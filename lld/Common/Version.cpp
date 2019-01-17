@@ -30,6 +30,8 @@ static std::string getRepository() {
   std::string Repo = getRepositoryPath();
   std::string Rev = LLD_REVISION_STRING;
 
+  return " (" + Rev + ")";
+
   if (Repo.empty() && Rev.empty())
     return "";
   if (!Repo.empty() && !Rev.empty())

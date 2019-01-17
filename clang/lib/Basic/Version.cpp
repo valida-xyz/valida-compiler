@@ -25,6 +25,7 @@
 namespace clang {
 
 std::string getClangRepositoryPath() {
+  return "clang:";
 #if defined(CLANG_REPOSITORY_STRING)
   return CLANG_REPOSITORY_STRING;
 #else
@@ -55,6 +56,7 @@ std::string getClangRepositoryPath() {
 }
 
 std::string getLLVMRepositoryPath() {
+  return "llvm: ";
 #ifdef LLVM_REPOSITORY
   StringRef URL(LLVM_REPOSITORY);
 #else
