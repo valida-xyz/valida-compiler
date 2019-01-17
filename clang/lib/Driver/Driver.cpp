@@ -26,6 +26,7 @@
 #include "ToolChains/HIP.h"
 #include "ToolChains/Haiku.h"
 #include "ToolChains/Hexagon.h"
+#include "ToolChains/HighTec.h"
 #include "ToolChains/Lanai.h"
 #include "ToolChains/Linux.h"
 #include "ToolChains/MSVC.h"
@@ -4282,6 +4283,12 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
 
   auto &TC = ToolChains[Target.str()];
   if (!TC) {
+
+    if (toolchains::HighTec::handlesTarget(Target)) {
+      TC = llvm::make_unique<toolchains::HighTec>(*this, Target, Args);
+      return *TC;
+    }
+
     switch (Target.getOS()) {
     case llvm::Triple::Haiku:
       TC = llvm::make_unique<toolchains::Haiku>(*this, Target, Args);

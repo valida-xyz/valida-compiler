@@ -43,6 +43,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "LicenseManagerBase.h"
 #include <memory>
 #include <set>
 #include <system_error>
@@ -320,6 +321,13 @@ static int ExecuteCC1Tool(ArrayRef<const char *> argv, StringRef Tool) {
 }
 
 int main(int argc_, const char **argv_) {
+
+  LicenseManagerBase LM(RLM_PRODUCT_NAME, RLM_BUILD_DATE, RLM_BASE_VERSION,
+                      RLM_LIC_FILE, 2);
+  if (LM.checkLicense() != 1)
+    llvm::report_fatal_error("license check: No valid license!");
+
+
   llvm::InitLLVM X(argc_, argv_);
   SmallVector<const char *, 256> argv(argv_, argv_ + argc_);
 

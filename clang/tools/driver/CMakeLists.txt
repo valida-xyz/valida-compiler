@@ -29,11 +29,35 @@ if(NOT CLANG_BUILT_STANDALONE)
   set(tablegen_deps intrinsics_gen)
 endif()
 
+set(RLM_PRODUCT_NAME
+  "arm-llvm"
+  CACHE  STRING "The name of the product as defined in RLM ")
+
+set(RLM_LIB ""
+  CACHE FILEPATH
+  "Path to librlm.a - This is used for integrating the license manager.")
+
+set(RLM_LIC ""
+  CACHE  FILEPATH "Path to the license file")
+
+if(WIN32)
+  add_library(rlm MODULE IMPORTED)
+  set (RLM_LIB "${CLANG_SOURCE_DIR}/rlm_libs/x64_w/rlm1233.lib")
+  string (REPLACE ".lib" ".dll" RLM_DLL ${RLM_LIB})
+else()
+  add_library(rlm STATIC  IMPORTED)
+  set (RLM_LIB "${CLANG_SOURCE_DIR}/rlm_libs/x64_l/librlm.a")
+endif()
+
+set_property(TARGET rlm PROPERTY IMPORTED_LOCATION ${RLM_LIB})
+
+
 add_clang_tool(clang
   driver.cpp
   cc1_main.cpp
   cc1as_main.cpp
   cc1gen_reproducer_main.cpp
+  LicenseManagerBase.cpp
 
   DEPENDS
   ${tablegen_deps}
@@ -46,7 +70,15 @@ target_link_libraries(clang
   clangDriver
   clangFrontend
   clangFrontendTool
+  rlm
   )
+
+add_definitions( -DRLM_BASE_VERSION="${CLANG_VERSION_MAJOR}.${CLANG_VERSION_MINOR}" )
+string(TIMESTAMP D_CLANG_BUILD_DATE "%Y.%m")
+add_definitions( -DRLM_BUILD_DATE="${D_CLANG_BUILD_DATE}" )
+add_definitions( -DRLM_LIC_FILE="${RLM_LIC}" )
+add_definitions( -DRLM_PRODUCT_NAME="${RLM_PRODUCT_NAME}" )
+
 
 if(WIN32 AND NOT CYGWIN)
   # Prevent versioning if the buildhost is targeting for Win32.
@@ -120,6 +152,15 @@ if(CLANG_ORDER_FILE AND
     target_link_libraries(clang PRIVATE ${LINKER_ORDER_FILE_OPTION})
     set_target_properties(clang PROPERTIES LINK_DEPENDS ${CLANG_ORDER_FILE})
   endif()
+endif()
+
+if(WIN32)
+add_custom_command(
+        TARGET clang POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${RLM_DLL}
+                ${LLVM_RUNTIME_OUTPUT_INTDIR}/
+        COMMENT "Copying RLM shared library to bin folder...")
 endif()
 
 if(WITH_POLLY AND LINK_POLLY_INTO_TOOLS)
