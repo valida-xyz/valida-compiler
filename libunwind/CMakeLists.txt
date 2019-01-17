@@ -134,6 +134,7 @@ option(LIBUNWIND_ENABLE_ARM_WMMX "Enable unwinding support for ARM WMMX register
 option(LIBUNWIND_ENABLE_THREADS "Build libunwind with threading support." ON)
 option(LIBUNWIND_USE_COMPILER_RT "Use compiler-rt instead of libgcc" OFF)
 option(LIBUNWIND_INCLUDE_DOCS "Build the libunwind documentation." ${LLVM_INCLUDE_DOCS})
+option(LIBUNWIND_BAREMETAL "Build libunwind for baremetal targets." OFF)
 
 set(LIBUNWIND_LIBDIR_SUFFIX "${LLVM_LIBDIR_SUFFIX}" CACHE STRING
     "Define suffix of library directory name (32/64)")
@@ -330,6 +331,10 @@ endif()
 # Disable DLL annotations on Windows for static builds.
 if (WIN32 AND LIBUNWIND_ENABLE_STATIC AND NOT LIBUNWIND_ENABLE_SHARED)
   add_definitions(-D_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS)
+endif()
+
+if (LIBUNWIND_BAREMETAL)
+  list(APPEND LIBUNWIND_COMPILE_FLAGS -D_LIBUNWIND_IS_BAREMETAL)
 endif()
 
 #===============================================================================
