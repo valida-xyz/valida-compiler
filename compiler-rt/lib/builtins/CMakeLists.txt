@@ -207,11 +207,11 @@ if (HAVE_UNWIND_H)
       gcc_personality_v0.c)
 endif ()
 
-if (NOT FUCHSIA)
-  set(GENERIC_SOURCES
-    ${GENERIC_SOURCES}
-    clear_cache.c)
-endif()
+#if (NOT FUCHSIA)
+#  set(GENERIC_SOURCES
+#    ${GENERIC_SOURCES}
+#    clear_cache.c)
+#endif()
 
 # These sources work on all x86 variants, but only x86 variants.
 set(x86_ARCH_SOURCES
@@ -394,11 +394,18 @@ set(arm_Thumb1_VFPv2_SOURCES
   arm/unordsf2vfp.S)
 set(arm_Thumb1_icache_SOURCES
   arm/sync_synchronize.S)
-set(arm_Thumb1_SOURCES
-  ${arm_Thumb1_JT_SOURCES}
-  ${arm_Thumb1_SjLj_EH_SOURCES}
-  ${arm_Thumb1_VFPv2_SOURCES}
-  ${arm_Thumb1_icache_SOURCES})
+
+if(APPLE)
+  set(arm_Thumb1_SOURCES
+    ${arm_Thumb1_JT_SOURCES}
+    ${arm_Thumb1_SjLj_EH_SOURCES}
+    ${arm_Thumb1_VFPv2_SOURCES}
+    ${arm_Thumb1_icache_SOURCES})
+else()
+  set(arm_Thumb1_SOURCES
+    ${arm_Thumb1_JT_SOURCES}
+    ${arm_Thumb1_icache_SOURCES})
+endif()
 
 if(MINGW)
   set(arm_SOURCES
@@ -453,6 +460,12 @@ set(armhf_SOURCES ${arm_SOURCES})
 set(armv7_SOURCES ${arm_SOURCES})
 set(armv7s_SOURCES ${arm_SOURCES})
 set(armv7k_SOURCES ${arm_SOURCES})
+
+set(armv8a_SOURCES ${arm_SOURCES})
+set(armv8r_SOURCES ${arm_SOURCES})
+
+set(aarch64v8a_SOURCES ${aarch64_SOURCES})
+
 set(arm64_SOURCES ${aarch64_SOURCES})
 
 # macho_embedded archs
@@ -565,8 +578,13 @@ else ()
         set(_arch "arm|armv6m")
       elseif("${arch}" MATCHES "^(armhf|armv7|armv7s|armv7k|armv7m|armv7em)$")
         set(_arch "arm")
+      elseif("${arch}" MATCHES "^(armv8a|armv8r)$")
+        set(_arch "arm")
+      elseif("${arch}" MATCHES "^(aarch64v8a)$")
+        set(_arch "aarch64")
       endif()
 
+      message(WARNING "supposed to work for target: " ${arch})
       # For ARM archs, exclude any VFP builtins if VFP is not supported
       if (${arch} MATCHES "^(arm|armhf|armv7|armv7s|armv7k|armv7m|armv7em)$")
         string(REPLACE ";" " " _TARGET_${arch}_CFLAGS "${TARGET_${arch}_CFLAGS}")
@@ -589,8 +607,9 @@ else ()
 
       # Needed for clear_cache on debug mode, due to r7's usage in inline asm.
       # Release mode already sets it via -O2/3, Debug mode doesn't.
+      set(BUILTIN_HF_CFLAGS "")
       if (${arch} STREQUAL "armhf")
-        list(APPEND BUILTIN_CFLAGS -fomit-frame-pointer -DCOMPILER_RT_ARMHF_TARGET)
+        list(APPEND BUILTIN_HF_CFLAGS -fomit-frame-pointer -DCOMPILER_RT_ARMHF_TARGET)
       endif()
 
       # For RISCV32, we must force enable int128 for compiling long
@@ -604,7 +623,7 @@ else ()
                               ARCHS ${arch}
                               SOURCES ${${arch}_SOURCES}
                               DEFS ${BUILTIN_DEFS}
-                              CFLAGS ${BUILTIN_CFLAGS}
+                              CFLAGS ${BUILTIN_CFLAGS} ${BUILTIN_HF_CFLAGS}
                               PARENT_TARGET builtins)
     endif ()
   endforeach ()
