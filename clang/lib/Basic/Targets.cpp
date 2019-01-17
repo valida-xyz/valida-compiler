@@ -112,6 +112,10 @@ void addMinGWDefines(const llvm::Triple &Triple, const LangOptions &Opts,
   addCygMingDefines(Opts, Builder);
 }
 
+void addHighTecDefines(MacroBuilder &Builder) {
+  Builder.defineMacro("__HIGHTEC__");
+}
+
 //===----------------------------------------------------------------------===//
 // Driver code
 //===----------------------------------------------------------------------===//
