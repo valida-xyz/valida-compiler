@@ -298,6 +298,8 @@ long double    truncl(long double x);
 #pragma GCC system_header
 #endif
 
+#include <type_traits>
+
 #include_next <math.h>
 
 #ifdef __cplusplus
@@ -306,7 +308,7 @@ long double    truncl(long double x);
 // back to C++ linkage before including these C++ headers.
 extern "C++" {
 
-#include <type_traits>
+
 #include <limits>
 
 // signbit

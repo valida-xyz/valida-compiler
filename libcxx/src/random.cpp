@@ -166,6 +166,8 @@ random_device::operator()()
     return r;
 }
 
+#elif defined(__HIGHTEC__)
+#warning TODO: implement random device for this architecture
 #else
 #error "Random device not implemented for this architecture"
 #endif

@@ -37,6 +37,8 @@
 # include <support/fuchsia/xlocale.h>
 #elif defined(_LIBCPP_HAS_MUSL_LIBC)
 # include <support/musl/xlocale.h>
+#elif defined(__HIGHTEC__)
+# include <support/hightec/locale_htc.h>
 #endif
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)

@@ -307,6 +307,8 @@
 #  define _LIBCPP_USING_NACL_RANDOM
 #elif defined(_LIBCPP_WIN32API)
 #  define _LIBCPP_USING_WIN32_RANDOM
+#elif defined(__HIGHTEC__)
+// Do not define anything here for HighTec
 #else
 #  define _LIBCPP_USING_DEV_RANDOM
 #endif
@@ -976,6 +978,10 @@ template <unsigned> struct __static_assert_check {};
 // If we are getting operator new from the MSVC CRT, then allocation overloads
 // for align_val_t were added in 19.12, aka VS 2017 version 15.3.
 #if defined(_LIBCPP_MSVCRT) && defined(_MSC_VER) && _MSC_VER < 1912
+#define _LIBCPP_HAS_NO_ALIGNED_ALLOCATION
+#endif
+
+#if defined(__HIGHTEC__)
 #define _LIBCPP_HAS_NO_ALIGNED_ALLOCATION
 #endif
 
