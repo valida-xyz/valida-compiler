@@ -3,7 +3,7 @@
 ; CHECK: ; ModuleID = 'debuginfo.c'
 ; CHECK-NEXT: source_filename = "debuginfo.c"
 
-; CHECK:      define i64 @foo(i64, i64, <10 x i64>) !dbg !20 {
+; CHECK:      define i64 @foo(i64 %0, i64 %1, <10 x i64> %2) !dbg !20 {
 ; CHECK-NEXT: entry:
 ; CHECK-NEXT:   call void @llvm.dbg.declare(metadata i64 0, metadata !27, metadata !DIExpression()), !dbg !32
 ; CHECK-NEXT:   call void @llvm.dbg.declare(metadata i64 0, metadata !28, metadata !DIExpression()), !dbg !32
@@ -18,7 +18,7 @@
 ; CHECK:      ; Function Attrs: nounwind readnone speculatable
 ; CHECK-NEXT: declare void @llvm.dbg.value(metadata, metadata, metadata) #0
 
-; CHECK:      attributes #0 = { nounwind readnone speculatable }
+; CHECK:      attributes #0 = { nounwind readnone speculatable willreturn }
 
 ; CHECK:      !llvm.dbg.cu = !{!0}
 ; CHECK-NEXT: !FooType = !{!16}
@@ -43,7 +43,7 @@
 ; CHECK-NEXT: !17 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", scope: !18, file: !1, size: 192, elements: !19, runtimeLang: DW_LANG_C89, identifier: "MyStruct")
 ; CHECK-NEXT: !18 = !DINamespace(name: "NameSpace", scope: !6)
 ; CHECK-NEXT: !19 = !{!11, !11, !11}
-; CHECK-NEXT: !20 = distinct !DISubprogram(name: "foo", linkageName: "foo", scope: !1, file: !1, line: 42, type: !21, isLocal: true, isDefinition: true, scopeLine: 42, isOptimized: false, unit: !0, retainedNodes: !26)
+; CHECK-NEXT: !20 = distinct !DISubprogram(name: "foo", linkageName: "foo", scope: !1, file: !1, line: 42, type: !21, scopeLine: 42, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !26)
 ; CHECK-NEXT: !21 = !DISubroutineType(types: !22)
 ; CHECK-NEXT: !22 = !{!11, !11, !23}
 ; CHECK-NEXT: !23 = !DICompositeType(tag: DW_TAG_array_type, baseType: !11, size: 640, flags: DIFlagVector, elements: !24)

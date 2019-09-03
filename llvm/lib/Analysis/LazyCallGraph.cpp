@@ -1,9 +1,8 @@
 //===- LazyCallGraph.cpp - Analysis of a Module's call graph --------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -171,6 +170,19 @@ LazyCallGraph::LazyCallGraph(Module &M, TargetLibraryInfo &TLI) {
     LLVM_DEBUG(dbgs() << "  Adding '" << F.getName()
                       << "' to entry set of the graph.\n");
     addEdge(EntryEdges.Edges, EntryEdges.EdgeIndexMap, get(F), Edge::Ref);
+  }
+
+  // Externally visible aliases of internal functions are also viable entry
+  // edges to the module.
+  for (auto &A : M.aliases()) {
+    if (A.hasLocalLinkage())
+      continue;
+    if (Function* F = dyn_cast<Function>(A.getAliasee())) {
+      LLVM_DEBUG(dbgs() << "  Adding '" << F->getName()
+                        << "' with alias '" << A.getName()
+                        << "' to entry set of the graph.\n");
+      addEdge(EntryEdges.Edges, EntryEdges.EdgeIndexMap, get(*F), Edge::Ref);
+    }
   }
 
   // Now add entry nodes for functions reachable via initializers to globals.
@@ -619,7 +631,7 @@ LazyCallGraph::RefSCC::switchInternalEdgeToCall(
 
   // If the merge range is empty, then adding the edge didn't actually form any
   // new cycles. We're done.
-  if (MergeRange.begin() == MergeRange.end()) {
+  if (empty(MergeRange)) {
     // Now that the SCC structure is finalized, flip the kind to call.
     SourceN->setEdgeKind(TargetN, Edge::Call);
     return false; // No new cycle.
@@ -1739,16 +1751,14 @@ static void printNode(raw_ostream &OS, LazyCallGraph::Node &N) {
 }
 
 static void printSCC(raw_ostream &OS, LazyCallGraph::SCC &C) {
-  ptrdiff_t Size = size(C);
-  OS << "    SCC with " << Size << " functions:\n";
+  OS << "    SCC with " << C.size() << " functions:\n";
 
   for (LazyCallGraph::Node &N : C)
     OS << "      " << N.getFunction().getName() << "\n";
 }
 
 static void printRefSCC(raw_ostream &OS, LazyCallGraph::RefSCC &C) {
-  ptrdiff_t Size = size(C);
-  OS << "  RefSCC with " << Size << " call SCCs:\n";
+  OS << "  RefSCC with " << C.size() << " call SCCs:\n";
 
   for (LazyCallGraph::SCC &InnerC : C)
     printSCC(OS, InnerC);

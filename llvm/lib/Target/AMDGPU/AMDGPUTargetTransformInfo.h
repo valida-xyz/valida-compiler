@@ -1,9 +1,8 @@
 //===- AMDGPUTargetTransformInfo.h - AMDGPU specific TTI --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -78,13 +77,16 @@ class GCNTTIImpl final : public BasicTTIImplBase<GCNTTIImpl> {
     AMDGPU::FeatureUnalignedScratchAccess,
 
     AMDGPU::FeatureAutoWaitcntBeforeBarrier,
-    AMDGPU::FeatureDebuggerEmitPrologue,
-    AMDGPU::FeatureDebuggerInsertNops,
 
     // Property of the kernel/environment which can't actually differ.
     AMDGPU::FeatureSGPRInitBug,
     AMDGPU::FeatureXNACK,
     AMDGPU::FeatureTrapHandler,
+    AMDGPU::FeatureCodeObjectV3,
+
+    // The default assumption needs to be ecc is enabled, but no directly
+    // exposed operations depend on it, so it can be safely inlined.
+    AMDGPU::FeatureSRAMECC,
 
     // Perf-tuning features
     AMDGPU::FeatureFastFMAF32,
@@ -178,9 +180,13 @@ public:
     // don't use flat addressing.
     if (IsGraphicsShader)
       return -1;
-    return ST->hasFlatAddressSpace() ?
-      ST->getAMDGPUAS().FLAT_ADDRESS : ST->getAMDGPUAS().UNKNOWN_ADDRESS_SPACE;
+    return AMDGPUAS::FLAT_ADDRESS;
   }
+
+  bool collectFlatAddressOperands(SmallVectorImpl<int> &OpIndexes,
+                                  Intrinsic::ID IID) const;
+  bool rewriteIntrinsicWithAddressSpace(IntrinsicInst *II,
+                                        Value *OldV, Value *NewV) const;
 
   unsigned getVectorSplitCost() { return 0; }
 
@@ -190,7 +196,9 @@ public:
   bool areInlineCompatible(const Function *Caller,
                            const Function *Callee) const;
 
-  unsigned getInliningThresholdMultiplier() { return 9; }
+  unsigned getInliningThresholdMultiplier() { return 7; }
+
+  int getInlinerVectorBonusPercent() { return 0; }
 
   int getArithmeticReductionCost(unsigned Opcode,
                                  Type *Ty,

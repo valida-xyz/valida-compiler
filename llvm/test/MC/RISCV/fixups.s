@@ -24,15 +24,26 @@ sw a0, %lo(val)(t1)
 # CHECK-FIXUP: fixup A - offset: 0, value: %lo(val), kind: fixup_riscv_lo12_s
 # CHECK-INSTR: sw a0, 1656(t1)
 
+1:
+auipc t1, %pcrel_hi(.LBB0)
+# CHECK-FIXUP: fixup A - offset: 0, value: %pcrel_hi(.LBB0), kind: fixup_riscv_pcrel_hi20
+# CHECK-INSTR: auipc t1, 0
+addi t1, t1, %pcrel_lo(1b)
+# CHECK-FIXUP: fixup A - offset: 0, value: %pcrel_lo(.Ltmp0), kind: fixup_riscv_pcrel_lo12_i
+# CHECK-INSTR: addi t1, t1, -16
+sw t1, %pcrel_lo(1b)(t1)
+# CHECK-FIXUP: fixup A - offset: 0, value: %pcrel_lo(.Ltmp0), kind: fixup_riscv_pcrel_lo12_s
+# CHECK-INSTR: sw t1, -16(t1)
+
 jal zero, .LBB0
 # CHECK-FIXUP: fixup A - offset: 0, value: .LBB0, kind: fixup_riscv_jal
-# CHECK-INSTR: jal zero, -16
+# CHECK-INSTR: jal zero, -28
 jal zero, .LBB2
 # CHECK-FIXUP: fixup A - offset: 0, value: .LBB2, kind: fixup_riscv_jal
 # CHECK-INSTR: jal zero, 330996
 beq a0, a1, .LBB0
 # CHECK-FIXUP: fixup A - offset: 0, value: .LBB0, kind: fixup_riscv_branch
-# CHECK-INSTR: beq a0, a1, -24
+# CHECK-INSTR: beq a0, a1, -36
 blt a0, a1, .LBB1
 # CHECK-FIXUP: fixup A - offset: 0, value: .LBB1, kind: fixup_riscv_branch
 # CHECK-INSTR: blt a0, a1, 1108
@@ -57,16 +68,16 @@ func:
 call func
 # CHECK-FIXUP: fixup A - offset: 0, value: func, kind: fixup_riscv_call
 # CHECK-INSTR: auipc   ra, 0
-# CHECK-INSTR: jalr    ra, ra, -100
+# CHECK-INSTR: jalr    ra, -100(ra)
 
 .fill 10000
 call func
 # CHECK-FIXUP: fixup A - offset: 0, value: func, kind: fixup_riscv_call
 # CHECK-INSTR: auipc   ra, 1048574
-# CHECK-INSTR: jalr    ra, ra, -1916
+# CHECK-INSTR: jalr    ra, -1916(ra)
 
 .fill 20888
 call func
 # CHECK-FIXUP: fixup A - offset: 0, value: func, kind: fixup_riscv_call
 # CHECK-INSTR: auipc   ra, 1048568
-# CHECK-INSTR: jalr    ra, ra, 1764
+# CHECK-INSTR: jalr    ra, 1764(ra)

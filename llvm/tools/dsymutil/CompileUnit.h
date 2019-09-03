@@ -1,18 +1,17 @@
 //===- tools/dsymutil/CompileUnit.h - Dwarf debug info linker ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+
+#ifndef LLVM_TOOLS_DSYMUTIL_COMPILEUNIT_H
+#define LLVM_TOOLS_DSYMUTIL_COMPILEUNIT_H
 
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/CodeGen/DIE.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
-
-#ifndef LLVM_TOOLS_DSYMUTIL_COMPILEUNIT_H
-#define LLVM_TOOLS_DSYMUTIL_COMPILEUNIT_H
 
 namespace llvm {
 namespace dsymutil {
@@ -115,6 +114,8 @@ public:
 
   bool hasODR() const { return HasODR; }
   bool isClangModule() const { return !ClangModuleName.empty(); }
+  uint16_t getLanguage();
+
   const std::string &getClangModuleName() const { return ClangModuleName; }
 
   DIEInfo &getInfo(unsigned Idx) { return Info[Idx]; }
@@ -316,6 +317,9 @@ private:
 
   /// Did a DIE actually contain a valid reloc?
   bool HasInterestingContent;
+
+  /// The DW_AT_language of this unit.
+  uint16_t Language = 0;
 
   /// If this is a Clang module, this holds the module's name.
   std::string ClangModuleName;

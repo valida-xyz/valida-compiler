@@ -25,8 +25,7 @@
     <a href="https://lists.llvm.org/mailman/listinfo/cfe-dev">cfe-dev</a>
     <a href="https://lists.llvm.org/mailman/listinfo/cfe-commits">cfe-commits</a>
     <a href="https://bugs.llvm.org/">Bug Reports</a>
-    <a href="https://llvm.org/svn/llvm-project/libcxx/trunk/">Browse SVN</a>
-    <a href="https://llvm.org/viewvc/llvm-project/libcxx/trunk/">Browse ViewVC</a>
+    <a href="https://github.com/llvm/llvm-project/tree/master/libcxx/">Browse Sources</a>
   </div>
 </div>
 
@@ -35,7 +34,7 @@
   <h1>libc++ Upcoming Meeting Status</h1>
   <!--*********************************************************************-->
 
-  <p>This is a temporary page; please check the c++1z status <a href="cxx1z_status.html">here</a></p>
+  <p>This is a temporary page; please check the c++2a status <a href="cxx2a_status.html">here</a></p>
   <p>This page shows the status of the papers and issues that are expected to be adopted in the next WG21 Meeting.</p>
 
   <p>The groups that have contributed papers:
@@ -47,77 +46,74 @@
   </p>
 
   <h3>Paper Status</h3>
-  <table id="papers" border="1">
-	<tr><th>Paper #</th><th>Paper Name</th><th>Meeting</th><th>Status</th></tr>
-	<tr><td><a href="https://wg21.link/P0805R1">P0805R1</a></td><td>Comparing Containers</td><td>Jacksonville</td><td><i>Patch Ready: <a href="https://reviews.llvm.org/D43773">D43773</a></i></td></tr>
-<!--
-	<tr><td><a href="https://wg21.link/LWGn3346">3346</a></td><td>LWG</td><td>Terminology for Container Element Requirements - Rev 1</td><td>Kona</td><td>Complete</td><td>3.4</td></tr>
--->
-<!--  	<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr> -->
-  </table>
+	<table border="1">
+	<tr><th>Paper #</th><th>Group</th><th>Paper Name</th><th>Meeting</th><th>Status</th></tr>
+	<tr><td><a href="https://wg21.link/P0553R4">P0553R4</a></td><td>LWG</td><td>Bit Operations</td><td>Cologne</td><td>Complete</td></tr>
+	<tr><td><a href="https://wg21.link/P1355R2">P1355R2</a></td><td>LWG</td><td>Exposing a narrow contract for ceil2</td><td>Cologne</td><td>Complete</td></tr>
+	</table>
+
 
   <h3>Library Working group Issues Status</h3>
   <table id="issues" border="1">
 	<tr><th>Issue #</th><th>Issue Name</th><th>Meeting</th><th>Status</th></tr>
 
-<tr><td><a href="https://wg21.link/LWG2139">2139</a></td><td>What is a user-defined type?</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG2970">2970</a></td><td>Return type of std::visit misspecified</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3058">3058</a></td><td>Parallel adjacent_difference shouldn't require creating temporaries</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3062">3062</a></td><td>Unnecessary decay_t in is_execution_policy_v should be remove_cvref_t</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3067">3067</a></td><td>recursive_directory_iterator::pop must invalidate</td><td>Rapperswil</td><td><i>Nothing to do</i></td></tr>
-<tr><td><a href="https://wg21.link/LWG3071">3071</a></td><td>[networking.ts] read_until still refers to "input sequence"</td><td>Rapperswil</td><td><i>Nothing to do</i></td></tr>
-<tr><td><a href="https://wg21.link/LWG3074">3074</a></td><td>Non-member functions for valarray should only deduce from the valarray</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3076">3076</a></td><td>basic_string CTAD ambiguity</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3079">3079</a></td><td>LWG 2935 forgot to fix the existing_p overloads of create_directory</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3080">3080</a></td><td>Floating point from_chars pattern specification breaks round-tripping</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3083">3083</a></td><td>What should ios::iword(-1) do?</td><td>Rapperswil</td><td><i>Nothing to do</i></td></tr>
-<tr><td><a href="https://wg21.link/LWG3094">3094</a></td><td>[time.duration.io]p4 makes surprising claims about encoding</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3100">3100</a></td><td>Unnecessary and confusing "empty span" wording</td><td>Rapperswil</td><td><i>Nothing to do</i></td></tr>
-<tr><td><a href="https://wg21.link/LWG3102">3102</a></td><td>Clarify span iterator and const_iterator behavior</td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG3104">3104</a></td><td>Fixing duration division</td><td>Rapperswil</td><td>Complete</td></tr>
-
+<table border="1">
+<tr><th>Issue #</th><th>Has P/R</th><th>Issue Name</th><th>Meeting</th><th>Status</th></tr>
+<tr><td><a href="https://wg21.link/LWG2899">2899</a></td><td>Yes</td><td><tt>is_(nothrow_)move_constructible</tt> and <tt>tuple</tt>, <tt>optional</tt> and <tt>unique_ptr</tt></td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3055">3055</a></td><td>Yes</td><td><tt>path::operator+=(<i>single-character</i>)</tt> misspecified</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3158">3158</a></td><td>Yes</td><td><tt>tuple(allocator_arg_t, const Alloc&amp;)</tt> should be conditionally explicit</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3169">3169</a></td><td>Yes</td><td><tt>ranges</tt> permutation generators discard useful information</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3183">3183</a></td><td>Yes</td><td>Normative permission to specialize Ranges variable templates</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3184">3184</a></td><td>Yes</td><td>Inconsistencies in <tt>bind_front</tt> wording</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3185">3185</a></td><td>Yes</td><td>Uses-allocator construction functions missing <tt>constexpr</tt> and <tt>noexcept</tt></td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3186">3186</a></td><td>Yes</td><td><tt>ranges</tt> removal, partition, and <tt>partial_sort_copy</tt> algorithms discard useful information</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3187">3187</a></td><td>Yes</td><td><a href="https://wg21.link/p0591r4">P0591R4</a> reverted DR 2586 fixes to <tt>scoped_allocator_adaptor::construct()</tt></td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3191">3191</a></td><td>Yes</td><td><tt>std::ranges::shuffle</tt> synopsis does not match algorithm definition</td><td>Cologne</td><td></td></tr>
+<tr><td><a href="https://wg21.link/LWG3196">3196</a></td><td>Yes</td><td><tt>std::optional&lt;T&gt;</tt> is ill-formed is <tt>T</tt> is an array</td><td>Cologne</td><td>Complete</td></tr>
+<tr><td><a href="https://wg21.link/LWG3198">3198</a></td><td>Yes</td><td>Bad constraint on <tt>std::span::span()</tt></td><td>Cologne</td><td>Complete</td></tr>
+<tr><td><a href="https://wg21.link/LWG3199">3199</a></td><td>Yes</td><td><tt>istream &gt;&gt; bitset&lt;0&gt;</tt> fails</td><td>Cologne</td><td>Complete</td></tr>
+<tr><td><a href="https://wg21.link/LWG3202">3202</a></td><td>Yes</td><td>P0318R1 was supposed to be revised</td><td>Cologne</td><td>Complete</td></tr>
+<tr><td><a href="https://wg21.link/LWG3206">3206</a></td><td>Yes</td><td><tt>year_month_day</tt> conversion to <tt>sys_days</tt> uses not-existing member function</td><td>Cologne</td><td>Complete</td></tr>
+<tr><td><a href="https://wg21.link/LWG3208">3208</a></td><td>Yes</td><td><tt>Boolean</tt>'s expression requirements are ordered inconsistently</td><td>Cologne</td><td>Nothing to do</td></tr>
+<tr><td><a href="https://wg21.link/LWG3209">3209</a></td><td>Yes</td><td>Expression in <tt>year::ok()</tt> returns clause is ill-formed</td><td>Cologne</td><td>Complete</td></tr>
+</table>
 </table>
 
 <h3>Issues to "Review"</h3>
 <table border="1">
 <tr><th>Issue #</th><th>Issue Name</th><th>Meeting</th><th>Status</th></tr>
-<tr><td><a href="https://wg21.link/LWG2412">2412</a></td><td><tt>promise::set_value()</tt> and <tt>promise::get_future()</tt> should not race</td><td>Rapperswil</td><td>Complete</td></tr>
-<tr><td><a href="https://wg21.link/LWG2682">2682</a></td><td><code>filesystem::copy()</code> won't create a symlink to a directory</td><td>Rapperswil</td><td>Complete</td></tr>
-<tr><td><a href="https://wg21.link/LWG2697">2697</a></td><td>[concurr.ts] Behavior of <tt>future/shared_future</tt> unwrapping constructor when given an invalid <tt>future</tt></td><td>Rapperswil</td><td></td></tr>
-<tr><td><a href="https://wg21.link/LWG2708">2708</a></td><td><tt>recursive_directory_iterator::recursion_pending()</tt> is incorrectly specified</td><td>Rapperswil</td><td>Complete</td></tr>
-<tr><td><a href="https://wg21.link/LWG2936">2936</a></td><td>Path comparison is defined in terms of the generic format</td><td>Rapperswil</td><td></td></tr>
 </table>
+
+<h3>Comments about the papers</h3>
+<ul>
+<li>P0553R4 - Marshall to updated existing patch (51262)</li>
+<li>P1355R2 - Paper in the mailing; Marshall to handle as part of 553/556</li>
+</ul>
 
 
 <h3>Comments about the issues</h3>
 <ul>
-<li>2139 - I think that this is just wording cleanup.</li>
-<li>2970 - I think that we already do this - checking with Michael.</li>
-<li>3058 - We don't do the parallel algos yet</li>
-<li>3062 - This should be very easy.</li>
-<li>3067 - Adding restrictions; no code changes needed.</li>
-<li>3071 - This is just wording cleanup.</li>
-<li>3074 - Large change, that looks straightforward.</li>
-<li>3076 - </li>
-<li>3079 - Eric? </li>
-<li>3080 - We don't have a from_chars implementation yet.</li>
-<li>3083 - This is just wording cleanup.</li>
-<li>3094 - We haven't implemented Howard's date library yet.</li>
-<li>3100 - This is just wording cleanup.</li>
-<li>3102 - This should be just adding tests.</li>
-<li>3104 - We already do this.</li>
+<li>2899 - Louis</li>
+<li>3055 - Eric?</li>
+<li>3158 - Louis</li>
+<li>3169 - We don't do ranges yet</li>
+<li>3183 - We don't do ranges yet</li>
+<li>3184 - We don't do bind_front yet</li>
+<li>3185 - Let's make sure that the patch up for review does this (D58879)</li>
+<li>3186 - We don't do ranges yet</li>
+<li>3187 - We need to make sure this is fixed when we land PMRs</li>
+<li>3191 - We don't do ranges yet</li>
+<li>3196 - We already do this</li>
+<li>3198 - We already do this</li>
+<li>3202 - We already do this</li>
+<li>3206 - We already do this; added a couple of explicit tests</li>
+<li>3208 - Nothing to do; wording cleanup</li>
+<li>3209 - We already do the right thing</li>
 </ul>
 
-<h3>Comments about the "Review" issues</h3>
-<ul>
-<li> 2412 - I think we do this already</li>
-<li> 2682 - We already to this </li>
-<li> 2697 - No concurrency TS implementation yet</li>
-<li> 2708 - We already do this </li>
-<li> 2936 - Eric - don't we do this already?</li>
-</ul>
 
-<p>Last Updated: 10-May-2018</p>
+
+<p>Last Updated: 1-Jul-2019</p>
 </div>
 </body>
 </html>

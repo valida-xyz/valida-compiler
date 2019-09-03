@@ -4,9 +4,6 @@ Test some SBValue APIs.
 
 from __future__ import print_function
 
-import os
-import re
-import time
 
 import lldb
 from lldbsuite.test.decorators import *
@@ -152,6 +149,9 @@ class ValueAPITestCase(TestBase):
         val_i = target.EvaluateExpression('i')
         val_s = target.EvaluateExpression('s')
         val_a = target.EvaluateExpression('a')
+        self.assertTrue(
+            val_s.GetChildMemberWithName('a').GetAddress().IsValid(),
+            VALID_VARIABLE)
         self.assertTrue(
             val_s.GetChildMemberWithName('a').AddressOf(),
             VALID_VARIABLE)

@@ -1,14 +1,14 @@
 //===---- ExecutionUtils.cpp - Utilities for executing functions in Orc ---===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 
+#include "llvm/ExecutionEngine/Orc/Layer.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -18,45 +18,6 @@
 
 namespace llvm {
 namespace orc {
-
-JITTargetMachineBuilder::JITTargetMachineBuilder(Triple TT)
-    : TT(std::move(TT)) {}
-
-Expected<JITTargetMachineBuilder> JITTargetMachineBuilder::detectHost() {
-  return JITTargetMachineBuilder(Triple(sys::getProcessTriple()));
-}
-
-Expected<std::unique_ptr<TargetMachine>>
-JITTargetMachineBuilder::createTargetMachine() {
-  if (!Arch.empty()) {
-    Triple::ArchType Type = Triple::getArchTypeForLLVMName(Arch);
-
-    if (Type == Triple::UnknownArch)
-      return make_error<StringError>(std::string("Unknown arch: ") + Arch,
-                                     inconvertibleErrorCode());
-  }
-
-  std::string ErrMsg;
-  auto *TheTarget = TargetRegistry::lookupTarget(TT.getTriple(), ErrMsg);
-  if (!TheTarget)
-    return make_error<StringError>(std::move(ErrMsg), inconvertibleErrorCode());
-
-  auto *TM =
-      TheTarget->createTargetMachine(TT.getTriple(), CPU, Features.getString(),
-                                     Options, RM, CM, OptLevel, /*JIT*/ true);
-  if (!TM)
-    return make_error<StringError>("Could not allocate target machine",
-                                   inconvertibleErrorCode());
-
-  return std::unique_ptr<TargetMachine>(TM);
-}
-
-JITTargetMachineBuilder &JITTargetMachineBuilder::addFeatures(
-    const std::vector<std::string> &FeatureVec) {
-  for (const auto &F : FeatureVec)
-    Features.AddFeature(F);
-  return *this;
-}
 
 CtorDtorIterator::CtorDtorIterator(const GlobalVariable *GV, bool End)
   : InitList(
@@ -126,17 +87,23 @@ iterator_range<CtorDtorIterator> getDestructors(const Module &M) {
                     CtorDtorIterator(DtorsList, true));
 }
 
-void CtorDtorRunner2::add(iterator_range<CtorDtorIterator> CtorDtors) {
-  if (CtorDtors.begin() == CtorDtors.end())
+void CtorDtorRunner::add(iterator_range<CtorDtorIterator> CtorDtors) {
+  if (empty(CtorDtors))
     return;
 
   MangleAndInterner Mangle(
-      V.getExecutionSession(),
+      JD.getExecutionSession(),
       (*CtorDtors.begin()).Func->getParent()->getDataLayout());
 
   for (const auto &CtorDtor : CtorDtors) {
     assert(CtorDtor.Func && CtorDtor.Func->hasName() &&
            "Ctor/Dtor function must be named to be runnable under the JIT");
+
+    // FIXME: Maybe use a symbol promoter here instead.
+    if (CtorDtor.Func->hasLocalLinkage()) {
+      CtorDtor.Func->setLinkage(GlobalValue::ExternalLinkage);
+      CtorDtor.Func->setVisibility(GlobalValue::HiddenVisibility);
+    }
 
     if (CtorDtor.Data && cast<GlobalValue>(CtorDtor.Data)->isDeclaration()) {
       dbgs() << "  Skipping because why now?\n";
@@ -148,7 +115,7 @@ void CtorDtorRunner2::add(iterator_range<CtorDtorIterator> CtorDtors) {
   }
 }
 
-Error CtorDtorRunner2::run() {
+Error CtorDtorRunner::run() {
   using CtorDtorTy = void (*)();
 
   SymbolNameSet Names;
@@ -161,7 +128,9 @@ Error CtorDtorRunner2::run() {
     }
   }
 
-  if (auto CtorDtorMap = lookup({&V}, std::move(Names))) {
+  auto &ES = JD.getExecutionSession();
+  if (auto CtorDtorMap =
+          ES.lookup(JITDylibSearchList({{&JD, true}}), std::move(Names))) {
     for (auto &KV : CtorDtorsByPriority) {
       for (auto &Name : KV.second) {
         assert(CtorDtorMap->count(Name) && "No entry for Name");
@@ -170,13 +139,10 @@ Error CtorDtorRunner2::run() {
         CtorDtor();
       }
     }
+    CtorDtorsByPriority.clear();
     return Error::success();
   } else
     return CtorDtorMap.takeError();
-
-  CtorDtorsByPriority.clear();
-
-  return Error::success();
 }
 
 void LocalCXXRuntimeOverridesBase::runDestructors() {
@@ -195,38 +161,55 @@ int LocalCXXRuntimeOverridesBase::CXAAtExitOverride(DestructorPtr Destructor,
   return 0;
 }
 
-Error LocalCXXRuntimeOverrides2::enable(VSO &V, MangleAndInterner &Mangle) {
-  SymbolMap RuntimeInterposes(
-      {{Mangle("__dso_handle"),
-        JITEvaluatedSymbol(toTargetAddress(&DSOHandleOverride),
-                           JITSymbolFlags::Exported)},
-       {Mangle("__cxa_atexit"),
-        JITEvaluatedSymbol(toTargetAddress(&CXAAtExitOverride),
-                           JITSymbolFlags::Exported)}});
+Error LocalCXXRuntimeOverrides::enable(JITDylib &JD,
+                                        MangleAndInterner &Mangle) {
+  SymbolMap RuntimeInterposes;
+  RuntimeInterposes[Mangle("__dso_handle")] =
+    JITEvaluatedSymbol(toTargetAddress(&DSOHandleOverride),
+                       JITSymbolFlags::Exported);
+  RuntimeInterposes[Mangle("__cxa_atexit")] =
+    JITEvaluatedSymbol(toTargetAddress(&CXAAtExitOverride),
+                       JITSymbolFlags::Exported);
 
-  return V.define(absoluteSymbols(std::move(RuntimeInterposes)));
+  return JD.define(absoluteSymbols(std::move(RuntimeInterposes)));
 }
 
-DynamicLibraryFallbackGenerator::DynamicLibraryFallbackGenerator(
-    sys::DynamicLibrary Dylib, const DataLayout &DL, SymbolPredicate Allow)
+DynamicLibrarySearchGenerator::DynamicLibrarySearchGenerator(
+    sys::DynamicLibrary Dylib, char GlobalPrefix, SymbolPredicate Allow)
     : Dylib(std::move(Dylib)), Allow(std::move(Allow)),
-      GlobalPrefix(DL.getGlobalPrefix()) {}
+      GlobalPrefix(GlobalPrefix) {}
 
-SymbolNameSet DynamicLibraryFallbackGenerator::
-operator()(VSO &V, const SymbolNameSet &Names) {
+Expected<std::unique_ptr<DynamicLibrarySearchGenerator>>
+DynamicLibrarySearchGenerator::Load(const char *FileName, char GlobalPrefix,
+                                    SymbolPredicate Allow) {
+  std::string ErrMsg;
+  auto Lib = sys::DynamicLibrary::getPermanentLibrary(FileName, &ErrMsg);
+  if (!Lib.isValid())
+    return make_error<StringError>(std::move(ErrMsg), inconvertibleErrorCode());
+  return std::make_unique<DynamicLibrarySearchGenerator>(
+      std::move(Lib), GlobalPrefix, std::move(Allow));
+}
+
+Expected<SymbolNameSet>
+DynamicLibrarySearchGenerator::tryToGenerate(JITDylib &JD,
+                                             const SymbolNameSet &Names) {
   orc::SymbolNameSet Added;
   orc::SymbolMap NewSymbols;
 
   bool HasGlobalPrefix = (GlobalPrefix != '\0');
 
   for (auto &Name : Names) {
-    if (!Allow(Name) || (*Name).empty())
+    if ((*Name).empty())
+      continue;
+
+    if (Allow && !Allow(Name))
       continue;
 
     if (HasGlobalPrefix && (*Name).front() != GlobalPrefix)
       continue;
 
-    std::string Tmp((*Name).data() + (HasGlobalPrefix ? 1 : 0), (*Name).size());
+    std::string Tmp((*Name).data() + HasGlobalPrefix,
+                    (*Name).size() - HasGlobalPrefix);
     if (void *Addr = Dylib.getAddressOfSymbol(Tmp.c_str())) {
       Added.insert(Name);
       NewSymbols[Name] = JITEvaluatedSymbol(
@@ -235,13 +218,90 @@ operator()(VSO &V, const SymbolNameSet &Names) {
     }
   }
 
-  // Add any new symbols to V. Since the fallback generator is only called for
-  // symbols that are not already defined, this will never trigger a duplicate
+  // Add any new symbols to JD. Since the generator is only called for symbols
+  // that are not already defined, this will never trigger a duplicate
   // definition error, so we can wrap this call in a 'cantFail'.
   if (!NewSymbols.empty())
-    cantFail(V.define(absoluteSymbols(std::move(NewSymbols))));
+    cantFail(JD.define(absoluteSymbols(std::move(NewSymbols))));
 
   return Added;
+}
+
+Expected<std::unique_ptr<StaticLibraryDefinitionGenerator>>
+StaticLibraryDefinitionGenerator::Load(ObjectLayer &L, const char *FileName) {
+  auto ArchiveBuffer = errorOrToExpected(MemoryBuffer::getFile(FileName));
+
+  if (!ArchiveBuffer)
+    return ArchiveBuffer.takeError();
+
+  return Create(L, std::move(*ArchiveBuffer));
+}
+
+Expected<std::unique_ptr<StaticLibraryDefinitionGenerator>>
+StaticLibraryDefinitionGenerator::Create(
+    ObjectLayer &L, std::unique_ptr<MemoryBuffer> ArchiveBuffer) {
+  Error Err = Error::success();
+
+  std::unique_ptr<StaticLibraryDefinitionGenerator> ADG(
+      new StaticLibraryDefinitionGenerator(L, std::move(ArchiveBuffer), Err));
+
+  if (Err)
+    return std::move(Err);
+
+  return std::move(ADG);
+}
+
+Expected<SymbolNameSet>
+StaticLibraryDefinitionGenerator::tryToGenerate(JITDylib &JD,
+                                                const SymbolNameSet &Names) {
+
+  DenseSet<std::pair<StringRef, StringRef>> ChildBufferInfos;
+  SymbolNameSet NewDefs;
+
+  for (const auto &Name : Names) {
+    auto Child = Archive.findSym(*Name);
+    if (!Child)
+      return Child.takeError();
+    if (*Child == None)
+      continue;
+    auto ChildBuffer = (*Child)->getMemoryBufferRef();
+    if (!ChildBuffer)
+      return ChildBuffer.takeError();
+    ChildBufferInfos.insert(
+        {ChildBuffer->getBuffer(), ChildBuffer->getBufferIdentifier()});
+    NewDefs.insert(Name);
+  }
+
+  for (auto ChildBufferInfo : ChildBufferInfos) {
+    MemoryBufferRef ChildBufferRef(ChildBufferInfo.first,
+                                   ChildBufferInfo.second);
+
+    if (auto Err =
+            L.add(JD, MemoryBuffer::getMemBuffer(ChildBufferRef), VModuleKey()))
+      return std::move(Err);
+
+    --UnrealizedObjects;
+  }
+
+  return NewDefs;
+}
+
+StaticLibraryDefinitionGenerator::StaticLibraryDefinitionGenerator(
+    ObjectLayer &L, std::unique_ptr<MemoryBuffer> ArchiveBuffer, Error &Err)
+    : L(L), ArchiveBuffer(std::move(ArchiveBuffer)),
+      Archive(*this->ArchiveBuffer, Err) {
+
+  if (Err)
+    return;
+
+  Error Err2 = Error::success();
+  for (auto _ : Archive.children(Err2)) {
+    (void)_;
+    ++UnrealizedObjects;
+  }
+
+  // No need to check this: We will leave it to the caller.
+  Err = std::move(Err2);
 }
 
 } // End namespace orc.

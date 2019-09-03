@@ -1,9 +1,8 @@
 //===--- UnusedUsingDeclsCheck.cpp - clang-tidy----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -68,9 +67,9 @@ void UnusedUsingDeclsCheck::check(const MatchFinder::MatchResult &Result) {
 
     UsingDeclContext Context(Using);
     Context.UsingDeclRange = CharSourceRange::getCharRange(
-        Using->getLocStart(),
+        Using->getBeginLoc(),
         Lexer::findLocationAfterToken(
-            Using->getLocEnd(), tok::semi, *Result.SourceManager, getLangOpts(),
+            Using->getEndLoc(), tok::semi, *Result.SourceManager, getLangOpts(),
             /*SkipTrailingWhitespaceAndNewLine=*/true));
     for (const auto *UsingShadow : Using->shadows()) {
       const auto *TargetDecl = UsingShadow->getTargetDecl()->getCanonicalDecl();
@@ -155,7 +154,10 @@ void UnusedUsingDeclsCheck::onEndOfTranslationUnit() {
   for (const auto &Context : Contexts) {
     if (!Context.IsUsed) {
       diag(Context.FoundUsingDecl->getLocation(), "using decl %0 is unused")
-          << Context.FoundUsingDecl
+          << Context.FoundUsingDecl;
+      // Emit a fix and a fix description of the check;
+      diag(Context.FoundUsingDecl->getLocation(),
+           /*Description=*/"remove the using", DiagnosticIDs::Note)
           << FixItHint::CreateRemoval(Context.UsingDeclRange);
     }
   }

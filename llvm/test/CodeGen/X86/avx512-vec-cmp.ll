@@ -852,8 +852,8 @@ define <8 x double> @test43(<8 x double> %x, <8 x double> %x1, double* %ptr,<8 x
 ; KNL:       ## %bb.0:
 ; KNL-NEXT:    vpmovsxwq %xmm2, %zmm2 ## encoding: [0x62,0xf2,0x7d,0x48,0x24,0xd2]
 ; KNL-NEXT:    vpsllq $63, %zmm2, %zmm2 ## encoding: [0x62,0xf1,0xed,0x48,0x73,0xf2,0x3f]
-; KNL-NEXT:    vptestmq %zmm2, %zmm2, %k1 ## encoding: [0x62,0xf2,0xed,0x48,0x27,0xca]
-; KNL-NEXT:    vcmpltpd (%rdi){1to8}, %zmm0, %k1 {%k1} ## encoding: [0x62,0xf1,0xfd,0x59,0xc2,0x0f,0x01]
+; KNL-NEXT:    vcmpltpd (%rdi){1to8}, %zmm0, %k1 ## encoding: [0x62,0xf1,0xfd,0x58,0xc2,0x0f,0x01]
+; KNL-NEXT:    vptestmq %zmm2, %zmm2, %k1 {%k1} ## encoding: [0x62,0xf2,0xed,0x49,0x27,0xca]
 ; KNL-NEXT:    vblendmpd %zmm0, %zmm1, %zmm0 {%k1} ## encoding: [0x62,0xf2,0xf5,0x49,0x65,0xc0]
 ; KNL-NEXT:    retq ## encoding: [0xc3]
 ;
@@ -886,22 +886,14 @@ define <8 x double> @test43(<8 x double> %x, <8 x double> %x1, double* %ptr,<8 x
 define <4 x i32> @test44(<4 x i16> %x, <4 x i16> %y) #0 {
 ; AVX512-LABEL: test44:
 ; AVX512:       ## %bb.0:
-; AVX512-NEXT:    vpxor %xmm2, %xmm2, %xmm2 ## encoding: [0xc5,0xe9,0xef,0xd2]
-; AVX512-NEXT:    vpblendw $170, %xmm2, %xmm1, %xmm1 ## encoding: [0xc4,0xe3,0x71,0x0e,0xca,0xaa]
-; AVX512-NEXT:    ## xmm1 = xmm1[0],xmm2[1],xmm1[2],xmm2[3],xmm1[4],xmm2[5],xmm1[6],xmm2[7]
-; AVX512-NEXT:    vpblendw $170, %xmm2, %xmm0, %xmm0 ## encoding: [0xc4,0xe3,0x79,0x0e,0xc2,0xaa]
-; AVX512-NEXT:    ## xmm0 = xmm0[0],xmm2[1],xmm0[2],xmm2[3],xmm0[4],xmm2[5],xmm0[6],xmm2[7]
-; AVX512-NEXT:    vpcmpeqd %xmm1, %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0x76,0xc1]
+; AVX512-NEXT:    vpcmpeqw %xmm1, %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0x75,0xc1]
+; AVX512-NEXT:    vpmovsxwd %xmm0, %xmm0 ## encoding: [0xc4,0xe2,0x79,0x23,0xc0]
 ; AVX512-NEXT:    retq ## encoding: [0xc3]
 ;
 ; SKX-LABEL: test44:
 ; SKX:       ## %bb.0:
-; SKX-NEXT:    vpxor %xmm2, %xmm2, %xmm2 ## EVEX TO VEX Compression encoding: [0xc5,0xe9,0xef,0xd2]
-; SKX-NEXT:    vpblendw $170, %xmm2, %xmm1, %xmm1 ## encoding: [0xc4,0xe3,0x71,0x0e,0xca,0xaa]
-; SKX-NEXT:    ## xmm1 = xmm1[0],xmm2[1],xmm1[2],xmm2[3],xmm1[4],xmm2[5],xmm1[6],xmm2[7]
-; SKX-NEXT:    vpblendw $170, %xmm2, %xmm0, %xmm0 ## encoding: [0xc4,0xe3,0x79,0x0e,0xc2,0xaa]
-; SKX-NEXT:    ## xmm0 = xmm0[0],xmm2[1],xmm0[2],xmm2[3],xmm0[4],xmm2[5],xmm0[6],xmm2[7]
-; SKX-NEXT:    vpcmpeqd %xmm1, %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0x76,0xc1]
+; SKX-NEXT:    vpcmpeqw %xmm1, %xmm0, %k0 ## encoding: [0x62,0xf1,0x7d,0x08,0x75,0xc1]
+; SKX-NEXT:    vpmovm2d %k0, %xmm0 ## encoding: [0x62,0xf2,0x7e,0x08,0x38,0xc0]
 ; SKX-NEXT:    retq ## encoding: [0xc3]
   %mask = icmp eq <4 x i16> %x, %y
   %1 = sext <4 x i1> %mask to <4 x i32>
@@ -911,23 +903,17 @@ define <4 x i32> @test44(<4 x i16> %x, <4 x i16> %y) #0 {
 define <2 x i64> @test45(<2 x i16> %x, <2 x i16> %y) #0 {
 ; AVX512-LABEL: test45:
 ; AVX512:       ## %bb.0:
-; AVX512-NEXT:    vpxor %xmm2, %xmm2, %xmm2 ## encoding: [0xc5,0xe9,0xef,0xd2]
-; AVX512-NEXT:    vpblendw $17, %xmm1, %xmm2, %xmm1 ## encoding: [0xc4,0xe3,0x69,0x0e,0xc9,0x11]
-; AVX512-NEXT:    ## xmm1 = xmm1[0],xmm2[1,2,3],xmm1[4],xmm2[5,6,7]
-; AVX512-NEXT:    vpblendw $17, %xmm0, %xmm2, %xmm0 ## encoding: [0xc4,0xe3,0x69,0x0e,0xc0,0x11]
-; AVX512-NEXT:    ## xmm0 = xmm0[0],xmm2[1,2,3],xmm0[4],xmm2[5,6,7]
-; AVX512-NEXT:    vpcmpeqq %xmm1, %xmm0, %xmm0 ## encoding: [0xc4,0xe2,0x79,0x29,0xc1]
-; AVX512-NEXT:    vpsrlq $63, %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0x73,0xd0,0x3f]
+; AVX512-NEXT:    vpcmpeqw %xmm1, %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0x75,0xc1]
+; AVX512-NEXT:    vpmovzxwq %xmm0, %xmm0 ## encoding: [0xc4,0xe2,0x79,0x34,0xc0]
+; AVX512-NEXT:    ## xmm0 = xmm0[0],zero,zero,zero,xmm0[1],zero,zero,zero
+; AVX512-NEXT:    vpand {{.*}}(%rip), %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0xdb,0x05,A,A,A,A]
+; AVX512-NEXT:    ## fixup A - offset: 4, value: LCPI46_0-4, kind: reloc_riprel_4byte
 ; AVX512-NEXT:    retq ## encoding: [0xc3]
 ;
 ; SKX-LABEL: test45:
 ; SKX:       ## %bb.0:
-; SKX-NEXT:    vpxor %xmm2, %xmm2, %xmm2 ## EVEX TO VEX Compression encoding: [0xc5,0xe9,0xef,0xd2]
-; SKX-NEXT:    vpblendw $17, %xmm1, %xmm2, %xmm1 ## encoding: [0xc4,0xe3,0x69,0x0e,0xc9,0x11]
-; SKX-NEXT:    ## xmm1 = xmm1[0],xmm2[1,2,3],xmm1[4],xmm2[5,6,7]
-; SKX-NEXT:    vpblendw $17, %xmm0, %xmm2, %xmm0 ## encoding: [0xc4,0xe3,0x69,0x0e,0xc0,0x11]
-; SKX-NEXT:    ## xmm0 = xmm0[0],xmm2[1,2,3],xmm0[4],xmm2[5,6,7]
-; SKX-NEXT:    vpcmpeqq %xmm1, %xmm0, %xmm0 ## encoding: [0xc4,0xe2,0x79,0x29,0xc1]
+; SKX-NEXT:    vpcmpeqw %xmm1, %xmm0, %k0 ## encoding: [0x62,0xf1,0x7d,0x08,0x75,0xc1]
+; SKX-NEXT:    vpmovm2q %k0, %xmm0 ## encoding: [0x62,0xf2,0xfe,0x08,0x38,0xc0]
 ; SKX-NEXT:    vpsrlq $63, %xmm0, %xmm0 ## EVEX TO VEX Compression encoding: [0xc5,0xf9,0x73,0xd0,0x3f]
 ; SKX-NEXT:    retq ## encoding: [0xc3]
   %mask = icmp eq <2 x i16> %x, %y
@@ -939,9 +925,9 @@ define <2 x i64> @test46(<2 x float> %x, <2 x float> %y) #0 {
 ; AVX512-LABEL: test46:
 ; AVX512:       ## %bb.0:
 ; AVX512-NEXT:    vcmpeqps %xmm1, %xmm0, %xmm0 ## encoding: [0xc5,0xf8,0xc2,0xc1,0x00]
-; AVX512-NEXT:    vpmovzxdq %xmm0, %xmm0 ## encoding: [0xc4,0xe2,0x79,0x35,0xc0]
-; AVX512-NEXT:    ## xmm0 = xmm0[0],zero,xmm0[1],zero
-; AVX512-NEXT:    vpand {{.*}}(%rip), %xmm0, %xmm0 ## encoding: [0xc5,0xf9,0xdb,0x05,A,A,A,A]
+; AVX512-NEXT:    vpermilps $212, %xmm0, %xmm0 ## encoding: [0xc4,0xe3,0x79,0x04,0xc0,0xd4]
+; AVX512-NEXT:    ## xmm0 = xmm0[0,1,1,3]
+; AVX512-NEXT:    vandps {{.*}}(%rip), %xmm0, %xmm0 ## encoding: [0xc5,0xf8,0x54,0x05,A,A,A,A]
 ; AVX512-NEXT:    ## fixup A - offset: 4, value: LCPI47_0-4, kind: reloc_riprel_4byte
 ; AVX512-NEXT:    retq ## encoding: [0xc3]
 ;
@@ -1106,4 +1092,23 @@ define i16 @pcmpeq_mem_2(<16 x i32> %a, <16 x i32>* %b) {
   %cmp = icmp eq <16 x i32> %load, %a
   %cast = bitcast <16 x i1> %cmp to i16
   ret i16 %cast
+}
+
+; Don't let a degenerate case trigger an infinite loop.
+; This should get simplified before it even exists as a vselect node,
+; but that does not happen as of this change.
+
+define <2 x i64> @PR41066(<2 x i64> %t0, <2 x double> %x, <2 x double> %y) {
+; AVX512-LABEL: PR41066:
+; AVX512:       ## %bb.0:
+; AVX512-NEXT:    vxorps %xmm0, %xmm0, %xmm0 ## encoding: [0xc5,0xf8,0x57,0xc0]
+; AVX512-NEXT:    retq ## encoding: [0xc3]
+;
+; SKX-LABEL: PR41066:
+; SKX:       ## %bb.0:
+; SKX-NEXT:    vxorps %xmm0, %xmm0, %xmm0 ## EVEX TO VEX Compression encoding: [0xc5,0xf8,0x57,0xc0]
+; SKX-NEXT:    retq ## encoding: [0xc3]
+  %t1 = fcmp ogt <2 x double> %x, %y
+  %t2 = select <2 x i1> %t1, <2 x i64> <i64 undef, i64 0>, <2 x i64> zeroinitializer
+  ret <2 x i64> %t2
 }

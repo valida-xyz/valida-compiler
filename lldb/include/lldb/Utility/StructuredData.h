@@ -1,9 +1,8 @@
 //===-- StructuredData.h ----------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,31 +12,28 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "lldb/Utility/ConstString.h"
-#include "lldb/Utility/FileSpec.h"  // for FileSpec
-#include "lldb/lldb-enumerations.h" // for StructuredDataType
+#include "lldb/Utility/FileSpec.h"
+#include "lldb/lldb-enumerations.h"
 
-#include <cassert> // for assert
-#include <cstddef> // for size_t
-#include <cstdint> // for uint64_t
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
-#include <type_traits> // for move
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace lldb_private {
 class Status;
-}
-namespace lldb_private {
 class Stream;
 }
 
 namespace lldb_private {
 
-//----------------------------------------------------------------------
-/// @class StructuredData StructuredData.h "lldb/Utility/StructuredData.h"
+/// \class StructuredData StructuredData.h "lldb/Utility/StructuredData.h"
 /// A class which can hold structured data
 ///
 /// The StructuredData class is designed to hold the data from a JSON or plist
@@ -49,7 +45,6 @@ namespace lldb_private {
 /// data it is holding; it can parse JSON data, for instance, and other parts
 /// of lldb can iterate through the parsed data set to find keys and values
 /// that may be present.
-//----------------------------------------------------------------------
 
 class StructuredData {
 public:
@@ -170,7 +165,7 @@ public:
     bool
     ForEach(std::function<bool(Object *object)> const &foreach_callback) const {
       for (const auto &object_sp : m_items) {
-        if (foreach_callback(object_sp.get()) == false)
+        if (!foreach_callback(object_sp.get()))
           return false;
       }
       return true;
@@ -359,7 +354,7 @@ public:
     void ForEach(std::function<bool(ConstString key, Object *object)> const
                      &callback) const {
       for (const auto &pair : m_dict) {
-        if (callback(pair.first, pair.second.get()) == false)
+        if (!callback(pair.first, pair.second.get()))
           break;
       }
     }

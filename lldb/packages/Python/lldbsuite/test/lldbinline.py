@@ -5,6 +5,7 @@ from __future__ import absolute_import
 import os
 
 # Third-party modules
+import io
 
 # LLDB modules
 import lldb
@@ -12,7 +13,6 @@ from .lldbtest import *
 from . import configuration
 from . import lldbutil
 from .decorators import *
-
 
 def source_type(filename):
     _, extension = os.path.splitext(filename)
@@ -45,7 +45,7 @@ class CommandParser:
 
     def parse_source_files(self, source_files):
         for source_file in source_files:
-            file_handle = open(source_file)
+            file_handle = io.open(source_file, encoding='utf-8')
             lines = file_handle.readlines()
             line_number = 0
             # non-NULL means we're looking through whitespace to find
@@ -195,7 +195,6 @@ def MakeInlineTest(__file, __globals, decorators=None):
 
     # Derive the test name from the current file name
     file_basename = os.path.basename(__file)
-    InlineTest.mydir = TestBase.compute_mydir(__file)
 
     test_name, _ = os.path.splitext(file_basename)
 
@@ -209,4 +208,5 @@ def MakeInlineTest(__file, __globals, decorators=None):
     # Keep track of the original test filename so we report it
     # correctly in test results.
     test_class.test_filename = __file
+    test_class.mydir = TestBase.compute_mydir(__file)
     return test_class

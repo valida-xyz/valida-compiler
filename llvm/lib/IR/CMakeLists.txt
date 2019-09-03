@@ -3,6 +3,7 @@ tablegen(LLVM AttributesCompatFunc.inc -gen-attrs)
 add_public_tablegen_target(AttributeCompatFuncTableGen)
 
 add_llvm_library(LLVMCore
+  AbstractCallSite.cpp
   AsmWriter.cpp
   Attributes.cpp
   AutoUpgrade.cpp
@@ -21,7 +22,6 @@ add_llvm_library(LLVMCore
   DiagnosticInfo.cpp
   DiagnosticPrinter.cpp
   Dominators.cpp
-  DomTreeUpdater.cpp
   Function.cpp
   GVMaterializer.cpp
   Globals.cpp
@@ -42,8 +42,11 @@ add_llvm_library(LLVMCore
   Operator.cpp
   OptBisect.cpp
   Pass.cpp
+  PassInstrumentation.cpp
   PassManager.cpp
   PassRegistry.cpp
+  PassTimingInfo.cpp
+  RemarkStreamer.cpp
   SafepointIRVerifier.cpp
   ProfileSummary.cpp
   Statepoint.cpp
@@ -57,6 +60,8 @@ add_llvm_library(LLVMCore
 
   ADDITIONAL_HEADER_DIRS
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/IR
+
+  LINK_LIBS ${LLVM_PTHREAD_LIB}
 
   DEPENDS
   intrinsics_gen

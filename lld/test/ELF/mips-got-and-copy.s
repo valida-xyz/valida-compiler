@@ -10,7 +10,7 @@
 # RUN: llvm-mc -filetype=obj -triple=mips-unknown-linux %s -o %t.o
 # RUN: ld.lld %t.so.o -shared -o %t.so
 # RUN: ld.lld %t.o %t.so -o %t.exe
-# RUN: llvm-readobj -r -mips-plt-got %t.exe | FileCheck %s
+# RUN: llvm-readobj -r --mips-plt-got %t.exe | FileCheck %s
 
 # CHECK:      Relocations [
 # CHECK-NEXT:   Section (7) .rel.dyn {
@@ -32,7 +32,7 @@
 # CHECK-NEXT:       Value: 0x[[DATA0]]
 # CHECK-NEXT:       Type: Object
 # CHECK-NEXT:       Section: .bss
-# CHECK-NEXT:       Name: data0@
+# CHECK-NEXT:       Name: data0
 # CHECK-NEXT:     }
 # CHECK-NEXT:     Entry {
 # CHECK-NEXT:       Address:
@@ -41,7 +41,7 @@
 # CHECK-NEXT:       Value: 0x[[DATA1]]
 # CHECK-NEXT:       Type: Object
 # CHECK-NEXT:       Section: .bss
-# CHECK-NEXT:       Name: data1@
+# CHECK-NEXT:       Name: data1
 # CHECK-NEXT:     }
 # CHECK-NEXT:   ]
 # CHECK-NEXT:   Number of TLS and multi-GOT entries: 0

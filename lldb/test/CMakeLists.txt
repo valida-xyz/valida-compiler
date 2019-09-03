@@ -8,9 +8,9 @@ function(add_python_test_target name test_script args comment)
   add_custom_target(${name}
     COMMAND ${PYTHON_TEST_COMMAND} ${ARG_DEFAULT_ARGS}
     COMMENT "${comment}"
-    DEPENDS ${LLDB_TEST_DEPS}
     USES_TERMINAL
     )
+  add_dependencies(${name} ${LLDB_TEST_DEPS})
 endfunction()
 
 # The default architecture with which to compile test executables is the default LLVM target
@@ -30,7 +30,7 @@ set(LLDB_TEST_USER_ARGS
   ""
   CACHE STRING "Specify additional arguments to pass to test runner. For example: '-C gcc -C clang -A i386 -A x86_64'")
 
-# The .nodindex suffix is a marker for Spotlight to never index the
+# The .noindex suffix is a marker for Spotlight to never index the
 # build directory.  LLDB queries Spotlight to locate .dSYM bundles
 # based on the UUID embedded in a binary, and because the UUID is a
 # hash of filename and .text section, there *will* be conflicts inside
@@ -39,8 +39,6 @@ set(LLDB_TEST_COMMON_ARGS
   --arch=${LLDB_TEST_ARCH}
   -s
   ${CMAKE_BINARY_DIR}/lldb-test-traces
-  --build-dir
-  ${CMAKE_BINARY_DIR}/lldb-test-build.noindex
   -S nm
   -u CXXFLAGS
   -u CFLAGS
@@ -49,6 +47,7 @@ set(LLDB_TEST_COMMON_ARGS
 list(APPEND LLDB_TEST_COMMON_ARGS
   --executable ${LLDB_TEST_EXECUTABLE}
   --dsymutil ${LLDB_TEST_DSYMUTIL}
+  --filecheck ${LLDB_TEST_FILECHECK}
   -C ${LLDB_TEST_C_COMPILER}
   )
 
@@ -73,39 +72,56 @@ if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
   endif()
 endif()
 
-if(LLDB_CODESIGN_IDENTITY)
-  list(APPEND LLDB_TEST_COMMON_ARGS --codesign-identity "${LLDB_CODESIGN_IDENTITY}")
-endif()
-
-if(LLDB_BUILD_FRAMEWORK)
-  list(APPEND LLDB_TEST_COMMON_ARGS --framework ${LLDB_FRAMEWORK_DIR}/LLDB.framework)
-endif()
-
 if (NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows|Darwin")
   list(APPEND LLDB_TEST_COMMON_ARGS
     --env ARCHIVER=${CMAKE_AR} --env OBJCOPY=${CMAKE_OBJCOPY})
 endif()
 
-if(CMAKE_HOST_APPLE)
-  list(APPEND LLDB_TEST_COMMON_ARGS --server ${DEBUGSERVER_PATH})
+if (NOT "${LLDB_LIT_TOOLS_DIR}" STREQUAL "")
+  if (NOT EXISTS "${LLDB_LIT_TOOLS_DIR}")
+    message(WARNING "LLDB_LIT_TOOLS_DIR ${LLDB_LIT_TOOLS_DIR} does not exist.")
+  endif()
 endif()
 
-if(SKIP_DEBUGSERVER)
-  list(APPEND LLDB_TEST_COMMON_ARGS --out-of-tree-debugserver)
+if(CMAKE_HOST_APPLE)
+  if(LLDB_BUILD_FRAMEWORK)
+    get_target_property(framework_build_dir liblldb LIBRARY_OUTPUT_DIRECTORY)
+    list(APPEND LLDB_TEST_COMMON_ARGS --framework ${framework_build_dir}/LLDB.framework)
+  endif()
+
+  # Use the same identity for testing
+  get_property(code_sign_identity_used GLOBAL PROPERTY LLDB_DEBUGSERVER_CODESIGN_IDENTITY)
+  if(code_sign_identity_used)
+    list(APPEND LLDB_TEST_COMMON_ARGS --codesign-identity "${code_sign_identity_used}")
+  endif()
+
+  if(LLDB_USE_SYSTEM_DEBUGSERVER)
+    lldb_find_system_debugserver(system_debugserver_path)
+    message(STATUS "LLDB tests use out-of-tree debugserver: ${system_debugserver_path}")
+    list(APPEND LLDB_TEST_COMMON_ARGS --out-of-tree-debugserver)
+  elseif(TARGET debugserver)
+    set(debugserver_path ${LLVM_RUNTIME_OUTPUT_INTDIR}/debugserver)
+    message(STATUS "LLDB Tests use just-built debugserver: ${debugserver_path}")
+    list(APPEND LLDB_TEST_COMMON_ARGS --server ${debugserver_path})
+    add_dependencies(lldb-test-deps debugserver)
+  elseif(TARGET lldb-server)
+    set(lldb_server_path ${LLVM_RUNTIME_OUTPUT_INTDIR}/lldb-server)
+    message(STATUS "LLDB Tests use just-built lldb-server: ${lldb_server_path}")
+    list(APPEND LLDB_TEST_COMMON_ARGS --server ${lldb_server_path})
+    add_dependencies(lldb-test-deps lldb-server)
+  else()
+    message(WARNING "LLDB Tests enabled, but no server available")
+  endif()
 endif()
 
 set(LLDB_DOTEST_ARGS ${LLDB_TEST_COMMON_ARGS};${LLDB_TEST_USER_ARGS})
 set_property(GLOBAL PROPERTY LLDB_DOTEST_ARGS_PROPERTY ${LLDB_DOTEST_ARGS})
 
-add_python_test_target(check-lldb-single
-  ${LLDB_SOURCE_DIR}/test/dotest.py
-  "--no-multiprocess;${LLDB_DOTEST_ARGS}"
-  "Testing LLDB with args: ${LLDB_DOTEST_ARGS}"
-  )
-
 # If tests crash cause LLDB to crash, or things are otherwise unstable, or if machine-parsable
 # output is desired (i.e. in continuous integration contexts) check-lldb-single is a better target.
 add_custom_target(check-lldb)
+add_dependencies(check-lldb lldb-test-deps)
+set_target_properties(check-lldb PROPERTIES FOLDER "lldb misc")
 
 # If we're building with an in-tree clang, then list clang as a dependency
 # to run tests.
@@ -125,7 +141,6 @@ endif ()
 # Run the lit-style tests and the unittests as part of the check-lldb target.
 add_dependencies(check-lldb check-lldb-lit)
 
-add_custom_target(lldb-test-depends DEPENDS ${LLDB_TEST_DEPENDS})
-# This will add LLDB's test dependencies to the depenednecies for check-all and
+# This will add LLDB's test dependencies to the dependencies for check-all and
 # include them in the test-depends target.
 set_property(GLOBAL APPEND PROPERTY LLVM_LIT_DEPENDS ${ARG_DEPENDS})

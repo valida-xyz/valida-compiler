@@ -1,9 +1,8 @@
 //===-- sanitizer_internal_defs.h -------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -105,8 +104,8 @@
 //
 // FIXME: do we have anything like this on Mac?
 #ifndef SANITIZER_CAN_USE_PREINIT_ARRAY
-#if ((SANITIZER_LINUX && !SANITIZER_ANDROID) || SANITIZER_OPENBSD) && \
-    !defined(PIC)
+#if ((SANITIZER_LINUX && !SANITIZER_ANDROID) || SANITIZER_OPENBSD || \
+     SANITIZER_FUCHSIA) && !defined(PIC)
 #define SANITIZER_CAN_USE_PREINIT_ARRAY 1
 // Before Solaris 11.4, .preinit_array is fully supported only with GNU ld.
 // FIXME: Check for those conditions.
@@ -172,6 +171,7 @@ typedef int pid_t;
 
 #if SANITIZER_FREEBSD || SANITIZER_NETBSD || \
     SANITIZER_OPENBSD || SANITIZER_MAC || \
+    (SANITIZER_SOLARIS && (defined(_LP64) || _FILE_OFFSET_BITS == 64)) || \
     (SANITIZER_LINUX && defined(__x86_64__))
 typedef u64 OFF_T;
 #else
@@ -196,7 +196,9 @@ typedef u64 tid_t;
 // This header should NOT include any other headers to avoid portability issues.
 
 // Common defs.
+#ifndef INLINE
 #define INLINE inline
+#endif
 #define INTERFACE_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
 #define SANITIZER_WEAK_DEFAULT_IMPL \
   extern "C" SANITIZER_INTERFACE_ATTRIBUTE SANITIZER_WEAK_ATTRIBUTE NOINLINE
@@ -275,8 +277,6 @@ typedef thread_return_t (THREAD_CALLING_CONV *thread_callback_t)(void* arg);
 // NOTE: Functions below must be defined in each run-time.
 void NORETURN Die();
 
-// FIXME: No, this shouldn't be in the sanitizer interface.
-SANITIZER_INTERFACE_ATTRIBUTE
 void NORETURN CheckFailed(const char *file, int line, const char *cond,
                           u64 v1, u64 v2);
 
@@ -422,7 +422,6 @@ inline void Trap() {
 namespace __asan  { using namespace __sanitizer; }  // NOLINT
 namespace __dsan  { using namespace __sanitizer; }  // NOLINT
 namespace __dfsan { using namespace __sanitizer; }  // NOLINT
-namespace __esan  { using namespace __sanitizer; }  // NOLINT
 namespace __lsan  { using namespace __sanitizer; }  // NOLINT
 namespace __msan  { using namespace __sanitizer; }  // NOLINT
 namespace __hwasan  { using namespace __sanitizer; }  // NOLINT
@@ -431,6 +430,7 @@ namespace __scudo { using namespace __sanitizer; }  // NOLINT
 namespace __ubsan { using namespace __sanitizer; }  // NOLINT
 namespace __xray  { using namespace __sanitizer; }  // NOLINT
 namespace __interception  { using namespace __sanitizer; }  // NOLINT
+namespace __hwasan  { using namespace __sanitizer; }  // NOLINT
 
 
 #endif  // SANITIZER_DEFS_H

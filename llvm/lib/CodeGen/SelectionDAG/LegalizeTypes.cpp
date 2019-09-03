@@ -1,9 +1,8 @@
 //===-- LegalizeTypes.cpp - Common code for DAG type legalizer ------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -708,6 +707,7 @@ void DAGTypeLegalizer::SetPromotedInteger(SDValue Op, SDValue Result) {
   auto &OpIdEntry = PromotedIntegers[getTableId(Op)];
   assert((OpIdEntry == 0) && "Node is already promoted!");
   OpIdEntry = getTableId(Result);
+  Result->setFlags(Op->getFlags());
 
   DAG.transferDbgValues(Op, Result);
 }
@@ -1003,25 +1003,27 @@ SDValue DAGTypeLegalizer::JoinIntegers(SDValue Lo, SDValue Hi) {
 /// Convert the node into a libcall with the same prototype.
 SDValue DAGTypeLegalizer::LibCallify(RTLIB::Libcall LC, SDNode *N,
                                      bool isSigned) {
+  TargetLowering::MakeLibCallOptions CallOptions;
+  CallOptions.setSExt(isSigned);
   unsigned NumOps = N->getNumOperands();
   SDLoc dl(N);
   if (NumOps == 0) {
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), None, isSigned,
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), None, CallOptions,
                            dl).first;
   } else if (NumOps == 1) {
     SDValue Op = N->getOperand(0);
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Op, isSigned,
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Op, CallOptions,
                            dl).first;
   } else if (NumOps == 2) {
     SDValue Ops[2] = { N->getOperand(0), N->getOperand(1) };
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, isSigned,
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, CallOptions,
                            dl).first;
   }
   SmallVector<SDValue, 8> Ops(NumOps);
   for (unsigned i = 0; i < NumOps; ++i)
     Ops[i] = N->getOperand(i);
 
-  return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, isSigned, dl).first;
+  return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, CallOptions, dl).first;
 }
 
 /// Expand a node into a call to a libcall. Similar to ExpandLibCall except that

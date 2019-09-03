@@ -3,8 +3,6 @@
 from __future__ import print_function
 
 
-import os
-import time
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -70,7 +68,6 @@ class AnonymousTestCase(TestBase):
         self.expect("expression z.y", VARIABLES_DISPLAYED_CORRECTLY,
                     substrs=["(type_y) $", "dummy = 2"])
 
-    @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr21550")
     def test_expr_null(self):
         self.build()
         self.common_setup(self.line2)

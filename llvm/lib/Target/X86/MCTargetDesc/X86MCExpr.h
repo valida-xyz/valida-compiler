@@ -1,9 +1,8 @@
 //=--- X86MCExpr.h - X86 specific MC expression classes ---*- C++ -*-=//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,7 +14,7 @@
 #ifndef LLVM_LIB_TARGET_X86_MCTARGETDESC_X86MCEXPR_H
 #define LLVM_LIB_TARGET_X86_MCTARGETDESC_X86MCEXPR_H
 
-#include "InstPrinter/X86ATTInstPrinter.h"
+#include "X86ATTInstPrinter.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -48,7 +47,7 @@ public:
   /// @}
 
   void printImpl(raw_ostream &OS, const MCAsmInfo *MAI) const override {
-    if (MAI->getAssemblerDialect() == 0)
+    if (!MAI || MAI->getAssemblerDialect() == 0)
       OS << '%';
     OS << X86ATTInstPrinter::getRegisterName(RegNo);
   }
@@ -59,6 +58,11 @@ public:
   }
   // Register values should be inlined as they are not valid .set expressions.
   bool inlineAssignedExpr() const override { return true; }
+  bool isEqualTo(const MCExpr *X) const override {
+    if (auto *E = dyn_cast<X86MCExpr>(X))
+      return getRegNo() == E->getRegNo();
+    return false;
+  }
   void visitUsedExpr(MCStreamer &Streamer) const override{};
   MCFragment *findAssociatedFragment() const override { return nullptr; }
 

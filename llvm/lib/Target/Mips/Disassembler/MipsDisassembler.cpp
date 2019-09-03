@@ -1,9 +1,8 @@
 //===- MipsDisassembler.cpp - Disassembler for Mips -----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,6 +12,7 @@
 
 #include "MCTargetDesc/MipsMCTargetDesc.h"
 #include "Mips.h"
+#include "TargetInfo/MipsTargetInfo.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler/MCDisassembler.h"
@@ -538,14 +538,8 @@ static DecodeStatus DecodeMovePRegPair(MCInst &Inst, unsigned RegPair,
                                        uint64_t Address,
                                        const void *Decoder);
 
-namespace llvm {
-
-Target &getTheMipselTarget();
-Target &getTheMipsTarget();
-Target &getTheMips64Target();
-Target &getTheMips64elTarget();
-
-} // end namespace llvm
+static DecodeStatus DecodeMovePOperands(MCInst &Inst, unsigned Insn,
+                                        uint64_t Address, const void *Decoder);
 
 static MCDisassembler *createMipsDisassembler(
                        const Target &T,
@@ -2446,6 +2440,32 @@ static DecodeStatus DecodeRegListOperand16(MCInst &Inst, unsigned Insn,
     Inst.addOperand(MCOperand::createReg(Regs[i]));
 
   Inst.addOperand(MCOperand::createReg(Mips::RA));
+
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeMovePOperands(MCInst &Inst, unsigned Insn,
+                                          uint64_t Address,
+                                          const void *Decoder) {
+  unsigned RegPair = fieldFromInstruction(Insn, 7, 3);
+  if (DecodeMovePRegPair(Inst, RegPair, Address, Decoder) ==
+      MCDisassembler::Fail)
+    return MCDisassembler::Fail;
+
+  unsigned RegRs;
+  if (static_cast<const MipsDisassembler*>(Decoder)->hasMips32r6())
+    RegRs = fieldFromInstruction(Insn, 0, 2) |
+            (fieldFromInstruction(Insn, 3, 1) << 2);
+  else
+    RegRs = fieldFromInstruction(Insn, 1, 3);
+  if (DecodeGPRMM16MovePRegisterClass(Inst, RegRs, Address, Decoder) ==
+      MCDisassembler::Fail)
+    return MCDisassembler::Fail;
+
+  unsigned RegRt = fieldFromInstruction(Insn, 4, 3);
+  if (DecodeGPRMM16MovePRegisterClass(Inst, RegRt, Address, Decoder) ==
+      MCDisassembler::Fail)
+    return MCDisassembler::Fail;
 
   return MCDisassembler::Success;
 }

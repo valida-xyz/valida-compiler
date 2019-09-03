@@ -302,3 +302,67 @@ void function_to_voidptr_conv() {
   void *a2 = &function_prototype; // expected-warning {{implicit conversion between pointer-to-function and pointer-to-object is a Microsoft extension}}
   void *a3 = function_ptr;        // expected-warning {{implicit conversion between pointer-to-function and pointer-to-object is a Microsoft extension}}
 }
+
+namespace member_lookup {
+
+template<typename T>
+struct ConfuseLookup {
+  T* m_val;
+  struct m_val {
+    static size_t ms_test;
+  };
+};
+
+// Microsoft mode allows explicit constructor calls
+// This could confuse name lookup in cases such as this
+template<typename T>
+size_t ConfuseLookup<T>::m_val::ms_test
+  = size_t(&(char&)(reinterpret_cast<ConfuseLookup<T>*>(0)->m_val));
+
+void instantiate() { ConfuseLookup<int>::m_val::ms_test = 1; }
+}
+
+
+// Microsoft doesn't validate exception specification.
+namespace microsoft_exception_spec {
+
+void foo(); // expected-note {{previous declaration}}
+void foo() throw(); // expected-warning {{exception specification in declaration does not match previous declaration}}
+
+void r6() throw(...); // expected-note {{previous declaration}}
+void r6() throw(int); // expected-warning {{exception specification in declaration does not match previous declaration}}
+
+struct Base {
+  virtual void f2();
+  virtual void f3() throw(...);
+};
+
+struct Derived : Base {
+  virtual void f2() throw(...);
+  virtual void f3();
+};
+
+class A {
+  virtual ~A() throw();
+#if __cplusplus <= 199711L
+  // expected-note@-2 {{overridden virtual function is here}}
+#endif
+};
+
+class B : public A {
+  virtual ~B();
+#if __cplusplus <= 199711L
+  // expected-warning@-2 {{exception specification of overriding function is more lax than base version}}
+#endif
+};
+
+}
+
+namespace PR25265 {
+struct S {
+  int fn() throw(); // expected-note {{previous declaration is here}}
+};
+
+int S::fn() { return 0; } // expected-warning {{is missing exception specification}}
+}
+

@@ -1,16 +1,16 @@
 //===-- LanaiAsmParser.cpp - Parse Lanai assembly to MCInst instructions --===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
-#include "Lanai.h"
 #include "LanaiAluCode.h"
 #include "LanaiCondCode.h"
+#include "LanaiInstrInfo.h"
 #include "MCTargetDesc/LanaiMCExpr.h"
+#include "TargetInfo/LanaiTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -580,7 +580,7 @@ public:
   }
 
   static std::unique_ptr<LanaiOperand> CreateToken(StringRef Str, SMLoc Start) {
-    auto Op = make_unique<LanaiOperand>(TOKEN);
+    auto Op = std::make_unique<LanaiOperand>(TOKEN);
     Op->Tok.Data = Str.data();
     Op->Tok.Length = Str.size();
     Op->StartLoc = Start;
@@ -590,7 +590,7 @@ public:
 
   static std::unique_ptr<LanaiOperand> createReg(unsigned RegNum, SMLoc Start,
                                                  SMLoc End) {
-    auto Op = make_unique<LanaiOperand>(REGISTER);
+    auto Op = std::make_unique<LanaiOperand>(REGISTER);
     Op->Reg.RegNum = RegNum;
     Op->StartLoc = Start;
     Op->EndLoc = End;
@@ -599,7 +599,7 @@ public:
 
   static std::unique_ptr<LanaiOperand> createImm(const MCExpr *Value,
                                                  SMLoc Start, SMLoc End) {
-    auto Op = make_unique<LanaiOperand>(IMMEDIATE);
+    auto Op = std::make_unique<LanaiOperand>(IMMEDIATE);
     Op->Imm.Value = Value;
     Op->StartLoc = Start;
     Op->EndLoc = End;

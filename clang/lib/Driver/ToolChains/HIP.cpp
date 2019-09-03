@@ -1,9 +1,8 @@
 //===--- HIP.cpp - HIP Tool and ToolChain Implementations -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,9 +23,15 @@ using namespace clang::driver::tools;
 using namespace clang;
 using namespace llvm::opt;
 
+#if defined(_WIN32) || defined(_WIN64)
+#define NULL_FILE "nul"
+#else
+#define NULL_FILE "/dev/null"
+#endif
+
 namespace {
 
-static void addBCLib(Compilation &C, const ArgList &Args,
+static void addBCLib(const Driver &D, const ArgList &Args,
                      ArgStringList &CmdArgs, ArgStringList LibraryPaths,
                      StringRef BCName) {
   StringRef FullName;
@@ -35,11 +40,12 @@ static void addBCLib(Compilation &C, const ArgList &Args,
     llvm::sys::path::append(Path, BCName);
     FullName = Path;
     if (llvm::sys::fs::exists(FullName)) {
+      CmdArgs.push_back("-mlink-builtin-bitcode");
       CmdArgs.push_back(Args.MakeArgString(FullName));
       return;
     }
   }
-  C.getDriver().Diag(diag::err_drv_no_such_file) << BCName;
+  D.Diag(diag::err_drv_no_such_file) << BCName;
 }
 
 } // namespace
@@ -53,44 +59,6 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
   for (const auto &II : Inputs)
     CmdArgs.push_back(II.getFilename());
 
-  ArgStringList LibraryPaths;
-
-  // Find in --hip-device-lib-path and HIP_LIBRARY_PATH.
-  for (auto Path : Args.getAllArgValues(options::OPT_hip_device_lib_path_EQ))
-    LibraryPaths.push_back(Args.MakeArgString(Path));
-
-  addDirectoryList(Args, LibraryPaths, "-L", "HIP_DEVICE_LIB_PATH");
-
-  llvm::SmallVector<std::string, 10> BCLibs;
-
-  // Add bitcode library in --hip-device-lib.
-  for (auto Lib : Args.getAllArgValues(options::OPT_hip_device_lib_EQ)) {
-    BCLibs.push_back(Args.MakeArgString(Lib));
-  }
-
-  // If --hip-device-lib is not set, add the default bitcode libraries.
-  if (BCLibs.empty()) {
-    // Get the bc lib file name for ISA version. For example,
-    // gfx803 => oclc_isa_version_803.amdgcn.bc.
-    std::string ISAVerBC =
-        "oclc_isa_version_" + SubArchName.drop_front(3).str() + ".amdgcn.bc";
-
-    llvm::StringRef FlushDenormalControlBC;
-    if (Args.hasArg(options::OPT_fcuda_flush_denormals_to_zero))
-      FlushDenormalControlBC = "oclc_daz_opt_on.amdgcn.bc";
-    else
-      FlushDenormalControlBC = "oclc_daz_opt_off.amdgcn.bc";
-
-    BCLibs.append({"opencl.amdgcn.bc",
-                   "ocml.amdgcn.bc", "ockl.amdgcn.bc", "irif.amdgcn.bc",
-                   "oclc_finite_only_off.amdgcn.bc",
-                   FlushDenormalControlBC,
-                   "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
-                   "oclc_unsafe_math_off.amdgcn.bc", ISAVerBC});
-  }
-  for (auto Lib : BCLibs)
-    addBCLib(C, Args, CmdArgs, LibraryPaths, Lib);
-
   // Add an intermediate output file.
   CmdArgs.push_back("-o");
   std::string TmpName =
@@ -101,7 +69,7 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
   SmallString<128> ExecPath(C.getDriver().Dir);
   llvm::sys::path::append(ExecPath, "llvm-link");
   const char *Exec = Args.MakeArgString(ExecPath);
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
   return OutputFileName;
 }
 
@@ -135,6 +103,11 @@ const char *AMDGCN::Linker::constructOptCommand(
   }
   OptArgs.push_back("-mtriple=amdgcn-amd-amdhsa");
   OptArgs.push_back(Args.MakeArgString("-mcpu=" + SubArchName));
+
+  for (const Arg *A : Args.filtered(options::OPT_mllvm)) {
+    OptArgs.push_back(A->getValue(0));
+  }
+
   OptArgs.push_back("-o");
   std::string TmpFileName = C.getDriver().GetTemporaryPath(
       OutputFilePrefix.str() + "-optimized", "bc");
@@ -144,7 +117,7 @@ const char *AMDGCN::Linker::constructOptCommand(
   SmallString<128> OptPath(C.getDriver().Dir);
   llvm::sys::path::append(OptPath, "opt");
   const char *OptExec = Args.MakeArgString(OptPath);
-  C.addCommand(llvm::make_unique<Command>(JA, *this, OptExec, OptArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, OptExec, OptArgs, Inputs));
   return OutputFileName;
 }
 
@@ -155,7 +128,29 @@ const char *AMDGCN::Linker::constructLlcCommand(
   // Construct llc command.
   ArgStringList LlcArgs{InputFileName, "-mtriple=amdgcn-amd-amdhsa",
                         "-filetype=obj",
-                        Args.MakeArgString("-mcpu=" + SubArchName), "-o"};
+                        Args.MakeArgString("-mcpu=" + SubArchName)};
+
+  // Extract all the -m options
+  std::vector<llvm::StringRef> Features;
+  handleTargetFeaturesGroup(
+    Args, Features, options::OPT_m_amdgpu_Features_Group);
+
+  // Add features to mattr such as xnack
+  std::string MAttrString = "-mattr=";
+  for(auto OneFeature : Features) {
+    MAttrString.append(Args.MakeArgString(OneFeature));
+    if (OneFeature != Features.back())
+      MAttrString.append(",");
+  }
+  if(!Features.empty())
+    LlcArgs.push_back(Args.MakeArgString(MAttrString));
+
+  for (const Arg *A : Args.filtered(options::OPT_mllvm)) {
+    LlcArgs.push_back(A->getValue(0));
+  }
+
+  // Add output filename
+  LlcArgs.push_back("-o");
   std::string LlcOutputFileName =
       C.getDriver().GetTemporaryPath(OutputFilePrefix, "o");
   const char *LlcOutputFile =
@@ -164,7 +159,7 @@ const char *AMDGCN::Linker::constructLlcCommand(
   SmallString<128> LlcPath(C.getDriver().Dir);
   llvm::sys::path::append(LlcPath, "llc");
   const char *Llc = Args.MakeArgString(LlcPath);
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Llc, LlcArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Llc, LlcArgs, Inputs));
   return LlcOutputFile;
 }
 
@@ -175,13 +170,46 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
                                           const char *InputFileName) const {
   // Construct lld command.
   // The output from ld.lld is an HSA code object file.
-  ArgStringList LldArgs{"-flavor",    "gnu", "--no-undefined",
-                        "-shared",    "-o",  Output.getFilename(),
-                        InputFileName};
+  ArgStringList LldArgs{
+      "-flavor", "gnu", "-shared", "-o", Output.getFilename(), InputFileName};
   SmallString<128> LldPath(C.getDriver().Dir);
   llvm::sys::path::append(LldPath, "lld");
   const char *Lld = Args.MakeArgString(LldPath);
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Lld, LldArgs, Inputs));
+  C.addCommand(std::make_unique<Command>(JA, *this, Lld, LldArgs, Inputs));
+}
+
+// Construct a clang-offload-bundler command to bundle code objects for
+// different GPU's into a HIP fat binary.
+void AMDGCN::constructHIPFatbinCommand(Compilation &C, const JobAction &JA,
+                  StringRef OutputFileName, const InputInfoList &Inputs,
+                  const llvm::opt::ArgList &Args, const Tool& T) {
+  // Construct clang-offload-bundler command to bundle object files for
+  // for different GPU archs.
+  ArgStringList BundlerArgs;
+  BundlerArgs.push_back(Args.MakeArgString("-type=o"));
+
+  // ToDo: Remove the dummy host binary entry which is required by
+  // clang-offload-bundler.
+  std::string BundlerTargetArg = "-targets=host-x86_64-unknown-linux";
+  std::string BundlerInputArg = "-inputs=" NULL_FILE;
+
+  for (const auto &II : Inputs) {
+    const auto* A = II.getAction();
+    BundlerTargetArg = BundlerTargetArg + ",hip-amdgcn-amd-amdhsa-" +
+                       StringRef(A->getOffloadingArch()).str();
+    BundlerInputArg = BundlerInputArg + "," + II.getFilename();
+  }
+  BundlerArgs.push_back(Args.MakeArgString(BundlerTargetArg));
+  BundlerArgs.push_back(Args.MakeArgString(BundlerInputArg));
+
+  auto BundlerOutputArg =
+      Args.MakeArgString(std::string("-outputs=").append(OutputFileName));
+  BundlerArgs.push_back(BundlerOutputArg);
+
+  SmallString<128> BundlerPath(C.getDriver().Dir);
+  llvm::sys::path::append(BundlerPath, "clang-offload-bundler");
+  const char *Bundler = Args.MakeArgString(BundlerPath);
+  C.addCommand(std::make_unique<Command>(JA, T, Bundler, BundlerArgs, Inputs));
 }
 
 // For amdgcn the inputs of the linker job are device bitcode and output is
@@ -191,6 +219,9 @@ void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                    const InputInfoList &Inputs,
                                    const ArgList &Args,
                                    const char *LinkingOutput) const {
+
+  if (JA.getType() == types::TY_HIP_FATBIN)
+    return constructHIPFatbinCommand(C, JA, Output.getFilename(), Inputs, Args, *this);
 
   assert(getToolChain().getTriple().getArch() == llvm::Triple::amdgcn &&
          "Unsupported target");
@@ -244,9 +275,61 @@ void HIPToolChain::addClangTargetOptions(
                          options::OPT_fno_cuda_approx_transcendentals, false))
     CC1Args.push_back("-fcuda-approx-transcendentals");
 
-  if (DriverArgs.hasFlag(options::OPT_fcuda_rdc, options::OPT_fno_cuda_rdc,
+  if (DriverArgs.hasFlag(options::OPT_fgpu_rdc, options::OPT_fno_gpu_rdc,
                          false))
-    CC1Args.push_back("-fcuda-rdc");
+    CC1Args.push_back("-fgpu-rdc");
+
+  // Default to "hidden" visibility, as object level linking will not be
+  // supported for the foreseeable future.
+  if (!DriverArgs.hasArg(options::OPT_fvisibility_EQ,
+                         options::OPT_fvisibility_ms_compat)) {
+    CC1Args.append({"-fvisibility", "hidden"});
+    CC1Args.push_back("-fapply-global-visibility-to-externs");
+  }
+  ArgStringList LibraryPaths;
+
+  // Find in --hip-device-lib-path and HIP_LIBRARY_PATH.
+  for (auto Path :
+       DriverArgs.getAllArgValues(options::OPT_hip_device_lib_path_EQ))
+    LibraryPaths.push_back(DriverArgs.MakeArgString(Path));
+
+  addDirectoryList(DriverArgs, LibraryPaths, "-L", "HIP_DEVICE_LIB_PATH");
+
+  llvm::SmallVector<std::string, 10> BCLibs;
+
+  // Add bitcode library in --hip-device-lib.
+  for (auto Lib : DriverArgs.getAllArgValues(options::OPT_hip_device_lib_EQ)) {
+    BCLibs.push_back(DriverArgs.MakeArgString(Lib));
+  }
+
+  // If --hip-device-lib is not set, add the default bitcode libraries.
+  if (BCLibs.empty()) {
+    // Get the bc lib file name for ISA version. For example,
+    // gfx803 => oclc_isa_version_803.amdgcn.bc.
+    std::string GFXVersion = GpuArch.drop_front(3).str();
+    std::string ISAVerBC = "oclc_isa_version_" + GFXVersion + ".amdgcn.bc";
+
+    llvm::StringRef FlushDenormalControlBC;
+    if (DriverArgs.hasArg(options::OPT_fcuda_flush_denormals_to_zero))
+      FlushDenormalControlBC = "oclc_daz_opt_on.amdgcn.bc";
+    else
+      FlushDenormalControlBC = "oclc_daz_opt_off.amdgcn.bc";
+
+    llvm::StringRef WaveFrontSizeBC;
+    if (stoi(GFXVersion) < 1000)
+      WaveFrontSizeBC = "oclc_wavefrontsize64_on.amdgcn.bc";
+    else
+      WaveFrontSizeBC = "oclc_wavefrontsize64_off.amdgcn.bc";
+
+    BCLibs.append({"hip.amdgcn.bc", "opencl.amdgcn.bc", "ocml.amdgcn.bc",
+                   "ockl.amdgcn.bc", "oclc_finite_only_off.amdgcn.bc",
+                   FlushDenormalControlBC,
+                   "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
+                   "oclc_unsafe_math_off.amdgcn.bc", ISAVerBC,
+                   WaveFrontSizeBC});
+  }
+  for (auto Lib : BCLibs)
+    addBCLib(getDriver(), DriverArgs, CC1Args, LibraryPaths, Lib);
 }
 
 llvm::opt::DerivedArgList *

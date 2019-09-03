@@ -1,9 +1,8 @@
 //===--------- support.h - NVPTX OpenMP support functions -------- CUDA -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.txt for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -41,29 +40,33 @@ INLINE int GetThreadIdInBlock();
 INLINE int GetBlockIdInKernel();
 INLINE int GetNumberOfBlocksInKernel();
 INLINE int GetNumberOfThreadsInBlock();
+INLINE unsigned GetWarpId();
+INLINE unsigned GetLaneId();
 
 // get global ids to locate tread/team info (constant regardless of OMP)
-INLINE int GetLogicalThreadIdInBlock();
+INLINE int GetLogicalThreadIdInBlock(bool isSPMDExecutionMode);
 INLINE int GetMasterThreadID();
 INLINE int GetNumberOfWorkersInTeam();
 
 // get OpenMP thread and team ids
-INLINE int GetOmpThreadId(int threadId, bool isSPMDExecutionMode,
-                          bool isRuntimeUninitialized); // omp_thread_num
+INLINE int GetOmpThreadId(int threadId,
+                          bool isSPMDExecutionMode);    // omp_thread_num
 INLINE int GetOmpTeamId();                              // omp_team_num
 
 // get OpenMP number of threads and team
-INLINE int
-GetNumberOfOmpThreads(int threadId, bool isSPMDExecutionMode,
-                      bool isRuntimeUninitialized); // omp_num_threads
-INLINE int GetNumberOfOmpTeams();                   // omp_num_teams
+INLINE int GetNumberOfOmpThreads(bool isSPMDExecutionMode); // omp_num_threads
+INLINE int GetNumberOfOmpTeams();                           // omp_num_teams
 
 // get OpenMP number of procs
-INLINE int GetNumberOfProcsInTeam();
-INLINE int GetNumberOfProcsInDevice();
+INLINE int GetNumberOfProcsInTeam(bool isSPMDExecutionMode);
+INLINE int GetNumberOfProcsInDevice(bool isSPMDExecutionMode);
 
 // masters
 INLINE int IsTeamMaster(int ompThreadId);
+
+// Parallel level
+INLINE void IncParallelLevel(bool ActiveParallel);
+INLINE void DecParallelLevel(bool ActiveParallel);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Memory

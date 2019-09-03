@@ -1,9 +1,8 @@
 //===-- Regex.h - Regular Expression matcher implementation -*- C++ -*-----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -45,6 +44,9 @@ namespace llvm {
 
     Regex();
     /// Compiles the given regular expression \p Regex.
+    ///
+    /// \param Regex - referenced string is no longer needed after this
+    /// constructor does finish.  Only its compiled form is kept stored.
     Regex(StringRef Regex, unsigned Flags = NoFlags);
     Regex(const Regex &) = delete;
     Regex &operator=(Regex regex) {
@@ -58,6 +60,7 @@ namespace llvm {
     /// isValid - returns the error encountered during regex compilation, or
     /// matching, if any.
     bool isValid(std::string &Error) const;
+    bool isValid() const { return !error; }
 
     /// getNumMatches - In a valid regex, return the number of parenthesized
     /// matches it contains.  The number filled in by match will include this

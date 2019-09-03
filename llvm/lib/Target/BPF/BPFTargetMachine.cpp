@@ -1,9 +1,8 @@
 //===-- BPFTargetMachine.cpp - Define TargetMachine for BPF ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,6 +13,7 @@
 #include "BPFTargetMachine.h"
 #include "BPF.h"
 #include "MCTargetDesc/BPFMCAsmInfo.h"
+#include "TargetInfo/BPFTargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -34,6 +34,7 @@ extern "C" void LLVMInitializeBPFTarget() {
   RegisterTargetMachine<BPFTargetMachine> Z(getTheBPFTarget());
 
   PassRegistry &PR = *PassRegistry::getPassRegistry();
+  initializeBPFAbstractMemberAccessPass(PR);
   initializeBPFMIPeepholePass(PR);
 }
 
@@ -51,12 +52,6 @@ static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {
   return *RM;
 }
 
-static CodeModel::Model getEffectiveCodeModel(Optional<CodeModel::Model> CM) {
-  if (CM)
-    return *CM;
-  return CodeModel::Small;
-}
-
 BPFTargetMachine::BPFTargetMachine(const Target &T, const Triple &TT,
                                    StringRef CPU, StringRef FS,
                                    const TargetOptions &Options,
@@ -64,15 +59,17 @@ BPFTargetMachine::BPFTargetMachine(const Target &T, const Triple &TT,
                                    Optional<CodeModel::Model> CM,
                                    CodeGenOpt::Level OL, bool JIT)
     : LLVMTargetMachine(T, computeDataLayout(TT), TT, CPU, FS, Options,
-                        getEffectiveRelocModel(RM), getEffectiveCodeModel(CM),
-                        OL),
-      TLOF(make_unique<TargetLoweringObjectFileELF>()),
+                        getEffectiveRelocModel(RM),
+                        getEffectiveCodeModel(CM, CodeModel::Small), OL),
+      TLOF(std::make_unique<TargetLoweringObjectFileELF>()),
       Subtarget(TT, CPU, FS, *this) {
   initAsmInfo();
 
-  BPFMCAsmInfo *MAI = static_cast<BPFMCAsmInfo *>(const_cast<MCAsmInfo *>(AsmInfo));
+  BPFMCAsmInfo *MAI =
+      static_cast<BPFMCAsmInfo *>(const_cast<MCAsmInfo *>(AsmInfo.get()));
   MAI->setDwarfUsesRelocationsAcrossSections(!Subtarget.getUseDwarfRIS());
 }
+
 namespace {
 // BPF Code Generator Pass Configuration Options.
 class BPFPassConfig : public TargetPassConfig {
@@ -84,6 +81,7 @@ public:
     return getTM<BPFTargetMachine>();
   }
 
+  void addIRPasses() override;
   bool addInstSelector() override;
   void addMachineSSAOptimization() override;
   void addPreEmitPass() override;
@@ -92,6 +90,13 @@ public:
 
 TargetPassConfig *BPFTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new BPFPassConfig(*this, PM);
+}
+
+void BPFPassConfig::addIRPasses() {
+
+  addPass(createBPFAbstractMemberAccess());
+
+  TargetPassConfig::addIRPasses();
 }
 
 // Install an instruction selector pass using
@@ -103,6 +108,8 @@ bool BPFPassConfig::addInstSelector() {
 }
 
 void BPFPassConfig::addMachineSSAOptimization() {
+  addPass(createBPFMISimplifyPatchablePass());
+
   // The default implementation must be called first as we want eBPF
   // Peephole ran at last.
   TargetPassConfig::addMachineSSAOptimization();
@@ -115,6 +122,7 @@ void BPFPassConfig::addMachineSSAOptimization() {
 void BPFPassConfig::addPreEmitPass() {
   const BPFSubtarget *Subtarget = getBPFTargetMachine().getSubtargetImpl();
 
+  addPass(createBPFMIPreEmitCheckingPass());
   if (getOptLevel() != CodeGenOpt::None)
     if (Subtarget->getHasAlu32() && !DisableMIPeephole)
       addPass(createBPFMIPreEmitPeepholePass());

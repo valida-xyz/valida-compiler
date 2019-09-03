@@ -1,9 +1,8 @@
 //===-- DWARFASTParser.h ----------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,10 +11,16 @@
 
 #include "DWARFDefines.h"
 #include "lldb/Core/PluginInterface.h"
+#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/CompilerDecl.h"
 #include "lldb/Symbol/CompilerDeclContext.h"
 
 class DWARFDIE;
+namespace lldb_private {
+class CompileUnit;
+class ExecutionContext;
+}
+class SymbolFileDWARF;
 
 class DWARFASTParser {
 public:
@@ -27,7 +32,7 @@ public:
                                           bool *type_is_new_ptr) = 0;
 
   virtual lldb_private::Function *
-  ParseFunctionFromDWARF(const lldb_private::SymbolContext &sc,
+  ParseFunctionFromDWARF(lldb_private::CompileUnit &comp_unit,
                          const DWARFDIE &die) = 0;
 
   virtual bool
@@ -45,6 +50,10 @@ public:
 
   virtual std::vector<DWARFDIE>
   GetDIEForDeclContext(lldb_private::CompilerDeclContext decl_context) = 0;
+
+  static llvm::Optional<lldb_private::SymbolFile::ArrayInfo>
+  ParseChildArrayInfo(const DWARFDIE &parent_die,
+                      const lldb_private::ExecutionContext *exe_ctx = nullptr);
 };
 
 #endif // SymbolFileDWARF_DWARFASTParser_h_

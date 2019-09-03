@@ -1,9 +1,8 @@
 //===-- X86DisassemblerDecoder.cpp - Disassembler decoder -----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -377,8 +376,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
       if (byte == 0xf3 && (nextByte == 0x88 || nextByte == 0x89 ||
                            nextByte == 0xc6 || nextByte == 0xc7)) {
         insn->xAcquireRelease = true;
-        if (nextByte != 0x90) // PAUSE instruction support
-          break;
+        break;
       }
       if (isREX(insn, nextByte)) {
         uint8_t nnextByte;
@@ -884,7 +882,7 @@ static int getID(struct InternalInstruction* insn, const void *miiArg) {
       if (aaaFromEVEX4of4(insn->vectorExtensionPrefix[3]))
         attrMask |= ATTR_EVEXK;
       if (lFromEVEX4of4(insn->vectorExtensionPrefix[3]))
-        attrMask |= ATTR_EVEXL;
+        attrMask |= ATTR_VEXL;
       if (l2FromEVEX4of4(insn->vectorExtensionPrefix[3]))
         attrMask |= ATTR_EVEXL2;
     } else if (insn->vectorExtensionType == TYPE_VEX_3B) {
@@ -983,45 +981,18 @@ static int getID(struct InternalInstruction* insn, const void *miiArg) {
       insn->opcode == 0xE3)
     attrMask ^= ATTR_ADSIZE;
 
-  /*
-   * In 64-bit mode all f64 superscripted opcodes ignore opcode size prefix
-   * CALL/JMP/JCC instructions need to ignore 0x66 and consume 4 bytes
-   */
+  // If we're in 16-bit mode and this is one of the relative jumps and opsize
+  // prefix isn't present, we need to force the opsize attribute since the
+  // prefix is inverted relative to 32-bit mode.
+  if (insn->mode == MODE_16BIT && !insn->hasOpSize &&
+      insn->opcodeType == ONEBYTE &&
+      (insn->opcode == 0xE8 || insn->opcode == 0xE9))
+    attrMask |= ATTR_OPSIZE;
 
-  if ((insn->mode == MODE_64BIT) && insn->hasOpSize) {
-    switch (insn->opcode) {
-    case 0xE8:
-    case 0xE9:
-      // Take care of psubsb and other mmx instructions.
-      if (insn->opcodeType == ONEBYTE) {
-        attrMask ^= ATTR_OPSIZE;
-        insn->immediateSize = 4;
-        insn->displacementSize = 4;
-      }
-      break;
-    case 0x82:
-    case 0x83:
-    case 0x84:
-    case 0x85:
-    case 0x86:
-    case 0x87:
-    case 0x88:
-    case 0x89:
-    case 0x8A:
-    case 0x8B:
-    case 0x8C:
-    case 0x8D:
-    case 0x8E:
-    case 0x8F:
-      // Take care of lea and three byte ops.
-      if (insn->opcodeType == TWOBYTE) {
-        attrMask ^= ATTR_OPSIZE;
-        insn->immediateSize = 4;
-        insn->displacementSize = 4;
-      }
-      break;
-    }
-  }
+  if (insn->mode == MODE_16BIT && !insn->hasOpSize &&
+      insn->opcodeType == TWOBYTE &&
+      insn->opcode >= 0x80 && insn->opcode <= 0x8F)
+    attrMask |= ATTR_OPSIZE;
 
   if (getIDWithAttrMask(&instructionID, insn, attrMask))
     return -1;
@@ -1420,7 +1391,7 @@ static int readModRM(struct InternalInstruction* insn) {
       break;
     case 0x1:
       insn->displacementSize = 1;
-      /* FALLTHROUGH */
+      LLVM_FALLTHROUGH;
     case 0x2:
       insn->eaDisplacement = (mod == 0x1 ? EA_DISP_8 : EA_DISP_32);
       switch (rm & 7) {
@@ -1497,6 +1468,10 @@ static int readModRM(struct InternalInstruction* insn) {
       if (index > 7)                                      \
         *valid = 0;                                       \
       return prefix##_K0 + index;                         \
+    case TYPE_VK_PAIR:                                    \
+      if (index > 7)                                      \
+        *valid = 0;                                       \
+      return prefix##_K0_K1 + (index / 2);                \
     case TYPE_MM64:                                       \
       return prefix##_MM0 + (index & 0x7);                \
     case TYPE_SEGMENTREG:                                 \
@@ -1873,6 +1848,9 @@ static int readOperands(struct InternalInstruction* insn) {
     case ENCODING_Rv:
       if (readOpcodeRegister(insn, 0))
         return -1;
+      break;
+    case ENCODING_CC:
+      insn->immediates[1] = insn->opcode & 0xf;
       break;
     case ENCODING_FP:
       break;

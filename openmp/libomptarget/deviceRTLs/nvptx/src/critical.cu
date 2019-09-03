@@ -1,9 +1,8 @@
 //===------ critical.cu - NVPTX OpenMP critical ------------------ CUDA -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.txt for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,17 +15,15 @@
 #include "omptarget-nvptx.h"
 
 EXTERN
-void __kmpc_critical(kmp_Indent *loc, int32_t global_tid,
+void __kmpc_critical(kmp_Ident *loc, int32_t global_tid,
                      kmp_CriticalName *lck) {
   PRINT0(LD_IO, "call to kmpc_critical()\n");
-  omptarget_nvptx_TeamDescr &teamDescr = getMyTeamDescriptor();
-  omp_set_lock(teamDescr.CriticalLock());
+  omp_set_lock((omp_lock_t *)lck);
 }
 
 EXTERN
-void __kmpc_end_critical(kmp_Indent *loc, int32_t global_tid,
+void __kmpc_end_critical(kmp_Ident *loc, int32_t global_tid,
                          kmp_CriticalName *lck) {
   PRINT0(LD_IO, "call to kmpc_end_critical()\n");
-  omptarget_nvptx_TeamDescr &teamDescr = getMyTeamDescriptor();
-  omp_unset_lock(teamDescr.CriticalLock());
+  omp_unset_lock((omp_lock_t *)lck);
 }

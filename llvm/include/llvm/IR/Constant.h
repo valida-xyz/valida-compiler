@@ -1,9 +1,8 @@
 //===-- llvm/Constant.h - Constant class definition -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -87,9 +86,19 @@ public:
   /// floating-point constant with all NaN elements.
   bool isNaN() const;
 
+  /// Return true if this constant and a constant 'Y' are element-wise equal.
+  /// This is identical to just comparing the pointers, with the exception that
+  /// for vectors, if only one of the constants has an `undef` element in some
+  /// lane, the constants still match.
+  bool isElementWiseEqual(Value *Y) const;
+
   /// Return true if this is a vector constant that includes any undefined
   /// elements.
   bool containsUndefElement() const;
+
+  /// Return true if this is a vector constant that includes any constant
+  /// expressions.
+  bool containsConstantExpression() const;
 
   /// Return true if evaluation of this constant could trap. This is true for
   /// things like constant expressions that could divide by zero.
@@ -114,7 +123,8 @@ public:
 
   /// For aggregates (struct/array/vector) return the constant that corresponds
   /// to the specified element if possible, or null if not. This can return null
-  /// if the element index is a ConstantExpr, or if 'this' is a constant expr.
+  /// if the element index is a ConstantExpr, if 'this' is a constant expr or
+  /// if the constant does not fit into an uint64_t.
   Constant *getAggregateElement(unsigned Elt) const;
   Constant *getAggregateElement(Constant *Elt) const;
 

@@ -1,5 +1,4 @@
-; RUN: llc -O0 %s -filetype=obj -o %t.o
-; RUN: llvm-dwarfdump -debug-loc %t.o | FileCheck %s
+; RUN: llc -O0 %s -filetype=obj -o - | llvm-dwarfdump -debug-loc - | FileCheck %s
 ;
 ; rdar://problem/15928306
 ;
@@ -19,7 +18,6 @@
 
 ; CHECK: [0x0000000000000000, 0x[[LTMP3:.*]]): DW_OP_reg5 RDI, DW_OP_piece 0x8, DW_OP_reg4 RSI, DW_OP_piece 0x4
 ; 0x0000000000000006 - 0x0000000000000008: rbp-8, piece 0x8, rax, piece 0x4 )
-; CHECK: [0x[[LTMP3]], {{.*}}): DW_OP_breg6 RBP-8, DW_OP_piece 0x8, DW_OP_reg4 RSI, DW_OP_piece 0x4
 
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.9.0"

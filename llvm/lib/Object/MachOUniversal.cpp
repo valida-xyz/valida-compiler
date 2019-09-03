@@ -1,9 +1,8 @@
 //===- MachOUniversal.cpp - Mach-O universal binary -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -156,12 +155,13 @@ MachOUniversalBinary::MachOUniversalBinary(MemoryBufferRef Source, Error &Err)
         ") extends past the end of the file");
       return;
     }
-#define MAXSECTALIGN 15 /* 2**15 or 0x8000 */
-    if (A.getAlign() > MAXSECTALIGN) {
-      Err = malformedError("align (2^" + Twine(A.getAlign()) + ") too large "
-        "for cputype (" + Twine(A.getCPUType()) + ") cpusubtype (" +
-        Twine(A.getCPUSubType() & ~MachO::CPU_SUBTYPE_MASK) +
-        ") (maximum 2^" + Twine(MAXSECTALIGN) + ")");
+
+    if (A.getAlign() > MaxSectionAlignment) {
+      Err = malformedError("align (2^" + Twine(A.getAlign()) +
+                           ") too large for cputype (" + Twine(A.getCPUType()) +
+                           ") cpusubtype (" +
+                           Twine(A.getCPUSubType() & ~MachO::CPU_SUBTYPE_MASK) +
+                           ") (maximum 2^" + Twine(MaxSectionAlignment) + ")");
       return;
     }
     if(A.getOffset() % (1 << A.getAlign()) != 0){

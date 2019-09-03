@@ -1,18 +1,17 @@
 //===-- NativeRegisterContextLinux.cpp --------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "NativeRegisterContextLinux.h"
 
-#include "lldb/Core/RegisterValue.h"
 #include "lldb/Host/common/NativeProcessProtocol.h"
 #include "lldb/Host/common/NativeThreadProtocol.h"
 #include "lldb/Host/linux/Ptrace.h"
+#include "lldb/Utility/RegisterValue.h"
 
 #include "Plugins/Process/Linux/NativeProcessLinux.h"
 #include "Plugins/Process/POSIX/ProcessPOSIXLog.h"
@@ -96,39 +95,25 @@ NativeRegisterContextLinux::WriteRegisterRaw(uint32_t reg_index,
 }
 
 Status NativeRegisterContextLinux::ReadGPR() {
-  void *buf = GetGPRBuffer();
-  if (!buf)
-    return Status("GPR buffer is NULL");
-  size_t buf_size = GetGPRSize();
-
-  return DoReadGPR(buf, buf_size);
+  return NativeProcessLinux::PtraceWrapper(
+      PTRACE_GETREGS, m_thread.GetID(), nullptr, GetGPRBuffer(), GetGPRSize());
 }
 
 Status NativeRegisterContextLinux::WriteGPR() {
-  void *buf = GetGPRBuffer();
-  if (!buf)
-    return Status("GPR buffer is NULL");
-  size_t buf_size = GetGPRSize();
-
-  return DoWriteGPR(buf, buf_size);
+  return NativeProcessLinux::PtraceWrapper(
+      PTRACE_SETREGS, m_thread.GetID(), nullptr, GetGPRBuffer(), GetGPRSize());
 }
 
 Status NativeRegisterContextLinux::ReadFPR() {
-  void *buf = GetFPRBuffer();
-  if (!buf)
-    return Status("FPR buffer is NULL");
-  size_t buf_size = GetFPRSize();
-
-  return DoReadFPR(buf, buf_size);
+  return NativeProcessLinux::PtraceWrapper(PTRACE_GETFPREGS, m_thread.GetID(),
+                                           nullptr, GetFPRBuffer(),
+                                           GetFPRSize());
 }
 
 Status NativeRegisterContextLinux::WriteFPR() {
-  void *buf = GetFPRBuffer();
-  if (!buf)
-    return Status("FPR buffer is NULL");
-  size_t buf_size = GetFPRSize();
-
-  return DoWriteFPR(buf, buf_size);
+  return NativeProcessLinux::PtraceWrapper(PTRACE_SETFPREGS, m_thread.GetID(),
+                                           nullptr, GetFPRBuffer(),
+                                           GetFPRSize());
 }
 
 Status NativeRegisterContextLinux::ReadRegisterSet(void *buf, size_t buf_size,
@@ -173,24 +158,4 @@ Status NativeRegisterContextLinux::DoWriteRegisterValue(
 
   return NativeProcessLinux::PtraceWrapper(
       PTRACE_POKEUSER, m_thread.GetID(), reinterpret_cast<void *>(offset), buf);
-}
-
-Status NativeRegisterContextLinux::DoReadGPR(void *buf, size_t buf_size) {
-  return NativeProcessLinux::PtraceWrapper(PTRACE_GETREGS, m_thread.GetID(),
-                                           nullptr, buf, buf_size);
-}
-
-Status NativeRegisterContextLinux::DoWriteGPR(void *buf, size_t buf_size) {
-  return NativeProcessLinux::PtraceWrapper(PTRACE_SETREGS, m_thread.GetID(),
-                                           nullptr, buf, buf_size);
-}
-
-Status NativeRegisterContextLinux::DoReadFPR(void *buf, size_t buf_size) {
-  return NativeProcessLinux::PtraceWrapper(PTRACE_GETFPREGS, m_thread.GetID(),
-                                           nullptr, buf, buf_size);
-}
-
-Status NativeRegisterContextLinux::DoWriteFPR(void *buf, size_t buf_size) {
-  return NativeProcessLinux::PtraceWrapper(PTRACE_SETFPREGS, m_thread.GetID(),
-                                           nullptr, buf, buf_size);
 }

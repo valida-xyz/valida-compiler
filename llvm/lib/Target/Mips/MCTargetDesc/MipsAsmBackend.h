@@ -1,9 +1,8 @@
 //===-- MipsAsmBackend.h - Mips Asm Backend  ------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -25,6 +24,7 @@ class MCAssembler;
 struct MCFixupKindInfo;
 class MCObjectWriter;
 class MCRegisterInfo;
+class MCSymbolELF;
 class Target;
 
 class MipsAsmBackend : public MCAsmBackend {
@@ -90,6 +90,7 @@ public:
   bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
                              const MCValue &Target) override;
 
+  bool isMicroMips(const MCSymbol *Sym) const override;
 }; // class MipsAsmBackend
 
 } // namespace

@@ -1,19 +1,18 @@
 //===-- VMRange.h -----------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef liblldb_VMRange_h_
 #define liblldb_VMRange_h_
 
-#include "lldb/lldb-types.h" // for addr_t
+#include "lldb/lldb-types.h"
 
-#include <stddef.h> // for size_t
-#include <stdint.h> // for uint32_t
+#include <stddef.h>
+#include <stdint.h>
 #include <vector>
 
 namespace lldb_private {
@@ -22,10 +21,8 @@ class Stream;
 
 namespace lldb_private {
 
-//----------------------------------------------------------------------
 // A vm address range. These can represent offsets ranges or actual
 // addresses.
-//----------------------------------------------------------------------
 class VMRange {
 public:
   typedef std::vector<VMRange> collection;
@@ -86,24 +83,6 @@ public:
 
   void Dump(Stream *s, lldb::addr_t base_addr = 0,
             uint32_t addr_width = 8) const;
-
-  class ValueInRangeUnaryPredicate {
-  public:
-    ValueInRangeUnaryPredicate(lldb::addr_t value) : _value(value) {}
-    bool operator()(const VMRange &range) const {
-      return range.Contains(_value);
-    }
-    lldb::addr_t _value;
-  };
-
-  class RangeInRangeUnaryPredicate {
-  public:
-    RangeInRangeUnaryPredicate(VMRange range) : _range(range) {}
-    bool operator()(const VMRange &range) const {
-      return range.Contains(_range);
-    }
-    const VMRange &_range;
-  };
 
   static bool ContainsValue(const VMRange::collection &coll,
                             lldb::addr_t value);

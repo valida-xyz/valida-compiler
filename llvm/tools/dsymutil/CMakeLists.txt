@@ -1,5 +1,8 @@
 set(LLVM_LINK_COMPONENTS
-  ${LLVM_TARGETS_TO_BUILD}
+  AllTargetsAsmPrinters
+  AllTargetsCodeGens
+  AllTargetsDescs
+  AllTargetsInfos
   AsmPrinter
   DebugInfoDWARF
   MC
@@ -20,6 +23,7 @@ add_llvm_tool(dsymutil
   MachODebugMapParser.cpp
   MachOUtils.cpp
   NonRelocatableStringpool.cpp
+  SymbolMap.cpp
 
   DEPENDS
   intrinsics_gen

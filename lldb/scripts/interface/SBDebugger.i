@@ -1,9 +1,8 @@
 //===-- SWIG Interface for SBDebugger ---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -28,7 +27,7 @@ def disassemble_instructions (insts):
 # Create a new debugger instance
 debugger = lldb.SBDebugger.Create()
 
-# When we step or continue, don't return from the function until the process 
+# When we step or continue, don't return from the function until the process
 # stops. We do this by setting the async mode to false.
 debugger.SetAsync (False)
 
@@ -46,7 +45,7 @@ if target:
     # Launch the process. Since we specified synchronous mode, we won't return
     # from this function until we hit the breakpoint at main
     process = target.LaunchSimple (None, None, os.getcwd())
-    
+
     # Make sure the launch went ok
     if process:
         # Print some simple process info
@@ -114,18 +113,20 @@ target = debugger.CreateTarget('')
 error = lldb.SBError()
 process = target.AttachToProcessWithName(debugger.GetListener(), 'PROCESS_NAME', False, error)
 
-or the equivalent arguments for AttachToProcessWithID.
-") SBDebugger;
+or the equivalent arguments for AttachToProcessWithID.") SBDebugger;
 class SBDebugger
 {
 public:
 
     static void
     Initialize();
-    
+
+    static SBError
+    InitializeWithErrorHandling();
+
     static void
     Terminate();
-    
+
     static lldb::SBDebugger
     Create();
 
@@ -150,13 +151,15 @@ public:
     bool
     IsValid() const;
 
+    explicit operator bool() const;
+
     void
     Clear ();
 
     void
     SetAsync (bool b);
-    
-    bool 
+
+    bool
     GetAsync ();
 
     void
@@ -248,7 +251,7 @@ public:
 
     lldb::SBPlatform
     GetSelectedPlatform();
-    
+
     void
     SetSelectedPlatform(lldb::SBPlatform &platform);
 
@@ -275,8 +278,7 @@ public:
 
     @param idx Zero-based index of the platform for which info should be
                retrieved, must be less than the value returned by
-               GetNumAvailablePlatforms().
-    ") GetAvailablePlatformInfoAtIndex;
+               GetNumAvailablePlatforms().") GetAvailablePlatformInfoAtIndex;
     lldb::SBStructuredData
     GetAvailablePlatformInfoAtIndex (uint32_t idx);
 
@@ -287,7 +289,7 @@ public:
     // SBPlatform from this class.
     lldb::SBError
     SetCurrentPlatform (const char *platform_name);
-    
+
     bool
     SetCurrentPlatformSDKRoot (const char *sysroot);
 
@@ -295,8 +297,8 @@ public:
     // an interface to the Set/Get UseExternalEditor.
     bool
     SetUseExternalEditor (bool input);
-    
-    bool 
+
+    bool
     GetUseExternalEditor ();
 
     bool
@@ -342,7 +344,7 @@ public:
 
     void
     DispatchInputEndOfFile ();
-    
+
     const char *
     GetInstanceName  ();
 
@@ -366,14 +368,17 @@ public:
 
     lldb::user_id_t
     GetID ();
-    
+
     const char *
     GetPrompt() const;
 
     void
     SetPrompt (const char *prompt);
-        
-    lldb::ScriptLanguage 
+
+    const char *
+    GetReproducerPath() const;
+
+    lldb::ScriptLanguage
     GetScriptLanguage() const;
 
     void
@@ -381,31 +386,31 @@ public:
 
     bool
     GetCloseInputOnEOF () const;
-    
+
     void
     SetCloseInputOnEOF (bool b);
-    
+
     lldb::SBTypeCategory
     GetCategory (const char* category_name);
-    
+
     SBTypeCategory
     GetCategory (lldb::LanguageType lang_type);
-    
+
     lldb::SBTypeCategory
     CreateCategory (const char* category_name);
-    
+
     bool
     DeleteCategory (const char* category_name);
-    
+
     uint32_t
     GetNumCategories ();
-    
+
     lldb::SBTypeCategory
     GetCategoryAtIndex (uint32_t);
-    
+
     lldb::SBTypeCategory
     GetDefaultCategory();
-    
+
     lldb::SBTypeFormat
     GetFormatForType (lldb::SBTypeNameSpecifier);
 
@@ -418,6 +423,32 @@ public:
     lldb::SBTypeSynthetic
     GetSyntheticForType (lldb::SBTypeNameSpecifier);
 
+    %feature("docstring",
+"Launch a command interpreter session. Commands are read from standard input or
+from the input handle specified for the debugger object. Output/errors are
+similarly redirected to standard output/error or the configured handles.
+
+@param[in] auto_handle_events If true, automatically handle resulting events.
+@param[in] spawn_thread If true, start a new thread for IO handling.
+@param[in] options Parameter collection of type SBCommandInterpreterRunOptions.
+@param[in] num_errors Initial error counter.
+@param[in] quit_requested Initial quit request flag.
+@param[in] stopped_for_crash Initial crash flag.
+
+@return
+A tuple with the number of errors encountered by the interpreter, a boolean
+indicating whether quitting the interpreter was requested and another boolean
+set to True in case of a crash.
+
+Example:
+
+# Start an interactive lldb session from a script (with a valid debugger object
+# created beforehand):
+n_errors, quit_requested, has_crashed = debugger.RunCommandInterpreter(True,
+    False, lldb.SBCommandInterpreterRunOptions(), 0, False, False)") RunCommandInterpreter;
+    %apply int& INOUT { int& num_errors };
+    %apply bool& INOUT { bool& quit_requested };
+    %apply bool& INOUT { bool& stopped_for_crash };
     void
     RunCommandInterpreter (bool auto_handle_events,
                            bool spawn_thread,
@@ -425,9 +456,20 @@ public:
                            int  &num_errors,
                            bool &quit_requested,
                            bool &stopped_for_crash);
-    
+
     lldb::SBError
     RunREPL (lldb::LanguageType language, const char *repl_options);
+
+    %pythoncode%{
+    def __iter__(self):
+        '''Iterate over all targets in a lldb.SBDebugger object.'''
+        return lldb_iter(self, 'GetNumTargets', 'GetTargetAtIndex')
+
+    def __len__(self):
+        '''Return the number of targets in a lldb.SBDebugger object.'''
+        return self.GetNumTargets()
+    %}
+
 }; // class SBDebugger
 
 } // namespace lldb

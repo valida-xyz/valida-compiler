@@ -1,9 +1,8 @@
 //===- TargetFrameLoweringImpl.cpp - Implement target frame interface ------==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -29,12 +28,6 @@
 using namespace llvm;
 
 TargetFrameLowering::~TargetFrameLowering() = default;
-
-/// The default implementation just looks at attribute "no-frame-pointer-elim".
-bool TargetFrameLowering::noFramePointerElim(const MachineFunction &MF) const {
-  auto Attr = MF.getFunction().getFnAttribute("no-frame-pointer-elim");
-  return Attr.getValueAsString() == "true";
-}
 
 bool TargetFrameLowering::enableCalleeSaveSkip(const MachineFunction &MF) const {
   assert(MF.getFunction().hasFnAttribute(Attribute::NoReturn) &&
@@ -78,7 +71,9 @@ void TargetFrameLowering::determineCalleeSaves(MachineFunction &MF,
 
   // When interprocedural register allocation is enabled caller saved registers
   // are preferred over callee saved registers.
-  if (MF.getTarget().Options.EnableIPRA && isSafeForNoCSROpt(MF.getFunction()))
+  if (MF.getTarget().Options.EnableIPRA &&
+      isSafeForNoCSROpt(MF.getFunction()) &&
+      isProfitableForNoCSROpt(MF.getFunction()))
     return;
 
   // Get the callee saved register list...

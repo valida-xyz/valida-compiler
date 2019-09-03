@@ -17,14 +17,21 @@ add_clang_library(clangTidyPlugin
   clangTidyFuchsiaModule
   clangTidyGoogleModule
   clangTidyHICPPModule
+  clangTidyLinuxKernelModule
   clangTidyLLVMModule
   clangTidyMiscModule
   clangTidyModernizeModule
-  clangTidyMPIModule
   clangTidyObjCModule
+  clangTidyOpenMPModule
   clangTidyPerformanceModule
   clangTidyPortabilityModule
   clangTidyReadabilityModule
   clangTidyZirconModule
   clangTooling
   )
+
+if(CLANG_ENABLE_STATIC_ANALYZER)
+  target_link_libraries(clangTidyPlugin PRIVATE
+    clangTidyMPIModule
+  )
+endif()

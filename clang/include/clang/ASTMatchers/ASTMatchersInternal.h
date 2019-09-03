@@ -1,9 +1,8 @@
 //===- ASTMatchersInternal.h - Structural query framework -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -184,7 +183,8 @@ public:
   /// Note that we're using std::map here, as for memoization:
   /// - we need a comparison operator
   /// - we need an assignment operator
-  using IDToNodeMap = std::map<std::string, ast_type_traits::DynTypedNode>;
+  using IDToNodeMap =
+      std::map<std::string, ast_type_traits::DynTypedNode, std::less<>>;
 
   const IDToNodeMap &getMap() const {
     return NodeMap;
@@ -261,7 +261,7 @@ public:
   }
 
 private:
-  SmallVector<BoundNodesMap, 16> Bindings;
+  SmallVector<BoundNodesMap, 1> Bindings;
 };
 
 class ASTMatchFinder;
@@ -951,15 +951,6 @@ const bool IsBaseType<T>::value;
 /// all nodes, as all nodes have ancestors.
 class ASTMatchFinder {
 public:
-  /// Defines how we descend a level in the AST when we pass
-  /// through expressions.
-  enum TraversalKind {
-    /// Will traverse any child nodes.
-    TK_AsIs,
-
-    /// Will not traverse implicit casts and parentheses.
-    TK_IgnoreImplicitCastsAndParentheses
-  };
 
   /// Defines how bindings are processed on recursive matches.
   enum BindKind {
@@ -981,20 +972,28 @@ public:
 
   virtual ~ASTMatchFinder() = default;
 
-  /// Returns true if the given class is directly or indirectly derived
+  /// Returns true if the given C++ class is directly or indirectly derived
   /// from a base type matching \c base.
   ///
-  /// A class is considered to be also derived from itself.
+  /// A class is not considered to be derived from itself.
   virtual bool classIsDerivedFrom(const CXXRecordDecl *Declaration,
                                   const Matcher<NamedDecl> &Base,
-                                  BoundNodesTreeBuilder *Builder) = 0;
+                                  BoundNodesTreeBuilder *Builder,
+                                  bool Directly) = 0;
+
+  /// Returns true if the given Objective-C class is directly or indirectly
+  /// derived from a base class matching \c base.
+  ///
+  /// A class is not considered to be derived from itself.
+  virtual bool objcClassIsDerivedFrom(const ObjCInterfaceDecl *Declaration,
+                                      const Matcher<NamedDecl> &Base,
+                                      BoundNodesTreeBuilder *Builder,
+                                      bool Directly) = 0;
 
   template <typename T>
-  bool matchesChildOf(const T &Node,
-                      const DynTypedMatcher &Matcher,
+  bool matchesChildOf(const T &Node, const DynTypedMatcher &Matcher,
                       BoundNodesTreeBuilder *Builder,
-                      TraversalKind Traverse,
-                      BindKind Bind) {
+                      ast_type_traits::TraversalKind Traverse, BindKind Bind) {
     static_assert(std::is_base_of<Decl, T>::value ||
                   std::is_base_of<Stmt, T>::value ||
                   std::is_base_of<NestedNameSpecifier, T>::value ||
@@ -1043,7 +1042,7 @@ protected:
   virtual bool matchesChildOf(const ast_type_traits::DynTypedNode &Node,
                               const DynTypedMatcher &Matcher,
                               BoundNodesTreeBuilder *Builder,
-                              TraversalKind Traverse,
+                              ast_type_traits::TraversalKind Traverse,
                               BindKind Bind) = 0;
 
   virtual bool matchesDescendantOf(const ast_type_traits::DynTypedNode &Node,
@@ -1291,7 +1290,7 @@ public:
   bool matches(const T &Node, ASTMatchFinder *Finder,
                BoundNodesTreeBuilder *Builder) const override {
     return Finder->matchesChildOf(Node, this->InnerMatcher, Builder,
-                                  ASTMatchFinder::TK_AsIs,
+                                  ast_type_traits::TraversalKind::TK_AsIs,
                                   ASTMatchFinder::BK_First);
   }
 };
@@ -1314,7 +1313,7 @@ class ForEachMatcher : public WrapperMatcherInterface<T> {
                BoundNodesTreeBuilder* Builder) const override {
     return Finder->matchesChildOf(
         Node, this->InnerMatcher, Builder,
-        ASTMatchFinder::TK_IgnoreImplicitCastsAndParentheses,
+        ast_type_traits::TraversalKind::TK_IgnoreImplicitCastsAndParentheses,
         ASTMatchFinder::BK_All);
   }
 };
@@ -1327,7 +1326,7 @@ class ForEachMatcher : public WrapperMatcherInterface<T> {
 ///
 /// Input matchers can have any type (including other polymorphic matcher
 /// types), and the actual Matcher<T> is generated on demand with an implicit
-/// coversion operator.
+/// conversion operator.
 template <typename... Ps> class VariadicOperatorMatcher {
 public:
   VariadicOperatorMatcher(DynTypedMatcher::VariadicOperator Op, Ps &&... Params)
@@ -1336,14 +1335,14 @@ public:
   template <typename T> operator Matcher<T>() const {
     return DynTypedMatcher::constructVariadic(
                Op, ast_type_traits::ASTNodeKind::getFromNodeKind<T>(),
-               getMatchers<T>(llvm::index_sequence_for<Ps...>()))
+               getMatchers<T>(std::index_sequence_for<Ps...>()))
         .template unconditionalConvertTo<T>();
   }
 
 private:
   // Helper method to unpack the tuple into a vector.
   template <typename T, std::size_t... Is>
-  std::vector<DynTypedMatcher> getMatchers(llvm::index_sequence<Is...>) const {
+  std::vector<DynTypedMatcher> getMatchers(std::index_sequence<Is...>) const {
     return {Matcher<T>(std::get<Is>(Params))...};
   }
 
@@ -1548,8 +1547,7 @@ inline bool ValueEqualsMatcher<FloatingLiteral, llvm::APFloat>::matchesNode(
 /// given matchers, if SourceT can be dynamically casted into TargetT.
 ///
 /// For example:
-///   const VariadicDynCastAllOfMatcher<
-///       Decl, CXXRecordDecl> record;
+///   const VariadicDynCastAllOfMatcher<Decl, CXXRecordDecl> record;
 /// Creates a functor record(...) that creates a Matcher<Decl> given
 /// a variable number of arguments of type Matcher<CXXRecordDecl>.
 /// The returned matcher matches if the given Decl can by dynamically

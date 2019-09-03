@@ -1,9 +1,8 @@
 //===---- MachineCombiner.cpp - Instcombining on SSA form machine code ----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -138,7 +137,7 @@ void MachineCombiner::getAnalysisUsage(AnalysisUsage &AU) const {
 MachineInstr *MachineCombiner::getOperandDef(const MachineOperand &MO) {
   MachineInstr *DefInstr = nullptr;
   // We need a virtual register definition.
-  if (MO.isReg() && TargetRegisterInfo::isVirtualRegister(MO.getReg()))
+  if (MO.isReg() && Register::isVirtualRegister(MO.getReg()))
     DefInstr = MRI->getUniqueVRegDef(MO.getReg());
   // PHI's have no depth etc.
   if (DefInstr && DefInstr->isPHI())
@@ -169,7 +168,7 @@ MachineCombiner::getDepth(SmallVectorImpl<MachineInstr *> &InsInstrs,
     unsigned IDepth = 0;
     for (const MachineOperand &MO : InstrPtr->operands()) {
       // Check for virtual register operand.
-      if (!(MO.isReg() && TargetRegisterInfo::isVirtualRegister(MO.getReg())))
+      if (!(MO.isReg() && Register::isVirtualRegister(MO.getReg())))
         continue;
       if (!MO.isUse())
         continue;
@@ -224,13 +223,15 @@ unsigned MachineCombiner::getLatency(MachineInstr *Root, MachineInstr *NewRoot,
 
   for (const MachineOperand &MO : NewRoot->operands()) {
     // Check for virtual register operand.
-    if (!(MO.isReg() && TargetRegisterInfo::isVirtualRegister(MO.getReg())))
+    if (!(MO.isReg() && Register::isVirtualRegister(MO.getReg())))
       continue;
     if (!MO.isDef())
       continue;
     // Get the first instruction that uses MO
     MachineRegisterInfo::reg_iterator RI = MRI->reg_begin(MO.getReg());
     RI++;
+    if (RI == MRI->reg_end())
+      continue;
     MachineInstr *UseMO = RI->getParent();
     unsigned LatencyOp = 0;
     if (UseMO && BlockTrace.isDepInTrace(*Root, *UseMO)) {
@@ -557,16 +558,15 @@ bool MachineCombiner::combineInstructions(MachineBasicBlock *MBB) {
         continue;
 
       LLVM_DEBUG(if (dump_intrs) {
-        dbgs() << "\tFor the Pattern (" << (int)P << ") these instructions could be removed\n";
-        for (auto const *InstrPtr : DelInstrs) {
-          dbgs() << "\t\t" << STI->getSchedInfoStr(*InstrPtr) << ": ";
-          InstrPtr->print(dbgs(), false, false, false, TII);
-        }
+        dbgs() << "\tFor the Pattern (" << (int)P
+               << ") these instructions could be removed\n";
+        for (auto const *InstrPtr : DelInstrs)
+          InstrPtr->print(dbgs(), /*IsStandalone*/false, /*SkipOpers*/false,
+                          /*SkipDebugLoc*/false, /*AddNewLine*/true, TII);
         dbgs() << "\tThese instructions could replace the removed ones\n";
-        for (auto const *InstrPtr : InsInstrs) {
-          dbgs() << "\t\t" << STI->getSchedInfoStr(*InstrPtr) << ": ";
-          InstrPtr->print(dbgs(), false, false, false, TII);
-        }
+        for (auto const *InstrPtr : InsInstrs)
+          InstrPtr->print(dbgs(), /*IsStandalone*/false, /*SkipOpers*/false,
+                          /*SkipDebugLoc*/false, /*AddNewLine*/true, TII);
       });
 
       bool SubstituteAlways = false;
@@ -639,7 +639,7 @@ bool MachineCombiner::runOnMachineFunction(MachineFunction &MF) {
   MLI = &getAnalysis<MachineLoopInfo>();
   Traces = &getAnalysis<MachineTraceMetrics>();
   MinInstr = nullptr;
-  OptSize = MF.getFunction().optForSize();
+  OptSize = MF.getFunction().hasOptSize();
 
   LLVM_DEBUG(dbgs() << getPassName() << ": " << MF.getName() << '\n');
   if (!TII->useMachineCombiner()) {

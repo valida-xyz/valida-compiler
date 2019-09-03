@@ -1,16 +1,15 @@
 //===-- CompileUnit.cpp -----------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Symbol/LineTable.h"
-#include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Language.h"
 
@@ -21,9 +20,9 @@ CompileUnit::CompileUnit(const lldb::ModuleSP &module_sp, void *user_data,
                          const char *pathname, const lldb::user_id_t cu_sym_id,
                          lldb::LanguageType language,
                          lldb_private::LazyBool is_optimized)
-    : ModuleChild(module_sp), FileSpec(pathname, false), UserID(cu_sym_id),
-      m_user_data(user_data), m_language(language), m_flags(0), m_functions(),
-      m_support_files(), m_line_table_ap(), m_variables(),
+    : ModuleChild(module_sp), FileSpec(pathname), UserID(cu_sym_id),
+      m_user_data(user_data), m_language(language), m_flags(0),
+      m_support_files(), m_line_table_up(), m_variables(),
       m_is_optimized(is_optimized) {
   if (language != eLanguageTypeUnknown)
     m_flags.Set(flagsParsedLanguage);
@@ -35,8 +34,8 @@ CompileUnit::CompileUnit(const lldb::ModuleSP &module_sp, void *user_data,
                          lldb::LanguageType language,
                          lldb_private::LazyBool is_optimized)
     : ModuleChild(module_sp), FileSpec(fspec), UserID(cu_sym_id),
-      m_user_data(user_data), m_language(language), m_flags(0), m_functions(),
-      m_support_files(), m_line_table_ap(), m_variables(),
+      m_user_data(user_data), m_language(language), m_flags(0),
+      m_support_files(), m_line_table_up(), m_variables(),
       m_is_optimized(is_optimized) {
   if (language != eLanguageTypeUnknown)
     m_flags.Set(flagsParsedLanguage);
@@ -66,12 +65,26 @@ void CompileUnit::GetDescription(Stream *s,
      << (const FileSpec &)*this << "\", language = \"" << language << '"';
 }
 
-//----------------------------------------------------------------------
+void CompileUnit::ForeachFunction(
+    llvm::function_ref<bool(const FunctionSP &)> lambda) const {
+  std::vector<lldb::FunctionSP> sorted_functions;
+  sorted_functions.reserve(m_functions_by_uid.size());
+  for (auto &p : m_functions_by_uid)
+    sorted_functions.push_back(p.second);
+  llvm::sort(sorted_functions.begin(), sorted_functions.end(),
+             [](const lldb::FunctionSP &a, const lldb::FunctionSP &b) {
+               return a->GetID() < b->GetID();
+             });
+
+  for (auto &f : sorted_functions)
+    if (lambda(f))
+      return;
+}
+
 // Dump the current contents of this object. No functions that cause on demand
 // parsing of functions, globals, statics are called, so this is a good
 // function to call to get an idea of the current contents of the CompileUnit
 // object.
-//----------------------------------------------------------------------
 void CompileUnit::Dump(Stream *s, bool show_context) const {
   const char *language = Language::GetNameForLanguageType(m_language);
 
@@ -89,122 +102,50 @@ void CompileUnit::Dump(Stream *s, bool show_context) const {
     s->IndentLess();
   }
 
-  if (!m_functions.empty()) {
+  if (!m_functions_by_uid.empty()) {
     s->IndentMore();
-    std::vector<FunctionSP>::const_iterator pos;
-    std::vector<FunctionSP>::const_iterator end = m_functions.end();
-    for (pos = m_functions.begin(); pos != end; ++pos) {
-      (*pos)->Dump(s, show_context);
-    }
+    ForeachFunction([&s, show_context](const FunctionSP &f) {
+      f->Dump(s, show_context);
+      return false;
+    });
 
     s->IndentLess();
     s->EOL();
   }
 }
 
-//----------------------------------------------------------------------
 // Add a function to this compile unit
-//----------------------------------------------------------------------
 void CompileUnit::AddFunction(FunctionSP &funcSP) {
-  // TODO: order these by address
-  m_functions.push_back(funcSP);
+  m_functions_by_uid[funcSP->GetID()] = funcSP;
 }
-
-FunctionSP CompileUnit::GetFunctionAtIndex(size_t idx) {
-  FunctionSP funcSP;
-  if (idx < m_functions.size())
-    funcSP = m_functions[idx];
-  return funcSP;
-}
-
-//----------------------------------------------------------------------
-// Find functions using the Mangled::Tokens token list. This function currently
-// implements an interactive approach designed to find all instances of certain
-// functions. It isn't designed to the quickest way to lookup functions as it
-// will need to iterate through all functions and see if they match, though it
-// does provide a powerful and context sensitive way to search for all
-// functions with a certain name, all functions in a namespace, or all
-// functions of a template type. See Mangled::Tokens::Parse() comments for more
-// information.
-//
-// The function prototype will need to change to return a list of results. It
-// was originally used to help debug the Mangled class and the
-// Mangled::Tokens::MatchesQuery() function and it currently will print out a
-// list of matching results for the functions that are currently in this
-// compile unit.
-//
-// A FindFunctions method should be called prior to this that takes
-// a regular function name (const char * or ConstString as a parameter) before
-// resorting to this slower but more complete function. The other FindFunctions
-// method should be able to take advantage of any accelerator tables available
-// in the debug information (which is parsed by the SymbolFile parser plug-ins
-// and registered with each Module).
-//----------------------------------------------------------------------
-// void
-// CompileUnit::FindFunctions(const Mangled::Tokens& tokens)
-//{
-//  if (!m_functions.empty())
-//  {
-//      Stream s(stdout);
-//      std::vector<FunctionSP>::const_iterator pos;
-//      std::vector<FunctionSP>::const_iterator end = m_functions.end();
-//      for (pos = m_functions.begin(); pos != end; ++pos)
-//      {
-//          const ConstString& demangled = (*pos)->Mangled().Demangled();
-//          if (demangled)
-//          {
-//              const Mangled::Tokens& func_tokens =
-//              (*pos)->Mangled().GetTokens();
-//              if (func_tokens.MatchesQuery (tokens))
-//                  s << "demangled MATCH found: " << demangled << "\n";
-//          }
-//      }
-//  }
-//}
 
 FunctionSP CompileUnit::FindFunctionByUID(lldb::user_id_t func_uid) {
-  FunctionSP funcSP;
-  if (!m_functions.empty()) {
-    std::vector<FunctionSP>::const_iterator pos;
-    std::vector<FunctionSP>::const_iterator end = m_functions.end();
-    for (pos = m_functions.begin(); pos != end; ++pos) {
-      if ((*pos)->GetID() == func_uid) {
-        funcSP = *pos;
-        break;
-      }
-    }
-  }
-  return funcSP;
+  auto it = m_functions_by_uid.find(func_uid);
+  if (it == m_functions_by_uid.end())
+    return FunctionSP();
+  return it->second;
 }
 
 lldb::LanguageType CompileUnit::GetLanguage() {
   if (m_language == eLanguageTypeUnknown) {
     if (m_flags.IsClear(flagsParsedLanguage)) {
       m_flags.Set(flagsParsedLanguage);
-      SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
-      if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        m_language = symbol_vendor->ParseCompileUnitLanguage(sc);
-      }
+      if (SymbolFile *symfile = GetModule()->GetSymbolFile())
+        m_language = symfile->ParseLanguage(*this);
     }
   }
   return m_language;
 }
 
 LineTable *CompileUnit::GetLineTable() {
-  if (m_line_table_ap.get() == nullptr) {
+  if (m_line_table_up == nullptr) {
     if (m_flags.IsClear(flagsParsedLineTable)) {
       m_flags.Set(flagsParsedLineTable);
-      SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
-      if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitLineTable(sc);
-      }
+      if (SymbolFile *symfile = GetModule()->GetSymbolFile())
+        symfile->ParseLineTable(*this);
     }
   }
-  return m_line_table_ap.get();
+  return m_line_table_up.get();
 }
 
 void CompileUnit::SetLineTable(LineTable *line_table) {
@@ -212,19 +153,19 @@ void CompileUnit::SetLineTable(LineTable *line_table) {
     m_flags.Clear(flagsParsedLineTable);
   else
     m_flags.Set(flagsParsedLineTable);
-  m_line_table_ap.reset(line_table);
+  m_line_table_up.reset(line_table);
+}
+
+void CompileUnit::SetSupportFiles(const FileSpecList &support_files) {
+  m_support_files = support_files;
 }
 
 DebugMacros *CompileUnit::GetDebugMacros() {
   if (m_debug_macros_sp.get() == nullptr) {
     if (m_flags.IsClear(flagsParsedDebugMacros)) {
       m_flags.Set(flagsParsedDebugMacros);
-      SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
-      if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitDebugMacros(sc);
-      }
+      if (SymbolFile *symfile = GetModule()->GetSymbolFile())
+        symfile->ParseDebugMacros(*this);
     }
   }
 
@@ -244,7 +185,7 @@ VariableListSP CompileUnit::GetVariableList(bool can_create) {
     SymbolContext sc;
     CalculateSymbolContext(&sc);
     assert(sc.module_sp);
-    sc.module_sp->GetSymbolVendor()->ParseVariablesForContext(sc);
+    sc.module_sp->GetSymbolFile()->ParseVariablesForContext(sc);
   }
 
   return m_variables;
@@ -263,7 +204,7 @@ uint32_t CompileUnit::FindLineEntry(uint32_t start_idx, uint32_t line,
     // All the line table entries actually point to the version of the Compile
     // Unit that is in the support files (the one at 0 was artificially added.)
     // So prefer the one further on in the support files if it exists...
-    FileSpecList &support_files = GetSupportFiles();
+    const FileSpecList &support_files = GetSupportFiles();
     const bool full = true;
     file_idx = support_files.FindFileIndex(
         1, support_files.GetFileSpecAtIndex(0), full);
@@ -279,7 +220,8 @@ uint32_t CompileUnit::FindLineEntry(uint32_t start_idx, uint32_t line,
 
 uint32_t CompileUnit::ResolveSymbolContext(const FileSpec &file_spec,
                                            uint32_t line, bool check_inlines,
-                                           bool exact, uint32_t resolve_scope,
+                                           bool exact,
+                                           SymbolContextItem resolve_scope,
                                            SymbolContextList &sc_list) {
   // First find all of the file indexes that match our "file_spec". If
   // "file_spec" has an empty directory, then only compare the basenames when
@@ -291,7 +233,7 @@ uint32_t CompileUnit::ResolveSymbolContext(const FileSpec &file_spec,
 
   // If we are not looking for inlined functions and our file spec doesn't
   // match then we are done...
-  if (file_spec_matches_cu_file_spec == false && check_inlines == false)
+  if (!file_spec_matches_cu_file_spec && !check_inlines)
     return 0;
 
   uint32_t file_idx =
@@ -386,10 +328,8 @@ uint32_t CompileUnit::ResolveSymbolContext(const FileSpec &file_spec,
 bool CompileUnit::GetIsOptimized() {
   if (m_is_optimized == eLazyBoolCalculate) {
     m_is_optimized = eLazyBoolNo;
-    if (SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor()) {
-      SymbolContext sc;
-      CalculateSymbolContext(&sc);
-      if (symbol_vendor->ParseCompileUnitIsOptimized(sc))
+    if (SymbolFile *symfile = GetModule()->GetSymbolFile()) {
+      if (symfile->ParseIsOptimized(*this))
         m_is_optimized = eLazyBoolYes;
     }
   }
@@ -400,29 +340,25 @@ void CompileUnit::SetVariableList(VariableListSP &variables) {
   m_variables = variables;
 }
 
-const std::vector<ConstString> &CompileUnit::GetImportedModules() {
+const std::vector<SourceModule> &CompileUnit::GetImportedModules() {
   if (m_imported_modules.empty() &&
       m_flags.IsClear(flagsParsedImportedModules)) {
     m_flags.Set(flagsParsedImportedModules);
-    if (SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor()) {
+    if (SymbolFile *symfile = GetModule()->GetSymbolFile()) {
       SymbolContext sc;
       CalculateSymbolContext(&sc);
-      symbol_vendor->ParseImportedModules(sc, m_imported_modules);
+      symfile->ParseImportedModules(sc, m_imported_modules);
     }
   }
   return m_imported_modules;
 }
 
-FileSpecList &CompileUnit::GetSupportFiles() {
+const FileSpecList &CompileUnit::GetSupportFiles() {
   if (m_support_files.GetSize() == 0) {
     if (m_flags.IsClear(flagsParsedSupportFiles)) {
       m_flags.Set(flagsParsedSupportFiles);
-      SymbolVendor *symbol_vendor = GetModule()->GetSymbolVendor();
-      if (symbol_vendor) {
-        SymbolContext sc;
-        CalculateSymbolContext(&sc);
-        symbol_vendor->ParseCompileUnitSupportFiles(sc, m_support_files);
-      }
+      if (SymbolFile *symfile = GetModule()->GetSymbolFile())
+        symfile->ParseSupportFiles(*this, m_support_files);
     }
   }
   return m_support_files;

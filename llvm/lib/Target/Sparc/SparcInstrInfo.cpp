@@ -1,9 +1,8 @@
 //===-- SparcInstrInfo.cpp - Sparc Instruction Information ----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -376,8 +375,8 @@ void SparcInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   MachineInstr *MovMI = nullptr;
 
   for (unsigned i = 0; i != numSubRegs; ++i) {
-    unsigned Dst = TRI->getSubReg(DestReg, subRegIdx[i]);
-    unsigned Src = TRI->getSubReg(SrcReg,  subRegIdx[i]);
+    Register Dst = TRI->getSubReg(DestReg, subRegIdx[i]);
+    Register Src = TRI->getSubReg(SrcReg, subRegIdx[i]);
     assert(Dst && Src && "Bad sub-register");
 
     MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(movOpc), Dst);

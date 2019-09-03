@@ -1,9 +1,8 @@
 //===--- DIBuilder.cpp - Debug Information Builder ------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -26,7 +25,7 @@
 using namespace llvm;
 using namespace llvm::dwarf;
 
-cl::opt<bool>
+static cl::opt<bool>
     UseDbgAddr("use-dbg-addr",
                llvm::cl::desc("Use llvm.dbg.addr for all local variables"),
                cl::init(false), cl::Hidden);
@@ -139,7 +138,8 @@ DICompileUnit *DIBuilder::createCompileUnit(
     unsigned Lang, DIFile *File, StringRef Producer, bool isOptimized,
     StringRef Flags, unsigned RunTimeVer, StringRef SplitName,
     DICompileUnit::DebugEmissionKind Kind, uint64_t DWOId,
-    bool SplitDebugInlining, bool DebugInfoForProfiling, bool GnuPubnames) {
+    bool SplitDebugInlining, bool DebugInfoForProfiling,
+    DICompileUnit::DebugNameTableKind NameTableKind, bool RangesBaseAddress) {
 
   assert(((Lang <= dwarf::DW_LANG_Fortran08 && Lang >= dwarf::DW_LANG_C89) ||
           (Lang <= dwarf::DW_LANG_hi_user && Lang >= dwarf::DW_LANG_lo_user)) &&
@@ -149,7 +149,8 @@ DICompileUnit *DIBuilder::createCompileUnit(
   CUNode = DICompileUnit::getDistinct(
       VMContext, Lang, File, Producer, isOptimized, Flags, RunTimeVer,
       SplitName, Kind, nullptr, nullptr, nullptr, nullptr, nullptr, DWOId,
-      SplitDebugInlining, DebugInfoForProfiling, GnuPubnames);
+      SplitDebugInlining, DebugInfoForProfiling, NameTableKind,
+      RangesBaseAddress);
 
   // Create a named metadata so that it is easier to find cu in a module.
   NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.cu");
@@ -165,8 +166,8 @@ createImportedModule(LLVMContext &C, dwarf::Tag Tag, DIScope *Context,
   if (Line)
     assert(File && "Source location has line number but no file");
   unsigned EntitiesCount = C.pImpl->DIImportedEntitys.size();
-  auto *M =
-      DIImportedEntity::get(C, Tag, Context, DINodeRef(NS), File, Line, Name);
+  auto *M = DIImportedEntity::get(C, Tag, Context, cast_or_null<DINode>(NS),
+                                  File, Line, Name);
   if (EntitiesCount < C.pImpl->DIImportedEntitys.size())
     // A new Imported Entity was just added to the context.
     // Add it to the Imported Modules list.
@@ -256,10 +257,11 @@ DIBasicType *DIBuilder::createNullPtrType() {
 }
 
 DIBasicType *DIBuilder::createBasicType(StringRef Name, uint64_t SizeInBits,
-                                        unsigned Encoding) {
+                                        unsigned Encoding,
+                                        DINode::DIFlags Flags) {
   assert(!Name.empty() && "Unable to create type without name");
   return DIBasicType::get(VMContext, dwarf::DW_TAG_base_type, Name, SizeInBits,
-                          0, Encoding);
+                          0, Encoding, Flags);
 }
 
 DIDerivedType *DIBuilder::createQualifiedType(unsigned Tag, DIType *FromTy) {
@@ -345,13 +347,10 @@ static ConstantAsMetadata *getConstantOrNull(Constant *C) {
   return nullptr;
 }
 
-DIDerivedType *DIBuilder::createVariantMemberType(DIScope *Scope, StringRef Name,
-						  DIFile *File, unsigned LineNumber,
-						  uint64_t SizeInBits,
-						  uint32_t AlignInBits,
-						  uint64_t OffsetInBits,
-						  Constant *Discriminant,
-						  DINode::DIFlags Flags, DIType *Ty) {
+DIDerivedType *DIBuilder::createVariantMemberType(
+    DIScope *Scope, StringRef Name, DIFile *File, unsigned LineNumber,
+    uint64_t SizeInBits, uint32_t AlignInBits, uint64_t OffsetInBits,
+    Constant *Discriminant, DINode::DIFlags Flags, DIType *Ty) {
   return DIDerivedType::get(VMContext, dwarf::DW_TAG_member, Name, File,
                             LineNumber, getNonCompileUnitScope(Scope), Ty,
                             SizeInBits, AlignInBits, OffsetInBits, None, Flags,
@@ -504,11 +503,11 @@ DISubroutineType *DIBuilder::createSubroutineType(DITypeRefArray ParameterTypes,
 DICompositeType *DIBuilder::createEnumerationType(
     DIScope *Scope, StringRef Name, DIFile *File, unsigned LineNumber,
     uint64_t SizeInBits, uint32_t AlignInBits, DINodeArray Elements,
-    DIType *UnderlyingType, StringRef UniqueIdentifier, bool IsFixed) {
+    DIType *UnderlyingType, StringRef UniqueIdentifier, bool IsScoped) {
   auto *CTy = DICompositeType::get(
       VMContext, dwarf::DW_TAG_enumeration_type, Name, File, LineNumber,
       getNonCompileUnitScope(Scope), UnderlyingType, SizeInBits, AlignInBits, 0,
-      IsFixed ? DINode::FlagFixedEnum : DINode::FlagZero, Elements, 0, nullptr,
+      IsScoped ? DINode::FlagEnumClass : DINode::FlagZero, Elements, 0, nullptr,
       nullptr, UniqueIdentifier);
   AllEnumTypes.push_back(CTy);
   trackIfUnresolved(CTy);
@@ -640,13 +639,13 @@ static void checkGlobalVariableScope(DIScope *Context) {
 DIGlobalVariableExpression *DIBuilder::createGlobalVariableExpression(
     DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *F,
     unsigned LineNumber, DIType *Ty, bool isLocalToUnit, DIExpression *Expr,
-    MDNode *Decl, uint32_t AlignInBits) {
+    MDNode *Decl, MDTuple *templateParams, uint32_t AlignInBits) {
   checkGlobalVariableScope(Context);
 
   auto *GV = DIGlobalVariable::getDistinct(
       VMContext, cast_or_null<DIScope>(Context), Name, LinkageName, F,
       LineNumber, Ty, isLocalToUnit, true, cast_or_null<DIDerivedType>(Decl),
-      AlignInBits);
+      templateParams, AlignInBits);
   if (!Expr)
     Expr = createExpression();
   auto *N = DIGlobalVariableExpression::get(VMContext, GV, Expr);
@@ -657,13 +656,13 @@ DIGlobalVariableExpression *DIBuilder::createGlobalVariableExpression(
 DIGlobalVariable *DIBuilder::createTempGlobalVariableFwdDecl(
     DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *F,
     unsigned LineNumber, DIType *Ty, bool isLocalToUnit, MDNode *Decl,
-    uint32_t AlignInBits) {
+    MDTuple *templateParams, uint32_t AlignInBits) {
   checkGlobalVariableScope(Context);
 
   return DIGlobalVariable::getTemporary(
              VMContext, cast_or_null<DIScope>(Context), Name, LinkageName, F,
              LineNumber, Ty, isLocalToUnit, false,
-             cast_or_null<DIDerivedType>(Decl), AlignInBits)
+             cast_or_null<DIDerivedType>(Decl), templateParams, AlignInBits)
       .release();
 }
 
@@ -751,18 +750,18 @@ static DISubprogram *getSubprogram(bool IsDistinct, Ts &&... Args) {
 
 DISubprogram *DIBuilder::createFunction(
     DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
-    unsigned LineNo, DISubroutineType *Ty, bool isLocalToUnit,
-    bool isDefinition, unsigned ScopeLine, DINode::DIFlags Flags,
-    bool isOptimized, DITemplateParameterArray TParams, DISubprogram *Decl,
+    unsigned LineNo, DISubroutineType *Ty, unsigned ScopeLine,
+    DINode::DIFlags Flags, DISubprogram::DISPFlags SPFlags,
+    DITemplateParameterArray TParams, DISubprogram *Decl,
     DITypeArray ThrownTypes) {
+  bool IsDefinition = SPFlags & DISubprogram::SPFlagDefinition;
   auto *Node = getSubprogram(
-      /* IsDistinct = */ isDefinition, VMContext,
-      getNonCompileUnitScope(Context), Name, LinkageName, File, LineNo, Ty,
-      isLocalToUnit, isDefinition, ScopeLine, nullptr, 0, 0, 0, Flags,
-      isOptimized, isDefinition ? CUNode : nullptr, TParams, Decl,
+      /*IsDistinct=*/IsDefinition, VMContext, getNonCompileUnitScope(Context),
+      Name, LinkageName, File, LineNo, Ty, ScopeLine, nullptr, 0, 0, Flags,
+      SPFlags, IsDefinition ? CUNode : nullptr, TParams, Decl,
       MDTuple::getTemporary(VMContext, None).release(), ThrownTypes);
 
-  if (isDefinition)
+  if (IsDefinition)
     AllSubprograms.push_back(Node);
   trackIfUnresolved(Node);
   return Node;
@@ -770,38 +769,47 @@ DISubprogram *DIBuilder::createFunction(
 
 DISubprogram *DIBuilder::createTempFunctionFwdDecl(
     DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
-    unsigned LineNo, DISubroutineType *Ty, bool isLocalToUnit,
-    bool isDefinition, unsigned ScopeLine, DINode::DIFlags Flags,
-    bool isOptimized, DITemplateParameterArray TParams, DISubprogram *Decl,
+    unsigned LineNo, DISubroutineType *Ty, unsigned ScopeLine,
+    DINode::DIFlags Flags, DISubprogram::DISPFlags SPFlags,
+    DITemplateParameterArray TParams, DISubprogram *Decl,
     DITypeArray ThrownTypes) {
-  return DISubprogram::getTemporary(
-             VMContext, getNonCompileUnitScope(Context), Name, LinkageName,
-             File, LineNo, Ty, isLocalToUnit, isDefinition, ScopeLine, nullptr,
-             0, 0, 0, Flags, isOptimized, isDefinition ? CUNode : nullptr,
-             TParams, Decl, nullptr, ThrownTypes)
+  bool IsDefinition = SPFlags & DISubprogram::SPFlagDefinition;
+  return DISubprogram::getTemporary(VMContext, getNonCompileUnitScope(Context),
+                                    Name, LinkageName, File, LineNo, Ty,
+                                    ScopeLine, nullptr, 0, 0, Flags, SPFlags,
+                                    IsDefinition ? CUNode : nullptr, TParams,
+                                    Decl, nullptr, ThrownTypes)
       .release();
 }
 
 DISubprogram *DIBuilder::createMethod(
     DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *F,
-    unsigned LineNo, DISubroutineType *Ty, bool isLocalToUnit,
-    bool isDefinition, unsigned VK, unsigned VIndex, int ThisAdjustment,
-    DIType *VTableHolder, DINode::DIFlags Flags, bool isOptimized,
-    DITemplateParameterArray TParams, DITypeArray ThrownTypes) {
+    unsigned LineNo, DISubroutineType *Ty, unsigned VIndex, int ThisAdjustment,
+    DIType *VTableHolder, DINode::DIFlags Flags,
+    DISubprogram::DISPFlags SPFlags, DITemplateParameterArray TParams,
+    DITypeArray ThrownTypes) {
   assert(getNonCompileUnitScope(Context) &&
          "Methods should have both a Context and a context that isn't "
          "the compile unit.");
   // FIXME: Do we want to use different scope/lines?
+  bool IsDefinition = SPFlags & DISubprogram::SPFlagDefinition;
   auto *SP = getSubprogram(
-      /* IsDistinct = */ isDefinition, VMContext, cast<DIScope>(Context), Name,
-      LinkageName, F, LineNo, Ty, isLocalToUnit, isDefinition, LineNo,
-      VTableHolder, VK, VIndex, ThisAdjustment, Flags, isOptimized,
-      isDefinition ? CUNode : nullptr, TParams, nullptr, nullptr, ThrownTypes);
+      /*IsDistinct=*/IsDefinition, VMContext, cast<DIScope>(Context), Name,
+      LinkageName, F, LineNo, Ty, LineNo, VTableHolder, VIndex, ThisAdjustment,
+      Flags, SPFlags, IsDefinition ? CUNode : nullptr, TParams, nullptr,
+      nullptr, ThrownTypes);
 
-  if (isDefinition)
+  if (IsDefinition)
     AllSubprograms.push_back(SP);
   trackIfUnresolved(SP);
   return SP;
+}
+
+DICommonBlock *DIBuilder::createCommonBlock(
+    DIScope *Scope, DIGlobalVariable *Decl, StringRef Name, DIFile *File,
+    unsigned LineNo) {
+  return DICommonBlock::get(
+      VMContext, Scope, Decl, Name, File, LineNo);
 }
 
 DINamespace *DIBuilder::createNameSpace(DIScope *Scope, StringRef Name,

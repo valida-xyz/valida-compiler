@@ -62,7 +62,7 @@ void test0() {
 // CHECK-NEXT:   br label %[[TRY_CONT_BB]]
 
 // CHECK: [[RETHROW_BB]]:
-// CHECK-NEXT:   call void @__cxa_rethrow() {{.*}} [ "funclet"(token %[[CATCHPAD]]) ]
+// CHECK-NEXT:   call void @llvm.wasm.rethrow.in.catch() {{.*}} [ "funclet"(token %[[CATCHPAD]]) ]
 // CHECK-NEXT:   unreachable
 
 // Single catch-all
@@ -191,7 +191,7 @@ void test5() {
 // CHECK-NEXT:   call void @__clang_call_terminate(i8* %[[EXN]]) {{.*}} [ "funclet"(token %[[CLEANUPPAD1]]) ]
 // CHECK-NEXT:   unreachable
 
-// CHECK-LABEL: define {{.*}} void @__clang_call_terminate(i8*)
+// CHECK-LABEL: define {{.*}} void @__clang_call_terminate(i8* %0)
 // CHECK-NEXT:   call i8* @__cxa_begin_catch(i8* %{{.*}})
 // CHECK-NEXT:   call void @_ZSt9terminatev()
 // CHECK-NEXT:   unreachable
@@ -232,7 +232,7 @@ void test6() {
 // CHECK:   catchret from %[[CATCHPAD]] to label %{{.*}}
 
 // CHECK: [[RETHROW_BB]]:
-// CHECK-NEXT:   invoke void @__cxa_rethrow() {{.*}} [ "funclet"(token %[[CATCHPAD]]) ]
+// CHECK-NEXT:   invoke void @llvm.wasm.rethrow.in.catch() {{.*}} [ "funclet"(token %[[CATCHPAD]]) ]
 // CHECK-NEXT:          to label %[[UNREACHABLE_BB:.*]] unwind label %[[EHCLEANUP_BB1:.*]]
 
 // CHECK: [[EHCLEANUP_BB2]]:
@@ -296,7 +296,7 @@ void test7() {
 
 // CHECK:   catchret from %[[CATCHPAD0]] to label
 
-// CHECK:   invoke void @__cxa_rethrow() {{.*}} [ "funclet"(token %[[CATCHPAD0]]) ]
+// CHECK:   invoke void @llvm.wasm.rethrow.in.catch() {{.*}} [ "funclet"(token %[[CATCHPAD0]]) ]
 
 // CHECK:   %[[CLEANUPPAD1:.*]] = cleanuppad within %[[CATCHPAD0]] []
 // CHECK:   cleanupret from %[[CLEANUPPAD1]] unwind label
@@ -368,11 +368,11 @@ void test8() {
 
 // CHECK:   catchret from %[[CATCHPAD1]] to label
 
-// CHECK:   invoke void @__cxa_rethrow() {{.*}} [ "funclet"(token %[[CATCHPAD1]]) ]
+// CHECK:   invoke void @llvm.wasm.rethrow.in.catch() {{.*}} [ "funclet"(token %[[CATCHPAD1]]) ]
 
 // CHECK:   catchret from %[[CATCHPAD0]] to label
 
-// CHECK:   call void @__cxa_rethrow() {{.*}} [ "funclet"(token %[[CATCHPAD0]]) ]
+// CHECK:   call void @llvm.wasm.rethrow.in.catch() {{.*}} [ "funclet"(token %[[CATCHPAD0]]) ]
 // CHECK:   unreachable
 
 // CHECK:   %[[CLEANUPPAD0:.*]] = cleanuppad within %[[CATCHPAD1]] []

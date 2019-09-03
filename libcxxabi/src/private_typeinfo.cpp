@@ -1,9 +1,8 @@
 //===----------------------- private_typeinfo.cpp -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -59,13 +58,12 @@ static inline
 bool
 is_equal(const std::type_info* x, const std::type_info* y, bool use_strcmp)
 {
-#ifndef _WIN32
+    // Use std::type_info's default comparison unless we've explicitly asked
+    // for strcmp.
     if (!use_strcmp)
-        return x == y;
-    return strcmp(x->name(), y->name()) == 0;
-#else
-    return (x == y) || (strcmp(x->name(), y->name()) == 0);
-#endif
+        return *x == *y;
+    // Still allow pointer equality to short circut.
+    return x == y || strcmp(x->name(), y->name()) == 0;
 }
 
 namespace __cxxabiv1
@@ -620,7 +618,6 @@ __dynamic_cast(const void *static_ptr, const __class_type_info *static_type,
                const __class_type_info *dst_type,
                std::ptrdiff_t src2dst_offset) {
     // Possible future optimization:  Take advantage of src2dst_offset
-    // Currently clang always sets src2dst_offset to -1 (no hint).
 
     // Get (dynamic_ptr, dynamic_type) from static_ptr
     void **vtable = *static_cast<void ** const *>(static_ptr);
@@ -650,7 +647,7 @@ __dynamic_cast(const void *static_ptr, const __class_type_info *static_type,
             // We get here only if there is some kind of visibility problem
             //   in client code.
             syslog(LOG_ERR, "dynamic_cast error 1: Both of the following type_info's "
-                    "should have public visibility.  At least one of them is hidden. %s" 
+                    "should have public visibility. At least one of them is hidden. %s"
                     ", %s.\n", static_type->name(), dynamic_type->name());
             // Redo the search comparing type_info's using strcmp
             info = {dst_type, static_ptr, static_type, src2dst_offset, 0};
@@ -673,7 +670,8 @@ __dynamic_cast(const void *static_ptr, const __class_type_info *static_type,
             info.path_dynamic_ptr_to_static_ptr == unknown)
         {
             syslog(LOG_ERR, "dynamic_cast error 2: One or more of the following type_info's "
-                            "has hidden visibility.  They should all have public visibility.  "
+                            "has hidden visibility or is defined in more than one translation "
+                            "unit. They should all have public visibility. "
                             "%s, %s, %s.\n", static_type->name(), dynamic_type->name(),
                     dst_type->name());
             // Redo the search comparing type_info's using strcmp

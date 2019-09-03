@@ -15,14 +15,15 @@ add_clang_library(clangTidyCERTModule
   VariadicFunctionDefCheck.cpp
 
   LINK_LIBS
-  clangAnalysis
   clangAST
   clangASTMatchers
   clangBasic
   clangLex
   clangTidy
+  clangTidyBugproneModule
   clangTidyGoogleModule
   clangTidyMiscModule
   clangTidyPerformanceModule
+  clangTidyReadabilityModule
   clangTidyUtils
   )

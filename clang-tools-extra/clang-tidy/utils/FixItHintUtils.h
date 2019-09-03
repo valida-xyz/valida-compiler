@@ -1,9 +1,8 @@
 //===--- FixItHintUtils.h - clang-tidy---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,10 +17,10 @@ namespace tidy {
 namespace utils {
 namespace fixit {
 
-/// \brief Creates fix to make ``VarDecl`` a reference by adding ``&``.
+/// Creates fix to make ``VarDecl`` a reference by adding ``&``.
 FixItHint changeVarDeclToReference(const VarDecl &Var, ASTContext &Context);
 
-/// \brief Creates fix to make ``VarDecl`` const qualified.
+/// Creates fix to make ``VarDecl`` const qualified.
 FixItHint changeVarDeclToConst(const VarDecl &Var);
 
 } // namespace fixit

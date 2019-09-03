@@ -1,9 +1,8 @@
 //==-- SystemZExpandPseudo.cpp - Expand pseudo instructions -------*- C++ -*-=//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -69,8 +68,8 @@ bool SystemZExpandPseudo::expandLOCRMux(MachineBasicBlock &MBB,
   const BasicBlock *BB = MBB.getBasicBlock();
   MachineInstr &MI = *MBBI;
   DebugLoc DL = MI.getDebugLoc();
-  unsigned DestReg = MI.getOperand(0).getReg();
-  unsigned SrcReg = MI.getOperand(2).getReg();
+  Register DestReg = MI.getOperand(0).getReg();
+  Register SrcReg = MI.getOperand(2).getReg();
   unsigned CCValid = MI.getOperand(3).getImm();
   unsigned CCMask = MI.getOperand(4).getImm();
 

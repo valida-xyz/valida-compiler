@@ -1,9 +1,8 @@
 //===- GVNSink.cpp - sink expressions into successors ---------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -239,7 +238,7 @@ public:
     SmallVector<std::pair<BasicBlock *, Value *>, 4> Ops;
     for (unsigned I = 0, E = PN->getNumIncomingValues(); I != E; ++I)
       Ops.push_back({PN->getIncomingBlock(I), PN->getIncomingValue(I)});
-    llvm::sort(Ops.begin(), Ops.end());
+    llvm::sort(Ops);
     for (auto &P : Ops) {
       Blocks.push_back(P.first);
       Values.push_back(P.second);
@@ -258,14 +257,14 @@ public:
   /// Create a PHI from an array of incoming values and incoming blocks.
   template <typename VArray, typename BArray>
   ModelledPHI(const VArray &V, const BArray &B) {
-    std::copy(V.begin(), V.end(), std::back_inserter(Values));
-    std::copy(B.begin(), B.end(), std::back_inserter(Blocks));
+    llvm::copy(V, std::back_inserter(Values));
+    llvm::copy(B, std::back_inserter(Blocks));
   }
 
   /// Create a PHI from [I[OpNum] for I in Insts].
   template <typename BArray>
   ModelledPHI(ArrayRef<Instruction *> Insts, unsigned OpNum, const BArray &B) {
-    std::copy(B.begin(), B.end(), std::back_inserter(Blocks));
+    llvm::copy(B, std::back_inserter(Blocks));
     for (auto *I : Insts)
       Values.push_back(I->getOperand(OpNum));
   }
@@ -442,6 +441,7 @@ public:
       break;
     case Instruction::Call:
     case Instruction::Invoke:
+    case Instruction::FNeg:
     case Instruction::Add:
     case Instruction::FAdd:
     case Instruction::Sub:
@@ -714,6 +714,15 @@ Optional<SinkingInstructionCandidate> GVNSink::analyzeInstructionForSinking(
   // FIXME: If any of these fail, we should partition up the candidates to
   // try and continue making progress.
   Instruction *I0 = NewInsts[0];
+
+  // If all instructions that are going to participate don't have the same
+  // number of operands, we can't do any useful PHI analysis for all operands.
+  auto hasDifferentNumOperands = [&I0](Instruction *I) {
+    return I->getNumOperands() != I0->getNumOperands();
+  };
+  if (any_of(NewInsts, hasDifferentNumOperands))
+    return None;
+
   for (unsigned OpNum = 0, E = I0->getNumOperands(); OpNum != E; ++OpNum) {
     ModelledPHI PHI(NewInsts, OpNum, ActivePreds);
     if (PHI.areAllIncomingValuesSame())
@@ -762,7 +771,7 @@ unsigned GVNSink::sinkBB(BasicBlock *BBEnd) {
   }
   if (Preds.size() < 2)
     return 0;
-  llvm::sort(Preds.begin(), Preds.end());
+  llvm::sort(Preds);
 
   unsigned NumOrigPreds = Preds.size();
   // We can only sink instructions through unconditional branches.
@@ -791,10 +800,7 @@ unsigned GVNSink::sinkBB(BasicBlock *BBEnd) {
     --LRI;
   }
 
-  std::stable_sort(
-      Candidates.begin(), Candidates.end(),
-      [](const SinkingInstructionCandidate &A,
-         const SinkingInstructionCandidate &B) { return A > B; });
+  llvm::stable_sort(Candidates, std::greater<SinkingInstructionCandidate>());
   LLVM_DEBUG(dbgs() << " -- Sinking candidates:\n"; for (auto &C
                                                          : Candidates) dbgs()
                                                     << "  " << C << "\n";);
@@ -859,7 +865,7 @@ void GVNSink::sinkLastInstruction(ArrayRef<BasicBlock *> Blocks,
   // Update metadata and IR flags.
   for (auto *I : Insts)
     if (I != I0) {
-      combineMetadataForCSE(I0, I);
+      combineMetadataForCSE(I0, I, true);
       I0->andIRFlags(I);
     }
 

@@ -1,9 +1,8 @@
 //===-- StreamFile.h --------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,19 +11,17 @@
 
 #include "lldb/Host/File.h"
 #include "lldb/Utility/Stream.h"
-#include "lldb/lldb-defines.h"      // for DISALLOW_COPY_AND_ASSIGN
-#include "lldb/lldb-enumerations.h" // for FilePermissions::eFilePermission...
+#include "lldb/lldb-defines.h"
+#include "lldb/lldb-enumerations.h"
 
-#include <stdint.h> // for uint32_t
-#include <stdio.h>  // for size_t, FILE
+#include <stdint.h>
+#include <stdio.h>
 
 namespace lldb_private {
 
 class StreamFile : public Stream {
 public:
-  //------------------------------------------------------------------
   // Constructors and Destructors
-  //------------------------------------------------------------------
   StreamFile();
 
   StreamFile(uint32_t flags, uint32_t addr_size, lldb::ByteOrder byte_order);
@@ -46,13 +43,11 @@ public:
 
   void Flush() override;
 
-  size_t Write(const void *s, size_t length) override;
 
 protected:
-  //------------------------------------------------------------------
   // Classes that inherit from StreamFile can see and modify these
-  //------------------------------------------------------------------
   File m_file;
+  size_t WriteImpl(const void *s, size_t length) override;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(StreamFile);

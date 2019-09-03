@@ -1,9 +1,8 @@
 //===-- X86InstrExtension.td - Sign and Zero Extensions ----*- tablegen -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -29,11 +28,11 @@ let hasSideEffects = 0 in {
 
   let Defs = [RAX], Uses = [EAX] in // RAX = signext(EAX)
   def CDQE : RI<0x98, RawFrm, (outs), (ins),
-               "{cltq|cdqe}", []>, Sched<[WriteALU]>;
+               "{cltq|cdqe}", []>, Sched<[WriteALU]>, Requires<[In64BitMode]>;
 
   let Defs = [RAX,RDX], Uses = [RAX] in // RDX:RAX = signext(RAX)
   def CQO  : RI<0x99, RawFrm, (outs), (ins),
-                "{cqto|cqo}", []>, Sched<[WriteALU]>;
+                "{cqto|cqo}", []>, Sched<[WriteALU]>, Requires<[In64BitMode]>;
 }
 
 // Sign/Zero extenders
@@ -162,6 +161,26 @@ def MOVSX64rm32: RI<0x63, MRMSrcMem, (outs GR64:$dst), (ins i32mem:$src),
                     "movs{lq|xd}\t{$src, $dst|$dst, $src}",
                     [(set GR64:$dst, (sextloadi64i32 addr:$src))]>,
                     Sched<[WriteALULd]>, Requires<[In64BitMode]>;
+
+// These instructions exist as a consequence of operand size prefix having
+// control of the destination size, but not the input size. Only support them
+// for the disassembler.
+let isCodeGenOnly = 1, ForceDisassemble = 1, hasSideEffects = 0 in {
+def MOVSX16rr32: I<0x63, MRMSrcReg, (outs GR16:$dst), (ins GR32:$src),
+                   "movs{lq|xd}\t{$src, $dst|$dst, $src}", []>,
+                   Sched<[WriteALU]>, OpSize16, Requires<[In64BitMode]>;
+def MOVSX32rr32: I<0x63, MRMSrcReg, (outs GR32:$dst), (ins GR32:$src),
+                   "movs{lq|xd}\t{$src, $dst|$dst, $src}", []>,
+                   Sched<[WriteALU]>, OpSize32, Requires<[In64BitMode]>;
+let mayLoad = 1 in {
+def MOVSX16rm32: I<0x63, MRMSrcMem, (outs GR16:$dst), (ins i32mem:$src),
+                   "movs{lq|xd}\t{$src, $dst|$dst, $src}", []>,
+                   Sched<[WriteALULd]>, OpSize16, Requires<[In64BitMode]>;
+def MOVSX32rm32: I<0x63, MRMSrcMem, (outs GR32:$dst), (ins i32mem:$src),
+                   "movs{lq|xd}\t{$src, $dst|$dst, $src}", []>,
+                   Sched<[WriteALULd]>, OpSize32, Requires<[In64BitMode]>;
+} // mayLoad = 1
+} // isCodeGenOnly = 1, ForceDisassemble = 1, hasSideEffects = 0
 
 // movzbq and movzwq encodings for the disassembler
 let hasSideEffects = 0 in {

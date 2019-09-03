@@ -1,9 +1,8 @@
 //===-- Block.cpp -----------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,9 +12,10 @@
 #include "lldb/Core/Section.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/SymbolFile.h"
-#include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Utility/Log.h"
+
+#include <memory>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -83,7 +83,7 @@ void Block::Dump(Stream *s, addr_t base_addr, int32_t depth,
     size_t num_ranges = m_ranges.GetSize();
     for (size_t i = 0; i < num_ranges; ++i) {
       const Range &range = m_ranges.GetEntryRef(i);
-      if (parent_block != nullptr && parent_block->Contains(range) == false)
+      if (parent_block != nullptr && !parent_block->Contains(range))
         *s << '!';
       else
         *s << ' ';
@@ -211,6 +211,21 @@ Block *Block::GetInlinedParent() {
   return nullptr;
 }
 
+Block *Block::GetContainingInlinedBlockWithCallSite(
+    const Declaration &find_call_site) {
+  Block *inlined_block = GetContainingInlinedBlock();
+
+  while (inlined_block) {
+    const auto *function_info = inlined_block->GetInlinedFunctionInfo();
+
+    if (function_info &&
+        function_info->GetCallSite().FileAndLineEqual(find_call_site))
+      return inlined_block;
+    inlined_block = inlined_block->GetInlinedParent();
+  }
+  return nullptr;
+}
+
 bool Block::GetRangeContainingOffset(const addr_t offset, Range &range) {
   const Range *range_ptr = m_ranges.FindEntryThatContains(offset);
   if (range_ptr) {
@@ -321,22 +336,24 @@ void Block::AddRange(const Range &range) {
 
       const Declaration &func_decl = func_type->GetDeclaration();
       if (func_decl.GetLine()) {
-        log->Printf("warning: %s:%u block {0x%8.8" PRIx64
-                    "} has range[%u] [0x%" PRIx64 " - 0x%" PRIx64
-                    ") which is not contained in parent block {0x%8.8" PRIx64
-                    "} in function {0x%8.8" PRIx64 "} from %s",
-                    func_decl.GetFile().GetPath().c_str(), func_decl.GetLine(),
-                    GetID(), (uint32_t)m_ranges.GetSize(), block_start_addr,
-                    block_end_addr, parent_block->GetID(), function->GetID(),
-                    module_sp->GetFileSpec().GetPath().c_str());
+        LLDB_LOGF(log,
+                  "warning: %s:%u block {0x%8.8" PRIx64
+                  "} has range[%u] [0x%" PRIx64 " - 0x%" PRIx64
+                  ") which is not contained in parent block {0x%8.8" PRIx64
+                  "} in function {0x%8.8" PRIx64 "} from %s",
+                  func_decl.GetFile().GetPath().c_str(), func_decl.GetLine(),
+                  GetID(), (uint32_t)m_ranges.GetSize(), block_start_addr,
+                  block_end_addr, parent_block->GetID(), function->GetID(),
+                  module_sp->GetFileSpec().GetPath().c_str());
       } else {
-        log->Printf("warning: block {0x%8.8" PRIx64
-                    "} has range[%u] [0x%" PRIx64 " - 0x%" PRIx64
-                    ") which is not contained in parent block {0x%8.8" PRIx64
-                    "} in function {0x%8.8" PRIx64 "} from %s",
-                    GetID(), (uint32_t)m_ranges.GetSize(), block_start_addr,
-                    block_end_addr, parent_block->GetID(), function->GetID(),
-                    module_sp->GetFileSpec().GetPath().c_str());
+        LLDB_LOGF(log,
+                  "warning: block {0x%8.8" PRIx64 "} has range[%u] [0x%" PRIx64
+                  " - 0x%" PRIx64
+                  ") which is not contained in parent block {0x%8.8" PRIx64
+                  "} in function {0x%8.8" PRIx64 "} from %s",
+                  GetID(), (uint32_t)m_ranges.GetSize(), block_start_addr,
+                  block_end_addr, parent_block->GetID(), function->GetID(),
+                  module_sp->GetFileSpec().GetPath().c_str());
       }
     }
     parent_block->AddRange(range);
@@ -364,18 +381,18 @@ void Block::AddChild(const BlockSP &child_block_sp) {
 void Block::SetInlinedFunctionInfo(const char *name, const char *mangled,
                                    const Declaration *decl_ptr,
                                    const Declaration *call_decl_ptr) {
-  m_inlineInfoSP.reset(
-      new InlineFunctionInfo(name, mangled, decl_ptr, call_decl_ptr));
+  m_inlineInfoSP = std::make_shared<InlineFunctionInfo>(name, mangled, decl_ptr,
+                                                        call_decl_ptr);
 }
 
 VariableListSP Block::GetBlockVariableList(bool can_create) {
-  if (m_parsed_block_variables == false) {
+  if (!m_parsed_block_variables) {
     if (m_variable_list_sp.get() == nullptr && can_create) {
       m_parsed_block_variables = true;
       SymbolContext sc;
       CalculateSymbolContext(&sc);
       assert(sc.module_sp);
-      sc.module_sp->GetSymbolVendor()->ParseVariablesForContext(sc);
+      sc.module_sp->GetSymbolFile()->ParseVariablesForContext(sc);
     }
   }
   return m_variable_list_sp;
@@ -402,7 +419,7 @@ Block::AppendBlockVariables(bool can_create, bool get_child_block_variables,
     collection::const_iterator pos, end = m_children.end();
     for (pos = m_children.begin(); pos != end; ++pos) {
       Block *child_block = pos->get();
-      if (stop_if_child_block_is_inlined_function == false ||
+      if (!stop_if_child_block_is_inlined_function ||
           child_block->GetInlinedFunctionInfo() == nullptr) {
         num_variables_added += child_block->AppendBlockVariables(
             can_create, get_child_block_variables,
@@ -444,19 +461,15 @@ uint32_t Block::AppendVariables(bool can_create, bool get_parent_variables,
   return num_variables_added;
 }
 
+SymbolFile *Block::GetSymbolFile() {
+  if (ModuleSP module_sp = CalculateSymbolContextModule())
+    return module_sp->GetSymbolFile();
+  return nullptr;
+}
+
 CompilerDeclContext Block::GetDeclContext() {
-  ModuleSP module_sp = CalculateSymbolContextModule();
-
-  if (module_sp) {
-    SymbolVendor *sym_vendor = module_sp->GetSymbolVendor();
-
-    if (sym_vendor) {
-      SymbolFile *sym_file = sym_vendor->GetSymbolFile();
-
-      if (sym_file)
-        return sym_file->GetDeclContextForUID(GetID());
-    }
-  }
+  if (SymbolFile *sym_file = GetSymbolFile())
+    return sym_file->GetDeclContextForUID(GetID());
   return CompilerDeclContext();
 }
 

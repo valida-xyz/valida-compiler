@@ -1,9 +1,8 @@
 //===- lib/MC/MachObjectWriter.cpp - Mach-O File Writer -------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,6 +13,7 @@
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCAssembler.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixupKindInfo.h"
@@ -449,11 +449,25 @@ void MachObjectWriter::writeLinkerOptionsLoadCommand(
   assert(W.OS.tell() - Start == Size);
 }
 
+static bool isFixupTargetValid(const MCValue &Target) {
+  // Target is (LHS - RHS + cst).
+  // We don't support the form where LHS is null: -RHS + cst
+  if (!Target.getSymA() && Target.getSymB())
+    return false;
+  return true;
+}
+
 void MachObjectWriter::recordRelocation(MCAssembler &Asm,
                                         const MCAsmLayout &Layout,
                                         const MCFragment *Fragment,
                                         const MCFixup &Fixup, MCValue Target,
                                         uint64_t &FixedValue) {
+  if (!isFixupTargetValid(Target)) {
+    Asm.getContext().reportError(Fixup.getLoc(),
+                                 "unsupported relocation expression");
+    return;
+  }
+
   TargetObjectWriter->recordRelocation(this, Asm, Layout, Fragment, Fixup,
                                        Target, FixedValue);
 }
@@ -597,8 +611,8 @@ void MachObjectWriter::computeSymbolTable(
   }
 
   // External and undefined symbols are required to be in lexicographic order.
-  llvm::sort(ExternalSymbolData.begin(), ExternalSymbolData.end());
-  llvm::sort(UndefinedSymbolData.begin(), UndefinedSymbolData.end());
+  llvm::sort(ExternalSymbolData);
+  llvm::sort(UndefinedSymbolData);
 
   // Set the symbol indices.
   Index = 0;
@@ -846,18 +860,27 @@ uint64_t MachObjectWriter::writeObject(MCAssembler &Asm,
 
   // Write out the deployment target information, if it's available.
   if (VersionInfo.Major != 0) {
-    assert(VersionInfo.Update < 256 && "unencodable update target version");
-    assert(VersionInfo.Minor < 256 && "unencodable minor target version");
-    assert(VersionInfo.Major < 65536 && "unencodable major target version");
-    uint32_t EncodedVersion = VersionInfo.Update | (VersionInfo.Minor << 8) |
-      (VersionInfo.Major << 16);
+    auto EncodeVersion = [](VersionTuple V) -> uint32_t {
+      assert(!V.empty() && "empty version");
+      unsigned Update = V.getSubminor() ? *V.getSubminor() : 0;
+      unsigned Minor = V.getMinor() ? *V.getMinor() : 0;
+      assert(Update < 256 && "unencodable update target version");
+      assert(Minor < 256 && "unencodable minor target version");
+      assert(V.getMajor() < 65536 && "unencodable major target version");
+      return Update | (Minor << 8) | (V.getMajor() << 16);
+    };
+    uint32_t EncodedVersion = EncodeVersion(
+        VersionTuple(VersionInfo.Major, VersionInfo.Minor, VersionInfo.Update));
+    uint32_t SDKVersion = !VersionInfo.SDKVersion.empty()
+                              ? EncodeVersion(VersionInfo.SDKVersion)
+                              : 0;
     if (VersionInfo.EmitBuildVersion) {
       // FIXME: Currently empty tools. Add clang version in the future.
       W.write<uint32_t>(MachO::LC_BUILD_VERSION);
       W.write<uint32_t>(sizeof(MachO::build_version_command));
       W.write<uint32_t>(VersionInfo.TypeOrPlatform.Platform);
       W.write<uint32_t>(EncodedVersion);
-      W.write<uint32_t>(0);         // SDK version.
+      W.write<uint32_t>(SDKVersion);
       W.write<uint32_t>(0);         // Empty tools list.
     } else {
       MachO::LoadCommandType LCType
@@ -865,7 +888,7 @@ uint64_t MachObjectWriter::writeObject(MCAssembler &Asm,
       W.write<uint32_t>(LCType);
       W.write<uint32_t>(sizeof(MachO::version_min_command));
       W.write<uint32_t>(EncodedVersion);
-      W.write<uint32_t>(0);         // reserved.
+      W.write<uint32_t>(SDKVersion);
     }
   }
 
@@ -1020,6 +1043,6 @@ uint64_t MachObjectWriter::writeObject(MCAssembler &Asm,
 std::unique_ptr<MCObjectWriter>
 llvm::createMachObjectWriter(std::unique_ptr<MCMachObjectTargetWriter> MOTW,
                              raw_pwrite_stream &OS, bool IsLittleEndian) {
-  return llvm::make_unique<MachObjectWriter>(std::move(MOTW), OS,
+  return std::make_unique<MachObjectWriter>(std::move(MOTW), OS,
                                              IsLittleEndian);
 }

@@ -1,9 +1,8 @@
 //===--- TypeTraits.cpp - clang-tidy---------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -55,6 +54,10 @@ bool recordIsTriviallyDefaultConstructible(const RecordDecl &RecordDecl,
   // Non-C++ records are always trivially constructible.
   if (!ClassDecl)
     return true;
+  // It is impossible to detemine whether an ill-formed decl is trivially
+  // constructible.
+  if (RecordDecl.isInvalidDecl())
+    return false;
   // A class with a user-provided default constructor is not trivially
   // constructible.
   if (ClassDecl->hasUserProvidedDefaultConstructor())

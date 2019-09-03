@@ -43,7 +43,7 @@ as they become available.</p>
 Specifications</a> that will help drive the future of the C++ programming
 language.</p>
 
-<p>The <a href="http://llvm.org/bugs/">LLVM bug tracker</a> contains Clang
+<p>The <a href="https://bugs.llvm.org/">LLVM bug tracker</a> contains Clang
 C++ components that track known bugs with Clang's language conformance in
 each language mode.</p>
 
@@ -74,9 +74,13 @@ with <a href="http://libcxx.llvm.org/">libc++</a> or with gcc's libstdc++.
     <th>Available in Clang?</th>
  </tr>
      <tr>
-      <td>Rvalue references</td>
+      <td rowspan="2">Rvalue references</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n2118.html">N2118</a></td>
       <td class="full" align="center">Clang 2.9</td>
+      <tr> <!-- from Kona 2019-->
+        <td><a href="http://wg21.link/p1825r0">P1825R0</a> (<a href="#dr">DR</a>)</td>
+        <td class="none" align="center">No</td>
+      </tr>
     </tr>
     <tr>
       <td>&nbsp;&nbsp;&nbsp;&nbsp;Rvalue references for <code>*this</code></td>
@@ -104,10 +108,14 @@ with <a href="http://libcxx.llvm.org/">libc++</a> or with gcc's libstdc++.
       <td class="full" align="center">Clang 2.9</td>
     </tr>
     <tr>
-      <td>Initializer lists</td>
+      <td rowspan="2">Initializer lists</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2672.htm">N2672</a></td>
       <td class="full" align="center">Clang 3.1</td>
     </tr>
+      <tr> <!-- from Kona 2019-->
+        <td><a href="http://wg21.link/p1009r2">P1009R2</a> (<a href="#dr">DR</a>)</td>
+        <td class="svn" align="center">SVN</td>
+      </tr>
     <tr>
       <td>Static assertions</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2004/n1720.html">N1720</a></td>
@@ -207,7 +215,7 @@ with <a href="http://libcxx.llvm.org/">libc++</a> or with gcc's libstdc++.
       <tr>
         <!-- from Albuquerque 2017 -->
         <td><a href="http://wg21.link/p0859r0">P0859R0</a> (<a href="#dr">DR</a>)</td>
-        <td class="none" align="center">No</td>
+        <td class="full" align="center">Clang 8</td>
       </tr>
     <tr>
       <td>Alignment support</td>
@@ -275,10 +283,14 @@ with <a href="http://libcxx.llvm.org/">libc++</a> or with gcc's libstdc++.
       <td class="full" align="center">Clang 3.0</td>
     </tr>
     <tr>
-      <td>Defaulted functions</td>
+      <td rowspan="2">Defaulted functions</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2346.htm">N2346</a></td>
       <td class="full" align="center">Clang 3.0</td>
     </tr>
+      <tr> <!-- from Kona 2019-->
+        <td><a href="http://wg21.link/p1286r2">P1286R2</a> (<a href="#dr">DR</a>)</td>
+        <td class="svn" align="center">SVN</td>
+      </tr>
     <tr>
       <td>Deleted functions</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2346.htm">N2346</a></td>
@@ -318,7 +330,7 @@ with <a href="http://libcxx.llvm.org/">libc++</a> or with gcc's libstdc++.
       <tr>
         <!-- from Jacksonville 2018 -->
         <td><a href="http://wg21.link/p0962r1">P0962R1</a> (<a href="#dr">DR</a>)</td>
-        <td class="none" align="center">No</td>
+        <td class="full" align="center">Clang 8</td>
       </tr>
     <tr>
       <td>Explicit virtual overrides</td>
@@ -646,10 +658,14 @@ version 3.7.
       <td class="full" align="center">Clang 3.9</td>
     </tr>
     <tr>
-      <td><tt>[[nodiscard]]</tt> attribute</td>
+      <td rowspan="2"><tt>[[nodiscard]]</tt> attribute</td>
       <td><a href="http://wg21.link/p0189r1">P0189R1</a></td>
       <td class="full" align="center">Clang 3.9</td>
     </tr>
+      <tr> <!-- from Cologne 2019 -->
+        <td><a href="http://wg21.link/p1771r1">P1771R1</a> (<a href="#dr">DR</a>)</td>
+        <td class="svn" align="center">SVN</td>
+      </tr>
     <tr>
       <td><tt>[[maybe_unused]]</tt> attribute</td>
       <td><a href="http://wg21.link/p0212r1">P0212R1</a></td>
@@ -707,7 +723,7 @@ version 3.7.
       <tr>
         <!-- from Kona 2017 -->
         <td><a href="http://wg21.link/p0620r1">P0620R0</a> (<a href="#dr">DR</a>)</td>
-        <td class="svn" align="center">SVN</td>
+        <td class="full" align="center">Clang 7</td>
       </tr>
       <tr>
         <!-- from Toronto 2017 -->
@@ -755,12 +771,12 @@ version 3.7.
       <tr>
         <!-- from Jacksonville 2018 -->
         <td><a href="http://wg21.link/p0961r1">P0961R1</a> (<a href="#dr">DR</a>)</td>
-        <td class="none" align="center">No</td>
+        <td class="full" align="center">Clang 8</td>
       </tr>
       <tr>
         <!-- from Jacksonville 2018 -->
         <td><a href="http://wg21.link/p0969r0">P0969R0</a> (<a href="#dr">DR</a>)</td>
-        <td class="none" align="center">No</td>
+        <td class="full" align="center">Clang 8</td>
       </tr>
     <tr>
       <td>Separate variable and condition for <tt>if</tt> and <tt>switch</tt></td>
@@ -850,44 +866,59 @@ as the draft C++2a standard evolves.
     </tr>
       <tr> <!-- from Rapperswil -->
         <td><a href="http://wg21.link/p1042r1">P1042R1</a></td>
-        <td class="partial" align="center">Partial</td>
+        <td class="svn" align="center">SVN</td>
       </tr>
     <tr>
       <td>Designated initializers</td>
       <td><a href="http://wg21.link/p0329r4">P0329R4</a></td>
-      <td class="partial" align="center">Partial (extension)</td>
+      <td class="svn" align="center">SVN (Clang 10)</td>
     </tr>
     <tr>
       <td><i>template-parameter-list</i> for generic lambdas</td>
       <td><a href="http://wg21.link/p0428r2">P0428R2</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr id="p0734">
-      <td rowspan="2">Concepts</td>
+      <td rowspan="7">Concepts</td>
       <td><a href="http://wg21.link/p0734r0">P0734R0</a></td>
-      <td rowspan="2" class="none" align="center">No</td>
+      <td rowspan="7" class="none" align="center">No</td>
     </tr>
       <tr> <!-- from Albuquerque -->
         <td><a href="http://wg21.link/p0857r0">P0857R0</a></td>
+      </tr>
+      <tr> <!-- from San Diego -->
+        <td><a href="http://wg21.link/p1084r2">P1084R2</a></td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1141r2">P1414R2</a></td>
+      </tr>
+      <tr> <!-- from Cologne -->
+        <td><a href="http://wg21.link/p0848r3">P0848R3</a></td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1616r1">P1616R1</a></td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1452r2">P1452R2</a></td>
       </tr>
     <!-- Albuquerque papers -->
     <tr>
       <td>Range-based for statements with initializer</td>
       <td><a href="http://wg21.link/p0614r1">P0614R1</a></td>
-      <td class="none" align="center">No</td>
+      <td class="full" align="center">Clang 8</td>
     </tr>
     <tr>
       <td>ADL and function templates that are not visible</td>
       <td><a href="http://wg21.link/p0846r0">P0846R0</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr>
       <td><tt>const</tt> mismatch with defaulted copy constructor</td>
       <td><a href="http://wg21.link/p0641r2">P0641R2</a></td>
-      <td class="none" align="center">No</td>
+      <td class="full" align="center">Clang 8</td>
     </tr>
     <tr>
-      <td rowspan="3">Consistent comparison (<tt>operator&lt;=&gt;</tt>)</td>
+      <td rowspan="6">Consistent comparison (<tt>operator&lt;=&gt;</tt>)</td>
       <td><a href="http://wg21.link/p0515r3">P0515R3</a></td>
       <td rowspan="3" class="partial" align="center">Partial</td>
     </tr>
@@ -897,6 +928,16 @@ as the draft C++2a standard evolves.
       <tr> <!-- from Rapperswil -->
         <td><a href="http://wg21.link/p1120r0">P1120R0</a></td>
       </tr>
+      <tr> <!-- from Kona 2019 -->
+        <td><a href="http://wg21.link/p1185r2">P1185R2</a></td>
+        <td rowspan="3" class="none" align="center">No</td>
+      </tr>
+      <tr> <!-- from Cologne -->
+        <td><a href="http://wg21.link/p1186r3">P1186R3</a></td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1630r1">P1630R1</a></td>
+      </tr>
     <tr>
       <td>Access checking on specializations</td>
       <td><a href="http://wg21.link/p0692r1">P0692R1</a></td>
@@ -905,7 +946,7 @@ as the draft C++2a standard evolves.
     <tr>
       <td>Default constructible and assignable stateless lambdas</td>
       <td><a href="http://wg21.link/p0624r2">P0624R2</a></td>
-      <td class="none" align="center">No</td>
+      <td class="full" align="center">Clang 8</td>
     </tr>
     <tr>
       <td>Lambdas in unevaluated contexts</td>
@@ -916,7 +957,7 @@ as the draft C++2a standard evolves.
     <tr>
       <td><tt>[[no_unique_address]]</tt> attribute</td>
       <td><a href="http://wg21.link/p0840r2">P0840R2</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr>
       <td><tt>[[likely]]</tt> and <tt>[[unlikely]]</tt> attributes</td>
@@ -931,7 +972,7 @@ as the draft C++2a standard evolves.
     <tr>
       <td>Pack expansion in lambda <i>init-capture</i></td>
       <td><a href="http://wg21.link/p0780r2">P0780R2</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <!-- Rapperswil papers -->
     <tr>
@@ -945,19 +986,37 @@ as the draft C++2a standard evolves.
       <td class="full" align="center">Clang 6</td>
     </tr>
     <tr>
-      <td>Virtual function calls in constant expressions</td>
+      <td rowspan="7">Relaxations of <tt>constexpr</tt> restrictions</td>
       <td><a href="http://wg21.link/p1064r0">P1064R0</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
+      <tr> <!-- from San Diego -->
+        <td><a href="http://wg21.link/p1002r1">P1002R1</a></td>
+        <td class="full" align="center">Clang 8</td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1327r1">P1327R1</a></td>
+        <td rowspan="2" class="svn" align="center">SVN</td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1330r0">P1330R0</a></td>
+      </tr>
+      <tr> <!-- from Cologne -->
+        <td><a href="http://wg21.link/p1331r2">P1331R2</a></td>
+        <td class="none" align="center">No</td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1668r1">P1668R1</a></td>
+        <td class="svn" align="center">SVN</td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p0784r7">P0784R7</a></td>
+        <td class="none" align="center">No</td>
+      </tr>
     <tr>
       <td>Prohibit aggregates with user-declared constructors</td>
       <td><a href="http://wg21.link/p1008r1">P1008R1</a></td>
-      <td class="none" align="center">No</td>
-    </tr>
-    <tr>
-      <td>Contracts</td>
-      <td><a href="http://wg21.link/p0542r5">P0542R5</a></td>
-      <td class="none" align="center">No</td>
+      <td class="full" align="center">Clang 8</td>
     </tr>
     <tr>
       <td>Feature test macros</td>
@@ -967,9 +1026,124 @@ as the draft C++2a standard evolves.
     <tr>
       <td><tt>explicit(bool)</tt></td>
       <td><a href="http://wg21.link/p0892r2">P0892R2</a></td>
+      <td class="svn" align="center">SVN</td>
+    </tr>
+    <!-- San Diego papers -->
+    <tr>
+      <td>Signed integers are two's complement</td>
+      <td><a href="http://wg21.link/p1236r1">P1236R1</a></td>
+      <td class="svn" align="center">SVN</td>
+    </tr>
+    <tr>
+      <td><tt>char8_t</tt></td>
+      <td><a href="http://wg21.link/p0482r6">P0482R6</a></td>
+      <td class="full" align="center">Clang 7 <a href="#p0482">(11)</a></td>
+    </tr>
+    <tr>
+      <td>Immediate functions (<tt>consteval</tt>)</td>
+      <td><a href="http://wg21.link/p1073r3">P1073R3</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td><tt>std::is_constant_evaluated</tt></td>
+      <td><a href="http://wg21.link/p0595r2">P0595R2</a></td>
+      <td class="svn" align="center">SVN</td>
+    </tr>
+    <tr>
+      <td>Nested inline namespaces</td>
+      <td><a href="http://wg21.link/p1094r2">P1094R2</a></td>
+      <td class="full" align="center">Clang 8</td>
+    </tr>
+    <!-- Kona 2019 papers -->
+    <tr>
+      <td rowspan="2">Structured binding extensions</td>
+      <td><a href="http://wg21.link/p1091r3">P1091R3</a></td>
+      <td rowspan="2" class="partial" align="center">Partial</td>
+    </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1381r1">P1381R1</a></td>
+      </tr>
+    <tr>
+      <td rowspan="2">Stronger Unicode requirements</td>
+      <td><a href="http://wg21.link/p1041r4">P1041R4</a></td>
+      <td rowspan="2" class="full" align="center">Yes</td>
+    </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1139r2">P1139R2</a></td>
+      </tr>
+    <tr>
+      <td>Parenthesized initialization of aggregates</td>
+      <td><a href="http://wg21.link/p0960r3">P0960R3</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td rowspan="4">Modules</td>
+      <td><a href="http://wg21.link/p1103r3">P1103R3</a></td>
+      <td class="partial" align="center">Partial</td>
+    </tr>
+      <tr> <!-- from Cologne -->
+        <td><a href="http://wg21.link/p1766r1">P1766R1</a> (<a href="#dr">DR</a>)</td>
+        <td rowspan="3" class="none" align="center">No</td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1811r0">P1811R0</a></td>
+      </tr>
+      <tr>
+        <td><a href="http://wg21.link/p1703r1">P1703R1</a></td>
+      </tr>
+    <tr>
+      <td>Coroutines</td>
+      <td><a href="http://wg21.link/p0912r5">P0912R5</a></td>
+      <td class="partial" align="center">Partial</td>
+    </tr>
+    <!-- Cologne 2019 papers -->
+    <tr>
+      <td>Deprecate <tt>a[b,c]</tt></td>
+      <td><a href="http://wg21.link/p1161r3">P1161R3</a></td>
+      <td class="svn" align="center">SVN</td>
+    </tr>
+    <tr>
+      <td>Deprecate some problematic uses of <tt>volatile</tt></td>
+      <td><a href="http://wg21.link/p1152r4">P1152R4</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td><tt>[[nodiscard("with reason")]]</tt></td>
+      <td><a href="http://wg21.link/p1301r4">P1301R4</a></td>
+      <td class="svn" align="center">SVN</td>
+    </tr>
+    <tr>
+      <td><tt>using enum</tt></td>
+      <td><a href="http://wg21.link/p1099r5">P1099R5</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td>Class template argument deduction for aggregates</td>
+      <td><a href="http://wg21.link/p1816r0">P1816R0</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td>Class template argument deduction for alias templates</td>
+      <td><a href="http://wg21.link/p1814r0">P1814R0</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td>Permit conversions to arrays of unknown bound</td>
+      <td><a href="http://wg21.link/p0388r4">P0388R4</a></td>
+      <td class="none" align="center">No</td>
+    </tr>
+    <tr>
+      <td><tt>constinit</tt></td>
+      <td><a href="http://wg21.link/p1143r2">P1143R2</a></td>
       <td class="none" align="center">No</td>
     </tr>
 </table>
+
+<p>
+<span id="p0482">(11): Prior to Clang 8, this feature is not enabled by
+<tt>-std=c++2a</tt>, but can be enabled with <tt>-fchar8_t</tt>.
+</span>
+</p>
 </details>
 
 <h2 id="dr">Defect reports</h2>
@@ -1002,9 +1176,9 @@ and library features that are not part of standard C++.</p>
     <th>Available in Clang?</th>
  </tr>
     <tr id="sd6">
-      <td rowspan="5">SD-6: SG10 feature test recommendations</td>
-      <td rowspan="5"><a href="http://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations">SD-6</a></td>
-      <td rowspan="5">N/A</td>
+      <td rowspan="6">SD-6: SG10 feature test recommendations</td>
+      <td rowspan="6"><a href="http://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations">SD-6</a></td>
+      <td rowspan="6">N/A</td>
       <td class="full" align="center">
         Clang 3.4 (<a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3745">N3745</a>)</br>
       </td>
@@ -1025,8 +1199,13 @@ and library features that are not part of standard C++.</p>
       </td>
     </tr>
     <tr>
-      <td class="svn" align="center">
-        SVN (<a href="http://wg21.link/p0096r5">P0096R5</a>)</a>
+      <td class="full" align="center">
+        Clang 7 (<a href="http://wg21.link/p0096r5">P0096R5</a>)</a>
+      </td>
+    </tr>
+    <tr>
+      <td class="partial" align="center">
+        WIP (<a href="http://wg21.link/p1353r0">P1353R0</a>)
       </td>
     </tr>
     <!-- FIXME: Implement latest recommendations.
@@ -1050,11 +1229,15 @@ and library features that are not part of standard C++.</p>
       <td class="na" align="center">Superseded by <a href="#p0734">P0734R0</a></td>
     </tr>
     <tr>
-      <!-- track unimplemented Coroutines features: p0913r1 p0914r1 -->
-      <td>[DRAFT TS] Coroutines</td>
-      <td><a href="https://isocpp.org/files/papers/N4663.pdf">N4663</a></td>
+      <!-- track unimplemented Coroutines features: p0913r1 p0914r1 p1356r0 -->
+      <td rowspan="2">[TS] Coroutines</td>
+      <td rowspan="2"><a href="https://isocpp.org/files/papers/N4663.pdf">N4663</a></td>
       <td><tt>-fcoroutines-ts<br>-stdlib=libc++</tt></td>
       <td class="full" align="center">Clang 5</td>
+    </tr>
+    <tr>
+      <td><tt>-std=c++2a<br>-stdlib=libc++</tt></td>
+      <td class="na" align="center">Superseded by <a href="#p0912">P0912R5</a></td>
     </tr>
     <tr>
       <td>[TS] Library Fundamentals, Version 1 (invocation type traits)</td>
@@ -1072,7 +1255,7 @@ and library features that are not part of standard C++.</p>
       <td>[TS] Modules</td>
       <td><a href="http://wg21.link/n4720">N4720</a></td>
       <td><tt>-fmodules-ts</tt></td>
-      <td class="none" align="center">WIP</td>
+      <td class="na" align="center">Superseded by <a href="#p1103">P1103R3</a></td>
     </tr>
     <tr>
       <td>[DRAFT TS] Reflection</td>

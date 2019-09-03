@@ -1,3 +1,4 @@
+// REQUIRES: static-analyzer
 // RUN: %check_clang_tidy %s google-explicit-constructor,clang-diagnostic-unused-variable,clang-analyzer-core.UndefinedBinaryOperatorResult %t -- -extra-arg=-Wunused-variable -- -I%S/Inputs/nolint
 
 #include "trigger_warning.h"
@@ -30,6 +31,7 @@ void f() {
   int i;
 // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: unused variable 'i' [clang-diagnostic-unused-variable]
   int j; // NOLINT
+  int k; // NOLINT(clang-diagnostic-unused-variable)
 }
 
 #define MACRO(X) class X { X(int i); };
@@ -46,4 +48,4 @@ MACRO_NOLINT
 #define DOUBLE_MACRO MACRO(H) // NOLINT
 DOUBLE_MACRO
 
-// CHECK-MESSAGES: Suppressed 12 warnings (12 NOLINT)
+// CHECK-MESSAGES: Suppressed 13 warnings (13 NOLINT)

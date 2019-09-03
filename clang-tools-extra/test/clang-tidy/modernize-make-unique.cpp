@@ -1,5 +1,4 @@
-// RUN: %check_clang_tidy %s modernize-make-unique %t -- -- -std=c++14 \
-// RUN:   -I%S/Inputs/modernize-smart-ptr
+// RUN: %check_clang_tidy -std=c++14-or-later %s modernize-make-unique %t -- -- -I %S/Inputs/modernize-smart-ptr
 
 #include "unique_ptr.h"
 #include "initializer_list.h"
@@ -32,6 +31,7 @@ struct MyVector {
 
 struct Empty {};
 
+
 struct E {
   E(std::initializer_list<int>);
   E();
@@ -56,6 +56,10 @@ struct H {
 
 struct I {
   I(G);
+};
+
+struct J {
+  J(E e, int);
 };
 
 namespace {
@@ -109,6 +113,19 @@ void basic() {
   auto P3 = std::unique_ptr<int>(new int());
   // CHECK-MESSAGES: :[[@LINE-1]]:13: warning: use std::make_unique instead
   // CHECK-FIXES: auto P3 = std::make_unique<int>();
+
+  std::unique_ptr<int> P4 = std::unique_ptr<int>((new int));
+  // CHECK-MESSAGES: :[[@LINE-1]]:29: warning: use std::make_unique instead [modernize-make-unique]
+  // CHECK-FIXES: std::unique_ptr<int> P4 = std::make_unique<int>();
+  P4.reset((new int));
+  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: use std::make_unique instead [modernize-make-unique]
+  // CHECK-FIXES: P4 = std::make_unique<int>();
+  std::unique_ptr<int> P5 = std::unique_ptr<int>((((new int))));
+  // CHECK-MESSAGES: :[[@LINE-1]]:29: warning: use std::make_unique instead [modernize-make-unique]
+  // CHECK-FIXES: std::unique_ptr<int> P5 = std::make_unique<int>();
+  P5.reset(((((new int)))));
+  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: use std::make_unique instead [modernize-make-unique]
+  // CHECK-FIXES: P5 = std::make_unique<int>();
 
   {
     // No std.
@@ -224,6 +241,14 @@ void initialization(int T, Base b) {
   // CHECK-MESSAGES: :[[@LINE-1]]:9: warning: use std::make_unique instead
   // CHECK-FIXES: std::make_unique<APair>(APair{T, 1});
 
+  // Check aggregate init with intermediate temporaries.
+  std::unique_ptr<APair> PAggrTemp = std::unique_ptr<APair>(new APair({T, 1}));
+  // CHECK-MESSAGES: :[[@LINE-1]]:38: warning: use std::make_unique instead
+  // CHECK-FIXES: std::unique_ptr<APair> PAggrTemp = std::unique_ptr<APair>(new APair({T, 1}));
+  PAggrTemp.reset(new APair({T, 1}));
+  // CHECK-MESSAGES: :[[@LINE-1]]:13: warning: use std::make_unique instead
+  // CHECK-FIXES: PAggrTemp.reset(new APair({T, 1}));
+
   // Test different kinds of initialization of the pointee, when the unique_ptr
   // is initialized with braces.
 
@@ -264,6 +289,9 @@ void initialization(int T, Base b) {
   PE1.reset(new E{});
   // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
   // CHECK-FIXES: PE1 = std::make_unique<E>();
+
+  // No warnings for `auto` new expression.
+  PE1.reset(new auto(E()));
 
   //============================================================================
   //  NOTE: For initlializer-list constructors, the check only gives warnings,
@@ -359,6 +387,34 @@ void initialization(int T, Base b) {
   // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
   // CHECK-FIXES: PI1 = std::make_unique<I>(G({1, 2, 3}));
 
+  std::unique_ptr<J> PJ1 = std::unique_ptr<J>(new J({1, 2}, 1));
+  // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: use std::make_unique instead
+  // CHECK-FIXES: std::unique_ptr<J> PJ1 = std::unique_ptr<J>(new J({1, 2}, 1));
+  PJ1.reset(new J({1, 2}, 1));
+  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
+  // CHECK-FIXES: PJ1.reset(new J({1, 2}, 1));
+
+  std::unique_ptr<J> PJ2 = std::unique_ptr<J>(new J(E{1, 2}, 1));
+  // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: use std::make_unique instead
+  // CHECK-FIXES: std::unique_ptr<J> PJ2 = std::unique_ptr<J>(new J(E{1, 2}, 1));
+  PJ2.reset(new J(E{1, 2}, 1));
+  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
+  // CHECK-FIXES: PJ2.reset(new J(E{1, 2}, 1));
+
+  std::unique_ptr<J> PJ3 = std::unique_ptr<J>(new J{ {1, 2}, 1 });
+  // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: use std::make_unique instead
+  // CHECK-FIXES: std::unique_ptr<J> PJ3 = std::unique_ptr<J>(new J{ {1, 2}, 1 });
+  PJ3.reset(new J{ {1, 2}, 1 });
+  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
+  // CHECK-FIXES:  PJ3.reset(new J{ {1, 2}, 1 });
+
+  std::unique_ptr<J> PJ4 = std::unique_ptr<J>(new J{E{1, 2}, 1});
+  // CHECK-MESSAGES: :[[@LINE-1]]:28: warning: use std::make_unique instead
+  // CHECK-FIXES: std::unique_ptr<J> PJ4 = std::unique_ptr<J>(new J{E{1, 2}, 1});
+  PJ4.reset(new J{E{1, 2}, 1});
+  // CHECK-MESSAGES: :[[@LINE-1]]:7: warning: use std::make_unique instead
+  // CHECK-FIXES: PJ4.reset(new J{E{1, 2}, 1});
+
   std::unique_ptr<Foo> FF = std::unique_ptr<Foo>(new Foo());
   // CHECK-MESSAGES: :[[@LINE-1]]:29: warning:
   // CHECK-FIXES: std::unique_ptr<Foo> FF = std::make_unique<Foo>();
@@ -390,18 +446,15 @@ void initialization(int T, Base b) {
   // CHECK-FIXES: FFs = std::make_unique<Foo[]>(Num2);
 
   std::unique_ptr<int[]> FI;
+  FI.reset(new int[5]()); // default initialization.
+  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning:
+  // CHECK-FIXES: FI = std::make_unique<int[]>(5);
+
+  // The check doesn't give warnings and fixes for cases where the original new
+  // expresion doesn't do any initialization.
   FI.reset(new int[5]);
-  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning:
-  // CHECK-FIXES: FI = std::make_unique<int[]>(5);
-  FI.reset(new int[5]());
-  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning:
-  // CHECK-FIXES: FI = std::make_unique<int[]>(5);
   FI.reset(new int[Num]);
-  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning:
-  // CHECK-FIXES: FI = std::make_unique<int[]>(Num);
   FI.reset(new int[Num2]);
-  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning:
-  // CHECK-FIXES: FI = std::make_unique<int[]>(Num2);
 }
 
 void aliases() {

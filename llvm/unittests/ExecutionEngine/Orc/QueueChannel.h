@@ -1,9 +1,8 @@
 //===----------------------- Queue.h - RPC Queue ------------------*-c++-*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -136,8 +135,8 @@ inline std::pair<std::unique_ptr<QueueChannel>, std::unique_ptr<QueueChannel>>
 createPairedQueueChannels() {
   auto Q1 = std::make_shared<Queue>();
   auto Q2 = std::make_shared<Queue>();
-  auto C1 = llvm::make_unique<QueueChannel>(Q1, Q2);
-  auto C2 = llvm::make_unique<QueueChannel>(Q2, Q1);
+  auto C1 = std::make_unique<QueueChannel>(Q1, Q2);
+  auto C2 = std::make_unique<QueueChannel>(Q2, Q1);
   return std::make_pair(std::move(C1), std::move(C2));
 }
 

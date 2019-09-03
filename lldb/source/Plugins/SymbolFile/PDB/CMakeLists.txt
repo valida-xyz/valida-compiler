@@ -8,7 +8,8 @@ add_lldb_library(lldbPluginSymbolFilePDB PLUGIN
     clangLex
     lldbCore
     lldbSymbol
-	lldbUtility
+    lldbUtility
+  lldbPluginSymbolFileNativePDB
   LINK_COMPONENTS
     DebugInfoPDB
     Support

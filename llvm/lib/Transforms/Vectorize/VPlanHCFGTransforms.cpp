@@ -1,9 +1,8 @@
 //===-- VPlanHCFGTransforms.cpp - Utility VPlan to VPlan transforms -------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -24,6 +23,18 @@ void VPlanHCFGTransforms::VPInstructionsToVPRecipes(
 
   VPRegionBlock *TopRegion = dyn_cast<VPRegionBlock>(Plan->getEntry());
   ReversePostOrderTraversal<VPBlockBase *> RPOT(TopRegion->getEntry());
+
+  // Condition bit VPValues get deleted during transformation to VPRecipes.
+  // Create new VPValues and save away as condition bits. These will be deleted
+  // after finalizing the vector IR basic blocks.
+  for (VPBlockBase *Base : RPOT) {
+    VPBasicBlock *VPBB = Base->getEntryBasicBlock();
+    if (auto *CondBit = VPBB->getCondBit()) {
+      auto *NCondBit = new VPValue(CondBit->getUnderlyingValue());
+      VPBB->setCondBit(NCondBit);
+      Plan->addCBV(NCondBit);
+    }
+  }
   for (VPBlockBase *Base : RPOT) {
     // Do not widen instructions in pre-header and exit blocks.
     if (Base->getNumPredecessors() == 0 || Base->getNumSuccessors() == 0)

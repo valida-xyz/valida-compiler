@@ -7,12 +7,12 @@
 # RUN: llvm-objdump -s -t %t.exe | FileCheck %s
 
 # CHECK:      Contents of section .data:
-# CHECK-NEXT:  30000 00020004 ffffffff ffff8004 ffffffff
-# CHECK-NEXT:  30010 ffff9004
+# CHECK-NEXT:  40000 00020004 ffffffff ffff8004 ffffffff
+# CHECK-NEXT:  40010 ffff9004
 #
 # CHECK: SYMBOL TABLE:
-# CHECK: 0000000000020004         .text           00000000 __tls_get_addr
-# CHECK: 0000000000000000 g       .tdata          00000000 tls1
+# CHECK: 0000000000020004        .text           00000000 __tls_get_addr
+# CHECK: 0000000000000000 g    O .tdata          00000000 tls1
 
   .text
   .global __start

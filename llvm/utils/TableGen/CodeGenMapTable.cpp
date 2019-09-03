@@ -1,9 +1,8 @@
 //===- CodeGenMapTable.cpp - Instruction Mapping Table Generator ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 // CodeGenMapTable provides functionality for the TabelGen to create
@@ -169,7 +168,7 @@ public:
     return ValueCols;
   }
 };
-} // End anonymous namespace.
+} // end anonymous namespace
 
 
 //===----------------------------------------------------------------------===//
@@ -227,7 +226,7 @@ public:
   void emitMapFuncBody(raw_ostream &OS, unsigned TableSize);
 
 };
-} // End anonymous namespace.
+} // end anonymous namespace
 
 
 //===----------------------------------------------------------------------===//
@@ -605,8 +604,8 @@ void EmitMapTable(RecordKeeper &Records, raw_ostream &OS) {
     // Emit map tables and the functions to query them.
     IMap.emitTablesWithFunc(OS);
   }
-  OS << "} // End " << NameSpace << " namespace\n";
-  OS << "} // End llvm namespace\n";
+  OS << "} // end namespace " << NameSpace << "\n";
+  OS << "} // end namespace llvm\n";
   OS << "#endif // GET_INSTRMAP_INFO\n\n";
 }
 

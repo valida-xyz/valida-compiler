@@ -1,9 +1,8 @@
 //===- IRPrintingPasses.h - Passes to print out IR constructs ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 /// \file
@@ -57,6 +56,22 @@ void printLLVMNameWithoutPrefix(raw_ostream &OS, StringRef Name);
 
 /// Return true if a pass is for IR printing.
 bool isIRPrintingPass(Pass *P);
+
+/// isFunctionInPrintList - returns true if a function should be printed via
+//  debugging options like -print-after-all/-print-before-all.
+//  Tells if the function IR should be printed by PrinterPass.
+extern bool isFunctionInPrintList(StringRef FunctionName);
+
+/// forcePrintModuleIR - returns true if IR printing passes should
+//  be printing module IR (even for local-pass printers e.g. function-pass)
+//  to provide more context, as enabled by debugging option -print-module-scope
+//  Tells if IR printer should be printing module IR
+extern bool forcePrintModuleIR();
+
+extern bool shouldPrintBeforePass();
+extern bool shouldPrintBeforePass(StringRef);
+extern bool shouldPrintAfterPass();
+extern bool shouldPrintAfterPass(StringRef);
 
 /// Pass for printing a Module as LLVM's text IR assembly.
 ///

@@ -55,11 +55,10 @@ User Guides
 
 For those new to the LLVM system.
 
-NOTE: If you are a user who is only interested in using LLVM-based
-compilers, you should look into `Clang <http://clang.llvm.org>`_ or
-`DragonEgg <http://dragonegg.llvm.org>`_ instead. The documentation here is
-intended for users who have a need to work with the intermediate LLVM
-representation.
+NOTE: If you are a user who is only interested in using an LLVM-based compiler,
+you should look into `Clang <http://clang.llvm.org>`_ instead. The
+documentation here is intended for users who have a need to work with the
+intermediate LLVM representation.
 
 .. toctree::
    :hidden:
@@ -68,6 +67,7 @@ representation.
    CMakePrimer
    AdvancedBuilds
    HowToBuildOnARM
+   HowToBuildWithPGO
    HowToCrossCompileBuiltinsOnArm
    HowToCrossCompileLLVM
    CommandGuide/index
@@ -79,6 +79,7 @@ representation.
    yaml2obj
    HowToSubmitABug
    SphinxQuickstartTemplate
+   MarkdownQuickstartTemplate
    Phabricator
    TestingGuide
    tutorial/index
@@ -88,11 +89,14 @@ representation.
    GetElementPtr
    Frontend/PerformanceTips
    MCJITDesignAndImplementation
+   ORCv2
    CodeOfConduct
    CompileCudaWithLLVM
    ReportingGuide
    Benchmarking
    Docker
+   BuildingADistribution
+   Remarks
 
 :doc:`GettingStarted`
    Discusses how to get up and running quickly with the LLVM infrastructure.
@@ -105,6 +109,9 @@ representation.
 
 :doc:`HowToBuildOnARM`
    Notes on building and testing LLVM/Clang on ARM.
+
+:doc:`HowToBuildWithPGO`
+    Notes on building LLVM/Clang with PGO.
 
 :doc:`HowToCrossCompileBuiltinsOnArm`
    Notes on cross-building and testing the compiler-rt builtins for Arm.
@@ -144,6 +151,9 @@ representation.
 :doc:`LLVM Testing Infrastructure Guide <TestingGuide>`
    A reference manual for using the LLVM testing infrastructure.
 
+:doc:`TestSuiteGuide`
+  Describes how to compile and run the test-suite benchmarks.
+
 `How to build the C, C++, ObjC, and ObjC++ front end`__
    Instructions for building the clang front-end from source.
 
@@ -169,6 +179,12 @@ representation.
 :doc:`Docker`
    A reference for using Dockerfiles provided with LLVM.
 
+:doc:`BuildingADistribution`
+  A best-practices guide for using LLVM's CMake build system to package and
+  distribute LLVM-based tools.
+
+:doc:`Remarks`
+   A reference on the implementation of remarks in LLVM.
 
 Programming Documentation
 =========================
@@ -190,6 +206,7 @@ For developers of applications which use LLVM as a library.
    FuzzingLLVM
    ScudoHardenedAllocator
    OptBisect
+   GwpAsan
 
 :doc:`LLVM Language Reference Manual <LangRef>`
   Defines the LLVM intermediate representation and the assembly form of the
@@ -224,7 +241,7 @@ For developers of applications which use LLVM as a library.
 
 `Documentation for Go bindings <http://godoc.org/llvm.org/llvm/bindings/go/llvm>`_
 
-`ViewVC Repository Browser <http://llvm.org/viewvc/>`_
+`Github Source Repository Browser <http://github.com/llvm/llvm-project//>`_
    ..
 
 :doc:`CompilerWriterInfo`
@@ -242,6 +259,9 @@ For developers of applications which use LLVM as a library.
 :doc:`OptBisect`
   A command line option for debugging optimization-induced failures.
 
+:doc:`GwpAsan`
+  A sampled heap memory error detection toolkit designed for production use.
+
 .. _index-subsystem-docs:
 
 Subsystem Documentation
@@ -258,8 +278,10 @@ For API clients and LLVM developers.
    BlockFrequencyTerminology
    BranchWeightMetadata
    Bugpoint
+   BugpointRedesign
    CodeGenerator
    ExceptionHandling
+   AddingConstrainedIntrinsics
    LinkTimeOptimization
    SegmentedStacks
    TableGenFundamentals
@@ -268,6 +290,7 @@ For API clients and LLVM developers.
    GoldPlugin
    MarkedUpDisassembly
    SystemLibrary
+   SupportLibrary
    SourceLevelDebugging
    Vectorizers
    WritingAnLLVMBackend
@@ -283,6 +306,7 @@ For API clients and LLVM developers.
    Statepoints
    MergeFunctions
    TypeMetadata
+   TransformMetadata
    FaultMaps
    MIRLangRef
    Coroutines
@@ -292,6 +316,9 @@ For API clients and LLVM developers.
    XRayFDRFormat
    PDB/index
    CFIVerify
+   SpeculativeLoadHardening
+   StackSafetyAnalysis
+   LoopTerminology
 
 :doc:`WritingAnLLVMPass`
    Information on how to write LLVM transformations and analyses.
@@ -334,15 +361,22 @@ For API clients and LLVM developers.
    This document describes the design and implementation of exception handling
    in LLVM.
 
+:doc:`AddingConstrainedIntrinsics`
+   Gives the steps necessary when adding a new constrained math intrinsic
+   to LLVM.
+
 :doc:`Bugpoint`
    Automatic bug finder and test-case reducer description and usage
    information.
 
+:doc:`BugpointRedesign`
+   Design doc for a redesign of the Bugpoint tool.
+
 :doc:`BitCodeFormat`
    This describes the file format and encoding used for LLVM "bc" files.
 
-:doc:`System Library <SystemLibrary>`
-   This document describes the LLVM System Library (``lib/System``) and
+:doc:`Support Library <SupportLibrary>`
+   This document describes the LLVM Support Library (``lib/Support``) and
    how to keep LLVM source code portable
 
 :doc:`LinkTimeOptimization`
@@ -357,6 +391,10 @@ For API clients and LLVM developers.
 
 :doc:`MCJITDesignAndImplementation`
    Describes the inner workings of MCJIT execution engine.
+
+:doc:`ORCv2`
+   Describes the design and implementation of the ORC APIs, including some
+   usage examples, and a guide for users transitioning from ORCv1 to ORCv2.
 
 :doc:`BranchWeightMetadata`
    Provides information about Branch Prediction Information.
@@ -425,6 +463,16 @@ For API clients and LLVM developers.
 :doc:`CFIVerify`
   A description of the verification tool for Control Flow Integrity.
 
+:doc:`SpeculativeLoadHardening`
+  A description of the Speculative Load Hardening mitigation for Spectre v1.
+
+:doc:`StackSafetyAnalysis`
+  This document describes the design of the stack safety analysis of local
+  variables.
+
+:doc:`LoopTerminology`
+  A document describing Loops and associated terms as used in LLVM.
+
 Development Process Documentation
 =================================
 
@@ -441,6 +489,7 @@ Information about LLVM's development process.
    Packaging
    ReleaseProcess
    Phabricator
+   BugLifeCycle
 
 :doc:`Contributing`
    An overview on how to contribute to LLVM.
@@ -470,6 +519,9 @@ Information about LLVM's development process.
 :doc:`Phabricator`
    Describes how to use the Phabricator code review tool hosted on
    http://reviews.llvm.org/ and its command line interface, Arcanist.
+
+:doc:`BugLifeCycle`
+   Describes how bugs are reported, triaged and closed.
 
 Community
 =========
@@ -531,13 +583,27 @@ This channel has several bots.
 
   * llvmbb - Bot for the main LLVM buildbot master.
     http://lab.llvm.org:8011/console
-  * bb-chapuni - An individually run buildbot master. http://bb.pgr.jp/console
   * smooshlab - Apple's internal buildbot master.
 
 * robot - Bugzilla linker. %bug <number>
 
 * clang-bot - A `geordi <http://www.eelis.net/geordi/>`_ instance running
   near-trunk clang instead of gcc.
+
+Meetups and social events
+-------------------------
+
+.. toctree::
+   :hidden:
+
+   MeetupGuidelines
+
+Besides developer `meetings and conferences <https://llvm.org/devmtg/>`_,
+there are several user groups called
+`LLVM Socials <https://www.meetup.com/pro/llvm/>`_. We greatly encourage you to
+join one in your city. Or start a new one if there is none:
+
+:doc:`MeetupGuidelines`
 
 Community wide proposals
 ------------------------
@@ -550,6 +616,9 @@ can be better.
 
    CodeOfConduct
    Proposals/GitHubMove
+   Proposals/LLVMLibC
+   Proposals/TestSuite
+   Proposals/VariableNames
    Proposals/VectorizationPlan
 
 :doc:`CodeOfConduct`
@@ -558,6 +627,15 @@ can be better.
 
 :doc:`Proposals/GitHubMove`
    Proposal to move from SVN/Git to GitHub.
+
+:doc:`Proposals/LLVMLibC`
+   Proposal to add a libc implementation under the LLVM project.
+
+:doc:`Proposals/TestSuite`
+   Proposals for additional benchmarks/programs for llvm's test-suite.
+
+:doc:`Proposals/VariableNames`
+   Proposal to change the variable names coding standard.
 
 :doc:`Proposals/VectorizationPlan`
    Proposal to model the process and upgrade the infrastructure of LLVM's Loop Vectorizer.

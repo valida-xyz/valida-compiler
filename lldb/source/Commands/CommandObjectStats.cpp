@@ -1,9 +1,8 @@
 //===-- CommandObjectStats.cpp ----------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,15 +26,15 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = GetSelectedOrDummyTarget();
+    Target &target = GetSelectedOrDummyTarget();
 
-    if (target->GetCollectingStats()) {
+    if (target.GetCollectingStats()) {
       result.AppendError("statistics already enabled");
       result.SetStatus(eReturnStatusFailed);
       return false;
     }
 
-    target->SetCollectingStats(true);
+    target.SetCollectingStats(true);
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;
   }
@@ -52,15 +51,15 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = GetSelectedOrDummyTarget();
+    Target &target = GetSelectedOrDummyTarget();
 
-    if (!target->GetCollectingStats()) {
+    if (!target.GetCollectingStats()) {
       result.AppendError("need to enable statistics before disabling them");
       result.SetStatus(eReturnStatusFailed);
       return false;
     }
 
-    target->SetCollectingStats(false);
+    target.SetCollectingStats(false);
     result.SetStatus(eReturnStatusSuccessFinishResult);
     return true;
   }
@@ -76,10 +75,10 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    Target *target = GetSelectedOrDummyTarget();
+    Target &target = GetSelectedOrDummyTarget();
 
     uint32_t i = 0;
-    for (auto &stat : target->GetStatistics()) {
+    for (auto &stat : target.GetStatistics()) {
       result.AppendMessageWithFormat(
           "%s : %u\n",
           lldb_private::GetStatDescription(static_cast<lldb_private::StatisticKind>(i))

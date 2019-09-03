@@ -1,9 +1,9 @@
 /*===-- Scalar.h - Scalar Transformation Library C Interface ----*- C++ -*-===*\
 |*                                                                            *|
-|*                     The LLVM Compiler Infrastructure                       *|
-|*                                                                            *|
-|* This file is distributed under the University of Illinois Open Source      *|
-|* License. See LICENSE.TXT for details.                                      *|
+|* Part of the LLVM Project, under the Apache License v2.0 with LLVM          *|
+|* Exceptions.                                                                *|
+|* See https://llvm.org/LICENSE.txt for license information.                  *|
+|* SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception                    *|
 |*                                                                            *|
 |*===----------------------------------------------------------------------===*|
 |*                                                                            *|
@@ -34,9 +34,6 @@ extern "C" {
 
 /** See llvm::createAggressiveDCEPass function. */
 void LLVMAddAggressiveDCEPass(LLVMPassManagerRef PM);
-
-/** See llvm::createAggressiveInstCombinerPass function. */
-void LLVMAddAggressiveInstCombinerPass(LLVMPassManagerRef PM);
 
 /** See llvm::createBitTrackingDCEPass function. */
 void LLVMAddBitTrackingDCEPass(LLVMPassManagerRef PM);
@@ -95,6 +92,9 @@ void LLVMAddLoopUnrollAndJamPass(LLVMPassManagerRef PM);
 /** See llvm::createLoopUnswitchPass function. */
 void LLVMAddLoopUnswitchPass(LLVMPassManagerRef PM);
 
+/** See llvm::createLowerAtomicPass function. */
+void LLVMAddLowerAtomicPass(LLVMPassManagerRef PM);
+
 /** See llvm::createMemCpyOptPass function. */
 void LLVMAddMemCpyOptPass(LLVMPassManagerRef PM);
 
@@ -152,6 +152,9 @@ void LLVMAddScopedNoAliasAAPass(LLVMPassManagerRef PM);
 
 /** See llvm::createBasicAliasAnalysisPass function */
 void LLVMAddBasicAliasAnalysisPass(LLVMPassManagerRef PM);
+
+/** See llvm::createUnifyFunctionExitNodesPass function */
+void LLVMAddUnifyFunctionExitNodesPass(LLVMPassManagerRef PM);
 
 /**
  * @}

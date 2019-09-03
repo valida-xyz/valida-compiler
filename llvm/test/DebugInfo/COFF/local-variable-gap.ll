@@ -1,5 +1,5 @@
 ; RUN: llc -mtriple=x86_64-windows-msvc < %s | FileCheck %s --check-prefix=ASM
-; RUN: llc -mtriple=x86_64-windows-msvc < %s -filetype=obj | llvm-readobj -codeview - | FileCheck %s --check-prefix=OBJ
+; RUN: llc -mtriple=x86_64-windows-msvc < %s -filetype=obj | llvm-readobj --codeview - | FileCheck %s --check-prefix=OBJ
 
 ; This test attempts to exercise gaps in local variables. The local variable 'p'
 ; will end up in some CSR (esi), which will be used in both the BB scheduled
@@ -54,7 +54,7 @@
 ; ASM: [[p_b2:\.Ltmp[0-9]+]]:
 ; ASM:         #DEBUG_VALUE: p <- $esi
 ; ASM:         callq   call_noreturn
-; ASM:         ud2
+; ASM:         int3
 ; ASM: .Lfunc_end0:
 
 ; ASM:         .short  {{.*}}         # Record length
@@ -62,7 +62,7 @@
 ; ASM:         .long   116                     # TypeIndex
 ; ASM:         .short  0                       # Flags
 ; ASM:         .asciz  "p"
-; ASM:         .cv_def_range    [[p_b1]] [[p_e1]] [[p_b2]] .Lfunc_end0, "A\021\027\000\000\000"
+; ASM:         .cv_def_range    [[p_b1]] [[p_e1]] [[p_b2]] .Lfunc_end0, reg, 23
 ; ASM:         .short  2                       # Record length
 ; ASM:         .short  4431                    # Record kind: S_PROC_ID_END
 
@@ -73,7 +73,7 @@
 ; OBJ-NOT:     LocalSym {
 ; OBJ:         DefRangeRegisterSym {
 ; OBJ-NEXT:      Kind:
-; OBJ-NEXT:      Register: CVRegESI (0x17)
+; OBJ-NEXT:      Register: ESI (0x17)
 ; OBJ-NEXT:      MayHaveNoName: 0
 ; OBJ-NEXT:      LocalVariableAddrRange {
 ; OBJ-NEXT:        OffsetStart: .text+0x{{.*}}

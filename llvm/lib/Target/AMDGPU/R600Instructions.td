@@ -1,9 +1,8 @@
 //===-- R600Instructions.td - R600 Instruction defs  -------*- tablegen -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -296,10 +295,38 @@ class VTX_READ <string name, dag outs, list<dag> pattern>
   let VTXInst = 1;
 }
 
+// FIXME: Deprecated.
+class LocalLoad <SDPatternOperator op> : LoadFrag <op>, LocalAddress;
+
+class AZExtLoadBase <SDPatternOperator ld_node>: PatFrag<(ops node:$ptr),
+                                              (ld_node node:$ptr), [{
+  LoadSDNode *L = cast<LoadSDNode>(N);
+  return L->getExtensionType() == ISD::ZEXTLOAD ||
+         L->getExtensionType() == ISD::EXTLOAD;
+}]>;
+
+def az_extload : AZExtLoadBase <unindexedload>;
+
+def az_extloadi8 : PatFrag<(ops node:$ptr), (az_extload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i8;
+}]>;
+
+def az_extloadi16 : PatFrag<(ops node:$ptr), (az_extload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i16;
+}]>;
+
+def az_extloadi32 : PatFrag<(ops node:$ptr), (az_extload node:$ptr), [{
+  return cast<LoadSDNode>(N)->getMemoryVT() == MVT::i32;
+}]>;
+
+// FIXME: These are deprecated
+def az_extloadi8_local : LocalLoad <az_extloadi8>;
+def az_extloadi16_local : LocalLoad <az_extloadi16>;
+
 class LoadParamFrag <PatFrag load_type> : PatFrag <
   (ops node:$ptr), (load_type node:$ptr),
   [{ return isConstantLoad(cast<LoadSDNode>(N), 0) ||
-            (cast<LoadSDNode>(N)->getAddressSpace() == AMDGPUASI.PARAM_I_ADDRESS); }]
+            (cast<LoadSDNode>(N)->getAddressSpace() == AMDGPUAS::PARAM_I_ADDRESS); }]
 >;
 
 def vtx_id3_az_extloadi8 : LoadParamFrag<az_extloadi8>;
@@ -309,8 +336,8 @@ def vtx_id3_load : LoadParamFrag<load>;
 class LoadVtxId1 <PatFrag load> : PatFrag <
   (ops node:$ptr), (load node:$ptr), [{
   const MemSDNode *LD = cast<MemSDNode>(N);
-  return LD->getAddressSpace() == AMDGPUASI.GLOBAL_ADDRESS ||
-         (LD->getAddressSpace() == AMDGPUASI.CONSTANT_ADDRESS &&
+  return LD->getAddressSpace() == AMDGPUAS::GLOBAL_ADDRESS ||
+         (LD->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
            !isa<GlobalValue>(GetUnderlyingObject(
            LD->getMemOperand()->getValue(), CurDAG->getDataLayout())));
 }]>;
@@ -322,7 +349,7 @@ def vtx_id1_load : LoadVtxId1 <load>;
 class LoadVtxId2 <PatFrag load> : PatFrag <
   (ops node:$ptr), (load node:$ptr), [{
   const MemSDNode *LD = cast<MemSDNode>(N);
-  return LD->getAddressSpace() == AMDGPUASI.CONSTANT_ADDRESS &&
+  return LD->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
          isa<GlobalValue>(GetUnderlyingObject(
          LD->getMemOperand()->getValue(), CurDAG->getDataLayout()));
 }]>;

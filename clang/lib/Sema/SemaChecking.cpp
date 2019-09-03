@@ -1,9 +1,8 @@
 //===- SemaChecking.cpp - Extra Semantic Checking -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -27,6 +26,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
+#include "clang/AST/FormatString.h"
 #include "clang/AST/NSAPI.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
 #include "clang/AST/OperationKinds.h"
@@ -35,7 +35,6 @@
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/UnresolvedSet.h"
-#include "clang/Analysis/Analyses/FormatString.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/Diagnostic.h"
@@ -85,6 +84,7 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Locale.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -112,13 +112,13 @@ static bool checkArgCount(Sema &S, CallExpr *call, unsigned desiredArgCount) {
   if (argCount == desiredArgCount) return false;
 
   if (argCount < desiredArgCount)
-    return S.Diag(call->getLocEnd(), diag::err_typecheck_call_too_few_args)
-        << 0 /*function call*/ << desiredArgCount << argCount
-        << call->getSourceRange();
+    return S.Diag(call->getEndLoc(), diag::err_typecheck_call_too_few_args)
+           << 0 /*function call*/ << desiredArgCount << argCount
+           << call->getSourceRange();
 
   // Highlight all the excess arguments.
-  SourceRange range(call->getArg(desiredArgCount)->getLocStart(),
-                    call->getArg(argCount - 1)->getLocEnd());
+  SourceRange range(call->getArg(desiredArgCount)->getBeginLoc(),
+                    call->getArg(argCount - 1)->getEndLoc());
 
   return S.Diag(range.getBegin(), diag::err_typecheck_call_too_many_args)
     << 0 /*function call*/ << desiredArgCount << argCount
@@ -135,8 +135,8 @@ static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
   Expr *ValArg = TheCall->getArg(0);
   QualType Ty = ValArg->getType();
   if (!Ty->isIntegerType()) {
-    S.Diag(ValArg->getLocStart(), diag::err_builtin_annotation_first_arg)
-      << ValArg->getSourceRange();
+    S.Diag(ValArg->getBeginLoc(), diag::err_builtin_annotation_first_arg)
+        << ValArg->getSourceRange();
     return true;
   }
 
@@ -144,8 +144,8 @@ static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
   Expr *StrArg = TheCall->getArg(1)->IgnoreParenCasts();
   StringLiteral *Literal = dyn_cast<StringLiteral>(StrArg);
   if (!Literal || !Literal->isAscii()) {
-    S.Diag(StrArg->getLocStart(), diag::err_builtin_annotation_second_arg)
-      << StrArg->getSourceRange();
+    S.Diag(StrArg->getBeginLoc(), diag::err_builtin_annotation_second_arg)
+        << StrArg->getSourceRange();
     return true;
   }
 
@@ -156,7 +156,7 @@ static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
 static bool SemaBuiltinMSVCAnnotation(Sema &S, CallExpr *TheCall) {
   // We need at least one argument.
   if (TheCall->getNumArgs() < 1) {
-    S.Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args_at_least)
+    S.Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args_at_least)
         << 0 << 1 << TheCall->getNumArgs()
         << TheCall->getCallee()->getSourceRange();
     return true;
@@ -166,7 +166,7 @@ static bool SemaBuiltinMSVCAnnotation(Sema &S, CallExpr *TheCall) {
   for (Expr *Arg : TheCall->arguments()) {
     auto *Literal = dyn_cast<StringLiteral>(Arg->IgnoreParenCasts());
     if (!Literal || !Literal->isWide()) {
-      S.Diag(Arg->getLocStart(), diag::err_msvc_annotation_wide_str)
+      S.Diag(Arg->getBeginLoc(), diag::err_msvc_annotation_wide_str)
           << Arg->getSourceRange();
       return true;
     }
@@ -182,12 +182,22 @@ static bool SemaBuiltinAddressof(Sema &S, CallExpr *TheCall) {
     return true;
 
   ExprResult Arg(TheCall->getArg(0));
-  QualType ResultType = S.CheckAddressOfOperand(Arg, TheCall->getLocStart());
+  QualType ResultType = S.CheckAddressOfOperand(Arg, TheCall->getBeginLoc());
   if (ResultType.isNull())
     return true;
 
   TheCall->setArg(0, Arg.get());
   TheCall->setType(ResultType);
+  return false;
+}
+
+/// Check the number of arguments, and set the result type to
+/// the argument type.
+static bool SemaBuiltinPreserveAI(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 1))
+    return true;
+
+  TheCall->setType(TheCall->getArg(0)->getType());
   return false;
 }
 
@@ -200,7 +210,7 @@ static bool SemaBuiltinOverflow(Sema &S, CallExpr *TheCall) {
     ExprResult Arg = TheCall->getArg(I);
     QualType Ty = Arg.get()->getType();
     if (!Ty->isIntegerType()) {
-      S.Diag(Arg.get()->getLocStart(), diag::err_overflow_builtin_must_be_int)
+      S.Diag(Arg.get()->getBeginLoc(), diag::err_overflow_builtin_must_be_int)
           << Ty << Arg.get()->getSourceRange();
       return true;
     }
@@ -221,7 +231,7 @@ static bool SemaBuiltinOverflow(Sema &S, CallExpr *TheCall) {
     const auto *PtrTy = Ty->getAs<PointerType>();
     if (!(PtrTy && PtrTy->getPointeeType()->isIntegerType() &&
           !PtrTy->getPointeeType().isConstQualified())) {
-      S.Diag(Arg.get()->getLocStart(),
+      S.Diag(Arg.get()->getBeginLoc(),
              diag::err_overflow_builtin_must_be_ptr_int)
           << Ty << Arg.get()->getSourceRange();
       return true;
@@ -236,39 +246,11 @@ static bool SemaBuiltinOverflow(Sema &S, CallExpr *TheCall) {
   return false;
 }
 
-static void SemaBuiltinMemChkCall(Sema &S, FunctionDecl *FDecl,
-                                  CallExpr *TheCall, unsigned SizeIdx,
-                                  unsigned DstSizeIdx) {
-  if (TheCall->getNumArgs() <= SizeIdx ||
-      TheCall->getNumArgs() <= DstSizeIdx)
-    return;
-
-  const Expr *SizeArg = TheCall->getArg(SizeIdx);
-  const Expr *DstSizeArg = TheCall->getArg(DstSizeIdx);
-
-  llvm::APSInt Size, DstSize;
-
-  // find out if both sizes are known at compile time
-  if (!SizeArg->EvaluateAsInt(Size, S.Context) ||
-      !DstSizeArg->EvaluateAsInt(DstSize, S.Context))
-    return;
-
-  if (Size.ule(DstSize))
-    return;
-
-  // confirmed overflow so generate the diagnostic.
-  IdentifierInfo *FnName = FDecl->getIdentifier();
-  SourceLocation SL = TheCall->getLocStart();
-  SourceRange SR = TheCall->getSourceRange();
-
-  S.Diag(SL, diag::warn_memcpy_chk_overflow) << SR << FnName;
-}
-
 static bool SemaBuiltinCallWithStaticChain(Sema &S, CallExpr *BuiltinCall) {
   if (checkArgCount(S, BuiltinCall, 2))
     return true;
 
-  SourceLocation BuiltinLoc = BuiltinCall->getLocStart();
+  SourceLocation BuiltinLoc = BuiltinCall->getBeginLoc();
   Expr *Builtin = BuiltinCall->getCallee()->IgnoreImpCasts();
   Expr *Call = BuiltinCall->getArg(0);
   Expr *Chain = BuiltinCall->getArg(1);
@@ -327,6 +309,149 @@ static bool SemaBuiltinCallWithStaticChain(Sema &S, CallExpr *BuiltinCall) {
   return false;
 }
 
+/// Check a call to BuiltinID for buffer overflows. If BuiltinID is a
+/// __builtin_*_chk function, then use the object size argument specified in the
+/// source. Otherwise, infer the object size using __builtin_object_size.
+void Sema::checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD,
+                                               CallExpr *TheCall) {
+  // FIXME: There are some more useful checks we could be doing here:
+  //  - Analyze the format string of sprintf to see how much of buffer is used.
+  //  - Evaluate strlen of strcpy arguments, use as object size.
+
+  if (TheCall->isValueDependent() || TheCall->isTypeDependent() ||
+      isConstantEvaluated())
+    return;
+
+  unsigned BuiltinID = FD->getBuiltinID(/*ConsiderWrappers=*/true);
+  if (!BuiltinID)
+    return;
+
+  unsigned DiagID = 0;
+  bool IsChkVariant = false;
+  unsigned SizeIndex, ObjectIndex;
+  switch (BuiltinID) {
+  default:
+    return;
+  case Builtin::BI__builtin___memcpy_chk:
+  case Builtin::BI__builtin___memmove_chk:
+  case Builtin::BI__builtin___memset_chk:
+  case Builtin::BI__builtin___strlcat_chk:
+  case Builtin::BI__builtin___strlcpy_chk:
+  case Builtin::BI__builtin___strncat_chk:
+  case Builtin::BI__builtin___strncpy_chk:
+  case Builtin::BI__builtin___stpncpy_chk:
+  case Builtin::BI__builtin___memccpy_chk: {
+    DiagID = diag::warn_builtin_chk_overflow;
+    IsChkVariant = true;
+    SizeIndex = TheCall->getNumArgs() - 2;
+    ObjectIndex = TheCall->getNumArgs() - 1;
+    break;
+  }
+
+  case Builtin::BI__builtin___snprintf_chk:
+  case Builtin::BI__builtin___vsnprintf_chk: {
+    DiagID = diag::warn_builtin_chk_overflow;
+    IsChkVariant = true;
+    SizeIndex = 1;
+    ObjectIndex = 3;
+    break;
+  }
+
+  case Builtin::BIstrncat:
+  case Builtin::BI__builtin_strncat:
+  case Builtin::BIstrncpy:
+  case Builtin::BI__builtin_strncpy:
+  case Builtin::BIstpncpy:
+  case Builtin::BI__builtin_stpncpy: {
+    // Whether these functions overflow depends on the runtime strlen of the
+    // string, not just the buffer size, so emitting the "always overflow"
+    // diagnostic isn't quite right. We should still diagnose passing a buffer
+    // size larger than the destination buffer though; this is a runtime abort
+    // in _FORTIFY_SOURCE mode, and is quite suspicious otherwise.
+    DiagID = diag::warn_fortify_source_size_mismatch;
+    SizeIndex = TheCall->getNumArgs() - 1;
+    ObjectIndex = 0;
+    break;
+  }
+
+  case Builtin::BImemcpy:
+  case Builtin::BI__builtin_memcpy:
+  case Builtin::BImemmove:
+  case Builtin::BI__builtin_memmove:
+  case Builtin::BImemset:
+  case Builtin::BI__builtin_memset: {
+    DiagID = diag::warn_fortify_source_overflow;
+    SizeIndex = TheCall->getNumArgs() - 1;
+    ObjectIndex = 0;
+    break;
+  }
+  case Builtin::BIsnprintf:
+  case Builtin::BI__builtin_snprintf:
+  case Builtin::BIvsnprintf:
+  case Builtin::BI__builtin_vsnprintf: {
+    DiagID = diag::warn_fortify_source_size_mismatch;
+    SizeIndex = 1;
+    ObjectIndex = 0;
+    break;
+  }
+  }
+
+  llvm::APSInt ObjectSize;
+  // For __builtin___*_chk, the object size is explicitly provided by the caller
+  // (usually using __builtin_object_size). Use that value to check this call.
+  if (IsChkVariant) {
+    Expr::EvalResult Result;
+    Expr *SizeArg = TheCall->getArg(ObjectIndex);
+    if (!SizeArg->EvaluateAsInt(Result, getASTContext()))
+      return;
+    ObjectSize = Result.Val.getInt();
+
+  // Otherwise, try to evaluate an imaginary call to __builtin_object_size.
+  } else {
+    // If the parameter has a pass_object_size attribute, then we should use its
+    // (potentially) more strict checking mode. Otherwise, conservatively assume
+    // type 0.
+    int BOSType = 0;
+    if (const auto *POS =
+            FD->getParamDecl(ObjectIndex)->getAttr<PassObjectSizeAttr>())
+      BOSType = POS->getType();
+
+    Expr *ObjArg = TheCall->getArg(ObjectIndex);
+    uint64_t Result;
+    if (!ObjArg->tryEvaluateObjectSize(Result, getASTContext(), BOSType))
+      return;
+    // Get the object size in the target's size_t width.
+    const TargetInfo &TI = getASTContext().getTargetInfo();
+    unsigned SizeTypeWidth = TI.getTypeWidth(TI.getSizeType());
+    ObjectSize = llvm::APSInt::getUnsigned(Result).extOrTrunc(SizeTypeWidth);
+  }
+
+  // Evaluate the number of bytes of the object that this call will use.
+  Expr::EvalResult Result;
+  Expr *UsedSizeArg = TheCall->getArg(SizeIndex);
+  if (!UsedSizeArg->EvaluateAsInt(Result, getASTContext()))
+    return;
+  llvm::APSInt UsedSize = Result.Val.getInt();
+
+  if (UsedSize.ule(ObjectSize))
+    return;
+
+  StringRef FunctionName = getASTContext().BuiltinInfo.getName(BuiltinID);
+  // Skim off the details of whichever builtin was called to produce a better
+  // diagnostic, as it's unlikley that the user wrote the __builtin explicitly.
+  if (IsChkVariant) {
+    FunctionName = FunctionName.drop_front(std::strlen("__builtin___"));
+    FunctionName = FunctionName.drop_back(std::strlen("_chk"));
+  } else if (FunctionName.startswith("__builtin_")) {
+    FunctionName = FunctionName.drop_front(std::strlen("__builtin_"));
+  }
+
+  DiagRuntimeBehavior(TheCall->getBeginLoc(), TheCall,
+                      PDiag(DiagID)
+                          << FunctionName << ObjectSize.toString(/*Radix=*/10)
+                          << UsedSize.toString(/*Radix=*/10));
+}
+
 static bool SemaBuiltinSEHScopeCheck(Sema &SemaRef, CallExpr *TheCall,
                                      Scope::ScopeFlags NeededScopeFlags,
                                      unsigned DiagID) {
@@ -375,9 +500,9 @@ static bool checkOpenCLBlockArgs(Sema &S, Expr *BlockArg) {
       SourceLocation ErrorLoc;
       if (isa<BlockExpr>(BlockArg)) {
         BlockDecl *BD = cast<BlockExpr>(BlockArg)->getBlockDecl();
-        ErrorLoc = BD->getParamDecl(ArgCounter)->getLocStart();
+        ErrorLoc = BD->getParamDecl(ArgCounter)->getBeginLoc();
       } else if (isa<DeclRefExpr>(BlockArg)) {
-        ErrorLoc = cast<DeclRefExpr>(BlockArg)->getLocStart();
+        ErrorLoc = cast<DeclRefExpr>(BlockArg)->getBeginLoc();
       }
       S.Diag(ErrorLoc,
              diag::err_opencl_enqueue_kernel_blocks_non_local_void_args);
@@ -390,8 +515,8 @@ static bool checkOpenCLBlockArgs(Sema &S, Expr *BlockArg) {
 
 static bool checkOpenCLSubgroupExt(Sema &S, CallExpr *Call) {
   if (!S.getOpenCLOptions().isEnabled("cl_khr_subgroups")) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_requires_extension)
-          << 1 << Call->getDirectCallee() << "cl_khr_subgroups";
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_requires_extension)
+        << 1 << Call->getDirectCallee() << "cl_khr_subgroups";
     return true;
   }
   return false;
@@ -407,16 +532,14 @@ static bool SemaOpenCLBuiltinNDRangeAndBlock(Sema &S, CallExpr *TheCall) {
   // First argument is an ndrange_t type.
   Expr *NDRangeArg = TheCall->getArg(0);
   if (NDRangeArg->getType().getUnqualifiedType().getAsString() != "ndrange_t") {
-    S.Diag(NDRangeArg->getLocStart(),
-           diag::err_opencl_builtin_expected_type)
+    S.Diag(NDRangeArg->getBeginLoc(), diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << "'ndrange_t'";
     return true;
   }
 
   Expr *BlockArg = TheCall->getArg(1);
   if (!isBlockPointer(BlockArg)) {
-    S.Diag(BlockArg->getLocStart(),
-           diag::err_opencl_builtin_expected_type)
+    S.Diag(BlockArg->getBeginLoc(), diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << "block";
     return true;
   }
@@ -432,8 +555,7 @@ static bool SemaOpenCLBuiltinKernelWorkGroupSize(Sema &S, CallExpr *TheCall) {
 
   Expr *BlockArg = TheCall->getArg(0);
   if (!isBlockPointer(BlockArg)) {
-    S.Diag(BlockArg->getLocStart(),
-           diag::err_opencl_builtin_expected_type)
+    S.Diag(BlockArg->getBeginLoc(), diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << "block";
     return true;
   }
@@ -467,7 +589,7 @@ static bool checkOpenCLEnqueueVariadicArgs(Sema &S, CallExpr *TheCall,
   // For each argument passed to the block, a corresponding uint needs to
   // be passed to describe the size of the local memory.
   if (TotalNumArgs != NumBlockParams + NumNonVarArgs) {
-    S.Diag(TheCall->getLocStart(),
+    S.Diag(TheCall->getBeginLoc(),
            diag::err_opencl_enqueue_kernel_local_size_args);
     return true;
   }
@@ -507,7 +629,9 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
   unsigned NumArgs = TheCall->getNumArgs();
 
   if (NumArgs < 4) {
-    S.Diag(TheCall->getLocStart(), diag::err_typecheck_call_too_few_args);
+    S.Diag(TheCall->getBeginLoc(),
+           diag::err_typecheck_call_too_few_args_at_least)
+        << 0 << 4 << NumArgs;
     return true;
   }
 
@@ -518,7 +642,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
 
   // First argument always needs to be a queue_t type.
   if (!Arg0->getType()->isQueueT()) {
-    S.Diag(TheCall->getArg(0)->getLocStart(),
+    S.Diag(TheCall->getArg(0)->getBeginLoc(),
            diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << S.Context.OCLQueueTy;
     return true;
@@ -526,7 +650,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
 
   // Second argument always needs to be a kernel_enqueue_flags_t enum value.
   if (!Arg1->getType()->isIntegerType()) {
-    S.Diag(TheCall->getArg(1)->getLocStart(),
+    S.Diag(TheCall->getArg(1)->getBeginLoc(),
            diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << "'kernel_enqueue_flags_t' (i.e. uint)";
     return true;
@@ -534,7 +658,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
 
   // Third argument is always an ndrange_t type.
   if (Arg2->getType().getUnqualifiedType().getAsString() != "ndrange_t") {
-    S.Diag(TheCall->getArg(2)->getLocStart(),
+    S.Diag(TheCall->getArg(2)->getBeginLoc(),
            diag::err_opencl_builtin_expected_type)
         << TheCall->getDirectCallee() << "'ndrange_t'";
     return true;
@@ -545,7 +669,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
   if (NumArgs == 4) {
     // check that the last argument is the right block type.
     if (!isBlockPointer(Arg3)) {
-      S.Diag(Arg3->getLocStart(), diag::err_opencl_builtin_expected_type)
+      S.Diag(Arg3->getBeginLoc(), diag::err_opencl_builtin_expected_type)
           << TheCall->getDirectCallee() << "block";
       return true;
     }
@@ -553,7 +677,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
     const BlockPointerType *BPT =
         cast<BlockPointerType>(Arg3->getType().getCanonicalType());
     if (BPT->getPointeeType()->getAs<FunctionProtoType>()->getNumParams() > 0) {
-      S.Diag(Arg3->getLocStart(),
+      S.Diag(Arg3->getBeginLoc(),
              diag::err_opencl_enqueue_kernel_blocks_no_args);
       return true;
     }
@@ -568,7 +692,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
     // check common block argument.
     Expr *Arg6 = TheCall->getArg(6);
     if (!isBlockPointer(Arg6)) {
-      S.Diag(Arg6->getLocStart(), diag::err_opencl_builtin_expected_type)
+      S.Diag(Arg6->getBeginLoc(), diag::err_opencl_builtin_expected_type)
           << TheCall->getDirectCallee() << "block";
       return true;
     }
@@ -577,7 +701,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
 
     // Forth argument has to be any integer type.
     if (!Arg3->getType()->isIntegerType()) {
-      S.Diag(TheCall->getArg(3)->getLocStart(),
+      S.Diag(TheCall->getArg(3)->getBeginLoc(),
              diag::err_opencl_builtin_expected_type)
           << TheCall->getDirectCallee() << "integer";
       return true;
@@ -590,7 +714,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
     if (!Arg4->isNullPointerConstant(S.Context,
                                      Expr::NPC_ValueDependentIsNotNull) &&
         !Arg4->getType()->getPointeeOrArrayElementType()->isClkEventT()) {
-      S.Diag(TheCall->getArg(4)->getLocStart(),
+      S.Diag(TheCall->getArg(4)->getBeginLoc(),
              diag::err_opencl_builtin_expected_type)
           << TheCall->getDirectCallee()
           << S.Context.getPointerType(S.Context.OCLClkEventTy);
@@ -602,7 +726,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
                                      Expr::NPC_ValueDependentIsNotNull) &&
         !(Arg5->getType()->isPointerType() &&
           Arg5->getType()->getPointeeType()->isClkEventT())) {
-      S.Diag(TheCall->getArg(5)->getLocStart(),
+      S.Diag(TheCall->getArg(5)->getBeginLoc(),
              diag::err_opencl_builtin_expected_type)
           << TheCall->getDirectCallee()
           << S.Context.getPointerType(S.Context.OCLClkEventTy);
@@ -616,7 +740,7 @@ static bool SemaOpenCLBuiltinEnqueueKernel(Sema &S, CallExpr *TheCall) {
   }
 
   // None of the specific case has been detected, give generic error
-  S.Diag(TheCall->getLocStart(),
+  S.Diag(TheCall->getBeginLoc(),
          diag::err_opencl_enqueue_kernel_incorrect_args);
   return true;
 }
@@ -631,7 +755,7 @@ static bool checkOpenCLPipeArg(Sema &S, CallExpr *Call) {
   const Expr *Arg0 = Call->getArg(0);
   // First argument type should always be pipe.
   if (!Arg0->getType()->isPipeType()) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_first_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_first_arg)
         << Call->getDirectCallee() << Arg0->getSourceRange();
     return true;
   }
@@ -650,7 +774,7 @@ static bool checkOpenCLPipeArg(Sema &S, CallExpr *Call) {
   case Builtin::BIwork_group_commit_read_pipe:
   case Builtin::BIsub_group_commit_read_pipe:
     if (!(!AccessQual || AccessQual->isReadOnly())) {
-      S.Diag(Arg0->getLocStart(),
+      S.Diag(Arg0->getBeginLoc(),
              diag::err_opencl_builtin_pipe_invalid_access_modifier)
           << "read_only" << Arg0->getSourceRange();
       return true;
@@ -664,7 +788,7 @@ static bool checkOpenCLPipeArg(Sema &S, CallExpr *Call) {
   case Builtin::BIwork_group_commit_write_pipe:
   case Builtin::BIsub_group_commit_write_pipe:
     if (!(AccessQual && AccessQual->isWriteOnly())) {
-      S.Diag(Arg0->getLocStart(),
+      S.Diag(Arg0->getBeginLoc(),
              diag::err_opencl_builtin_pipe_invalid_access_modifier)
           << "write_only" << Arg0->getSourceRange();
       return true;
@@ -688,7 +812,7 @@ static bool checkOpenCLPipePacketType(Sema &S, CallExpr *Call, unsigned Idx) {
   if (!ArgTy ||
       !S.Context.hasSameType(
           EltTy, ArgTy->getPointeeType()->getCanonicalTypeInternal())) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_invalid_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_invalid_arg)
         << Call->getDirectCallee() << S.Context.getPointerType(EltTy)
         << ArgIdx->getType() << ArgIdx->getSourceRange();
     return true;
@@ -721,7 +845,7 @@ static bool SemaBuiltinRWPipe(Sema &S, CallExpr *Call) {
     // read/write_pipe(pipe T, reserve_id_t, uint, T*).
     // Check reserve_id_t.
     if (!Call->getArg(1)->getType()->isReserveIDT()) {
-      S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_invalid_arg)
+      S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_invalid_arg)
           << Call->getDirectCallee() << S.Context.OCLReserveIDTy
           << Call->getArg(1)->getType() << Call->getArg(1)->getSourceRange();
       return true;
@@ -731,7 +855,7 @@ static bool SemaBuiltinRWPipe(Sema &S, CallExpr *Call) {
     const Expr *Arg2 = Call->getArg(2);
     if (!Arg2->getType()->isIntegerType() &&
         !Arg2->getType()->isUnsignedIntegerType()) {
-      S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_invalid_arg)
+      S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_invalid_arg)
           << Call->getDirectCallee() << S.Context.UnsignedIntTy
           << Arg2->getType() << Arg2->getSourceRange();
       return true;
@@ -742,7 +866,7 @@ static bool SemaBuiltinRWPipe(Sema &S, CallExpr *Call) {
       return true;
   } break;
   default:
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_arg_num)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_arg_num)
         << Call->getDirectCallee() << Call->getSourceRange();
     return true;
   }
@@ -765,7 +889,7 @@ static bool SemaBuiltinReserveRWPipe(Sema &S, CallExpr *Call) {
   // Check the reserve size.
   if (!Call->getArg(1)->getType()->isIntegerType() &&
       !Call->getArg(1)->getType()->isUnsignedIntegerType()) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_invalid_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_invalid_arg)
         << Call->getDirectCallee() << S.Context.UnsignedIntTy
         << Call->getArg(1)->getType() << Call->getArg(1)->getSourceRange();
     return true;
@@ -793,7 +917,7 @@ static bool SemaBuiltinCommitRWPipe(Sema &S, CallExpr *Call) {
 
   // Check reserve_id_t.
   if (!Call->getArg(1)->getType()->isReserveIDT()) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_invalid_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_invalid_arg)
         << Call->getDirectCallee() << S.Context.OCLReserveIDTy
         << Call->getArg(1)->getType() << Call->getArg(1)->getSourceRange();
     return true;
@@ -812,7 +936,7 @@ static bool SemaBuiltinPipePackets(Sema &S, CallExpr *Call) {
     return true;
 
   if (!Call->getArg(0)->getType()->isPipeType()) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_pipe_first_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_pipe_first_arg)
         << Call->getDirectCallee() << Call->getArg(0)->getSourceRange();
     return true;
   }
@@ -829,7 +953,7 @@ static bool SemaBuiltinPipePackets(Sema &S, CallExpr *Call) {
 static bool SemaOpenCLBuiltinToAddr(Sema &S, unsigned BuiltinID,
                                     CallExpr *Call) {
   if (Call->getNumArgs() != 1) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_to_addr_arg_num)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_to_addr_arg_num)
         << Call->getDirectCallee() << Call->getSourceRange();
     return true;
   }
@@ -837,9 +961,16 @@ static bool SemaOpenCLBuiltinToAddr(Sema &S, unsigned BuiltinID,
   auto RT = Call->getArg(0)->getType();
   if (!RT->isPointerType() || RT->getPointeeType()
       .getAddressSpace() == LangAS::opencl_constant) {
-    S.Diag(Call->getLocStart(), diag::err_opencl_builtin_to_addr_invalid_arg)
+    S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_to_addr_invalid_arg)
         << Call->getArg(0) << Call->getDirectCallee() << Call->getSourceRange();
     return true;
+  }
+
+  if (RT->getPointeeType().getAddressSpace() != LangAS::opencl_generic) {
+    S.Diag(Call->getArg(0)->getBeginLoc(),
+           diag::warn_opencl_generic_address_space_arg)
+        << Call->getDirectCallee()->getNameInfo().getAsString()
+        << Call->getArg(0)->getSourceRange();
   }
 
   RT = RT->getPointeeType();
@@ -863,6 +994,66 @@ static bool SemaOpenCLBuiltinToAddr(Sema &S, unsigned BuiltinID,
   return false;
 }
 
+static ExprResult SemaBuiltinLaunder(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 1))
+    return ExprError();
+
+  // Compute __builtin_launder's parameter type from the argument.
+  // The parameter type is:
+  //  * The type of the argument if it's not an array or function type,
+  //  Otherwise,
+  //  * The decayed argument type.
+  QualType ParamTy = [&]() {
+    QualType ArgTy = TheCall->getArg(0)->getType();
+    if (const ArrayType *Ty = ArgTy->getAsArrayTypeUnsafe())
+      return S.Context.getPointerType(Ty->getElementType());
+    if (ArgTy->isFunctionType()) {
+      return S.Context.getPointerType(ArgTy);
+    }
+    return ArgTy;
+  }();
+
+  TheCall->setType(ParamTy);
+
+  auto DiagSelect = [&]() -> llvm::Optional<unsigned> {
+    if (!ParamTy->isPointerType())
+      return 0;
+    if (ParamTy->isFunctionPointerType())
+      return 1;
+    if (ParamTy->isVoidPointerType())
+      return 2;
+    return llvm::Optional<unsigned>{};
+  }();
+  if (DiagSelect.hasValue()) {
+    S.Diag(TheCall->getBeginLoc(), diag::err_builtin_launder_invalid_arg)
+        << DiagSelect.getValue() << TheCall->getSourceRange();
+    return ExprError();
+  }
+
+  // We either have an incomplete class type, or we have a class template
+  // whose instantiation has not been forced. Example:
+  //
+  //   template <class T> struct Foo { T value; };
+  //   Foo<int> *p = nullptr;
+  //   auto *d = __builtin_launder(p);
+  if (S.RequireCompleteType(TheCall->getBeginLoc(), ParamTy->getPointeeType(),
+                            diag::err_incomplete_type))
+    return ExprError();
+
+  assert(ParamTy->getPointeeType()->isObjectType() &&
+         "Unhandled non-object pointer case");
+
+  InitializedEntity Entity =
+      InitializedEntity::InitializeParameter(S.Context, ParamTy, false);
+  ExprResult Arg =
+      S.PerformCopyInitialization(Entity, SourceLocation(), TheCall->getArg(0));
+  if (Arg.isInvalid())
+    return ExprError();
+  TheCall->setArg(0, Arg.get());
+
+  return TheCall;
+}
+
 // Emit an error and return true if the current architecture is not in the list
 // of supported architectures.
 static bool
@@ -872,7 +1063,7 @@ CheckBuiltinTargetSupport(Sema &S, unsigned BuiltinID, CallExpr *TheCall,
       S.getASTContext().getTargetInfo().getTriple().getArch();
   if (llvm::is_contained(SupportedArchs, CurArch))
     return false;
-  S.Diag(TheCall->getLocStart(), diag::err_builtin_target_unsupported)
+  S.Diag(TheCall->getBeginLoc(), diag::err_builtin_target_unsupported)
       << TheCall->getSourceRange();
   return true;
 }
@@ -915,6 +1106,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     break;
   case Builtin::BI__va_start: {
     switch (Context.getTargetInfo().getTriple().getArch()) {
+    case llvm::Triple::aarch64:
     case llvm::Triple::arm:
     case llvm::Triple::thumb:
       if (SemaBuiltinVAStartARMMicrosoft(TheCall))
@@ -989,6 +1181,10 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
   case Builtin::BI__builtin_alloca_with_align:
     if (SemaBuiltinAllocaWithAlign(TheCall))
       return ExprError();
+    LLVM_FALLTHROUGH;
+  case Builtin::BI__builtin_alloca:
+    Diag(TheCall->getBeginLoc(), diag::warn_alloca)
+        << TheCall->getDirectCallee();
     break;
   case Builtin::BI__assume:
   case Builtin::BI__builtin_assume:
@@ -999,6 +1195,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     if (SemaBuiltinAssumeAligned(TheCall))
       return ExprError();
     break;
+  case Builtin::BI__builtin_dynamic_object_size:
   case Builtin::BI__builtin_object_size:
     if (SemaBuiltinConstantArgRange(TheCall, 1, 0, 3))
       return ExprError();
@@ -1020,10 +1217,16 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     if (checkArgCount(*this, TheCall, 1)) return true;
     TheCall->setType(Context.IntTy);
     break;
-  case Builtin::BI__builtin_constant_p:
+  case Builtin::BI__builtin_constant_p: {
     if (checkArgCount(*this, TheCall, 1)) return true;
+    ExprResult Arg = DefaultFunctionArrayLvalueConversion(TheCall->getArg(0));
+    if (Arg.isInvalid()) return true;
+    TheCall->setArg(0, Arg.get());
     TheCall->setType(Context.IntTy);
     break;
+  }
+  case Builtin::BI__builtin_launder:
+    return SemaBuiltinLaunder(*this, TheCall);
   case Builtin::BI__sync_fetch_and_add:
   case Builtin::BI__sync_fetch_and_add_1:
   case Builtin::BI__sync_fetch_and_add_2:
@@ -1127,6 +1330,10 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
   case Builtin::BI__sync_swap_8:
   case Builtin::BI__sync_swap_16:
     return SemaBuiltinAtomicOverloaded(TheCallResult);
+  case Builtin::BI__sync_synchronize:
+    Diag(TheCall->getBeginLoc(), diag::warn_atomic_implicit_seq_cst)
+        << TheCall->getCallee()->getSourceRange();
+    break;
   case Builtin::BI__builtin_nontemporal_load:
   case Builtin::BI__builtin_nontemporal_store:
     return SemaBuiltinNontemporalOverloaded(TheCallResult);
@@ -1171,7 +1378,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     const QualType PtrArgType = PtrArg->getType();
     if (!PtrArgType->isPointerType() ||
         !PtrArgType->getPointeeType()->isRecordType()) {
-      Diag(PtrArg->getLocStart(), diag::err_typecheck_convert_incompatible)
+      Diag(PtrArg->getBeginLoc(), diag::err_typecheck_convert_incompatible)
           << PtrArgType << "structure pointer" << 1 << 0 << 3 << 1 << PtrArgType
           << "structure pointer";
       return ExprError();
@@ -1181,9 +1388,9 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     const Expr *FnPtrArg = TheCall->getArg(1)->IgnoreImpCasts();
     const QualType FnPtrArgType = FnPtrArg->getType();
     if (!FnPtrArgType->isPointerType()) {
-      Diag(FnPtrArg->getLocStart(), diag::err_typecheck_convert_incompatible)
-          << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3
-          << 2 << FnPtrArgType << "'int (*)(const char *, ...)'";
+      Diag(FnPtrArg->getBeginLoc(), diag::err_typecheck_convert_incompatible)
+          << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3 << 2
+          << FnPtrArgType << "'int (*)(const char *, ...)'";
       return ExprError();
     }
 
@@ -1191,15 +1398,15 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
         FnPtrArgType->getPointeeType()->getAs<FunctionType>();
 
     if (!FuncType) {
-      Diag(FnPtrArg->getLocStart(), diag::err_typecheck_convert_incompatible)
-          << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3
-          << 2 << FnPtrArgType << "'int (*)(const char *, ...)'";
+      Diag(FnPtrArg->getBeginLoc(), diag::err_typecheck_convert_incompatible)
+          << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3 << 2
+          << FnPtrArgType << "'int (*)(const char *, ...)'";
       return ExprError();
     }
 
     if (const auto *FT = dyn_cast<FunctionProtoType>(FuncType)) {
       if (!FT->getNumParams()) {
-        Diag(FnPtrArg->getLocStart(), diag::err_typecheck_convert_incompatible)
+        Diag(FnPtrArg->getBeginLoc(), diag::err_typecheck_convert_incompatible)
             << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3
             << 2 << FnPtrArgType << "'int (*)(const char *, ...)'";
         return ExprError();
@@ -1208,7 +1415,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       if (!FT->isVariadic() || FT->getReturnType() != Context.IntTy ||
           !PT->isPointerType() || !PT->getPointeeType()->isCharType() ||
           !PT->getPointeeType().isConstQualified()) {
-        Diag(FnPtrArg->getLocStart(), diag::err_typecheck_convert_incompatible)
+        Diag(FnPtrArg->getBeginLoc(), diag::err_typecheck_convert_incompatible)
             << FnPtrArgType << "'int (*)(const char *, ...)'" << 1 << 0 << 3
             << 2 << FnPtrArgType << "'int (*)(const char *, ...)'";
         return ExprError();
@@ -1218,25 +1425,9 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     TheCall->setType(Context.IntTy);
     break;
   }
-
-  // check secure string manipulation functions where overflows
-  // are detectable at compile time
-  case Builtin::BI__builtin___memcpy_chk:
-  case Builtin::BI__builtin___memmove_chk:
-  case Builtin::BI__builtin___memset_chk:
-  case Builtin::BI__builtin___strlcat_chk:
-  case Builtin::BI__builtin___strlcpy_chk:
-  case Builtin::BI__builtin___strncat_chk:
-  case Builtin::BI__builtin___strncpy_chk:
-  case Builtin::BI__builtin___stpncpy_chk:
-    SemaBuiltinMemChkCall(*this, FDecl, TheCall, 2, 3);
-    break;
-  case Builtin::BI__builtin___memccpy_chk:
-    SemaBuiltinMemChkCall(*this, FDecl, TheCall, 3, 4);
-    break;
-  case Builtin::BI__builtin___snprintf_chk:
-  case Builtin::BI__builtin___vsnprintf_chk:
-    SemaBuiltinMemChkCall(*this, FDecl, TheCall, 1, 3);
+  case Builtin::BI__builtin_preserve_access_index:
+    if (SemaBuiltinPreserveAI(*this, TheCall))
+      return ExprError();
     break;
   case Builtin::BI__builtin_call_with_static_chain:
     if (SemaBuiltinCallWithStaticChain(*this, TheCall))
@@ -1259,7 +1450,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       return ExprError();
 
     if (CheckCXXThrowOperand(
-            TheCall->getLocStart(),
+            TheCall->getBeginLoc(),
             Context.getExceptionObjectType(FDecl->getParamDecl(0)->getType()),
             TheCall))
       return ExprError();
@@ -1273,7 +1464,6 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     // check for the argument.
     if (SemaBuiltinRWPipe(*this, TheCall))
       return ExprError();
-    TheCall->setType(Context.IntTy);
     break;
   case Builtin::BIreserve_read_pipe:
   case Builtin::BIreserve_write_pipe:
@@ -1305,7 +1495,6 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
   case Builtin::BIget_pipe_max_packets:
     if (SemaBuiltinPipePackets(*this, TheCall))
       return ExprError();
-    TheCall->setType(Context.UnsignedIntTy);
     break;
   case Builtin::BIto_global:
   case Builtin::BIto_local:
@@ -1477,8 +1666,8 @@ bool Sema::CheckNeonBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
 
     TV = Result.getLimitedValue(64);
     if ((TV > 63) || (mask & (1ULL << TV)) == 0)
-      return Diag(TheCall->getLocStart(), diag::err_invalid_neon_type_code)
-        << TheCall->getArg(ImmArg)->getSourceRange();
+      return Diag(TheCall->getBeginLoc(), diag::err_invalid_neon_type_code)
+             << TheCall->getArg(ImmArg)->getSourceRange();
   }
 
   if (PtrArgNum >= 0) {
@@ -1503,7 +1692,7 @@ bool Sema::CheckNeonBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
     ConvTy = CheckSingleAssignmentConstraints(LHSTy, RHS);
     if (RHS.isInvalid())
       return true;
-    if (DiagnoseAssignmentResult(ConvTy, Arg->getLocStart(), LHSTy, RHSTy,
+    if (DiagnoseAssignmentResult(ConvTy, Arg->getBeginLoc(), LHSTy, RHSTy,
                                  RHS.get(), AA_Assigning))
       return true;
   }
@@ -1557,8 +1746,8 @@ bool Sema::CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
 
   const PointerType *pointerType = PointerArg->getType()->getAs<PointerType>();
   if (!pointerType) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_must_be_pointer)
-      << PointerArg->getType() << PointerArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_must_be_pointer)
+        << PointerArg->getType() << PointerArg->getSourceRange();
     return true;
   }
 
@@ -1574,10 +1763,9 @@ bool Sema::CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
   CastKind CastNeeded = CK_NoOp;
   if (!AddrType.isAtLeastAsQualifiedAs(ValType)) {
     CastNeeded = CK_BitCast;
-    Diag(DRE->getLocStart(), diag::ext_typecheck_convert_discards_qualifiers)
-      << PointerArg->getType()
-      << Context.getPointerType(AddrType)
-      << AA_Passing << PointerArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::ext_typecheck_convert_discards_qualifiers)
+        << PointerArg->getType() << Context.getPointerType(AddrType)
+        << AA_Passing << PointerArg->getSourceRange();
   }
 
   // Finally, do the cast and replace the argument with the corrected version.
@@ -1592,16 +1780,16 @@ bool Sema::CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
   // In general, we allow ints, floats and pointers to be loaded and stored.
   if (!ValType->isIntegerType() && !ValType->isAnyPointerType() &&
       !ValType->isBlockPointerType() && !ValType->isFloatingType()) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_must_be_pointer_intfltptr)
-      << PointerArg->getType() << PointerArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_must_be_pointer_intfltptr)
+        << PointerArg->getType() << PointerArg->getSourceRange();
     return true;
   }
 
   // But ARM doesn't have instructions to deal with 128-bit versions.
   if (Context.getTypeSize(ValType) > MaxWidth) {
     assert(MaxWidth == 64 && "Diagnostic unexpectedly inaccurate");
-    Diag(DRE->getLocStart(), diag::err_atomic_exclusive_builtin_pointer_size)
-      << PointerArg->getType() << PointerArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_exclusive_builtin_pointer_size)
+        << PointerArg->getType() << PointerArg->getSourceRange();
     return true;
   }
 
@@ -1614,8 +1802,8 @@ bool Sema::CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
   case Qualifiers::OCL_Weak:
   case Qualifiers::OCL_Strong:
   case Qualifiers::OCL_Autoreleasing:
-    Diag(DRE->getLocStart(), diag::err_arc_atomic_ownership)
-      << ValType << PointerArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_arc_atomic_ownership)
+        << ValType << PointerArg->getSourceRange();
     return true;
   }
 
@@ -1709,11 +1897,31 @@ bool Sema::CheckAArch64BuiltinFunctionCall(unsigned BuiltinID,
       BuiltinID == AArch64::BI__builtin_arm_wsr64)
     return SemaBuiltinARMSpecialReg(BuiltinID, TheCall, 0, 5, true);
 
+  // Memory Tagging Extensions (MTE) Intrinsics
+  if (BuiltinID == AArch64::BI__builtin_arm_irg ||
+      BuiltinID == AArch64::BI__builtin_arm_addg ||
+      BuiltinID == AArch64::BI__builtin_arm_gmi ||
+      BuiltinID == AArch64::BI__builtin_arm_ldg ||
+      BuiltinID == AArch64::BI__builtin_arm_stg ||
+      BuiltinID == AArch64::BI__builtin_arm_subp) {
+    return SemaBuiltinARMMemoryTaggingCall(BuiltinID, TheCall);
+  }
+
   if (BuiltinID == AArch64::BI__builtin_arm_rsr ||
       BuiltinID == AArch64::BI__builtin_arm_rsrp ||
       BuiltinID == AArch64::BI__builtin_arm_wsr ||
       BuiltinID == AArch64::BI__builtin_arm_wsrp)
     return SemaBuiltinARMSpecialReg(BuiltinID, TheCall, 0, 5, true);
+
+  // Only check the valid encoding range. Any constant in this range would be
+  // converted to a register of the form S1_2_C3_C4_5. Let the hardware throw
+  // an exception for incorrect registers. This matches MSVC behavior.
+  if (BuiltinID == AArch64::BI_ReadStatusReg ||
+      BuiltinID == AArch64::BI_WriteStatusReg)
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 0x7fff);
+
+  if (BuiltinID == AArch64::BI__getReg)
+    return SemaBuiltinConstantArgRange(TheCall, 0, 0, 31);
 
   if (CheckNeonBuiltinFunctionCall(BuiltinID, TheCall))
     return true;
@@ -1726,789 +1934,825 @@ bool Sema::CheckAArch64BuiltinFunctionCall(unsigned BuiltinID,
   case AArch64::BI__builtin_arm_dmb:
   case AArch64::BI__builtin_arm_dsb:
   case AArch64::BI__builtin_arm_isb: l = 0; u = 15; break;
+  case AArch64::BI__builtin_arm_tcancel: l = 0; u = 65535; break;
   }
 
   return SemaBuiltinConstantArgRange(TheCall, i, l, u + l);
 }
 
 bool Sema::CheckHexagonBuiltinCpu(unsigned BuiltinID, CallExpr *TheCall) {
-  static const std::map<unsigned, std::vector<StringRef>> ValidCPU = {
-    { Hexagon::BI__builtin_HEXAGON_A6_vcmpbeq_notany, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_A6_vminub_RdP, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_M6_vabsdiffb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_M6_vabsdiffub, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_nac, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_xacc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_nac, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_xacc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_vsplatrbp, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_vtrunehb_ppp, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_S6_vtrunohb_ppp, {"v62", "v65"} },
+  struct BuiltinAndString {
+    unsigned BuiltinID;
+    const char *Str;
   };
 
-  static const std::map<unsigned, std::vector<StringRef>> ValidHVX = {
-    { Hexagon::BI__builtin_HEXAGON_V6_extractw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_extractw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_hi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_hi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lo, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lo_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatb_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplath, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplath_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_n, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_n_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_not, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_not_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_n, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_n_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2v2, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2v2_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_pred_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqh, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqh_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqw, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqw_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsb, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_sat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_sat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_dv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_dv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarry, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarry_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbh, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbh_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbw, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbw_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddububb_sat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddububb_sat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_dv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_dv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_valignb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_valignb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_valignbi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_valignbi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vand, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vand_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvnqv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvnqv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvqv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvqv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslhv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslhv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslwv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vaslwv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbrndsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbrndsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubrndsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubrndsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrhv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubrndsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubrndsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhrndsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhrndsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhrndsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhrndsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhrndsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhrndsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vasrwv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vassign, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vassign_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vassignp, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vassignp_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgb, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgb_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgbrnd, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgbrnd_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavghrnd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavghrnd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgubrnd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgubrnd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguhrnd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguhrnd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguw, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguw_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguwrnd, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavguwrnd_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgwrnd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vavgwrnd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcl0h, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcl0h_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcl0w, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcl0w_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcombine, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vcombine_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vd0, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vd0_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdd0, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdd0_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealb4w, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealb4w_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealvdd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdealvdd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdelta, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdelta_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqb_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqh_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_veqw_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgth_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_and, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_and_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_or, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_or_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_xor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_xor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vinsertwr, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vinsertwr_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlalignb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlalignb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlalignbi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlalignbi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrb_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrhv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrhv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrwv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlsrwv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlut4, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlut4_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvbi, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvbi_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_nm, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_nm_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracci, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracci_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwhi, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwhi_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_nm, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_nm_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracci, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracci_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxb_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmaxw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminb_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vminw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabusv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabusv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuuv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuuv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahhsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpahhsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhuhsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhuhsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpsuhuhsat, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpsuhuhsat_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_64, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_64_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsat_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsat_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsrs, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsrs_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhss, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhss_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhvsrs, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhvsrs_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyieoh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyieoh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewh_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewh_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiowh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiowh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_64_acc, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_64_acc_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_sacc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_sacc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_sacc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_sacc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmux, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vmux_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgb, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgb_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnavgw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnormamth, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnormamth_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnormamtw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnormamtw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnot, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vnot_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackeb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackeb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackeh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackeh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackhb_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackhb_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackhub_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackhub_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackob, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackob_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackoh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackoh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackwh_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackwh_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackwuh_sat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpackwuh_sat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpopcounth, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vpopcounth_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqb, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqb_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqh, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqh_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqw, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqw_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrdelta, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrdelta_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_acc, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_acc_128B, {"v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vror, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vror_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundhb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundhb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundhub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundhub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrounduhub, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrounduhub_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrounduwuh, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrounduwuh_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundwh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundwh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundwuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vroundwuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsathub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsathub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsatuwuh, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsatuwuh_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsatwh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsatwh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufeh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufeh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffeb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffeb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffob, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffob_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffvdd, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshuffvdd_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vshufoh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_dv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_dv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubcarry, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubcarry_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubhw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubububb_sat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubububb_sat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_dv, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_dv_128B, {"v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubw, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_dv, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_dv_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vswap, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vswap_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_acc, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_acc_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackob, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackob_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackoh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackoh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackub, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackub_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackuh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vunpackuh_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vxor, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vxor_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vzb, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vzb_128B, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vzh, {"v60", "v62", "v65"} },
-    { Hexagon::BI__builtin_HEXAGON_V6_vzh_128B, {"v60", "v62", "v65"} },
+  static BuiltinAndString ValidCPU[] = {
+    { Hexagon::BI__builtin_HEXAGON_A6_vcmpbeq_notany, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_A6_vminub_RdP, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_F2_dfadd, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_F2_dfsub, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_M2_mnaci, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_M6_vabsdiffb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_M6_vabsdiffub, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S2_mask, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_nac, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_p_xacc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_nac, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_rol_i_r_xacc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_vsplatrbp, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_vtrunehb_ppp, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_S6_vtrunohb_ppp, "v62,v65,v66" },
+  };
+
+  static BuiltinAndString ValidHVX[] = {
+    { Hexagon::BI__builtin_HEXAGON_V6_hi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_hi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lo, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lo_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_extractw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_extractw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatb_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplath, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplath_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_lvsplatw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_n, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_and_n_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_not, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_not_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_n, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_or_n_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2v2, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_scalar2v2_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_pred_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqh, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqh_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqw, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_shuffeqw_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsb, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_sat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsb_sat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsdiffw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsh_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vabsw_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddb_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_dv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddbsat_dv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarry, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarry_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarrysat, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddcarrysat_128B, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbh, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbh_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbw, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddclbw_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddh_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddhw_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubh_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddubsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddububb_sat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddububb_sat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduhw_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_dv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vadduwsat_dv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddw_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaddwsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_valignb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_valignb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_valignbi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_valignbi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vand, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vand_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandnqrt_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandqrt_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvnqv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvnqv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvqv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvqv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vandvrt_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_acc, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslh_acc_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslhv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslhv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslw_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslwv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vaslwv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_acc, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrh_acc_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbrndsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbrndsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhbsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubrndsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubrndsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhubsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrhv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasr_into, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasr_into_128B, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubrndsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubrndsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruhubsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhrndsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhrndsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasruwuhsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrw_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhrndsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhrndsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhrndsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhrndsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwuhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vasrwv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vassign, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vassign_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vassignp, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vassignp_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgb, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgb_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgbrnd, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgbrnd_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavghrnd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavghrnd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgubrnd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgubrnd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguhrnd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguhrnd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguw, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguw_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguwrnd, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavguwrnd_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgwrnd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vavgwrnd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcl0h, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcl0h_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcl0w, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcl0w_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcombine, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vcombine_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vd0, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vd0_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdd0, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdd0_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealb4w, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealb4w_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealvdd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdealvdd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdelta, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdelta_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpybus_dv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhb_dv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhisat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsuisat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhsusat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdmpyhvsat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vdsaduh_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqb_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqh_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_veqw_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtb_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgth_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtub_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuh_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtuw_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_and, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_and_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_or, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_or_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_xor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vgtw_xor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vinsertwr, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vinsertwr_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlalignb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlalignb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlalignbi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlalignbi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrb_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrhv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrhv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrwv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlsrwv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlut4, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlut4_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvbi, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvbi_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_nm, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_nm_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracci, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvvb_oracci_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwhi, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwhi_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_nm, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_nm_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracci, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vlutvwh_oracci_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxb_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmaxw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminb_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vminw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabusv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabusv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_acc, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuu_acc_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuuv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpabuuv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahhsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpahhsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhb_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhuhsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpauhuhsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpsuhuhsat, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpsuhuhsat_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybusv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpybv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_64, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyewuh_64_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_acc, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyh_acc_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsat_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsat_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsrs, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhsrs_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhss, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhss_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhvsrs, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyhvsrs_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyieoh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyieoh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewh_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewh_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiewuh_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyih_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyihb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiowh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiowh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwh_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyiwub_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_64_acc, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_64_acc_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_sacc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_rnd_sacc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_sacc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyowh_sacc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyub_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyubv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuh_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_acc, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhe_acc_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmpyuhv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmux, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vmux_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgb, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgb_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnavgw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnormamth, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnormamth_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnormamtw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnormamtw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnot, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vnot_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackeb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackeb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackeh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackeh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackhb_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackhb_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackhub_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackhub_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackob, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackob_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackoh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackoh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackwh_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackwh_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackwuh_sat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpackwuh_sat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpopcounth, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vpopcounth_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqb, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqb_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqh, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqh_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqw, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vprefixqw_128B, "v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrdelta, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrdelta_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_128B, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_acc, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybub_rtt_acc_128B, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusi_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybusv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpybv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubi_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_128B, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_acc, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyub_rtt_acc_128B, "v65" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrmpyubv_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vror, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vror_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrotr, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrotr_128B, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundhb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundhb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundhub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundhub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrounduhub, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrounduhub_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrounduwuh, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrounduwuh_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundwh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundwh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundwuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vroundwuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vrsadubi_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatdw, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatdw_128B, "v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsathub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsathub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatuwuh, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatuwuh_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatwh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsatwh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufeh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufeh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffeb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffeb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffob, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffob_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffvdd, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshuffvdd_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoeh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vshufoh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubb_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_dv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubbsat_dv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubcarry, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubcarry_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubh_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubhw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsububsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubububb_sat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubububb_sat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuhw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_dv, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubuwsat_dv_128B, "v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubw, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubw_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_dv, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vsubwsat_dv_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vswap, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vswap_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpybus_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_acc, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vtmpyhb_acc_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackob, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackob_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackoh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackoh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackub, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackub_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackuh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vunpackuh_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vxor, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vxor_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vzb, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vzb_128B, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vzh, "v60,v62,v65,v66" },
+    { Hexagon::BI__builtin_HEXAGON_V6_vzh_128B, "v60,v62,v65,v66" },
+  };
+
+  // Sort the tables on first execution so we can binary search them.
+  auto SortCmp = [](const BuiltinAndString &LHS, const BuiltinAndString &RHS) {
+    return LHS.BuiltinID < RHS.BuiltinID;
+  };
+  static const bool SortOnce =
+      (llvm::sort(ValidCPU, SortCmp),
+       llvm::sort(ValidHVX, SortCmp), true);
+  (void)SortOnce;
+  auto LowerBoundCmp = [](const BuiltinAndString &BI, unsigned BuiltinID) {
+    return BI.BuiltinID < BuiltinID;
   };
 
   const TargetInfo &TI = Context.getTargetInfo();
 
-  auto FC = ValidCPU.find(BuiltinID);
-  if (FC != ValidCPU.end()) {
+  const BuiltinAndString *FC =
+      llvm::lower_bound(ValidCPU, BuiltinID, LowerBoundCmp);
+  if (FC != std::end(ValidCPU) && FC->BuiltinID == BuiltinID) {
     const TargetOptions &Opts = TI.getTargetOpts();
     StringRef CPU = Opts.CPU;
     if (!CPU.empty()) {
       assert(CPU.startswith("hexagon") && "Unexpected CPU name");
       CPU.consume_front("hexagon");
-      if (llvm::none_of(FC->second, [CPU](StringRef S) { return S == CPU; }))
-        return Diag(TheCall->getLocStart(),
+      SmallVector<StringRef, 3> CPUs;
+      StringRef(FC->Str).split(CPUs, ',');
+      if (llvm::none_of(CPUs, [CPU](StringRef S) { return S == CPU; }))
+        return Diag(TheCall->getBeginLoc(),
                     diag::err_hexagon_builtin_unsupported_cpu);
     }
   }
 
-  auto FH = ValidHVX.find(BuiltinID);
-  if (FH != ValidHVX.end()) {
+  const BuiltinAndString *FH =
+      llvm::lower_bound(ValidHVX, BuiltinID, LowerBoundCmp);
+  if (FH != std::end(ValidHVX) && FH->BuiltinID == BuiltinID) {
     if (!TI.hasFeature("hvx"))
-      return Diag(TheCall->getLocStart(),
+      return Diag(TheCall->getBeginLoc(),
                   diag::err_hexagon_builtin_requires_hvx);
 
-    bool IsValid = llvm::any_of(FH->second,
+    SmallVector<StringRef, 3> HVXs;
+    StringRef(FH->Str).split(HVXs, ',');
+    bool IsValid = llvm::any_of(HVXs,
                                 [&TI] (StringRef V) {
                                   std::string F = "hvx" + V.str();
                                   return TI.hasFeature(F);
                                 });
     if (!IsValid)
-      return Diag(TheCall->getLocStart(),
+      return Diag(TheCall->getBeginLoc(),
                   diag::err_hexagon_builtin_unsupported_hvx);
   }
 
@@ -2517,15 +2761,17 @@ bool Sema::CheckHexagonBuiltinCpu(unsigned BuiltinID, CallExpr *TheCall) {
 
 bool Sema::CheckHexagonBuiltinArgument(unsigned BuiltinID, CallExpr *TheCall) {
   struct ArgInfo {
-    ArgInfo(unsigned O, bool S, unsigned W, unsigned A)
-      : OpNum(O), IsSigned(S), BitWidth(W), Align(A) {}
-    unsigned OpNum = 0;
-    bool IsSigned = false;
-    unsigned BitWidth = 0;
-    unsigned Align = 0;
+    uint8_t OpNum;
+    bool IsSigned;
+    uint8_t BitWidth;
+    uint8_t Align;
+  };
+  struct BuiltinInfo {
+    unsigned BuiltinID;
+    ArgInfo Infos[2];
   };
 
-  static const std::map<unsigned, std::vector<ArgInfo>> Infos = {
+  static BuiltinInfo Infos[] = {
     { Hexagon::BI__builtin_circ_ldd,                  {{ 3, true,  4,  3 }} },
     { Hexagon::BI__builtin_circ_ldw,                  {{ 3, true,  4,  2 }} },
     { Hexagon::BI__builtin_circ_ldh,                  {{ 3, true,  4,  1 }} },
@@ -2711,15 +2957,30 @@ bool Sema::CheckHexagonBuiltinArgument(unsigned BuiltinID, CallExpr *TheCall) {
                                                       {{ 3, false, 1,  0 }} },
   };
 
-  auto F = Infos.find(BuiltinID);
-  if (F == Infos.end())
+  // Use a dynamically initialized static to sort the table exactly once on
+  // first run.
+  static const bool SortOnce =
+      (llvm::sort(Infos,
+                 [](const BuiltinInfo &LHS, const BuiltinInfo &RHS) {
+                   return LHS.BuiltinID < RHS.BuiltinID;
+                 }),
+       true);
+  (void)SortOnce;
+
+  const BuiltinInfo *F = llvm::partition_point(
+      Infos, [=](const BuiltinInfo &BI) { return BI.BuiltinID < BuiltinID; });
+  if (F == std::end(Infos) || F->BuiltinID != BuiltinID)
     return false;
 
   bool Error = false;
 
-  for (const ArgInfo &A : F->second) {
-    int32_t Min = A.IsSigned ? -(1 << (A.BitWidth-1)) : 0;
-    int32_t Max = (1 << (A.IsSigned ? A.BitWidth-1 : A.BitWidth)) - 1;
+  for (const ArgInfo &A : F->Infos) {
+    // Ignore empty ArgInfo elements.
+    if (A.BitWidth == 0)
+      continue;
+
+    int32_t Min = A.IsSigned ? -(1 << (A.BitWidth - 1)) : 0;
+    int32_t Max = (1 << (A.IsSigned ? A.BitWidth - 1 : A.BitWidth)) - 1;
     if (!A.Align) {
       Error |= SemaBuiltinConstantArgRange(TheCall, A.OpNum, Min, Max);
     } else {
@@ -2760,7 +3021,7 @@ bool Sema::CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case Mips::BI__builtin_mips_precr_sra_ph_w: i = 2; l = 0; u = 31; break;
   case Mips::BI__builtin_mips_precr_sra_r_ph_w: i = 2; l = 0; u = 31; break;
   case Mips::BI__builtin_mips_prepend: i = 2; l = 0; u = 31; break;
-  // MSA instrinsics. Instructions (which the intrinsics maps to) which use the
+  // MSA intrinsics. Instructions (which the intrinsics maps to) which use the
   // df/m field.
   // These intrinsics take an unsigned 3 bit immediate.
   case Mips::BI__builtin_msa_bclri_b:
@@ -2791,6 +3052,8 @@ bool Sema::CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   // These intrinsics take an unsigned 5 bit immediate.
   // The first block of intrinsics actually have an unsigned 5 bit field,
   // not a df/n field.
+  case Mips::BI__builtin_msa_cfcmsa:
+  case Mips::BI__builtin_msa_ctcmsa: i = 0; l = 0; u = 31; break;
   case Mips::BI__builtin_msa_clei_u_b:
   case Mips::BI__builtin_msa_clei_u_h:
   case Mips::BI__builtin_msa_clei_u_w:
@@ -2903,14 +3166,14 @@ bool Sema::CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case Mips::BI__builtin_msa_ldi_h:
   case Mips::BI__builtin_msa_ldi_w:
   case Mips::BI__builtin_msa_ldi_d: i = 0; l = -512; u = 511; break;
-  case Mips::BI__builtin_msa_ld_b: i = 1; l = -512; u = 511; m = 16; break;
-  case Mips::BI__builtin_msa_ld_h: i = 1; l = -1024; u = 1022; m = 16; break;
-  case Mips::BI__builtin_msa_ld_w: i = 1; l = -2048; u = 2044; m = 16; break;
-  case Mips::BI__builtin_msa_ld_d: i = 1; l = -4096; u = 4088; m = 16; break;
-  case Mips::BI__builtin_msa_st_b: i = 2; l = -512; u = 511; m = 16; break;
-  case Mips::BI__builtin_msa_st_h: i = 2; l = -1024; u = 1022; m = 16; break;
-  case Mips::BI__builtin_msa_st_w: i = 2; l = -2048; u = 2044; m = 16; break;
-  case Mips::BI__builtin_msa_st_d: i = 2; l = -4096; u = 4088; m = 16; break;
+  case Mips::BI__builtin_msa_ld_b: i = 1; l = -512; u = 511; m = 1; break;
+  case Mips::BI__builtin_msa_ld_h: i = 1; l = -1024; u = 1022; m = 2; break;
+  case Mips::BI__builtin_msa_ld_w: i = 1; l = -2048; u = 2044; m = 4; break;
+  case Mips::BI__builtin_msa_ld_d: i = 1; l = -4096; u = 4088; m = 8; break;
+  case Mips::BI__builtin_msa_st_b: i = 2; l = -512; u = 511; m = 1; break;
+  case Mips::BI__builtin_msa_st_h: i = 2; l = -1024; u = 1022; m = 2; break;
+  case Mips::BI__builtin_msa_st_w: i = 2; l = -2048; u = 2044; m = 4; break;
+  case Mips::BI__builtin_msa_st_d: i = 2; l = -4096; u = 4088; m = 8; break;
   }
 
   if (!m)
@@ -2935,14 +3198,21 @@ bool Sema::CheckPPCBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
                        BuiltinID == PPC::BI__builtin_divdeu;
 
   if (Is64BitBltin && !IsTarget64Bit)
-      return Diag(TheCall->getLocStart(), diag::err_64_bit_builtin_32_bit_tgt)
-             << TheCall->getSourceRange();
+    return Diag(TheCall->getBeginLoc(), diag::err_64_bit_builtin_32_bit_tgt)
+           << TheCall->getSourceRange();
 
   if ((IsBltinExtDiv && !Context.getTargetInfo().hasFeature("extdiv")) ||
       (BuiltinID == PPC::BI__builtin_bpermd &&
        !Context.getTargetInfo().hasFeature("bpermd")))
-    return Diag(TheCall->getLocStart(), diag::err_ppc_builtin_only_on_pwr7)
+    return Diag(TheCall->getBeginLoc(), diag::err_ppc_builtin_only_on_pwr7)
            << TheCall->getSourceRange();
+
+  auto SemaVSXCheck = [&](CallExpr *TheCall) -> bool {
+    if (!Context.getTargetInfo().hasFeature("vsx"))
+      return Diag(TheCall->getBeginLoc(), diag::err_ppc_builtin_only_on_pwr7)
+             << TheCall->getSourceRange();
+    return false;
+  };
 
   switch (BuiltinID) {
   default: return false;
@@ -2962,6 +3232,11 @@ bool Sema::CheckPPCBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case PPC::BI__builtin_vsx_xxpermdi:
   case PPC::BI__builtin_vsx_xxsldwi:
     return SemaBuiltinVSX(TheCall);
+  case PPC::BI__builtin_unpack_vector_int128:
+    return SemaVSXCheck(TheCall) ||
+           SemaBuiltinConstantArgRange(TheCall, 1, 0, 1);
+  case PPC::BI__builtin_pack_vector_int128:
+    return SemaVSXCheck(TheCall);
   }
   return SemaBuiltinConstantArgRange(TheCall, i, l, u);
 }
@@ -2973,7 +3248,7 @@ bool Sema::CheckSystemZBuiltinFunctionCall(unsigned BuiltinID,
     llvm::APSInt AbortCode(32);
     if (Arg->isIntegerConstantExpr(AbortCode, Context) &&
         AbortCode.getSExtValue() >= 0 && AbortCode.getSExtValue() < 256)
-      return Diag(Arg->getLocStart(), diag::err_systemz_invalid_tabort_code)
+      return Diag(Arg->getBeginLoc(), diag::err_systemz_invalid_tabort_code)
              << Arg->getSourceRange();
   }
 
@@ -3025,6 +3300,8 @@ bool Sema::CheckSystemZBuiltinFunctionCall(unsigned BuiltinID,
   case SystemZ::BI__builtin_s390_vfmaxsb:
   case SystemZ::BI__builtin_s390_vfmindb:
   case SystemZ::BI__builtin_s390_vfmaxdb: i = 2; l = 0; u = 15; break;
+  case SystemZ::BI__builtin_s390_vsld: i = 2; l = 0; u = 7; break;
+  case SystemZ::BI__builtin_s390_vsrd: i = 2; l = 0; u = 7; break;
   }
   return SemaBuiltinConstantArgRange(TheCall, i, l, u);
 }
@@ -3037,14 +3314,14 @@ static bool SemaBuiltinCpuSupports(Sema &S, CallExpr *TheCall) {
 
   // Check if the argument is a string literal.
   if (!isa<StringLiteral>(Arg->IgnoreParenImpCasts()))
-    return S.Diag(TheCall->getLocStart(), diag::err_expr_not_string_literal)
+    return S.Diag(TheCall->getBeginLoc(), diag::err_expr_not_string_literal)
            << Arg->getSourceRange();
 
   // Check the contents of the string.
   StringRef Feature =
       cast<StringLiteral>(Arg->IgnoreParenImpCasts())->getString();
   if (!S.Context.getTargetInfo().validateCpuSupports(Feature))
-    return S.Diag(TheCall->getLocStart(), diag::err_invalid_cpu_supports)
+    return S.Diag(TheCall->getBeginLoc(), diag::err_invalid_cpu_supports)
            << Arg->getSourceRange();
   return false;
 }
@@ -3057,14 +3334,14 @@ static bool SemaBuiltinCpuIs(Sema &S, CallExpr *TheCall) {
 
   // Check if the argument is a string literal.
   if (!isa<StringLiteral>(Arg->IgnoreParenImpCasts()))
-    return S.Diag(TheCall->getLocStart(), diag::err_expr_not_string_literal)
+    return S.Diag(TheCall->getBeginLoc(), diag::err_expr_not_string_literal)
            << Arg->getSourceRange();
 
   // Check the contents of the string.
   StringRef Feature =
       cast<StringLiteral>(Arg->IgnoreParenImpCasts())->getString();
   if (!S.Context.getTargetInfo().validateCpuIs(Feature))
-    return S.Diag(TheCall->getLocStart(), diag::err_invalid_cpu_is)
+    return S.Diag(TheCall->getBeginLoc(), diag::err_invalid_cpu_is)
            << Arg->getSourceRange();
   return false;
 }
@@ -3123,6 +3400,8 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_cvtss2sd_round_mask:
   case X86::BI__builtin_ia32_getexpsd128_round_mask:
   case X86::BI__builtin_ia32_getexpss128_round_mask:
+  case X86::BI__builtin_ia32_getmantpd512_mask:
+  case X86::BI__builtin_ia32_getmantps512_mask:
   case X86::BI__builtin_ia32_maxsd_round_mask:
   case X86::BI__builtin_ia32_maxss_round_mask:
   case X86::BI__builtin_ia32_minsd_round_mask:
@@ -3145,6 +3424,8 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_fixupimmsd_maskz:
   case X86::BI__builtin_ia32_fixupimmss_mask:
   case X86::BI__builtin_ia32_fixupimmss_maskz:
+  case X86::BI__builtin_ia32_getmantsd_round_mask:
+  case X86::BI__builtin_ia32_getmantss_round_mask:
   case X86::BI__builtin_ia32_rangepd512_mask:
   case X86::BI__builtin_ia32_rangeps512_mask:
   case X86::BI__builtin_ia32_rangesd128_round_mask:
@@ -3188,9 +3469,13 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_cvtdq2ps512_mask:
   case X86::BI__builtin_ia32_cvtudq2ps512_mask:
   case X86::BI__builtin_ia32_cvtpd2ps512_mask:
+  case X86::BI__builtin_ia32_cvtpd2dq512_mask:
   case X86::BI__builtin_ia32_cvtpd2qq512_mask:
+  case X86::BI__builtin_ia32_cvtpd2udq512_mask:
   case X86::BI__builtin_ia32_cvtpd2uqq512_mask:
+  case X86::BI__builtin_ia32_cvtps2dq512_mask:
   case X86::BI__builtin_ia32_cvtps2qq512_mask:
+  case X86::BI__builtin_ia32_cvtps2udq512_mask:
   case X86::BI__builtin_ia32_cvtps2uqq512_mask:
   case X86::BI__builtin_ia32_cvtqq2pd512_mask:
   case X86::BI__builtin_ia32_cvtqq2ps512_mask:
@@ -3211,8 +3496,6 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_scalefps512_mask:
   case X86::BI__builtin_ia32_scalefsd_round_mask:
   case X86::BI__builtin_ia32_scalefss_round_mask:
-  case X86::BI__builtin_ia32_getmantpd512_mask:
-  case X86::BI__builtin_ia32_getmantps512_mask:
   case X86::BI__builtin_ia32_cvtsd2ss_round_mask:
   case X86::BI__builtin_ia32_sqrtsd_round_mask:
   case X86::BI__builtin_ia32_sqrtss_round_mask:
@@ -3241,11 +3524,6 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
     ArgNum = 4;
     HasRC = true;
     break;
-  case X86::BI__builtin_ia32_getmantsd_round_mask:
-  case X86::BI__builtin_ia32_getmantss_round_mask:
-    ArgNum = 5;
-    HasRC = true;
-    break;
   }
 
   llvm::APSInt Result;
@@ -3267,8 +3545,8 @@ bool Sema::CheckX86BuiltinRoundingOrSAE(unsigned BuiltinID, CallExpr *TheCall) {
       (HasRC && Result.getZExtValue() >= 8 && Result.getZExtValue() <= 11))
     return false;
 
-  return Diag(TheCall->getLocStart(), diag::err_x86_builtin_invalid_rounding)
-    << Arg->getSourceRange();
+  return Diag(TheCall->getBeginLoc(), diag::err_x86_builtin_invalid_rounding)
+         << Arg->getSourceRange();
 }
 
 // Check if the gather/scatter scale is legal.
@@ -3370,8 +3648,8 @@ bool Sema::CheckX86BuiltinGatherScatterScale(unsigned BuiltinID,
   if (Result == 1 || Result == 2 || Result == 4 || Result == 8)
     return false;
 
-  return Diag(TheCall->getLocStart(), diag::err_x86_builtin_invalid_scale)
-    << Arg->getSourceRange();
+  return Diag(TheCall->getBeginLoc(), diag::err_x86_builtin_invalid_scale)
+         << Arg->getSourceRange();
 }
 
 static bool isX86_32Builtin(unsigned BuiltinID) {
@@ -3395,7 +3673,7 @@ bool Sema::CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   // Check for 32-bit only builtins on a 64-bit target.
   const llvm::Triple &TT = Context.getTargetInfo().getTriple();
   if (TT.getArch() != llvm::Triple::x86 && isX86_32Builtin(BuiltinID))
-    return Diag(TheCall->getCallee()->getLocStart(),
+    return Diag(TheCall->getCallee()->getBeginLoc(),
                 diag::err_32_bit_builtin_64_bit_tgt);
 
   // If the intrinsic has rounding or SAE make sure its valid.
@@ -3630,6 +3908,14 @@ bool Sema::CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_psrldqi128_byteshift:
   case X86::BI__builtin_ia32_psrldqi256_byteshift:
   case X86::BI__builtin_ia32_psrldqi512_byteshift:
+  case X86::BI__builtin_ia32_kshiftliqi:
+  case X86::BI__builtin_ia32_kshiftlihi:
+  case X86::BI__builtin_ia32_kshiftlisi:
+  case X86::BI__builtin_ia32_kshiftlidi:
+  case X86::BI__builtin_ia32_kshiftriqi:
+  case X86::BI__builtin_ia32_kshiftrihi:
+  case X86::BI__builtin_ia32_kshiftrisi:
+  case X86::BI__builtin_ia32_kshiftridi:
     i = 1; l = 0; u = 255;
     break;
   case X86::BI__builtin_ia32_vperm2f128_pd256:
@@ -3722,6 +4008,8 @@ bool Sema::CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case X86::BI__builtin_ia32_scatterpfqps:
     i = 4; l = 2; u = 3;
     break;
+  case X86::BI__builtin_ia32_reducesd_mask:
+  case X86::BI__builtin_ia32_reducess_mask:
   case X86::BI__builtin_ia32_rndscalesd_round_mask:
   case X86::BI__builtin_ia32_rndscaless_round_mask:
     i = 4; l = 0; u = 255;
@@ -3791,7 +4079,8 @@ static void CheckNonNullArgument(Sema &S,
                                  SourceLocation CallSiteLoc) {
   if (CheckNonNullExpr(S, ArgExpr))
     S.DiagRuntimeBehavior(CallSiteLoc, ArgExpr,
-           S.PDiag(diag::warn_null_arg) << ArgExpr->getSourceRange());
+                          S.PDiag(diag::warn_null_arg)
+                              << ArgExpr->getSourceRange());
 }
 
 bool Sema::GetFormatNSStringIdx(const FormatAttr *Format, unsigned &Idx) {
@@ -3861,6 +4150,9 @@ static void CheckNonNullArguments(Sema &S,
                                   SourceLocation CallSiteLoc) {
   assert((FDecl || Proto) && "Need a function declaration or prototype");
 
+  // Already checked by by constant evaluator.
+  if (S.isConstantEvaluated())
+    return;
   // Check the attributes attached to the method/function itself.
   llvm::SmallBitVector NonNullArgs;
   if (FDecl) {
@@ -4056,7 +4348,7 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
   CheckAbsoluteValueFunction(TheCall, FDecl);
   CheckMaxUnsignedZero(TheCall, FDecl);
 
-  if (getLangOpts().ObjC1)
+  if (getLangOpts().ObjC)
     DiagnoseCStringFormatDirectiveInCFAPI(*this, FDecl, Args, NumArgs);
 
   unsigned CMId = FDecl->getMemoryFunctionKind();
@@ -4312,15 +4604,15 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
     ++AdjustedNumArgs;
   // Check we have the right number of arguments.
   if (TheCall->getNumArgs() < AdjustedNumArgs) {
-    Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args)
-      << 0 << AdjustedNumArgs << TheCall->getNumArgs()
-      << TheCall->getCallee()->getSourceRange();
+    Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args)
+        << 0 << AdjustedNumArgs << TheCall->getNumArgs()
+        << TheCall->getCallee()->getSourceRange();
     return ExprError();
   } else if (TheCall->getNumArgs() > AdjustedNumArgs) {
-    Diag(TheCall->getArg(AdjustedNumArgs)->getLocStart(),
+    Diag(TheCall->getArg(AdjustedNumArgs)->getBeginLoc(),
          diag::err_typecheck_call_too_many_args)
-      << 0 << AdjustedNumArgs << TheCall->getNumArgs()
-      << TheCall->getCallee()->getSourceRange();
+        << 0 << AdjustedNumArgs << TheCall->getNumArgs()
+        << TheCall->getCallee()->getSourceRange();
     return ExprError();
   }
 
@@ -4333,8 +4625,8 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
   Ptr = ConvertedPtr.get();
   const PointerType *pointerType = Ptr->getType()->getAs<PointerType>();
   if (!pointerType) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_must_be_pointer)
-      << Ptr->getType() << Ptr->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_must_be_pointer)
+        << Ptr->getType() << Ptr->getSourceRange();
     return ExprError();
   }
 
@@ -4343,13 +4635,13 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
   QualType ValType = AtomTy; // 'C'
   if (IsC11) {
     if (!AtomTy->isAtomicType()) {
-      Diag(DRE->getLocStart(), diag::err_atomic_op_needs_atomic)
-        << Ptr->getType() << Ptr->getSourceRange();
+      Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_atomic)
+          << Ptr->getType() << Ptr->getSourceRange();
       return ExprError();
     }
-    if (AtomTy.isConstQualified() ||
+    if ((Form != Load && Form != LoadCopy && AtomTy.isConstQualified()) ||
         AtomTy.getAddressSpace() == LangAS::opencl_constant) {
-      Diag(DRE->getLocStart(), diag::err_atomic_op_needs_non_const_atomic)
+      Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_non_const_atomic)
           << (AtomTy.isConstQualified() ? 0 : 1) << Ptr->getType()
           << Ptr->getSourceRange();
       return ExprError();
@@ -4357,8 +4649,8 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
     ValType = AtomTy->getAs<AtomicType>()->getValueType();
   } else if (Form != Load && Form != LoadCopy) {
     if (ValType.isConstQualified()) {
-      Diag(DRE->getLocStart(), diag::err_atomic_op_needs_non_const_pointer)
-        << Ptr->getType() << Ptr->getSourceRange();
+      Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_non_const_pointer)
+          << Ptr->getType() << Ptr->getSourceRange();
       return ExprError();
     }
   }
@@ -4368,33 +4660,33 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
     // gcc does not enforce these rules for GNU atomics, but we do so for sanity.
     if (IsAddSub && !ValType->isIntegerType()
         && !ValType->isPointerType()) {
-      Diag(DRE->getLocStart(), diag::err_atomic_op_needs_atomic_int_or_ptr)
-        << IsC11 << Ptr->getType() << Ptr->getSourceRange();
+      Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_atomic_int_or_ptr)
+          << IsC11 << Ptr->getType() << Ptr->getSourceRange();
       return ExprError();
     }
     if (IsMinMax) {
       const BuiltinType *BT = ValType->getAs<BuiltinType>();
       if (!BT || (BT->getKind() != BuiltinType::Int &&
                   BT->getKind() != BuiltinType::UInt)) {
-        Diag(DRE->getLocStart(), diag::err_atomic_op_needs_int32_or_ptr);
+        Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_int32_or_ptr);
         return ExprError();
       }
     }
     if (!IsAddSub && !IsMinMax && !ValType->isIntegerType()) {
-      Diag(DRE->getLocStart(), diag::err_atomic_op_bitwise_needs_atomic_int)
-        << IsC11 << Ptr->getType() << Ptr->getSourceRange();
+      Diag(DRE->getBeginLoc(), diag::err_atomic_op_bitwise_needs_atomic_int)
+          << IsC11 << Ptr->getType() << Ptr->getSourceRange();
       return ExprError();
     }
     if (IsC11 && ValType->isPointerType() &&
-        RequireCompleteType(Ptr->getLocStart(), ValType->getPointeeType(),
+        RequireCompleteType(Ptr->getBeginLoc(), ValType->getPointeeType(),
                             diag::err_incomplete_type)) {
       return ExprError();
     }
   } else if (IsN && !ValType->isIntegerType() && !ValType->isPointerType()) {
     // For __atomic_*_n operations, the value type must be a scalar integral or
     // pointer type which is 1, 2, 4, 8 or 16 bytes in length.
-    Diag(DRE->getLocStart(), diag::err_atomic_op_needs_atomic_int_or_ptr)
-      << IsC11 << Ptr->getType() << Ptr->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_atomic_int_or_ptr)
+        << IsC11 << Ptr->getType() << Ptr->getSourceRange();
     return ExprError();
   }
 
@@ -4402,8 +4694,8 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
       !AtomTy->isScalarType()) {
     // For GNU atomics, require a trivially-copyable type. This is not part of
     // the GNU atomics specification, but we enforce it for sanity.
-    Diag(DRE->getLocStart(), diag::err_atomic_op_needs_trivial_copy)
-      << Ptr->getType() << Ptr->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_op_needs_trivial_copy)
+        << Ptr->getType() << Ptr->getSourceRange();
     return ExprError();
   }
 
@@ -4418,8 +4710,8 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
   case Qualifiers::OCL_Autoreleasing:
     // FIXME: Can this happen? By this point, ValType should be known
     // to be trivially copyable.
-    Diag(DRE->getLocStart(), diag::err_arc_atomic_ownership)
-      << ValType << Ptr->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_arc_atomic_ownership)
+        << ValType << Ptr->getSourceRange();
     return ExprError();
   }
 
@@ -4457,7 +4749,7 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
       case 0:
         // The first argument is always a pointer. It has a fixed type.
         // It is always dereferenced, a nullptr is undefined.
-        CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getLocStart());
+        CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getBeginLoc());
         // Nothing else to do: we already know all we want about this pointer.
         continue;
       case 1:
@@ -4471,14 +4763,14 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
         else if (Form == Copy || Form == Xchg) {
           if (IsPassedByAddress)
             // The value pointer is always dereferenced, a nullptr is undefined.
-            CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getLocStart());
+            CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getBeginLoc());
           Ty = ByValType;
         } else if (Form == Arithmetic)
           Ty = Context.getPointerDiffType();
         else {
           Expr *ValArg = TheCall->getArg(i);
           // The value pointer is always dereferenced, a nullptr is undefined.
-          CheckNonNullArgument(*this, ValArg, DRE->getLocStart());
+          CheckNonNullArgument(*this, ValArg, DRE->getBeginLoc());
           LangAS AS = LangAS::Default;
           // Keep address space of non-atomic pointer type.
           if (const PointerType *PtrTy =
@@ -4493,7 +4785,7 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
         // The third argument to compare_exchange / GNU exchange is the desired
         // value, either by-value (for the C11 and *_n variant) or as a pointer.
         if (IsPassedByAddress)
-          CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getLocStart());
+          CheckNonNullArgument(*this, TheCall->getArg(i), DRE->getBeginLoc());
         Ty = ByValType;
         break;
       case 3:
@@ -4558,7 +4850,7 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
     llvm::APSInt Result(32);
     if (SubExprs[1]->isIntegerConstantExpr(Result, Context) &&
         !isValidOrderingForOp(Result.getSExtValue(), Op))
-      Diag(SubExprs[1]->getLocStart(),
+      Diag(SubExprs[1]->getBeginLoc(),
            diag::warn_atomic_op_has_invalid_memory_order)
           << SubExprs[1]->getSourceRange();
   }
@@ -4568,25 +4860,26 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
     llvm::APSInt Result(32);
     if (Scope->isIntegerConstantExpr(Result, Context) &&
         !ScopeModel->isValid(Result.getZExtValue())) {
-      Diag(Scope->getLocStart(), diag::err_atomic_op_has_invalid_synch_scope)
+      Diag(Scope->getBeginLoc(), diag::err_atomic_op_has_invalid_synch_scope)
           << Scope->getSourceRange();
     }
     SubExprs.push_back(Scope);
   }
 
-  AtomicExpr *AE = new (Context) AtomicExpr(TheCall->getCallee()->getLocStart(),
-                                            SubExprs, ResultType, Op,
-                                            TheCall->getRParenLoc());
+  AtomicExpr *AE =
+      new (Context) AtomicExpr(TheCall->getCallee()->getBeginLoc(), SubExprs,
+                               ResultType, Op, TheCall->getRParenLoc());
 
   if ((Op == AtomicExpr::AO__c11_atomic_load ||
        Op == AtomicExpr::AO__c11_atomic_store ||
        Op == AtomicExpr::AO__opencl_atomic_load ||
        Op == AtomicExpr::AO__opencl_atomic_store ) &&
       Context.AtomicUsesUnsupportedLibcall(AE))
-    Diag(AE->getLocStart(), diag::err_atomic_load_store_uses_lib)
+    Diag(AE->getBeginLoc(), diag::err_atomic_load_store_uses_lib)
         << ((Op == AtomicExpr::AO__c11_atomic_load ||
-            Op == AtomicExpr::AO__opencl_atomic_load)
-                ? 0 : 1);
+             Op == AtomicExpr::AO__opencl_atomic_load)
+                ? 0
+                : 1);
 
   return AE;
 }
@@ -4615,25 +4908,24 @@ static bool checkBuiltinArgument(Sema &S, CallExpr *E, unsigned ArgIndex) {
   return false;
 }
 
-/// SemaBuiltinAtomicOverloaded - We have a call to a function like
-/// __sync_fetch_and_add, which is an overloaded function based on the pointer
-/// type of its first argument.  The main ActOnCallExpr routines have already
-/// promoted the types of arguments because all of these calls are prototyped as
-/// void(...).
+/// We have a call to a function like __sync_fetch_and_add, which is an
+/// overloaded function based on the pointer type of its first argument.
+/// The main BuildCallExpr routines have already promoted the types of
+/// arguments because all of these calls are prototyped as void(...).
 ///
 /// This function goes through and does final semantic checking for these
-/// builtins,
+/// builtins, as well as generating any warnings.
 ExprResult
 Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
-  CallExpr *TheCall = (CallExpr *)TheCallResult.get();
-  DeclRefExpr *DRE =cast<DeclRefExpr>(TheCall->getCallee()->IgnoreParenCasts());
+  CallExpr *TheCall = static_cast<CallExpr *>(TheCallResult.get());
+  Expr *Callee = TheCall->getCallee();
+  DeclRefExpr *DRE = cast<DeclRefExpr>(Callee->IgnoreParenCasts());
   FunctionDecl *FDecl = cast<FunctionDecl>(DRE->getDecl());
 
   // Ensure that we have at least one argument to do type inference from.
   if (TheCall->getNumArgs() < 1) {
-    Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args_at_least)
-      << 0 << 1 << TheCall->getNumArgs()
-      << TheCall->getCallee()->getSourceRange();
+    Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args_at_least)
+        << 0 << 1 << TheCall->getNumArgs() << Callee->getSourceRange();
     return ExprError();
   }
 
@@ -4651,21 +4943,21 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
 
   const PointerType *pointerType = FirstArg->getType()->getAs<PointerType>();
   if (!pointerType) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_must_be_pointer)
-      << FirstArg->getType() << FirstArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_must_be_pointer)
+        << FirstArg->getType() << FirstArg->getSourceRange();
     return ExprError();
   }
 
   QualType ValType = pointerType->getPointeeType();
   if (!ValType->isIntegerType() && !ValType->isAnyPointerType() &&
       !ValType->isBlockPointerType()) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_must_be_pointer_intptr)
-      << FirstArg->getType() << FirstArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_must_be_pointer_intptr)
+        << FirstArg->getType() << FirstArg->getSourceRange();
     return ExprError();
   }
 
   if (ValType.isConstQualified()) {
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_cannot_be_const)
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_cannot_be_const)
         << FirstArg->getType() << FirstArg->getSourceRange();
     return ExprError();
   }
@@ -4679,8 +4971,8 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Qualifiers::OCL_Weak:
   case Qualifiers::OCL_Strong:
   case Qualifiers::OCL_Autoreleasing:
-    Diag(DRE->getLocStart(), diag::err_arc_atomic_ownership)
-      << ValType << FirstArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_arc_atomic_ownership)
+        << ValType << FirstArg->getSourceRange();
     return ExprError();
   }
 
@@ -4730,8 +5022,8 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case 8: SizeIndex = 3; break;
   case 16: SizeIndex = 4; break;
   default:
-    Diag(DRE->getLocStart(), diag::err_atomic_builtin_pointer_size)
-      << FirstArg->getType() << FirstArg->getSourceRange();
+    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_pointer_size)
+        << FirstArg->getType() << FirstArg->getSourceRange();
     return ExprError();
   }
 
@@ -4908,15 +5200,18 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   // Now that we know how many fixed arguments we expect, first check that we
   // have at least that many.
   if (TheCall->getNumArgs() < 1+NumFixed) {
-    Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args_at_least)
-      << 0 << 1+NumFixed << TheCall->getNumArgs()
-      << TheCall->getCallee()->getSourceRange();
+    Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args_at_least)
+        << 0 << 1 + NumFixed << TheCall->getNumArgs()
+        << Callee->getSourceRange();
     return ExprError();
   }
 
+  Diag(TheCall->getEndLoc(), diag::warn_atomic_implicit_seq_cst)
+      << Callee->getSourceRange();
+
   if (WarnAboutSemanticsChange) {
-    Diag(TheCall->getLocEnd(), diag::warn_sync_fetch_and_nand_semantics_change)
-      << TheCall->getCallee()->getSourceRange();
+    Diag(TheCall->getEndLoc(), diag::warn_sync_fetch_and_nand_semantics_change)
+        << Callee->getSourceRange();
   }
 
   // Get the decl for the concrete builtin from this, we can tell what the
@@ -4929,7 +5224,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   else {
     // Perform builtin lookup to avoid redeclaring it.
     DeclarationName DN(&Context.Idents.get(NewBuiltinName));
-    LookupResult Res(*this, DN, DRE->getLocStart(), LookupOrdinaryName);
+    LookupResult Res(*this, DN, DRE->getBeginLoc(), LookupOrdinaryName);
     LookupName(Res, TUScope, /*AllowBuiltinCreation=*/true);
     assert(Res.getFoundDecl());
     NewBuiltinDecl = dyn_cast<FunctionDecl>(Res.getFoundDecl());
@@ -4961,18 +5256,11 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
     TheCall->setArg(i+1, Arg.get());
   }
 
-  ASTContext& Context = this->getASTContext();
-
   // Create a new DeclRefExpr to refer to the new decl.
-  DeclRefExpr* NewDRE = DeclRefExpr::Create(
-      Context,
-      DRE->getQualifierLoc(),
-      SourceLocation(),
-      NewBuiltinDecl,
-      /*enclosing*/ false,
-      DRE->getLocation(),
-      Context.BuiltinFnTy,
-      DRE->getValueKind());
+  DeclRefExpr *NewDRE = DeclRefExpr::Create(
+      Context, DRE->getQualifierLoc(), SourceLocation(), NewBuiltinDecl,
+      /*enclosing*/ false, DRE->getLocation(), Context.BuiltinFnTy,
+      DRE->getValueKind(), nullptr, nullptr, DRE->isNonOdrUse());
 
   // Set the callee in the CallExpr.
   // FIXME: This loses syntactic information.
@@ -5026,7 +5314,7 @@ ExprResult Sema::SemaBuiltinNontemporalOverloaded(ExprResult TheCallResult) {
 
   const PointerType *pointerType = PointerArg->getType()->getAs<PointerType>();
   if (!pointerType) {
-    Diag(DRE->getLocStart(), diag::err_nontemporal_builtin_must_be_pointer)
+    Diag(DRE->getBeginLoc(), diag::err_nontemporal_builtin_must_be_pointer)
         << PointerArg->getType() << PointerArg->getSourceRange();
     return ExprError();
   }
@@ -5038,7 +5326,7 @@ ExprResult Sema::SemaBuiltinNontemporalOverloaded(ExprResult TheCallResult) {
   if (!ValType->isIntegerType() && !ValType->isAnyPointerType() &&
       !ValType->isBlockPointerType() && !ValType->isFloatingType() &&
       !ValType->isVectorType()) {
-    Diag(DRE->getLocStart(),
+    Diag(DRE->getBeginLoc(),
          diag::err_nontemporal_builtin_must_be_pointer_intfltptr_or_vector)
         << PointerArg->getType() << PointerArg->getSourceRange();
     return ExprError();
@@ -5070,8 +5358,8 @@ bool Sema::CheckObjCString(Expr *Arg) {
   StringLiteral *Literal = dyn_cast<StringLiteral>(Arg);
 
   if (!Literal || !Literal->isAscii()) {
-    Diag(Arg->getLocStart(), diag::err_cfstring_literal_not_string_constant)
-      << Arg->getSourceRange();
+    Diag(Arg->getBeginLoc(), diag::err_cfstring_literal_not_string_constant)
+        << Arg->getSourceRange();
     return true;
   }
 
@@ -5087,8 +5375,8 @@ bool Sema::CheckObjCString(Expr *Arg) {
                                  ToPtr + NumBytes, llvm::strictConversion);
     // Check for conversion failure.
     if (Result != llvm::conversionOK)
-      Diag(Arg->getLocStart(),
-           diag::warn_cfstring_truncated) << Arg->getSourceRange();
+      Diag(Arg->getBeginLoc(), diag::warn_cfstring_truncated)
+          << Arg->getSourceRange();
   }
   return false;
 }
@@ -5106,7 +5394,7 @@ ExprResult Sema::CheckOSLogFormatStringArg(Expr *Arg) {
 
   if (!Literal || (!Literal->isAscii() && !Literal->isUTF8())) {
     return ExprError(
-        Diag(Arg->getLocStart(), diag::err_os_log_format_not_string_constant)
+        Diag(Arg->getBeginLoc(), diag::err_os_log_format_not_string_constant)
         << Arg->getSourceRange());
   }
 
@@ -5133,7 +5421,7 @@ static bool checkVAStartABI(Sema &S, unsigned BuiltinID, Expr *Fn) {
     if (IsMSVAStart) {
       // Don't allow this in System V ABI functions.
       if (CC == CC_X86_64SysV || (!IsWindows && CC != CC_Win64))
-        return S.Diag(Fn->getLocStart(),
+        return S.Diag(Fn->getBeginLoc(),
                       diag::err_ms_va_start_used_in_sysv_function);
     } else {
       // On x86-64/AArch64 Unix, don't allow this in Win64 ABI functions.
@@ -5142,7 +5430,7 @@ static bool checkVAStartABI(Sema &S, unsigned BuiltinID, Expr *Fn) {
       // System V ABI functions on Windows.)
       if ((IsWindows && CC == CC_X86_64SysV) ||
           (!IsWindows && CC == CC_Win64))
-        return S.Diag(Fn->getLocStart(),
+        return S.Diag(Fn->getBeginLoc(),
                       diag::err_va_start_used_in_wrong_abi_function)
                << !IsWindows;
     }
@@ -5150,7 +5438,7 @@ static bool checkVAStartABI(Sema &S, unsigned BuiltinID, Expr *Fn) {
   }
 
   if (IsMSVAStart)
-    return S.Diag(Fn->getLocStart(), diag::err_builtin_x64_aarch64_only);
+    return S.Diag(Fn->getBeginLoc(), diag::err_builtin_x64_aarch64_only);
   return false;
 }
 
@@ -5173,16 +5461,16 @@ static bool checkVAStartIsInVariadicFunction(Sema &S, Expr *Fn,
     Params = MD->parameters();
   } else if (isa<CapturedDecl>(Caller)) {
     // We don't support va_start in a CapturedDecl.
-    S.Diag(Fn->getLocStart(), diag::err_va_start_captured_stmt);
+    S.Diag(Fn->getBeginLoc(), diag::err_va_start_captured_stmt);
     return true;
   } else {
     // This must be some other declcontext that parses exprs.
-    S.Diag(Fn->getLocStart(), diag::err_va_start_outside_function);
+    S.Diag(Fn->getBeginLoc(), diag::err_va_start_outside_function);
     return true;
   }
 
   if (!IsVariadic) {
-    S.Diag(Fn->getLocStart(), diag::err_va_start_fixed_function);
+    S.Diag(Fn->getBeginLoc(), diag::err_va_start_fixed_function);
     return true;
   }
 
@@ -5202,19 +5490,19 @@ bool Sema::SemaBuiltinVAStart(unsigned BuiltinID, CallExpr *TheCall) {
     return true;
 
   if (TheCall->getNumArgs() > 2) {
-    Diag(TheCall->getArg(2)->getLocStart(),
+    Diag(TheCall->getArg(2)->getBeginLoc(),
          diag::err_typecheck_call_too_many_args)
-      << 0 /*function call*/ << 2 << TheCall->getNumArgs()
-      << Fn->getSourceRange()
-      << SourceRange(TheCall->getArg(2)->getLocStart(),
-                     (*(TheCall->arg_end()-1))->getLocEnd());
+        << 0 /*function call*/ << 2 << TheCall->getNumArgs()
+        << Fn->getSourceRange()
+        << SourceRange(TheCall->getArg(2)->getBeginLoc(),
+                       (*(TheCall->arg_end() - 1))->getEndLoc());
     return true;
   }
 
   if (TheCall->getNumArgs() < 2) {
-    return Diag(TheCall->getLocEnd(),
-      diag::err_typecheck_call_too_few_args_at_least)
-      << 0 /*function call*/ << 2 << TheCall->getNumArgs();
+    return Diag(TheCall->getEndLoc(),
+                diag::err_typecheck_call_too_few_args_at_least)
+           << 0 /*function call*/ << 2 << TheCall->getNumArgs();
   }
 
   // Type-check the first argument normally.
@@ -5249,7 +5537,7 @@ bool Sema::SemaBuiltinVAStart(unsigned BuiltinID, CallExpr *TheCall) {
   }
 
   if (!SecondArgIsLastNamedArgument)
-    Diag(TheCall->getArg(1)->getLocStart(),
+    Diag(TheCall->getArg(1)->getBeginLoc(),
          diag::warn_second_arg_of_va_start_not_last_named_param);
   else if (IsCRegister || Type->isReferenceType() ||
            Type->isSpecificBuiltinType(BuiltinType::Float) || [=] {
@@ -5266,7 +5554,7 @@ bool Sema::SemaBuiltinVAStart(unsigned BuiltinID, CallExpr *TheCall) {
     unsigned Reason = 0;
     if (Type->isReferenceType())  Reason = 1;
     else if (IsCRegister)         Reason = 2;
-    Diag(Arg->getLocStart(), diag::warn_va_start_type_is_undefined) << Reason;
+    Diag(Arg->getBeginLoc(), diag::warn_va_start_type_is_undefined) << Reason;
     Diag(ParamLoc, diag::note_parameter_type) << Type;
   }
 
@@ -5281,7 +5569,7 @@ bool Sema::SemaBuiltinVAStartARMMicrosoft(CallExpr *Call) {
   Expr *Func = Call->getCallee();
 
   if (Call->getNumArgs() < 3)
-    return Diag(Call->getLocEnd(),
+    return Diag(Call->getEndLoc(),
                 diag::err_typecheck_call_too_few_args_at_least)
            << 0 /*function call*/ << 3 << Call->getNumArgs();
 
@@ -5305,20 +5593,18 @@ bool Sema::SemaBuiltinVAStartARMMicrosoft(CallExpr *Call) {
       Context.getPointerType(Context.CharTy.withConst());
   if (!Arg1Ty->isPointerType() ||
       Arg1Ty->getPointeeType().withoutLocalFastQualifiers() != Context.CharTy)
-    Diag(Arg1->getLocStart(), diag::err_typecheck_convert_incompatible)
-        << Arg1->getType() << ConstCharPtrTy
-        << 1 /* different class */
-        << 0 /* qualifier difference */
-        << 3 /* parameter mismatch */
+    Diag(Arg1->getBeginLoc(), diag::err_typecheck_convert_incompatible)
+        << Arg1->getType() << ConstCharPtrTy << 1 /* different class */
+        << 0                                      /* qualifier difference */
+        << 3                                      /* parameter mismatch */
         << 2 << Arg1->getType() << ConstCharPtrTy;
 
   const QualType SizeTy = Context.getSizeType();
   if (Arg2Ty->getCanonicalTypeInternal().withoutLocalFastQualifiers() != SizeTy)
-    Diag(Arg2->getLocStart(), diag::err_typecheck_convert_incompatible)
-        << Arg2->getType() << SizeTy
-        << 1 /* different class */
-        << 0 /* qualifier difference */
-        << 3 /* parameter mismatch */
+    Diag(Arg2->getBeginLoc(), diag::err_typecheck_convert_incompatible)
+        << Arg2->getType() << SizeTy << 1 /* different class */
+        << 0                              /* qualifier difference */
+        << 3                              /* parameter mismatch */
         << 3 << Arg2->getType() << SizeTy;
 
   return false;
@@ -5328,14 +5614,14 @@ bool Sema::SemaBuiltinVAStartARMMicrosoft(CallExpr *Call) {
 /// friends.  This is declared to take (...), so we have to check everything.
 bool Sema::SemaBuiltinUnorderedCompare(CallExpr *TheCall) {
   if (TheCall->getNumArgs() < 2)
-    return Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args)
-      << 0 << 2 << TheCall->getNumArgs()/*function call*/;
+    return Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args)
+           << 0 << 2 << TheCall->getNumArgs() /*function call*/;
   if (TheCall->getNumArgs() > 2)
-    return Diag(TheCall->getArg(2)->getLocStart(),
+    return Diag(TheCall->getArg(2)->getBeginLoc(),
                 diag::err_typecheck_call_too_many_args)
-      << 0 /*function call*/ << 2 << TheCall->getNumArgs()
-      << SourceRange(TheCall->getArg(2)->getLocStart(),
-                     (*(TheCall->arg_end()-1))->getLocEnd());
+           << 0 /*function call*/ << 2 << TheCall->getNumArgs()
+           << SourceRange(TheCall->getArg(2)->getBeginLoc(),
+                          (*(TheCall->arg_end() - 1))->getEndLoc());
 
   ExprResult OrigArg0 = TheCall->getArg(0);
   ExprResult OrigArg1 = TheCall->getArg(1);
@@ -5358,10 +5644,11 @@ bool Sema::SemaBuiltinUnorderedCompare(CallExpr *TheCall) {
   // If the common type isn't a real floating type, then the arguments were
   // invalid for this operation.
   if (Res.isNull() || !Res->isRealFloatingType())
-    return Diag(OrigArg0.get()->getLocStart(),
+    return Diag(OrigArg0.get()->getBeginLoc(),
                 diag::err_typecheck_call_invalid_ordered_compare)
-      << OrigArg0.get()->getType() << OrigArg1.get()->getType()
-      << SourceRange(OrigArg0.get()->getLocStart(), OrigArg1.get()->getLocEnd());
+           << OrigArg0.get()->getType() << OrigArg1.get()->getType()
+           << SourceRange(OrigArg0.get()->getBeginLoc(),
+                          OrigArg1.get()->getEndLoc());
 
   return false;
 }
@@ -5372,14 +5659,14 @@ bool Sema::SemaBuiltinUnorderedCompare(CallExpr *TheCall) {
 /// value.
 bool Sema::SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs) {
   if (TheCall->getNumArgs() < NumArgs)
-    return Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args)
-      << 0 << NumArgs << TheCall->getNumArgs()/*function call*/;
+    return Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args)
+           << 0 << NumArgs << TheCall->getNumArgs() /*function call*/;
   if (TheCall->getNumArgs() > NumArgs)
-    return Diag(TheCall->getArg(NumArgs)->getLocStart(),
+    return Diag(TheCall->getArg(NumArgs)->getBeginLoc(),
                 diag::err_typecheck_call_too_many_args)
-      << 0 /*function call*/ << NumArgs << TheCall->getNumArgs()
-      << SourceRange(TheCall->getArg(NumArgs)->getLocStart(),
-                     (*(TheCall->arg_end()-1))->getLocEnd());
+           << 0 /*function call*/ << NumArgs << TheCall->getNumArgs()
+           << SourceRange(TheCall->getArg(NumArgs)->getBeginLoc(),
+                          (*(TheCall->arg_end() - 1))->getEndLoc());
 
   Expr *OrigArg = TheCall->getArg(NumArgs-1);
 
@@ -5388,9 +5675,9 @@ bool Sema::SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs) {
 
   // This operation requires a non-_Complex floating-point number.
   if (!OrigArg->getType()->isRealFloatingType())
-    return Diag(OrigArg->getLocStart(),
+    return Diag(OrigArg->getBeginLoc(),
                 diag::err_typecheck_call_invalid_unary_fp)
-      << OrigArg->getType() << OrigArg->getSourceRange();
+           << OrigArg->getType() << OrigArg->getSourceRange();
 
   // If this is an implicit conversion from float -> float, double, or
   // long double, remove it.
@@ -5424,13 +5711,13 @@ bool Sema::SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs) {
 bool Sema::SemaBuiltinVSX(CallExpr *TheCall) {
   unsigned ExpectedNumArgs = 3;
   if (TheCall->getNumArgs() < ExpectedNumArgs)
-    return Diag(TheCall->getLocEnd(),
+    return Diag(TheCall->getEndLoc(),
                 diag::err_typecheck_call_too_few_args_at_least)
-           << 0 /*function call*/ <<  ExpectedNumArgs << TheCall->getNumArgs()
+           << 0 /*function call*/ << ExpectedNumArgs << TheCall->getNumArgs()
            << TheCall->getSourceRange();
 
   if (TheCall->getNumArgs() > ExpectedNumArgs)
-    return Diag(TheCall->getLocEnd(),
+    return Diag(TheCall->getEndLoc(),
                 diag::err_typecheck_call_too_many_args_at_most)
            << 0 /*function call*/ << ExpectedNumArgs << TheCall->getNumArgs()
            << TheCall->getSourceRange();
@@ -5438,31 +5725,31 @@ bool Sema::SemaBuiltinVSX(CallExpr *TheCall) {
   // Check the third argument is a compile time constant
   llvm::APSInt Value;
   if(!TheCall->getArg(2)->isIntegerConstantExpr(Value, Context))
-    return Diag(TheCall->getLocStart(),
+    return Diag(TheCall->getBeginLoc(),
                 diag::err_vsx_builtin_nonconstant_argument)
            << 3 /* argument index */ << TheCall->getDirectCallee()
-           << SourceRange(TheCall->getArg(2)->getLocStart(),
-                          TheCall->getArg(2)->getLocEnd());
+           << SourceRange(TheCall->getArg(2)->getBeginLoc(),
+                          TheCall->getArg(2)->getEndLoc());
 
   QualType Arg1Ty = TheCall->getArg(0)->getType();
   QualType Arg2Ty = TheCall->getArg(1)->getType();
 
   // Check the type of argument 1 and argument 2 are vectors.
-  SourceLocation BuiltinLoc = TheCall->getLocStart();
+  SourceLocation BuiltinLoc = TheCall->getBeginLoc();
   if ((!Arg1Ty->isVectorType() && !Arg1Ty->isDependentType()) ||
       (!Arg2Ty->isVectorType() && !Arg2Ty->isDependentType())) {
     return Diag(BuiltinLoc, diag::err_vec_builtin_non_vector)
            << TheCall->getDirectCallee()
-           << SourceRange(TheCall->getArg(0)->getLocStart(),
-                          TheCall->getArg(1)->getLocEnd());
+           << SourceRange(TheCall->getArg(0)->getBeginLoc(),
+                          TheCall->getArg(1)->getEndLoc());
   }
 
   // Check the first two arguments are the same type.
   if (!Context.hasSameUnqualifiedType(Arg1Ty, Arg2Ty)) {
     return Diag(BuiltinLoc, diag::err_vec_builtin_incompatible_vector)
            << TheCall->getDirectCallee()
-           << SourceRange(TheCall->getArg(0)->getLocStart(),
-                          TheCall->getArg(1)->getLocEnd());
+           << SourceRange(TheCall->getArg(0)->getBeginLoc(),
+                          TheCall->getArg(1)->getEndLoc());
   }
 
   // When default clang type checking is turned off and the customized type
@@ -5477,7 +5764,7 @@ bool Sema::SemaBuiltinVSX(CallExpr *TheCall) {
 // This is declared to take (...), so we have to check everything.
 ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
   if (TheCall->getNumArgs() < 2)
-    return ExprError(Diag(TheCall->getLocEnd(),
+    return ExprError(Diag(TheCall->getEndLoc(),
                           diag::err_typecheck_call_too_few_args_at_least)
                      << 0 /*function call*/ << 2 << TheCall->getNumArgs()
                      << TheCall->getSourceRange());
@@ -5494,11 +5781,11 @@ ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
     QualType RHSType = TheCall->getArg(1)->getType();
 
     if (!LHSType->isVectorType() || !RHSType->isVectorType())
-      return ExprError(Diag(TheCall->getLocStart(),
-                            diag::err_vec_builtin_non_vector)
-                       << TheCall->getDirectCallee()
-                       << SourceRange(TheCall->getArg(0)->getLocStart(),
-                                      TheCall->getArg(1)->getLocEnd()));
+      return ExprError(
+          Diag(TheCall->getBeginLoc(), diag::err_vec_builtin_non_vector)
+          << TheCall->getDirectCallee()
+          << SourceRange(TheCall->getArg(0)->getBeginLoc(),
+                         TheCall->getArg(1)->getEndLoc()));
 
     numElements = LHSType->getAs<VectorType>()->getNumElements();
     unsigned numResElements = TheCall->getNumArgs() - 2;
@@ -5509,17 +5796,17 @@ ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
     if (TheCall->getNumArgs() == 2) {
       if (!RHSType->hasIntegerRepresentation() ||
           RHSType->getAs<VectorType>()->getNumElements() != numElements)
-        return ExprError(Diag(TheCall->getLocStart(),
+        return ExprError(Diag(TheCall->getBeginLoc(),
                               diag::err_vec_builtin_incompatible_vector)
                          << TheCall->getDirectCallee()
-                         << SourceRange(TheCall->getArg(1)->getLocStart(),
-                                        TheCall->getArg(1)->getLocEnd()));
+                         << SourceRange(TheCall->getArg(1)->getBeginLoc(),
+                                        TheCall->getArg(1)->getEndLoc()));
     } else if (!Context.hasSameUnqualifiedType(LHSType, RHSType)) {
-      return ExprError(Diag(TheCall->getLocStart(),
+      return ExprError(Diag(TheCall->getBeginLoc(),
                             diag::err_vec_builtin_incompatible_vector)
                        << TheCall->getDirectCallee()
-                       << SourceRange(TheCall->getArg(0)->getLocStart(),
-                                      TheCall->getArg(1)->getLocEnd()));
+                       << SourceRange(TheCall->getArg(0)->getBeginLoc(),
+                                      TheCall->getArg(1)->getEndLoc()));
     } else if (numElements != numResElements) {
       QualType eltType = LHSType->getAs<VectorType>()->getElementType();
       resType = Context.getVectorType(eltType, numResElements,
@@ -5534,7 +5821,7 @@ ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
 
     llvm::APSInt Result(32);
     if (!TheCall->getArg(i)->isIntegerConstantExpr(Result, Context))
-      return ExprError(Diag(TheCall->getLocStart(),
+      return ExprError(Diag(TheCall->getBeginLoc(),
                             diag::err_shufflevector_nonconstant_argument)
                        << TheCall->getArg(i)->getSourceRange());
 
@@ -5543,7 +5830,7 @@ ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
       continue;
 
     if (Result.getActiveBits() > 64 || Result.getZExtValue() >= numElements*2)
-      return ExprError(Diag(TheCall->getLocStart(),
+      return ExprError(Diag(TheCall->getBeginLoc(),
                             diag::err_shufflevector_argument_too_large)
                        << TheCall->getArg(i)->getSourceRange());
   }
@@ -5556,7 +5843,7 @@ ExprResult Sema::SemaBuiltinShuffleVector(CallExpr *TheCall) {
   }
 
   return new (Context) ShuffleVectorExpr(Context, exprs, resType,
-                                         TheCall->getCallee()->getLocStart(),
+                                         TheCall->getCallee()->getBeginLoc(),
                                          TheCall->getRParenLoc());
 }
 
@@ -5597,10 +5884,9 @@ bool Sema::SemaBuiltinPrefetch(CallExpr *TheCall) {
   unsigned NumArgs = TheCall->getNumArgs();
 
   if (NumArgs > 3)
-    return Diag(TheCall->getLocEnd(),
-             diag::err_typecheck_call_too_many_args_at_most)
-             << 0 /*function call*/ << 3 << NumArgs
-             << TheCall->getSourceRange();
+    return Diag(TheCall->getEndLoc(),
+                diag::err_typecheck_call_too_many_args_at_most)
+           << 0 /*function call*/ << 3 << NumArgs << TheCall->getSourceRange();
 
   // Argument 0 is checked for us and the remaining arguments must be
   // constant integers.
@@ -5619,9 +5905,9 @@ bool Sema::SemaBuiltinAssume(CallExpr *TheCall) {
   if (Arg->isInstantiationDependent()) return false;
 
   if (Arg->HasSideEffects(Context))
-    Diag(Arg->getLocStart(), diag::warn_assume_side_effects)
-      << Arg->getSourceRange()
-      << cast<FunctionDecl>(TheCall->getCalleeDecl())->getIdentifier();
+    Diag(Arg->getBeginLoc(), diag::warn_assume_side_effects)
+        << Arg->getSourceRange()
+        << cast<FunctionDecl>(TheCall->getCalleeDecl())->getIdentifier();
 
   return false;
 }
@@ -5637,26 +5923,24 @@ bool Sema::SemaBuiltinAllocaWithAlign(CallExpr *TheCall) {
   if (!Arg->isTypeDependent() && !Arg->isValueDependent()) {
     if (const auto *UE =
             dyn_cast<UnaryExprOrTypeTraitExpr>(Arg->IgnoreParenImpCasts()))
-      if (UE->getKind() == UETT_AlignOf)
-        Diag(TheCall->getLocStart(), diag::warn_alloca_align_alignof)
-          << Arg->getSourceRange();
+      if (UE->getKind() == UETT_AlignOf ||
+          UE->getKind() == UETT_PreferredAlignOf)
+        Diag(TheCall->getBeginLoc(), diag::warn_alloca_align_alignof)
+            << Arg->getSourceRange();
 
     llvm::APSInt Result = Arg->EvaluateKnownConstInt(Context);
 
     if (!Result.isPowerOf2())
-      return Diag(TheCall->getLocStart(),
-                  diag::err_alignment_not_power_of_two)
-           << Arg->getSourceRange();
+      return Diag(TheCall->getBeginLoc(), diag::err_alignment_not_power_of_two)
+             << Arg->getSourceRange();
 
     if (Result < Context.getCharWidth())
-      return Diag(TheCall->getLocStart(), diag::err_alignment_too_small)
-           << (unsigned)Context.getCharWidth()
-           << Arg->getSourceRange();
+      return Diag(TheCall->getBeginLoc(), diag::err_alignment_too_small)
+             << (unsigned)Context.getCharWidth() << Arg->getSourceRange();
 
     if (Result > std::numeric_limits<int32_t>::max())
-      return Diag(TheCall->getLocStart(), diag::err_alignment_too_big)
-           << std::numeric_limits<int32_t>::max()
-           << Arg->getSourceRange();
+      return Diag(TheCall->getBeginLoc(), diag::err_alignment_too_big)
+             << std::numeric_limits<int32_t>::max() << Arg->getSourceRange();
   }
 
   return false;
@@ -5668,10 +5952,9 @@ bool Sema::SemaBuiltinAssumeAligned(CallExpr *TheCall) {
   unsigned NumArgs = TheCall->getNumArgs();
 
   if (NumArgs > 3)
-    return Diag(TheCall->getLocEnd(),
-             diag::err_typecheck_call_too_many_args_at_most)
-             << 0 /*function call*/ << 3 << NumArgs
-             << TheCall->getSourceRange();
+    return Diag(TheCall->getEndLoc(),
+                diag::err_typecheck_call_too_many_args_at_most)
+           << 0 /*function call*/ << 3 << NumArgs << TheCall->getSourceRange();
 
   // The alignment must be a constant integer.
   Expr *Arg = TheCall->getArg(1);
@@ -5683,9 +5966,8 @@ bool Sema::SemaBuiltinAssumeAligned(CallExpr *TheCall) {
       return true;
 
     if (!Result.isPowerOf2())
-      return Diag(TheCall->getLocStart(),
-                  diag::err_alignment_not_power_of_two)
-           << Arg->getSourceRange();
+      return Diag(TheCall->getBeginLoc(), diag::err_alignment_not_power_of_two)
+             << Arg->getSourceRange();
   }
 
   if (NumArgs > 2) {
@@ -5708,12 +5990,12 @@ bool Sema::SemaBuiltinOSLogFormat(CallExpr *TheCall) {
   unsigned NumArgs = TheCall->getNumArgs();
   unsigned NumRequiredArgs = IsSizeCall ? 1 : 2;
   if (NumArgs < NumRequiredArgs) {
-    return Diag(TheCall->getLocEnd(), diag::err_typecheck_call_too_few_args)
+    return Diag(TheCall->getEndLoc(), diag::err_typecheck_call_too_few_args)
            << 0 /* function call */ << NumRequiredArgs << NumArgs
            << TheCall->getSourceRange();
   }
   if (NumArgs >= NumRequiredArgs + 0x100) {
-    return Diag(TheCall->getLocEnd(),
+    return Diag(TheCall->getEndLoc(),
                 diag::err_typecheck_call_too_many_args_at_most)
            << 0 /* function call */ << (NumRequiredArgs + 0xff) << NumArgs
            << TheCall->getSourceRange();
@@ -5751,7 +6033,7 @@ bool Sema::SemaBuiltinOSLogFormat(CallExpr *TheCall) {
       return true;
     CharUnits ArgSize = Context.getTypeSizeInChars(Arg.get()->getType());
     if (ArgSize.getQuantity() >= 0x100) {
-      return Diag(Arg.get()->getLocEnd(), diag::err_os_log_argument_too_big)
+      return Diag(Arg.get()->getEndLoc(), diag::err_os_log_argument_too_big)
              << i << (int)ArgSize.getQuantity() << 0xff
              << TheCall->getSourceRange();
     }
@@ -5766,7 +6048,7 @@ bool Sema::SemaBuiltinOSLogFormat(CallExpr *TheCall) {
     ArrayRef<const Expr *> Args(TheCall->getArgs(), TheCall->getNumArgs());
     bool Success = CheckFormatArguments(
         Args, /*HasVAListArg*/ false, FormatIdx, FirstDataArg, FST_OSLog,
-        VariadicFunction, TheCall->getLocStart(), SourceRange(),
+        VariadicFunction, TheCall->getBeginLoc(), SourceRange(),
         CheckedVarArgs);
     if (!Success)
       return true;
@@ -5791,8 +6073,8 @@ bool Sema::SemaBuiltinConstantArg(CallExpr *TheCall, int ArgNum,
   if (Arg->isTypeDependent() || Arg->isValueDependent()) return false;
 
   if (!Arg->isIntegerConstantExpr(Result, Context))
-    return Diag(TheCall->getLocStart(), diag::err_constant_integer_arg_type)
-                << FDecl->getDeclName() <<  Arg->getSourceRange();
+    return Diag(TheCall->getBeginLoc(), diag::err_constant_integer_arg_type)
+           << FDecl->getDeclName() << Arg->getSourceRange();
 
   return false;
 }
@@ -5801,6 +6083,8 @@ bool Sema::SemaBuiltinConstantArg(CallExpr *TheCall, int ArgNum,
 /// TheCall is a constant expression in the range [Low, High].
 bool Sema::SemaBuiltinConstantArgRange(CallExpr *TheCall, int ArgNum,
                                        int Low, int High, bool RangeIsError) {
+  if (isConstantEvaluated())
+    return false;
   llvm::APSInt Result;
 
   // We can't check the value of a dependent argument.
@@ -5814,15 +6098,15 @@ bool Sema::SemaBuiltinConstantArgRange(CallExpr *TheCall, int ArgNum,
 
   if (Result.getSExtValue() < Low || Result.getSExtValue() > High) {
     if (RangeIsError)
-      return Diag(TheCall->getLocStart(), diag::err_argument_invalid_range)
+      return Diag(TheCall->getBeginLoc(), diag::err_argument_invalid_range)
              << Result.toString(10) << Low << High << Arg->getSourceRange();
     else
       // Defer the warning until we know if the code will be emitted so that
       // dead code can ignore this.
-      DiagRuntimeBehavior(TheCall->getLocStart(), TheCall,
-                            PDiag(diag::warn_argument_invalid_range)
-                                << Result.toString(10) << Low << High
-                                << Arg->getSourceRange());
+      DiagRuntimeBehavior(TheCall->getBeginLoc(), TheCall,
+                          PDiag(diag::warn_argument_invalid_range)
+                              << Result.toString(10) << Low << High
+                              << Arg->getSourceRange());
   }
 
   return false;
@@ -5844,10 +6128,164 @@ bool Sema::SemaBuiltinConstantArgMultiple(CallExpr *TheCall, int ArgNum,
     return true;
 
   if (Result.getSExtValue() % Num != 0)
-    return Diag(TheCall->getLocStart(), diag::err_argument_not_multiple)
-      << Num << Arg->getSourceRange();
+    return Diag(TheCall->getBeginLoc(), diag::err_argument_not_multiple)
+           << Num << Arg->getSourceRange();
 
   return false;
+}
+
+/// SemaBuiltinARMMemoryTaggingCall - Handle calls of memory tagging extensions
+bool Sema::SemaBuiltinARMMemoryTaggingCall(unsigned BuiltinID, CallExpr *TheCall) {
+  if (BuiltinID == AArch64::BI__builtin_arm_irg) {
+    if (checkArgCount(*this, TheCall, 2))
+      return true;
+    Expr *Arg0 = TheCall->getArg(0);
+    Expr *Arg1 = TheCall->getArg(1);
+
+    ExprResult FirstArg = DefaultFunctionArrayLvalueConversion(Arg0);
+    if (FirstArg.isInvalid())
+      return true;
+    QualType FirstArgType = FirstArg.get()->getType();
+    if (!FirstArgType->isAnyPointerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_pointer)
+               << "first" << FirstArgType << Arg0->getSourceRange();
+    TheCall->setArg(0, FirstArg.get());
+
+    ExprResult SecArg = DefaultLvalueConversion(Arg1);
+    if (SecArg.isInvalid())
+      return true;
+    QualType SecArgType = SecArg.get()->getType();
+    if (!SecArgType->isIntegerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_integer)
+               << "second" << SecArgType << Arg1->getSourceRange();
+
+    // Derive the return type from the pointer argument.
+    TheCall->setType(FirstArgType);
+    return false;
+  }
+
+  if (BuiltinID == AArch64::BI__builtin_arm_addg) {
+    if (checkArgCount(*this, TheCall, 2))
+      return true;
+
+    Expr *Arg0 = TheCall->getArg(0);
+    ExprResult FirstArg = DefaultFunctionArrayLvalueConversion(Arg0);
+    if (FirstArg.isInvalid())
+      return true;
+    QualType FirstArgType = FirstArg.get()->getType();
+    if (!FirstArgType->isAnyPointerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_pointer)
+               << "first" << FirstArgType << Arg0->getSourceRange();
+    TheCall->setArg(0, FirstArg.get());
+
+    // Derive the return type from the pointer argument.
+    TheCall->setType(FirstArgType);
+
+    // Second arg must be an constant in range [0,15]
+    return SemaBuiltinConstantArgRange(TheCall, 1, 0, 15);
+  }
+
+  if (BuiltinID == AArch64::BI__builtin_arm_gmi) {
+    if (checkArgCount(*this, TheCall, 2))
+      return true;
+    Expr *Arg0 = TheCall->getArg(0);
+    Expr *Arg1 = TheCall->getArg(1);
+
+    ExprResult FirstArg = DefaultFunctionArrayLvalueConversion(Arg0);
+    if (FirstArg.isInvalid())
+      return true;
+    QualType FirstArgType = FirstArg.get()->getType();
+    if (!FirstArgType->isAnyPointerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_pointer)
+               << "first" << FirstArgType << Arg0->getSourceRange();
+
+    QualType SecArgType = Arg1->getType();
+    if (!SecArgType->isIntegerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_integer)
+               << "second" << SecArgType << Arg1->getSourceRange();
+    TheCall->setType(Context.IntTy);
+    return false;
+  }
+
+  if (BuiltinID == AArch64::BI__builtin_arm_ldg ||
+      BuiltinID == AArch64::BI__builtin_arm_stg) {
+    if (checkArgCount(*this, TheCall, 1))
+      return true;
+    Expr *Arg0 = TheCall->getArg(0);
+    ExprResult FirstArg = DefaultFunctionArrayLvalueConversion(Arg0);
+    if (FirstArg.isInvalid())
+      return true;
+
+    QualType FirstArgType = FirstArg.get()->getType();
+    if (!FirstArgType->isAnyPointerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_must_be_pointer)
+               << "first" << FirstArgType << Arg0->getSourceRange();
+    TheCall->setArg(0, FirstArg.get());
+
+    // Derive the return type from the pointer argument.
+    if (BuiltinID == AArch64::BI__builtin_arm_ldg)
+      TheCall->setType(FirstArgType);
+    return false;
+  }
+
+  if (BuiltinID == AArch64::BI__builtin_arm_subp) {
+    Expr *ArgA = TheCall->getArg(0);
+    Expr *ArgB = TheCall->getArg(1);
+
+    ExprResult ArgExprA = DefaultFunctionArrayLvalueConversion(ArgA);
+    ExprResult ArgExprB = DefaultFunctionArrayLvalueConversion(ArgB);
+
+    if (ArgExprA.isInvalid() || ArgExprB.isInvalid())
+      return true;
+
+    QualType ArgTypeA = ArgExprA.get()->getType();
+    QualType ArgTypeB = ArgExprB.get()->getType();
+
+    auto isNull = [&] (Expr *E) -> bool {
+      return E->isNullPointerConstant(
+                        Context, Expr::NPC_ValueDependentIsNotNull); };
+
+    // argument should be either a pointer or null
+    if (!ArgTypeA->isAnyPointerType() && !isNull(ArgA))
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_null_or_pointer)
+        << "first" << ArgTypeA << ArgA->getSourceRange();
+
+    if (!ArgTypeB->isAnyPointerType() && !isNull(ArgB))
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_arg_null_or_pointer)
+        << "second" << ArgTypeB << ArgB->getSourceRange();
+
+    // Ensure Pointee types are compatible
+    if (ArgTypeA->isAnyPointerType() && !isNull(ArgA) &&
+        ArgTypeB->isAnyPointerType() && !isNull(ArgB)) {
+      QualType pointeeA = ArgTypeA->getPointeeType();
+      QualType pointeeB = ArgTypeB->getPointeeType();
+      if (!Context.typesAreCompatible(
+             Context.getCanonicalType(pointeeA).getUnqualifiedType(),
+             Context.getCanonicalType(pointeeB).getUnqualifiedType())) {
+        return Diag(TheCall->getBeginLoc(), diag::err_typecheck_sub_ptr_compatible)
+          << ArgTypeA <<  ArgTypeB << ArgA->getSourceRange()
+          << ArgB->getSourceRange();
+      }
+    }
+
+    // at least one argument should be pointer type
+    if (!ArgTypeA->isAnyPointerType() && !ArgTypeB->isAnyPointerType())
+      return Diag(TheCall->getBeginLoc(), diag::err_memtag_any2arg_pointer)
+        <<  ArgTypeA << ArgTypeB << ArgA->getSourceRange();
+
+    if (isNull(ArgA)) // adopt type of the other pointer
+      ArgExprA = ImpCastExprToType(ArgExprA.get(), ArgTypeB, CK_NullToPointer);
+
+    if (isNull(ArgB))
+      ArgExprB = ImpCastExprToType(ArgExprB.get(), ArgTypeA, CK_NullToPointer);
+
+    TheCall->setArg(0, ArgExprA.get());
+    TheCall->setArg(1, ArgExprB.get());
+    TheCall->setType(Context.LongLongTy);
+    return false;
+  }
+  assert(false && "Unhandled ARM MTE intrinsic");
+  return true;
 }
 
 /// SemaBuiltinARMSpecialReg - Handle a check if argument ArgNum of CallExpr
@@ -5876,7 +6314,7 @@ bool Sema::SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
 
   // Check if the argument is a string literal.
   if (!isa<StringLiteral>(Arg->IgnoreParenImpCasts()))
-    return Diag(TheCall->getLocStart(), diag::err_expr_not_string_literal)
+    return Diag(TheCall->getBeginLoc(), diag::err_expr_not_string_literal)
            << Arg->getSourceRange();
 
   // Check the type of special register given.
@@ -5885,7 +6323,7 @@ bool Sema::SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
   Reg.split(Fields, ":");
 
   if (Fields.size() != ExpectedFieldNum && !(AllowName && Fields.size() == 1))
-    return Diag(TheCall->getLocStart(), diag::err_arm_invalid_specialreg)
+    return Diag(TheCall->getBeginLoc(), diag::err_arm_invalid_specialreg)
            << Arg->getSourceRange();
 
   // If the string is the name of a register then we cannot check that it is
@@ -5927,7 +6365,7 @@ bool Sema::SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
     }
 
     if (!ValidString)
-      return Diag(TheCall->getLocStart(), diag::err_arm_invalid_specialreg)
+      return Diag(TheCall->getBeginLoc(), diag::err_arm_invalid_specialreg)
              << Arg->getSourceRange();
   } else if (IsAArch64Builtin && Fields.size() == 1) {
     // If the register name is one of those that appear in the condition below
@@ -5955,8 +6393,8 @@ bool Sema::SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
 /// that val is a constant 1.
 bool Sema::SemaBuiltinLongjmp(CallExpr *TheCall) {
   if (!Context.getTargetInfo().hasSjLjLowering())
-    return Diag(TheCall->getLocStart(), diag::err_builtin_longjmp_unsupported)
-             << SourceRange(TheCall->getLocStart(), TheCall->getLocEnd());
+    return Diag(TheCall->getBeginLoc(), diag::err_builtin_longjmp_unsupported)
+           << SourceRange(TheCall->getBeginLoc(), TheCall->getEndLoc());
 
   Expr *Arg = TheCall->getArg(1);
   llvm::APSInt Result;
@@ -5966,8 +6404,8 @@ bool Sema::SemaBuiltinLongjmp(CallExpr *TheCall) {
     return true;
 
   if (Result != 1)
-    return Diag(TheCall->getLocStart(), diag::err_builtin_longjmp_invalid_val)
-             << SourceRange(Arg->getLocStart(), Arg->getLocEnd());
+    return Diag(TheCall->getBeginLoc(), diag::err_builtin_longjmp_invalid_val)
+           << SourceRange(Arg->getBeginLoc(), Arg->getEndLoc());
 
   return false;
 }
@@ -5976,8 +6414,8 @@ bool Sema::SemaBuiltinLongjmp(CallExpr *TheCall) {
 /// This checks that the target supports __builtin_setjmp.
 bool Sema::SemaBuiltinSetjmp(CallExpr *TheCall) {
   if (!Context.getTargetInfo().hasSjLjLowering())
-    return Diag(TheCall->getLocStart(), diag::err_builtin_setjmp_unsupported)
-             << SourceRange(TheCall->getLocStart(), TheCall->getLocEnd());
+    return Diag(TheCall->getBeginLoc(), diag::err_builtin_setjmp_unsupported)
+           << SourceRange(TheCall->getBeginLoc(), TheCall->getEndLoc());
   return false;
 }
 
@@ -6121,11 +6559,11 @@ class FormatStringLiteral {
                                     StartToken, StartTokenByteOffset);
   }
 
-  SourceLocation getLocStart() const LLVM_READONLY {
-    return FExpr->getLocStart().getLocWithOffset(Offset);
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return FExpr->getBeginLoc().getLocWithOffset(Offset);
   }
 
-  SourceLocation getLocEnd() const LLVM_READONLY { return FExpr->getLocEnd(); }
+  SourceLocation getEndLoc() const LLVM_READONLY { return FExpr->getEndLoc(); }
 };
 
 }  // namespace
@@ -6139,7 +6577,8 @@ static void CheckFormatString(Sema &S, const FormatStringLiteral *FExpr,
                               bool inFunctionCall,
                               Sema::VariadicCallType CallType,
                               llvm::SmallBitVector &CheckedVarArgs,
-                              UncoveredArgHandler &UncoveredArg);
+                              UncoveredArgHandler &UncoveredArg,
+                              bool IgnoreStringsWithoutSpecifiers);
 
 // Determine if an expression is a string literal or constant string.
 // If this function returns false on the arguments to a function expecting a
@@ -6152,7 +6591,10 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
                       Sema::VariadicCallType CallType, bool InFunctionCall,
                       llvm::SmallBitVector &CheckedVarArgs,
                       UncoveredArgHandler &UncoveredArg,
-                      llvm::APSInt Offset) {
+                      llvm::APSInt Offset,
+                      bool IgnoreStringsWithoutSpecifiers = false) {
+  if (S.isConstantEvaluated())
+    return SLCT_NotALiteral;
  tryAgain:
   assert(Offset.isSigned() && "invalid offset");
 
@@ -6182,7 +6624,8 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
     bool CheckLeft = true, CheckRight = true;
 
     bool Cond;
-    if (C->getCond()->EvaluateAsBooleanCondition(Cond, S.getASTContext())) {
+    if (C->getCond()->EvaluateAsBooleanCondition(Cond, S.getASTContext(),
+                                                 S.isConstantEvaluated())) {
       if (Cond)
         CheckRight = false;
       else
@@ -6200,17 +6643,17 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
       Left = checkFormatStringExpr(S, C->getTrueExpr(), Args,
                                    HasVAListArg, format_idx, firstDataArg,
                                    Type, CallType, InFunctionCall,
-                                   CheckedVarArgs, UncoveredArg, Offset);
+                                   CheckedVarArgs, UncoveredArg, Offset,
+                                   IgnoreStringsWithoutSpecifiers);
       if (Left == SLCT_NotALiteral || !CheckRight) {
         return Left;
       }
     }
 
-    StringLiteralCheckType Right =
-        checkFormatStringExpr(S, C->getFalseExpr(), Args,
-                              HasVAListArg, format_idx, firstDataArg,
-                              Type, CallType, InFunctionCall, CheckedVarArgs,
-                              UncoveredArg, Offset);
+    StringLiteralCheckType Right = checkFormatStringExpr(
+        S, C->getFalseExpr(), Args, HasVAListArg, format_idx, firstDataArg,
+        Type, CallType, InFunctionCall, CheckedVarArgs, UncoveredArg, Offset,
+        IgnoreStringsWithoutSpecifiers);
 
     return (CheckLeft && Left < Right) ? Left : Right;
   }
@@ -6314,7 +6757,8 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
         const Expr *Arg = CE->getArg(FA->getFormatIdx().getASTIndex());
         StringLiteralCheckType Result = checkFormatStringExpr(
             S, Arg, Args, HasVAListArg, format_idx, firstDataArg, Type,
-            CallType, InFunctionCall, CheckedVarArgs, UncoveredArg, Offset);
+            CallType, InFunctionCall, CheckedVarArgs, UncoveredArg, Offset,
+            IgnoreStringsWithoutSpecifiers);
         if (IsFirst) {
           CommonResult = Result;
           IsFirst = false;
@@ -6332,7 +6776,8 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
                                        HasVAListArg, format_idx,
                                        firstDataArg, Type, CallType,
                                        InFunctionCall, CheckedVarArgs,
-                                       UncoveredArg, Offset);
+                                       UncoveredArg, Offset,
+                                       IgnoreStringsWithoutSpecifiers);
         }
       }
     }
@@ -6341,12 +6786,28 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
   }
   case Stmt::ObjCMessageExprClass: {
     const auto *ME = cast<ObjCMessageExpr>(E);
-    if (const auto *ND = ME->getMethodDecl()) {
-      if (const auto *FA = ND->getAttr<FormatArgAttr>()) {
+    if (const auto *MD = ME->getMethodDecl()) {
+      if (const auto *FA = MD->getAttr<FormatArgAttr>()) {
+        // As a special case heuristic, if we're using the method -[NSBundle
+        // localizedStringForKey:value:table:], ignore any key strings that lack
+        // format specifiers. The idea is that if the key doesn't have any
+        // format specifiers then its probably just a key to map to the
+        // localized strings. If it does have format specifiers though, then its
+        // likely that the text of the key is the format string in the
+        // programmer's language, and should be checked.
+        const ObjCInterfaceDecl *IFace;
+        if (MD->isInstanceMethod() && (IFace = MD->getClassInterface()) &&
+            IFace->getIdentifier()->isStr("NSBundle") &&
+            MD->getSelector().isKeywordSelector(
+                {"localizedStringForKey", "value", "table"})) {
+          IgnoreStringsWithoutSpecifiers = true;
+        }
+
         const Expr *Arg = ME->getArg(FA->getFormatIdx().getASTIndex());
         return checkFormatStringExpr(
             S, Arg, Args, HasVAListArg, format_idx, firstDataArg, Type,
-            CallType, InFunctionCall, CheckedVarArgs, UncoveredArg, Offset);
+            CallType, InFunctionCall, CheckedVarArgs, UncoveredArg, Offset,
+            IgnoreStringsWithoutSpecifiers);
       }
     }
 
@@ -6370,34 +6831,36 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
       FormatStringLiteral FStr(StrE, Offset.sextOrTrunc(64).getSExtValue());
       CheckFormatString(S, &FStr, E, Args, HasVAListArg, format_idx,
                         firstDataArg, Type, InFunctionCall, CallType,
-                        CheckedVarArgs, UncoveredArg);
+                        CheckedVarArgs, UncoveredArg,
+                        IgnoreStringsWithoutSpecifiers);
       return SLCT_CheckedLiteral;
     }
 
     return SLCT_NotALiteral;
   }
   case Stmt::BinaryOperatorClass: {
-    llvm::APSInt LResult;
-    llvm::APSInt RResult;
-
     const BinaryOperator *BinOp = cast<BinaryOperator>(E);
 
     // A string literal + an int offset is still a string literal.
     if (BinOp->isAdditiveOp()) {
-      bool LIsInt = BinOp->getLHS()->EvaluateAsInt(LResult, S.Context);
-      bool RIsInt = BinOp->getRHS()->EvaluateAsInt(RResult, S.Context);
+      Expr::EvalResult LResult, RResult;
+
+      bool LIsInt = BinOp->getLHS()->EvaluateAsInt(
+          LResult, S.Context, Expr::SE_NoSideEffects, S.isConstantEvaluated());
+      bool RIsInt = BinOp->getRHS()->EvaluateAsInt(
+          RResult, S.Context, Expr::SE_NoSideEffects, S.isConstantEvaluated());
 
       if (LIsInt != RIsInt) {
         BinaryOperatorKind BinOpKind = BinOp->getOpcode();
 
         if (LIsInt) {
           if (BinOpKind == BO_Add) {
-            sumOffsets(Offset, LResult, BinOpKind, RIsInt);
+            sumOffsets(Offset, LResult.Val.getInt(), BinOpKind, RIsInt);
             E = BinOp->getRHS();
             goto tryAgain;
           }
         } else {
-          sumOffsets(Offset, RResult, BinOpKind, RIsInt);
+          sumOffsets(Offset, RResult.Val.getInt(), BinOpKind, RIsInt);
           E = BinOp->getLHS();
           goto tryAgain;
         }
@@ -6410,9 +6873,12 @@ checkFormatStringExpr(Sema &S, const Expr *E, ArrayRef<const Expr *> Args,
     const UnaryOperator *UnaOp = cast<UnaryOperator>(E);
     auto ASE = dyn_cast<ArraySubscriptExpr>(UnaOp->getSubExpr());
     if (UnaOp->getOpcode() == UO_AddrOf && ASE) {
-      llvm::APSInt IndexResult;
-      if (ASE->getRHS()->EvaluateAsInt(IndexResult, S.Context)) {
-        sumOffsets(Offset, IndexResult, BO_Add, /*RHS is int*/ true);
+      Expr::EvalResult IndexResult;
+      if (ASE->getRHS()->EvaluateAsInt(IndexResult, S.Context,
+                                       Expr::SE_NoSideEffects,
+                                       S.isConstantEvaluated())) {
+        sumOffsets(Offset, IndexResult.Val.getInt(), BO_Add,
+                   /*RHS is int*/ true);
         E = ASE->getBase();
         goto tryAgain;
       }
@@ -6511,7 +6977,7 @@ bool Sema::CheckFormatArguments(ArrayRef<const Expr *> Args,
   // format is either NSString or CFString. This is a hack to prevent
   // diag when using the NSLocalizedString and CFCopyLocalizedString macros
   // which are usually used in place of NS and CF string literals.
-  SourceLocation FormatLoc = Args[format_idx]->getLocStart();
+  SourceLocation FormatLoc = Args[format_idx]->getBeginLoc();
   if (Type == FST_NSString && SourceMgr.isInSystemMacro(FormatLoc))
     return false;
 
@@ -6831,7 +7297,7 @@ void UncoveredArgHandler::Diagnose(Sema &S, bool IsFunctionCall,
   if (!ArgExpr)
     return;
 
-  SourceLocation Loc = ArgExpr->getLocStart();
+  SourceLocation Loc = ArgExpr->getBeginLoc();
 
   if (S.getSourceManager().isInSystemMacro(Loc))
     return;
@@ -7029,6 +7495,8 @@ public:
                                       const char *startSpecifier,
                                       unsigned specifierLen) override;
 
+  void handleInvalidMaskType(StringRef MaskType) override;
+
   bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier &FS,
                              const char *startSpecifier,
                              unsigned specifierLen) override;
@@ -7078,6 +7546,10 @@ bool CheckPrintfHandler::HandleInvalidPrintfConversionSpecifier(
                                           getLocationOfByte(CS.getStart()),
                                           startSpecifier, specifierLen,
                                           CS.getStart(), CS.getLength());
+}
+
+void CheckPrintfHandler::handleInvalidMaskType(StringRef MaskType) {
+  S.Diag(getLocationOfByte(MaskType.data()), diag::err_invalid_mask_type_size);
 }
 
 bool CheckPrintfHandler::HandleAmount(
@@ -7276,10 +7748,9 @@ bool CheckPrintfHandler::checkForCStrMembers(
     if (Method->getMinRequiredArguments() == 0 &&
         AT.matchesType(S.Context, Method->getReturnType())) {
       // FIXME: Suggest parens if the expression needs them.
-      SourceLocation EndLoc = S.getLocForEndOfToken(E->getLocEnd());
-      S.Diag(E->getLocStart(), diag::note_printf_c_str)
-          << "c_str()"
-          << FixItHint::CreateInsertion(EndLoc, ".c_str()");
+      SourceLocation EndLoc = S.getLocForEndOfToken(E->getEndLoc());
+      S.Diag(E->getBeginLoc(), diag::note_printf_c_str)
+          << "c_str()" << FixItHint::CreateInsertion(EndLoc, ".c_str()");
       return true;
     }
   }
@@ -7353,22 +7824,22 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
         ArgType(S.Context.IntTy) : ArgType::CPointerTy;
     if (AT.isValid() && !AT.matchesType(S.Context, Ex->getType()))
       EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-        << AT.getRepresentativeTypeName(S.Context) << Ex->getType()
-        << false << Ex->getSourceRange(),
-        Ex->getLocStart(), /*IsStringLocation*/false,
-        getSpecifierRange(startSpecifier, specifierLen));
+          S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
+              << AT.getRepresentativeTypeName(S.Context) << Ex->getType()
+              << false << Ex->getSourceRange(),
+          Ex->getBeginLoc(), /*IsStringLocation*/ false,
+          getSpecifierRange(startSpecifier, specifierLen));
 
     // Type check the second argument (char * for both %b and %D)
     Ex = getDataArg(argIndex + 1);
     const analyze_printf::ArgType &AT2 = ArgType::CStrTy;
     if (AT2.isValid() && !AT2.matchesType(S.Context, Ex->getType()))
       EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-        << AT2.getRepresentativeTypeName(S.Context) << Ex->getType()
-        << false << Ex->getSourceRange(),
-        Ex->getLocStart(), /*IsStringLocation*/false,
-        getSpecifierRange(startSpecifier, specifierLen));
+          S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
+              << AT2.getRepresentativeTypeName(S.Context) << Ex->getType()
+              << false << Ex->getSourceRange(),
+          Ex->getBeginLoc(), /*IsStringLocation*/ false,
+          getSpecifierRange(startSpecifier, specifierLen));
 
      return true;
   }
@@ -7467,7 +7938,8 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
             startSpecifier, specifierLen);
 
   // Check the length modifier is valid with the given conversion specifier.
-  if (!FS.hasValidLengthModifier(S.getASTContext().getTargetInfo()))
+  if (!FS.hasValidLengthModifier(S.getASTContext().getTargetInfo(),
+                                 S.getLangOpts()))
     HandleInvalidLengthModifier(FS, CS, startSpecifier, specifierLen,
                                 diag::warn_format_nonsensical_length);
   else if (!FS.hasStandardLengthModifier())
@@ -7585,6 +8057,30 @@ shouldNotPrintDirectly(const ASTContext &Context,
   return std::make_pair(QualType(), StringRef());
 }
 
+/// Return true if \p ICE is an implicit argument promotion of an arithmetic
+/// type. Bit-field 'promotions' from a higher ranked type to a lower ranked
+/// type do not count.
+static bool
+isArithmeticArgumentPromotion(Sema &S, const ImplicitCastExpr *ICE) {
+  QualType From = ICE->getSubExpr()->getType();
+  QualType To = ICE->getType();
+  // It's an integer promotion if the destination type is the promoted
+  // source type.
+  if (ICE->getCastKind() == CK_IntegralCast &&
+      From->isPromotableIntegerType() &&
+      S.Context.getPromotedIntegerType(From) == To)
+    return true;
+  // Look through vector types, since we do default argument promotion for
+  // those in OpenCL.
+  if (const auto *VecTy = From->getAs<ExtVectorType>())
+    From = VecTy->getElementType();
+  if (const auto *VecTy = To->getAs<ExtVectorType>())
+    To = VecTy->getElementType();
+  // It's a floating promotion if the source type is a lower rank.
+  return ICE->getCastKind() == CK_FloatingCast &&
+         S.Context.getFloatingTypeOrder(From, To) < 0;
+}
+
 bool
 CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
                                     const char *StartSpecifier,
@@ -7612,11 +8108,11 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
 
   // Look through argument promotions for our error message's reported type.
   // This includes the integral and floating promotions, but excludes array
-  // and function pointer decay; seeing that an argument intended to be a
-  // string has type 'char [6]' is probably more confusing than 'char *'.
+  // and function pointer decay (seeing that an argument intended to be a
+  // string has type 'char [6]' is probably more confusing than 'char *') and
+  // certain bitfield promotions (bitfields can be 'demoted' to a lesser type).
   if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E)) {
-    if (ICE->getCastKind() == CK_IntegralCast ||
-        ICE->getCastKind() == CK_FloatingCast) {
+    if (isArithmeticArgumentPromotion(S, ICE)) {
       E = ICE->getSubExpr();
       ExprTy = E->getType();
 
@@ -7625,9 +8121,13 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       // function.
       if (ICE->getType() == S.Context.IntTy ||
           ICE->getType() == S.Context.UnsignedIntTy) {
-        // All further checking is done on the subexpression.
-        if (AT.matchesType(S.Context, ExprTy))
+        // All further checking is done on the subexpression
+        const analyze_printf::ArgType::MatchKind ImplicitMatch =
+            AT.matchesType(S.Context, ExprTy);
+        if (ImplicitMatch == analyze_printf::ArgType::Match)
           return true;
+        if (ImplicitMatch == analyze_printf::ArgType::NoMatchPedantic)
+          Pedantic = true;
       }
     }
   } else if (const CharacterLiteral *CL = dyn_cast<CharacterLiteral>(E)) {
@@ -7666,7 +8166,7 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
           return true;
       }
 
-      LookupResult Result(S, &S.Context.Idents.get("unichar"), E->getLocStart(),
+      LookupResult Result(S, &S.Context.Idents.get("unichar"), E->getBeginLoc(),
                           Sema::LookupOrdinaryName);
       if (S.LookupName(Result, S.getCurScope())) {
         NamedDecl *ND = Result.getFoundDecl();
@@ -7718,7 +8218,7 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       EmitFormatDiagnostic(S.PDiag(Diag)
                                << AT.getRepresentativeTypeName(S.Context)
                                << IntendedTy << IsEnum << E->getSourceRange(),
-                           E->getLocStart(),
+                           E->getBeginLoc(),
                            /*IsStringLocation*/ false, SpecRange,
                            FixItHint::CreateReplacement(SpecRange, os.str()));
     } else {
@@ -7747,15 +8247,15 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       } else if (!requiresParensToAddCast(E)) {
         // If the expression has high enough precedence,
         // just write the C-style cast.
-        Hints.push_back(FixItHint::CreateInsertion(E->getLocStart(),
-                                                   CastFix.str()));
+        Hints.push_back(
+            FixItHint::CreateInsertion(E->getBeginLoc(), CastFix.str()));
       } else {
         // Otherwise, add parens around the expression as well as the cast.
         CastFix << "(";
-        Hints.push_back(FixItHint::CreateInsertion(E->getLocStart(),
-                                                   CastFix.str()));
+        Hints.push_back(
+            FixItHint::CreateInsertion(E->getBeginLoc(), CastFix.str()));
 
-        SourceLocation After = S.getLocForEndOfToken(E->getLocEnd());
+        SourceLocation After = S.getLocForEndOfToken(E->getEndLoc());
         Hints.push_back(FixItHint::CreateInsertion(After, ")"));
       }
 
@@ -7773,18 +8273,17 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
                             : diag::warn_format_argument_needs_cast;
         EmitFormatDiagnostic(S.PDiag(Diag) << Name << IntendedTy << IsEnum
                                            << E->getSourceRange(),
-                             E->getLocStart(), /*IsStringLocation=*/false,
+                             E->getBeginLoc(), /*IsStringLocation=*/false,
                              SpecRange, Hints);
       } else {
         // In this case, the expression could be printed using a different
         // specifier, but we've decided that the specifier is probably correct
         // and we should cast instead. Just use the normal warning message.
         EmitFormatDiagnostic(
-          S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-            << AT.getRepresentativeTypeName(S.Context) << ExprTy << IsEnum
-            << E->getSourceRange(),
-          E->getLocStart(), /*IsStringLocation*/false,
-          SpecRange, Hints);
+            S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
+                << AT.getRepresentativeTypeName(S.Context) << ExprTy << IsEnum
+                << E->getSourceRange(),
+            E->getBeginLoc(), /*IsStringLocation*/ false, SpecRange, Hints);
       }
     }
   } else {
@@ -7804,41 +8303,34 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       EmitFormatDiagnostic(
           S.PDiag(Diag) << AT.getRepresentativeTypeName(S.Context) << ExprTy
                         << IsEnum << CSR << E->getSourceRange(),
-          E->getLocStart(), /*IsStringLocation*/ false, CSR);
+          E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
       break;
     }
     case Sema::VAK_Undefined:
     case Sema::VAK_MSVCUndefined:
-      EmitFormatDiagnostic(
-        S.PDiag(diag::warn_non_pod_vararg_with_format_string)
-          << S.getLangOpts().CPlusPlus11
-          << ExprTy
-          << CallType
-          << AT.getRepresentativeTypeName(S.Context)
-          << CSR
-          << E->getSourceRange(),
-        E->getLocStart(), /*IsStringLocation*/false, CSR);
+      EmitFormatDiagnostic(S.PDiag(diag::warn_non_pod_vararg_with_format_string)
+                               << S.getLangOpts().CPlusPlus11 << ExprTy
+                               << CallType
+                               << AT.getRepresentativeTypeName(S.Context) << CSR
+                               << E->getSourceRange(),
+                           E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
       checkForCStrMembers(AT, E);
       break;
 
     case Sema::VAK_Invalid:
       if (ExprTy->isObjCObjectType())
         EmitFormatDiagnostic(
-          S.PDiag(diag::err_cannot_pass_objc_interface_to_vararg_format)
-            << S.getLangOpts().CPlusPlus11
-            << ExprTy
-            << CallType
-            << AT.getRepresentativeTypeName(S.Context)
-            << CSR
-            << E->getSourceRange(),
-          E->getLocStart(), /*IsStringLocation*/false, CSR);
+            S.PDiag(diag::err_cannot_pass_objc_interface_to_vararg_format)
+                << S.getLangOpts().CPlusPlus11 << ExprTy << CallType
+                << AT.getRepresentativeTypeName(S.Context) << CSR
+                << E->getSourceRange(),
+            E->getBeginLoc(), /*IsStringLocation*/ false, CSR);
       else
         // FIXME: If this is an initializer list, suggest removing the braces
         // or inserting a cast to the target type.
-        S.Diag(E->getLocStart(), diag::err_cannot_pass_to_vararg_format)
-          << isa<InitListExpr>(E) << ExprTy << CallType
-          << AT.getRepresentativeTypeName(S.Context)
-          << E->getSourceRange();
+        S.Diag(E->getBeginLoc(), diag::err_cannot_pass_to_vararg_format)
+            << isa<InitListExpr>(E) << ExprTy << CallType
+            << AT.getRepresentativeTypeName(S.Context) << E->getSourceRange();
       break;
     }
 
@@ -7955,7 +8447,8 @@ bool CheckScanfHandler::HandleScanfSpecifier(
   }
 
   // Check the length modifier is valid with the given conversion specifier.
-  if (!FS.hasValidLengthModifier(S.getASTContext().getTargetInfo()))
+  if (!FS.hasValidLengthModifier(S.getASTContext().getTargetInfo(),
+                                 S.getLangOpts()))
     HandleInvalidLengthModifier(FS, CS, startSpecifier, specifierLen,
                                 diag::warn_format_nonsensical_length);
   else if (!FS.hasStandardLengthModifier())
@@ -8008,7 +8501,7 @@ bool CheckScanfHandler::HandleScanfSpecifier(
     EmitFormatDiagnostic(
         S.PDiag(Diag) << AT.getRepresentativeTypeName(S.Context)
                       << Ex->getType() << false << Ex->getSourceRange(),
-        Ex->getLocStart(),
+        Ex->getBeginLoc(),
         /*IsStringLocation*/ false,
         getSpecifierRange(startSpecifier, specifierLen),
         FixItHint::CreateReplacement(
@@ -8017,7 +8510,7 @@ bool CheckScanfHandler::HandleScanfSpecifier(
     EmitFormatDiagnostic(S.PDiag(Diag)
                              << AT.getRepresentativeTypeName(S.Context)
                              << Ex->getType() << false << Ex->getSourceRange(),
-                         Ex->getLocStart(),
+                         Ex->getBeginLoc(),
                          /*IsStringLocation*/ false,
                          getSpecifierRange(startSpecifier, specifierLen));
   }
@@ -8034,13 +8527,14 @@ static void CheckFormatString(Sema &S, const FormatStringLiteral *FExpr,
                               bool inFunctionCall,
                               Sema::VariadicCallType CallType,
                               llvm::SmallBitVector &CheckedVarArgs,
-                              UncoveredArgHandler &UncoveredArg) {
+                              UncoveredArgHandler &UncoveredArg,
+                              bool IgnoreStringsWithoutSpecifiers) {
   // CHECK: is the format string a wide literal?
   if (!FExpr->isAscii() && !FExpr->isUTF8()) {
     CheckFormatHandler::EmitFormatDiagnostic(
-      S, inFunctionCall, Args[format_idx],
-      S.PDiag(diag::warn_format_string_is_wide_literal), FExpr->getLocStart(),
-      /*IsStringLocation*/true, OrigFormatExpr->getSourceRange());
+        S, inFunctionCall, Args[format_idx],
+        S.PDiag(diag::warn_format_string_is_wide_literal), FExpr->getBeginLoc(),
+        /*IsStringLocation*/ true, OrigFormatExpr->getSourceRange());
     return;
   }
 
@@ -8055,6 +8549,11 @@ static void CheckFormatString(Sema &S, const FormatStringLiteral *FExpr,
   size_t StrLen = std::min(std::max(TypeSize, size_t(1)) - 1, StrRef.size());
   const unsigned numDataArgs = Args.size() - firstDataArg;
 
+  if (IgnoreStringsWithoutSpecifiers &&
+      !analyze_format_string::parseFormatStringHasFormattingSpecifiers(
+          Str, Str + StrLen, S.getLangOpts(), S.Context.getTargetInfo()))
+    return;
+
   // Emit a warning if the string literal is truncated and does not contain an
   // embedded null character.
   if (TypeSize <= StrRef.size() &&
@@ -8062,7 +8561,7 @@ static void CheckFormatString(Sema &S, const FormatStringLiteral *FExpr,
     CheckFormatHandler::EmitFormatDiagnostic(
         S, inFunctionCall, Args[format_idx],
         S.PDiag(diag::warn_printf_format_string_not_null_terminated),
-        FExpr->getLocStart(),
+        FExpr->getBeginLoc(),
         /*IsStringLocation=*/true, OrigFormatExpr->getSourceRange());
     return;
   }
@@ -8070,9 +8569,9 @@ static void CheckFormatString(Sema &S, const FormatStringLiteral *FExpr,
   // CHECK: empty format string?
   if (StrLen == 0 && numDataArgs > 0) {
     CheckFormatHandler::EmitFormatDiagnostic(
-      S, inFunctionCall, Args[format_idx],
-      S.PDiag(diag::warn_empty_format_string), FExpr->getLocStart(),
-      /*IsStringLocation*/true, OrigFormatExpr->getSourceRange());
+        S, inFunctionCall, Args[format_idx],
+        S.PDiag(diag::warn_empty_format_string), FExpr->getBeginLoc(),
+        /*IsStringLocation*/ true, OrigFormatExpr->getSourceRange());
     return;
   }
 
@@ -8587,8 +9086,9 @@ static bool CheckMemorySizeofForComparison(Sema &S, const Expr *E,
   S.Diag(Size->getOperatorLoc(), diag::warn_memsize_comparison)
       << SizeRange << FnName;
   S.Diag(FnLoc, diag::note_memsize_comparison_paren)
-      << FnName << FixItHint::CreateInsertion(
-                       S.getLocForEndOfToken(Size->getLHS()->getLocEnd()), ")")
+      << FnName
+      << FixItHint::CreateInsertion(
+             S.getLocForEndOfToken(Size->getLHS()->getEndLoc()), ")")
       << FixItHint::CreateRemoval(RParenLoc);
   S.Diag(SizeRange.getBegin(), diag::note_memsize_comparison_cast_silence)
       << FixItHint::CreateInsertion(SizeRange.getBegin(), "(size_t)(")
@@ -8853,7 +9353,7 @@ void Sema::CheckMemaccessArguments(const CallExpr *Call,
   const Expr *LenExpr = Call->getArg(LenArg)->IgnoreParenImpCasts();
 
   if (CheckMemorySizeofForComparison(*this, LenExpr, FnName,
-                                     Call->getLocStart(), Call->getRParenLoc()))
+                                     Call->getBeginLoc(), Call->getRParenLoc()))
     return;
 
   // Catch cases like 'memset(buf, sizeof(buf), 0)'.
@@ -8971,23 +9471,23 @@ void Sema::CheckMemaccessArguments(const CallExpr *Call,
             getContainedDynamicClass(PointeeTy, IsContained)) {
 
       unsigned OperationType = 0;
+      const bool IsCmp = BId == Builtin::BImemcmp || BId == Builtin::BIbcmp;
       // "overwritten" if we're warning about the destination for any call
       // but memcmp; otherwise a verb appropriate to the call.
-      if (ArgIdx != 0 || BId == Builtin::BImemcmp) {
+      if (ArgIdx != 0 || IsCmp) {
         if (BId == Builtin::BImemcpy)
           OperationType = 1;
         else if(BId == Builtin::BImemmove)
           OperationType = 2;
-        else if (BId == Builtin::BImemcmp)
+        else if (IsCmp)
           OperationType = 3;
       }
 
-      DiagRuntimeBehavior(
-        Dest->getExprLoc(), Dest,
-        PDiag(diag::warn_dyn_class_memaccess)
-          << (BId == Builtin::BImemcmp ? ArgIdx + 2 : ArgIdx)
-          << FnName << IsContained << ContainedRD << OperationType
-          << Call->getCallee()->getSourceRange());
+      DiagRuntimeBehavior(Dest->getExprLoc(), Dest,
+                          PDiag(diag::warn_dyn_class_memaccess)
+                              << (IsCmp ? ArgIdx + 2 : ArgIdx) << FnName
+                              << IsContained << ContainedRD << OperationType
+                              << Call->getCallee()->getSourceRange());
     } else if (PointeeTy.hasNonTrivialObjCLifetime() &&
              BId != Builtin::BImemset)
       DiagRuntimeBehavior(
@@ -9075,7 +9575,7 @@ void Sema::CheckStrlcpycatArguments(const CallExpr *Call,
   const Expr *CompareWithSrc = nullptr;
 
   if (CheckMemorySizeofForComparison(*this, SizeArg, FnName,
-                                     Call->getLocStart(), Call->getRParenLoc()))
+                                     Call->getBeginLoc(), Call->getRParenLoc()))
     return;
 
   // Look for 'strlcpy(dst, x, sizeof(x))'
@@ -9107,8 +9607,8 @@ void Sema::CheckStrlcpycatArguments(const CallExpr *Call,
     return;
 
   const Expr *OriginalSizeArg = Call->getArg(2);
-  Diag(CompareWithSrcDRE->getLocStart(), diag::warn_strlcpycat_wrong_size)
-    << OriginalSizeArg->getSourceRange() << FnName;
+  Diag(CompareWithSrcDRE->getBeginLoc(), diag::warn_strlcpycat_wrong_size)
+      << OriginalSizeArg->getSourceRange() << FnName;
 
   // Output a FIXIT hint if the destination is an array (rather than a
   // pointer to an array).  This could be enhanced to handle some
@@ -9124,9 +9624,9 @@ void Sema::CheckStrlcpycatArguments(const CallExpr *Call,
   DstArg->printPretty(OS, nullptr, getPrintingPolicy());
   OS << ")";
 
-  Diag(OriginalSizeArg->getLocStart(), diag::note_strlcpycat_wrong_size)
-    << FixItHint::CreateReplacement(OriginalSizeArg->getSourceRange(),
-                                    OS.str());
+  Diag(OriginalSizeArg->getBeginLoc(), diag::note_strlcpycat_wrong_size)
+      << FixItHint::CreateReplacement(OriginalSizeArg->getSourceRange(),
+                                      OS.str());
 }
 
 /// Check if two expressions refer to the same declaration.
@@ -9159,7 +9659,7 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
   const Expr *SrcArg = CE->getArg(1)->IgnoreParenCasts();
   const Expr *LenArg = CE->getArg(2)->IgnoreParenCasts();
 
-  if (CheckMemorySizeofForComparison(*this, LenArg, FnName, CE->getLocStart(),
+  if (CheckMemorySizeofForComparison(*this, LenArg, FnName, CE->getBeginLoc(),
                                      CE->getRParenLoc()))
     return;
 
@@ -9191,7 +9691,7 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
     return;
 
   // Generate the diagnostic.
-  SourceLocation SL = LenArg->getLocStart();
+  SourceLocation SL = LenArg->getBeginLoc();
   SourceRange SR = LenArg->getSourceRange();
   SourceManager &SM = getSourceManager();
 
@@ -9466,12 +9966,13 @@ static QualType GetExprType(const Expr *E) {
 /// range of values it might take.
 ///
 /// \param MaxWidth - the width to which the value will be truncated
-static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
+static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth,
+                             bool InConstantContext) {
   E = E->IgnoreParens();
 
   // Try a full evaluation first.
   Expr::EvalResult result;
-  if (E->EvaluateAsRValue(result, C))
+  if (E->EvaluateAsRValue(result, C, InConstantContext))
     return GetValueRange(C, result.Val, GetExprType(E), MaxWidth);
 
   // I think we only want to look through implicit casts here; if the
@@ -9479,7 +9980,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
   // being of the new, wider type.
   if (const auto *CE = dyn_cast<ImplicitCastExpr>(E)) {
     if (CE->getCastKind() == CK_NoOp || CE->getCastKind() == CK_LValueToRValue)
-      return GetExprRange(C, CE->getSubExpr(), MaxWidth);
+      return GetExprRange(C, CE->getSubExpr(), MaxWidth, InConstantContext);
 
     IntRange OutputTypeRange = IntRange::forValueOfType(C, GetExprType(CE));
 
@@ -9490,9 +9991,9 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     if (!isIntegerCast)
       return OutputTypeRange;
 
-    IntRange SubRange
-      = GetExprRange(C, CE->getSubExpr(),
-                     std::min(MaxWidth, OutputTypeRange.Width));
+    IntRange SubRange = GetExprRange(C, CE->getSubExpr(),
+                                     std::min(MaxWidth, OutputTypeRange.Width),
+                                     InConstantContext);
 
     // Bail out if the subexpr's range is as wide as the cast type.
     if (SubRange.Width >= OutputTypeRange.Width)
@@ -9508,13 +10009,15 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     // If we can fold the condition, just take that operand.
     bool CondResult;
     if (CO->getCond()->EvaluateAsBooleanCondition(CondResult, C))
-      return GetExprRange(C, CondResult ? CO->getTrueExpr()
-                                        : CO->getFalseExpr(),
-                          MaxWidth);
+      return GetExprRange(C,
+                          CondResult ? CO->getTrueExpr() : CO->getFalseExpr(),
+                          MaxWidth, InConstantContext);
 
     // Otherwise, conservatively merge.
-    IntRange L = GetExprRange(C, CO->getTrueExpr(), MaxWidth);
-    IntRange R = GetExprRange(C, CO->getFalseExpr(), MaxWidth);
+    IntRange L =
+        GetExprRange(C, CO->getTrueExpr(), MaxWidth, InConstantContext);
+    IntRange R =
+        GetExprRange(C, CO->getFalseExpr(), MaxWidth, InConstantContext);
     return IntRange::join(L, R);
   }
 
@@ -9550,7 +10053,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     // been coerced to the LHS type.
     case BO_Assign:
       // TODO: bitfields?
-      return GetExprRange(C, BO->getRHS(), MaxWidth);
+      return GetExprRange(C, BO->getRHS(), MaxWidth, InConstantContext);
 
     // Operations with opaque sources are black-listed.
     case BO_PtrMemD:
@@ -9560,8 +10063,9 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     // Bitwise-and uses the *infinum* of the two source ranges.
     case BO_And:
     case BO_AndAssign:
-      return IntRange::meet(GetExprRange(C, BO->getLHS(), MaxWidth),
-                            GetExprRange(C, BO->getRHS(), MaxWidth));
+      return IntRange::meet(
+          GetExprRange(C, BO->getLHS(), MaxWidth, InConstantContext),
+          GetExprRange(C, BO->getRHS(), MaxWidth, InConstantContext));
 
     // Left shift gets black-listed based on a judgement call.
     case BO_Shl:
@@ -9582,7 +10086,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     // Right shift by a constant can narrow its left argument.
     case BO_Shr:
     case BO_ShrAssign: {
-      IntRange L = GetExprRange(C, BO->getLHS(), MaxWidth);
+      IntRange L = GetExprRange(C, BO->getLHS(), MaxWidth, InConstantContext);
 
       // If the shift amount is a positive constant, drop the width by
       // that much.
@@ -9601,7 +10105,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
 
     // Comma acts as its right operand.
     case BO_Comma:
-      return GetExprRange(C, BO->getRHS(), MaxWidth);
+      return GetExprRange(C, BO->getRHS(), MaxWidth, InConstantContext);
 
     // Black-list pointer subtractions.
     case BO_Sub:
@@ -9614,7 +10118,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     case BO_Div: {
       // Don't 'pre-truncate' the operands.
       unsigned opWidth = C.getIntWidth(GetExprType(E));
-      IntRange L = GetExprRange(C, BO->getLHS(), opWidth);
+      IntRange L = GetExprRange(C, BO->getLHS(), opWidth, InConstantContext);
 
       // If the divisor is constant, use that.
       llvm::APSInt divisor;
@@ -9628,7 +10132,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
       }
 
       // Otherwise, just use the LHS's width.
-      IntRange R = GetExprRange(C, BO->getRHS(), opWidth);
+      IntRange R = GetExprRange(C, BO->getRHS(), opWidth, InConstantContext);
       return IntRange(L.Width, L.NonNegative && R.NonNegative);
     }
 
@@ -9637,8 +10141,8 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
     case BO_Rem: {
       // Don't 'pre-truncate' the operands.
       unsigned opWidth = C.getIntWidth(GetExprType(E));
-      IntRange L = GetExprRange(C, BO->getLHS(), opWidth);
-      IntRange R = GetExprRange(C, BO->getRHS(), opWidth);
+      IntRange L = GetExprRange(C, BO->getLHS(), opWidth, InConstantContext);
+      IntRange R = GetExprRange(C, BO->getRHS(), opWidth, InConstantContext);
 
       IntRange meet = IntRange::meet(L, R);
       meet.Width = std::min(meet.Width, MaxWidth);
@@ -9655,8 +10159,8 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
 
     // The default case is to treat the operation as if it were closed
     // on the narrowest type that encompasses both operands.
-    IntRange L = GetExprRange(C, BO->getLHS(), MaxWidth);
-    IntRange R = GetExprRange(C, BO->getRHS(), MaxWidth);
+    IntRange L = GetExprRange(C, BO->getLHS(), MaxWidth, InConstantContext);
+    IntRange R = GetExprRange(C, BO->getRHS(), MaxWidth, InConstantContext);
     return IntRange::join(L, R);
   }
 
@@ -9672,12 +10176,12 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
       return IntRange::forValueOfType(C, GetExprType(E));
 
     default:
-      return GetExprRange(C, UO->getSubExpr(), MaxWidth);
+      return GetExprRange(C, UO->getSubExpr(), MaxWidth, InConstantContext);
     }
   }
 
   if (const auto *OVE = dyn_cast<OpaqueValueExpr>(E))
-    return GetExprRange(C, OVE->getSourceExpr(), MaxWidth);
+    return GetExprRange(C, OVE->getSourceExpr(), MaxWidth, InConstantContext);
 
   if (const auto *BitField = E->getSourceBitField())
     return IntRange(BitField->getBitWidthValue(C),
@@ -9686,8 +10190,9 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth) {
   return IntRange::forValueOfType(C, GetExprType(E));
 }
 
-static IntRange GetExprRange(ASTContext &C, const Expr *E) {
-  return GetExprRange(C, E, C.getIntWidth(GetExprType(E)));
+static IntRange GetExprRange(ASTContext &C, const Expr *E,
+                             bool InConstantContext) {
+  return GetExprRange(C, E, C.getIntWidth(GetExprType(E)), InConstantContext);
 }
 
 /// Checks whether the given value, which currently has the given
@@ -9728,7 +10233,8 @@ static bool IsSameFloatAfterCast(const APValue &value,
           IsSameFloatAfterCast(value.getComplexFloatImag(), Src, Tgt));
 }
 
-static void AnalyzeImplicitConversions(Sema &S, Expr *E, SourceLocation CC);
+static void AnalyzeImplicitConversions(Sema &S, Expr *E, SourceLocation CC,
+                                       bool IsListInit = false);
 
 static bool IsEnumConstOrFromMacro(Sema &S, Expr *E) {
   // Suppress cases where we are comparing against an enum constant.
@@ -9737,9 +10243,16 @@ static bool IsEnumConstOrFromMacro(Sema &S, Expr *E) {
     if (isa<EnumConstantDecl>(DR->getDecl()))
       return true;
 
-  // Suppress cases where the '0' value is expanded from a macro.
-  if (E->getLocStart().isMacroID())
-    return true;
+  // Suppress cases where the value is expanded from a macro, unless that macro
+  // is how a language represents a boolean literal. This is the case in both C
+  // and Objective-C.
+  SourceLocation BeginLoc = E->getBeginLoc();
+  if (BeginLoc.isMacroID()) {
+    StringRef MacroName = Lexer::getImmediateMacroName(
+        BeginLoc, S.getSourceManager(), S.getLangOpts());
+    return MacroName != "YES" && MacroName != "NO" &&
+           MacroName != "true" && MacroName != "false";
+  }
 
   return false;
 }
@@ -9931,11 +10444,17 @@ static bool CheckTautologicalComparison(Sema &S, BinaryOperator *E,
     OtherT = AT->getValueType();
   IntRange OtherRange = IntRange::forValueOfType(S.Context, OtherT);
 
+  // Special case for ObjC BOOL on targets where its a typedef for a signed char
+  // (Namely, macOS).
+  bool IsObjCSignedCharBool = S.getLangOpts().ObjC &&
+                              S.NSAPIObj->isObjCBOOLType(OtherT) &&
+                              OtherT->isSpecificBuiltinType(BuiltinType::SChar);
+
   // Whether we're treating Other as being a bool because of the form of
   // expression despite it having another type (typically 'int' in C).
   bool OtherIsBooleanDespiteType =
       !OtherT->isBooleanType() && Other->isKnownToHaveBooleanValue();
-  if (OtherIsBooleanDespiteType)
+  if (OtherIsBooleanDespiteType || IsObjCSignedCharBool)
     OtherRange = IntRange::forBoolType();
 
   // Determine the promoted range of the other type and see if a comparison of
@@ -9966,22 +10485,34 @@ static bool CheckTautologicalComparison(Sema &S, BinaryOperator *E,
   // Should be enough for uint128 (39 decimal digits)
   SmallString<64> PrettySourceValue;
   llvm::raw_svector_ostream OS(PrettySourceValue);
-  if (ED)
+  if (ED) {
     OS << '\'' << *ED << "' (" << Value << ")";
-  else
+  } else if (auto *BL = dyn_cast<ObjCBoolLiteralExpr>(
+               Constant->IgnoreParenImpCasts())) {
+    OS << (BL->getValue() ? "YES" : "NO");
+  } else {
     OS << Value;
+  }
+
+  if (IsObjCSignedCharBool) {
+    S.DiagRuntimeBehavior(E->getOperatorLoc(), E,
+                          S.PDiag(diag::warn_tautological_compare_objc_bool)
+                              << OS.str() << *Result);
+    return true;
+  }
 
   // FIXME: We use a somewhat different formatting for the in-range cases and
   // cases involving boolean values for historical reasons. We should pick a
   // consistent way of presenting these diagnostics.
   if (!InRange || Other->isKnownToHaveBooleanValue()) {
+
     S.DiagRuntimeBehavior(
-      E->getOperatorLoc(), E,
-      S.PDiag(!InRange ? diag::warn_out_of_range_compare
-                       : diag::warn_tautological_bool_compare)
-          << OS.str() << classifyConstantValue(Constant)
-          << OtherT << OtherIsBooleanDespiteType << *Result
-          << E->getLHS()->getSourceRange() << E->getRHS()->getSourceRange());
+        E->getOperatorLoc(), E,
+        S.PDiag(!InRange ? diag::warn_out_of_range_compare
+                         : diag::warn_tautological_bool_compare)
+            << OS.str() << classifyConstantValue(Constant) << OtherT
+            << OtherIsBooleanDespiteType << *Result
+            << E->getLHS()->getSourceRange() << E->getRHS()->getSourceRange());
   } else {
     unsigned Diag = (isKnownToHaveUnsignedValue(OriginalOther) && Value == 0)
                         ? (HasEnumType(OriginalOther)
@@ -10085,7 +10616,8 @@ static void AnalyzeComparison(Sema &S, BinaryOperator *E) {
   }
 
   // Otherwise, calculate the effective range of the signed operand.
-  IntRange signedRange = GetExprRange(S.Context, signedOperand);
+  IntRange signedRange =
+      GetExprRange(S.Context, signedOperand, S.isConstantEvaluated());
 
   // Go ahead and analyze implicit conversions in the operands.  Note
   // that we skip the implicit conversions on both sides.
@@ -10102,7 +10634,8 @@ static void AnalyzeComparison(Sema &S, BinaryOperator *E) {
   // change the result of the comparison.
   if (E->isEqualityOp()) {
     unsigned comparisonWidth = S.Context.getIntWidth(T);
-    IntRange unsignedRange = GetExprRange(S.Context, unsignedOperand);
+    IntRange unsignedRange =
+        GetExprRange(S.Context, unsignedOperand, S.isConstantEvaluated());
 
     // We should never be unable to prove that the unsigned operand is
     // non-negative.
@@ -10113,9 +10646,9 @@ static void AnalyzeComparison(Sema &S, BinaryOperator *E) {
   }
 
   S.DiagRuntimeBehavior(E->getOperatorLoc(), E,
-    S.PDiag(diag::warn_mixed_sign_comparison)
-      << LHS->getType() << RHS->getType()
-      << LHS->getSourceRange() << RHS->getSourceRange());
+                        S.PDiag(diag::warn_mixed_sign_comparison)
+                            << LHS->getType() << RHS->getType()
+                            << LHS->getSourceRange() << RHS->getSourceRange());
 }
 
 /// Analyzes an attempt to assign the given value to a bitfield.
@@ -10159,8 +10692,8 @@ static bool AnalyzeBitFieldAssignment(Sema &S, FieldDecl *Bitfield, Expr *Init,
   Expr *OriginalInit = Init->IgnoreParenImpCasts();
   unsigned FieldWidth = Bitfield->getBitWidthValue(S.Context);
 
-  llvm::APSInt Value;
-  if (!OriginalInit->EvaluateAsInt(Value, S.Context,
+  Expr::EvalResult Result;
+  if (!OriginalInit->EvaluateAsInt(Result, S.Context,
                                    Expr::SE_AllowSideEffects)) {
     // The RHS is not constant.  If the RHS has an enum type, make sure the
     // bitfield is wide enough to hold all the values of the enum without
@@ -10216,6 +10749,8 @@ static bool AnalyzeBitFieldAssignment(Sema &S, FieldDecl *Bitfield, Expr *Init,
     return false;
   }
 
+  llvm::APSInt Value = Result.Val.getInt();
+
   unsigned OriginalWidth = Value.getBitWidth();
 
   if (!Value.isSigned() || Value.isNegative())
@@ -10268,6 +10803,10 @@ static void AnalyzeAssignment(Sema &S, BinaryOperator *E) {
   }
 
   AnalyzeImplicitConversions(S, E->getRHS(), E->getOperatorLoc());
+
+  // Diagnose implicitly sequentially-consistent atomic assignment.
+  if (E->getLHS()->getType()->isAtomicType())
+    S.Diag(E->getRHS()->getBeginLoc(), diag::warn_atomic_implicit_seq_cst);
 }
 
 /// Diagnose an implicit cast;  purely a helper for CheckImplicitConversion.
@@ -10277,8 +10816,8 @@ static void DiagnoseImpCast(Sema &S, Expr *E, QualType SourceType, QualType T,
   if (pruneControlFlow) {
     S.DiagRuntimeBehavior(E->getExprLoc(), E,
                           S.PDiag(diag)
-                            << SourceType << T << E->getSourceRange()
-                            << SourceRange(CContext));
+                              << SourceType << T << E->getSourceRange()
+                              << SourceRange(CContext));
     return;
   }
   S.Diag(E->getExprLoc(), diag)
@@ -10290,33 +10829,6 @@ static void DiagnoseImpCast(Sema &S, Expr *E, QualType T,
                             SourceLocation CContext,
                             unsigned diag, bool pruneControlFlow = false) {
   DiagnoseImpCast(S, E, E->getType(), T, CContext, diag, pruneControlFlow);
-}
-
-/// Analyze the given compound assignment for the possible losing of
-/// floating-point precision.
-static void AnalyzeCompoundAssignment(Sema &S, BinaryOperator *E) {
-  assert(isa<CompoundAssignOperator>(E) &&
-         "Must be compound assignment operation");
-  // Recurse on the LHS and RHS in here
-  AnalyzeImplicitConversions(S, E->getLHS(), E->getOperatorLoc());
-  AnalyzeImplicitConversions(S, E->getRHS(), E->getOperatorLoc());
-
-  // Now check the outermost expression
-  const auto *ResultBT = E->getLHS()->getType()->getAs<BuiltinType>();
-  const auto *RBT = cast<CompoundAssignOperator>(E)
-                        ->getComputationResultType()
-                        ->getAs<BuiltinType>();
-
-  // If both source and target are floating points.
-  if (ResultBT && ResultBT->isFloatingPoint() && RBT && RBT->isFloatingPoint())
-    // Builtin FP kinds are ordered by increasing FP rank.
-    if (ResultBT->getKind() < RBT->getKind())
-      // We don't want to warn for system macro.
-      if (!S.SourceMgr.isInSystemMacro(E->getOperatorLoc()))
-        // warn about dropping FP rank.
-        DiagnoseImpCast(S, E->getRHS(), E->getLHS()->getType(),
-                        E->getOperatorLoc(),
-                        diag::warn_impcast_float_result_precision);
 }
 
 /// Diagnose an implicit cast from a floating point value to an integer value.
@@ -10419,6 +10931,44 @@ static void DiagnoseFloatingImpCast(Sema &S, Expr *E, QualType T,
         << E->getType() << T.getUnqualifiedType() << PrettySourceValue
         << PrettyTargetValue << E->getSourceRange() << SourceRange(CContext);
   }
+}
+
+/// Analyze the given compound assignment for the possible losing of
+/// floating-point precision.
+static void AnalyzeCompoundAssignment(Sema &S, BinaryOperator *E) {
+  assert(isa<CompoundAssignOperator>(E) &&
+         "Must be compound assignment operation");
+  // Recurse on the LHS and RHS in here
+  AnalyzeImplicitConversions(S, E->getLHS(), E->getOperatorLoc());
+  AnalyzeImplicitConversions(S, E->getRHS(), E->getOperatorLoc());
+
+  if (E->getLHS()->getType()->isAtomicType())
+    S.Diag(E->getOperatorLoc(), diag::warn_atomic_implicit_seq_cst);
+
+  // Now check the outermost expression
+  const auto *ResultBT = E->getLHS()->getType()->getAs<BuiltinType>();
+  const auto *RBT = cast<CompoundAssignOperator>(E)
+                        ->getComputationResultType()
+                        ->getAs<BuiltinType>();
+
+  // The below checks assume source is floating point.
+  if (!ResultBT || !RBT || !RBT->isFloatingPoint()) return;
+
+  // If source is floating point but target is an integer.
+  if (ResultBT->isInteger())
+    return DiagnoseImpCast(S, E, E->getRHS()->getType(), E->getLHS()->getType(),
+                           E->getExprLoc(), diag::warn_impcast_float_integer);
+
+  if (!ResultBT->isFloatingPoint())
+    return;
+
+  // If both source and target are floating points, warn about losing precision.
+  int Order = S.getASTContext().getFloatingTypeSemanticOrder(
+      QualType(ResultBT, 0), QualType(RBT, 0));
+  if (Order < 0 && !S.SourceMgr.isInSystemMacro(E->getOperatorLoc()))
+    // warn about dropping FP rank.
+    DiagnoseImpCast(S, E->getRHS(), E->getLHS()->getType(), E->getOperatorLoc(),
+                    diag::warn_impcast_float_result_precision);
 }
 
 static std::string PrettyPrintInRange(const llvm::APSInt &Value,
@@ -10545,10 +11095,9 @@ static void checkObjCCollectionLiteralElement(Sema &S,
                                          ElementResult,
                                          false, false)
         != Sema::Compatible) {
-    S.Diag(Element->getLocStart(),
-           diag::warn_objc_collection_literal_element)
-      << ElementType << ElementKind << TargetElementType
-      << Element->getSourceRange();
+    S.Diag(Element->getBeginLoc(), diag::warn_objc_collection_literal_element)
+        << ElementType << ElementKind << TargetElementType
+        << Element->getSourceRange();
   }
 
   if (auto ArrayLiteral = dyn_cast<ObjCArrayLiteral>(Element))
@@ -10624,7 +11173,7 @@ static bool isSameWidthConstantConversion(Sema &S, Expr *E, QualType T,
   // to fill all the bits, even if there is a sign change.
   if (auto *IntLit = dyn_cast<IntegerLiteral>(E->IgnoreParenImpCasts())) {
     const char FirstLiteralCharacter =
-        S.getSourceManager().getCharacterData(IntLit->getLocStart())[0];
+        S.getSourceManager().getCharacterData(IntLit->getBeginLoc())[0];
     if (FirstLiteralCharacter == '0')
       return false;
   }
@@ -10641,9 +11190,15 @@ static bool isSameWidthConstantConversion(Sema &S, Expr *E, QualType T,
   return true;
 }
 
-static void
-CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
-                        bool *ICContext = nullptr) {
+static bool isObjCSignedCharBool(Sema &S, QualType Ty) {
+  return Ty->isSpecificBuiltinType(BuiltinType::SChar) &&
+         S.getLangOpts().ObjC && S.NSAPIObj->isObjCBOOLType(Ty);
+}
+
+static void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
+                                    SourceLocation CC,
+                                    bool *ICContext = nullptr,
+                                    bool IsListInit = false) {
   if (E->isTypeDependent() || E->isValueDependent()) return;
 
   const Type *Source = S.Context.getCanonicalType(E->getType()).getTypePtr();
@@ -10658,6 +11213,9 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
   // scenario, we just return.
   if (CC.isInvalid())
     return;
+
+  if (Source->isAtomicType())
+    S.Diag(E->getExprLoc(), diag::warn_atomic_implicit_seq_cst);
 
   // Diagnose implicit casts to bool.
   if (Target->isSpecificBuiltinType(BuiltinType::Bool)) {
@@ -10678,6 +11236,29 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
       // Warn on pointer to bool conversion that is always true.
       S.DiagnoseAlwaysNonNullPointer(E, Expr::NPCK_NotNull, /*IsEqual*/ false,
                                      SourceRange(CC));
+    }
+  }
+
+  // If the we're converting a constant to an ObjC BOOL on a platform where BOOL
+  // is a typedef for signed char (macOS), then that constant value has to be 1
+  // or 0.
+  if (isObjCSignedCharBool(S, T) && Source->isIntegralType(S.Context)) {
+    Expr::EvalResult Result;
+    if (E->EvaluateAsInt(Result, S.getASTContext(),
+                         Expr::SE_AllowSideEffects) &&
+        Result.Val.getInt() != 1 && Result.Val.getInt() != 0) {
+      auto Builder = S.Diag(CC, diag::warn_impcast_constant_int_to_objc_bool)
+                     << Result.Val.getInt().toString(10);
+      Expr *Ignored = E->IgnoreImplicit();
+      bool NeedsParens = isa<AbstractConditionalOperator>(Ignored) ||
+                         isa<BinaryOperator>(Ignored) ||
+                         isa<CXXOperatorCallExpr>(Ignored);
+      SourceLocation EndLoc = S.getLocForEndOfToken(E->getEndLoc());
+      if (NeedsParens)
+        Builder << FixItHint::CreateInsertion(E->getBeginLoc(), "(")
+                << FixItHint::CreateInsertion(EndLoc, ")");
+      Builder << FixItHint::CreateInsertion(EndLoc, " ? YES : NO");
+      return;
     }
   }
 
@@ -10732,8 +11313,9 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
     if (TargetBT && TargetBT->isFloatingPoint()) {
       // ...then warn if we're dropping FP rank.
 
-      // Builtin FP kinds are ordered by increasing FP rank.
-      if (SourceBT->getKind() > TargetBT->getKind()) {
+      int Order = S.getASTContext().getFloatingTypeSemanticOrder(
+          QualType(SourceBT, 0), QualType(TargetBT, 0));
+      if (Order > 0) {
         // Don't warn about float constants that are precisely
         // representable in the target type.
         Expr::EvalResult result;
@@ -10751,7 +11333,7 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
         DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_float_precision);
       }
       // ... or possibly if we're increasing rank, too
-      else if (TargetBT->getKind() > SourceBT->getKind()) {
+      else if (Order < 0) {
         if (S.SourceMgr.isInSystemMacro(CC))
           return;
 
@@ -10795,6 +11377,117 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
     return;
   }
 
+  // Valid casts involving fixed point types should be accounted for here.
+  if (Source->isFixedPointType()) {
+    if (Target->isUnsaturatedFixedPointType()) {
+      Expr::EvalResult Result;
+      if (E->EvaluateAsFixedPoint(Result, S.Context, Expr::SE_AllowSideEffects,
+                                  S.isConstantEvaluated())) {
+        APFixedPoint Value = Result.Val.getFixedPoint();
+        APFixedPoint MaxVal = S.Context.getFixedPointMax(T);
+        APFixedPoint MinVal = S.Context.getFixedPointMin(T);
+        if (Value > MaxVal || Value < MinVal) {
+          S.DiagRuntimeBehavior(E->getExprLoc(), E,
+                                S.PDiag(diag::warn_impcast_fixed_point_range)
+                                    << Value.toString() << T
+                                    << E->getSourceRange()
+                                    << clang::SourceRange(CC));
+          return;
+        }
+      }
+    } else if (Target->isIntegerType()) {
+      Expr::EvalResult Result;
+      if (!S.isConstantEvaluated() &&
+          E->EvaluateAsFixedPoint(Result, S.Context,
+                                  Expr::SE_AllowSideEffects)) {
+        APFixedPoint FXResult = Result.Val.getFixedPoint();
+
+        bool Overflowed;
+        llvm::APSInt IntResult = FXResult.convertToInt(
+            S.Context.getIntWidth(T),
+            Target->isSignedIntegerOrEnumerationType(), &Overflowed);
+
+        if (Overflowed) {
+          S.DiagRuntimeBehavior(E->getExprLoc(), E,
+                                S.PDiag(diag::warn_impcast_fixed_point_range)
+                                    << FXResult.toString() << T
+                                    << E->getSourceRange()
+                                    << clang::SourceRange(CC));
+          return;
+        }
+      }
+    }
+  } else if (Target->isUnsaturatedFixedPointType()) {
+    if (Source->isIntegerType()) {
+      Expr::EvalResult Result;
+      if (!S.isConstantEvaluated() &&
+          E->EvaluateAsInt(Result, S.Context, Expr::SE_AllowSideEffects)) {
+        llvm::APSInt Value = Result.Val.getInt();
+
+        bool Overflowed;
+        APFixedPoint IntResult = APFixedPoint::getFromIntValue(
+            Value, S.Context.getFixedPointSemantics(T), &Overflowed);
+
+        if (Overflowed) {
+          S.DiagRuntimeBehavior(E->getExprLoc(), E,
+                                S.PDiag(diag::warn_impcast_fixed_point_range)
+                                    << Value.toString(/*Radix=*/10) << T
+                                    << E->getSourceRange()
+                                    << clang::SourceRange(CC));
+          return;
+        }
+      }
+    }
+  }
+
+  // If we are casting an integer type to a floating point type without
+  // initialization-list syntax, we might lose accuracy if the floating
+  // point type has a narrower significand than the integer type.
+  if (SourceBT && TargetBT && SourceBT->isIntegerType() &&
+      TargetBT->isFloatingType() && !IsListInit) {
+    // Determine the number of precision bits in the source integer type.
+    IntRange SourceRange = GetExprRange(S.Context, E, S.isConstantEvaluated());
+    unsigned int SourcePrecision = SourceRange.Width;
+
+    // Determine the number of precision bits in the
+    // target floating point type.
+    unsigned int TargetPrecision = llvm::APFloatBase::semanticsPrecision(
+        S.Context.getFloatTypeSemantics(QualType(TargetBT, 0)));
+
+    if (SourcePrecision > 0 && TargetPrecision > 0 &&
+        SourcePrecision > TargetPrecision) {
+
+      llvm::APSInt SourceInt;
+      if (E->isIntegerConstantExpr(SourceInt, S.Context)) {
+        // If the source integer is a constant, convert it to the target
+        // floating point type. Issue a warning if the value changes
+        // during the whole conversion.
+        llvm::APFloat TargetFloatValue(
+            S.Context.getFloatTypeSemantics(QualType(TargetBT, 0)));
+        llvm::APFloat::opStatus ConversionStatus =
+            TargetFloatValue.convertFromAPInt(
+                SourceInt, SourceBT->isSignedInteger(),
+                llvm::APFloat::rmNearestTiesToEven);
+
+        if (ConversionStatus != llvm::APFloat::opOK) {
+          std::string PrettySourceValue = SourceInt.toString(10);
+          SmallString<32> PrettyTargetValue;
+          TargetFloatValue.toString(PrettyTargetValue, TargetPrecision);
+
+          S.DiagRuntimeBehavior(
+              E->getExprLoc(), E,
+              S.PDiag(diag::warn_impcast_integer_float_precision_constant)
+                  << PrettySourceValue << PrettyTargetValue << E->getType() << T
+                  << E->getSourceRange() << clang::SourceRange(CC));
+        }
+      } else {
+        // Otherwise, the implicit conversion may lose precision.
+        DiagnoseImpCast(S, E, T, CC,
+                        diag::warn_impcast_integer_float_precision);
+      }
+    }
+  }
+
   DiagnoseNullConversion(S, E, T, CC);
 
   S.DiscardMisalignedMemberAddress(Target, E);
@@ -10807,25 +11500,29 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
   if (Target->isSpecificBuiltinType(BuiltinType::Bool))
     return;
 
-  IntRange SourceRange = GetExprRange(S.Context, E);
+  IntRange SourceRange = GetExprRange(S.Context, E, S.isConstantEvaluated());
   IntRange TargetRange = IntRange::forTargetOfCanonicalType(S.Context, Target);
 
   if (SourceRange.Width > TargetRange.Width) {
     // If the source is a constant, use a default-on diagnostic.
     // TODO: this should happen for bitfield stores, too.
-    llvm::APSInt Value(32);
-    if (E->EvaluateAsInt(Value, S.Context, Expr::SE_AllowSideEffects)) {
+    Expr::EvalResult Result;
+    if (E->EvaluateAsInt(Result, S.Context, Expr::SE_AllowSideEffects,
+                         S.isConstantEvaluated())) {
+      llvm::APSInt Value(32);
+      Value = Result.Val.getInt();
+
       if (S.SourceMgr.isInSystemMacro(CC))
         return;
 
       std::string PrettySourceValue = Value.toString(10);
       std::string PrettyTargetValue = PrettyPrintInRange(Value, TargetRange);
 
-      S.DiagRuntimeBehavior(E->getExprLoc(), E,
-        S.PDiag(diag::warn_impcast_integer_precision_constant)
-            << PrettySourceValue << PrettyTargetValue
-            << E->getType() << T << E->getSourceRange()
-            << clang::SourceRange(CC));
+      S.DiagRuntimeBehavior(
+          E->getExprLoc(), E,
+          S.PDiag(diag::warn_impcast_integer_precision_constant)
+              << PrettySourceValue << PrettyTargetValue << E->getType() << T
+              << E->getSourceRange() << clang::SourceRange(CC));
       return;
     }
 
@@ -10839,15 +11536,29 @@ CheckImplicitConversion(Sema &S, Expr *E, QualType T, SourceLocation CC,
     return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_integer_precision);
   }
 
+  if (TargetRange.Width > SourceRange.Width) {
+    if (auto *UO = dyn_cast<UnaryOperator>(E))
+      if (UO->getOpcode() == UO_Minus)
+        if (Source->isUnsignedIntegerType()) {
+          if (Target->isUnsignedIntegerType())
+            return DiagnoseImpCast(S, E, T, CC,
+                                   diag::warn_impcast_high_order_zero_bits);
+          if (Target->isSignedIntegerType())
+            return DiagnoseImpCast(S, E, T, CC,
+                                   diag::warn_impcast_nonnegative_result);
+        }
+  }
+
   if (TargetRange.Width == SourceRange.Width && !TargetRange.NonNegative &&
       SourceRange.NonNegative && Source->isSignedIntegerType()) {
     // Warn when doing a signed to signed conversion, warn if the positive
     // source value is exactly the width of the target type, which will
     // cause a negative value to be stored.
 
-    llvm::APSInt Value;
-    if (E->EvaluateAsInt(Value, S.Context, Expr::SE_AllowSideEffects) &&
+    Expr::EvalResult Result;
+    if (E->EvaluateAsInt(Result, S.Context, Expr::SE_AllowSideEffects) &&
         !S.SourceMgr.isInSystemMacro(CC)) {
+      llvm::APSInt Value = Result.Val.getInt();
       if (isSameWidthConstantConversion(S, E, T, CC)) {
         std::string PrettySourceValue = Value.toString(10);
         std::string PrettyTargetValue = PrettyPrintInRange(Value, TargetRange);
@@ -10954,10 +11665,12 @@ static void CheckConditionalOperator(Sema &S, ConditionalOperator *E,
                             E->getType(), CC, &Suspicious);
 }
 
-/// CheckBoolLikeConversion - Check conversion of given expression to boolean.
+/// Check conversion of given expression to boolean.
 /// Input argument E is a logical expression.
 static void CheckBoolLikeConversion(Sema &S, Expr *E, SourceLocation CC) {
   if (S.getLangOpts().Bool)
+    return;
+  if (E->IgnoreParenImpCasts()->getType()->isAtomicType())
     return;
   CheckImplicitConversion(S, E->IgnoreParenImpCasts(), S.Context.BoolTy, CC);
 }
@@ -10965,10 +11678,16 @@ static void CheckBoolLikeConversion(Sema &S, Expr *E, SourceLocation CC) {
 /// AnalyzeImplicitConversions - Find and report any interesting
 /// implicit conversions in the given expression.  There are a couple
 /// of competing diagnostics here, -Wconversion and -Wsign-compare.
-static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE,
-                                       SourceLocation CC) {
+static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC,
+                                       bool IsListInit/*= false*/) {
   QualType T = OrigE->getType();
   Expr *E = OrigE->IgnoreParenImpCasts();
+
+  // Propagate whether we are in a C++ list initialization expression.
+  // If so, we do not issue warnings for implicit int-float conversion
+  // precision loss, because C++11 narrowing already handles it.
+  IsListInit =
+      IsListInit || (isa<InitListExpr>(OrigE) && S.getLangOpts().CPlusPlus);
 
   if (E->isTypeDependent() || E->isValueDependent())
     return;
@@ -10989,7 +11708,7 @@ static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE,
   // The non-canonical typecheck is just an optimization;
   // CheckImplicitConversion will filter out dead implicit conversions.
   if (E->getType() != T)
-    CheckImplicitConversion(S, E, T, CC);
+    CheckImplicitConversion(S, E, T, CC, nullptr, IsListInit);
 
   // Now continue drilling into this expression.
 
@@ -10999,13 +11718,15 @@ static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE,
     // FIXME: Use a more uniform representation for this.
     for (auto *SE : POE->semantics())
       if (auto *OVE = dyn_cast<OpaqueValueExpr>(SE))
-        AnalyzeImplicitConversions(S, OVE->getSourceExpr(), CC);
+        AnalyzeImplicitConversions(S, OVE->getSourceExpr(), CC, IsListInit);
   }
 
   // Skip past explicit casts.
-  if (isa<ExplicitCastExpr>(E)) {
-    E = cast<ExplicitCastExpr>(E)->getSubExpr()->IgnoreParenImpCasts();
-    return AnalyzeImplicitConversions(S, E, CC);
+  if (auto *CE = dyn_cast<ExplicitCastExpr>(E)) {
+    E = CE->getSubExpr()->IgnoreParenImpCasts();
+    if (!CE->getType()->isVoidType() && E->getType()->isAtomicType())
+      S.Diag(E->getBeginLoc(), diag::warn_atomic_implicit_seq_cst);
+    return AnalyzeImplicitConversions(S, E, CC, IsListInit);
   }
 
   if (BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
@@ -11044,7 +11765,7 @@ static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE,
       // Ignore checking string literals that are in logical and operators.
       // This is a common pattern for asserts.
       continue;
-    AnalyzeImplicitConversions(S, ChildExpr, CC);
+    AnalyzeImplicitConversions(S, ChildExpr, CC, IsListInit);
   }
 
   if (BO && BO->isLogicalOp()) {
@@ -11057,9 +11778,15 @@ static void AnalyzeImplicitConversions(Sema &S, Expr *OrigE,
       ::CheckBoolLikeConversion(S, SubExpr, BO->getExprLoc());
   }
 
-  if (const UnaryOperator *U = dyn_cast<UnaryOperator>(E))
-    if (U->getOpcode() == UO_LNot)
+  if (const UnaryOperator *U = dyn_cast<UnaryOperator>(E)) {
+    if (U->getOpcode() == UO_LNot) {
       ::CheckBoolLikeConversion(S, U->getSubExpr(), CC);
+    } else if (U->getOpcode() != UO_AddrOf) {
+      if (U->getSubExpr()->getType()->isAtomicType())
+        S.Diag(U->getSubExpr()->getBeginLoc(),
+               diag::warn_atomic_implicit_seq_cst);
+    }
+  }
 }
 
 /// Diagnose integer type and any valid implicit conversion to it.
@@ -11067,13 +11794,13 @@ static bool checkOpenCLEnqueueIntType(Sema &S, Expr *E, const QualType &IntT) {
   // Taking into account implicit conversions,
   // allow any integer.
   if (!E->getType()->isIntegerType()) {
-    S.Diag(E->getLocStart(),
+    S.Diag(E->getBeginLoc(),
            diag::err_opencl_enqueue_kernel_invalid_local_size_type);
     return true;
   }
   // Potentially emit standard warnings for implicit conversions if enabled
   // using -Wconversion.
-  CheckImplicitConversion(S, E, IntT, E->getLocStart());
+  CheckImplicitConversion(S, E, IntT, E->getBeginLoc());
   return false;
 }
 
@@ -11219,6 +11946,9 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
       }
 
       if (const auto *FD = dyn_cast<FunctionDecl>(PV->getDeclContext())) {
+        // Skip function template not specialized yet.
+        if (FD->getTemplatedKind() == FunctionDecl::TK_FunctionTemplate)
+          return;
         auto ParamIter = llvm::find(FD->parameters(), PV);
         assert(ParamIter != FD->param_end());
         unsigned ParamNo = std::distance(FD->param_begin(), ParamIter);
@@ -11281,7 +12011,7 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
 
   // Suggest '&' to silence the function warning.
   Diag(E->getExprLoc(), diag::note_function_warning_silence)
-      << FixItHint::CreateInsertion(E->getLocStart(), "&");
+      << FixItHint::CreateInsertion(E->getBeginLoc(), "&");
 
   // Check to see if '()' fixit should be emitted.
   QualType ReturnType;
@@ -11310,7 +12040,7 @@ void Sema::DiagnoseAlwaysNonNullPointer(Expr *E,
       return;
   }
   Diag(E->getExprLoc(), diag::note_function_to_function_call)
-      << FixItHint::CreateInsertion(getLocForEndOfToken(E->getLocEnd()), "()");
+      << FixItHint::CreateInsertion(getLocForEndOfToken(E->getEndLoc()), "()");
 }
 
 /// Diagnoses "dangerous" implicit conversions within the given
@@ -11396,12 +12126,12 @@ class SequenceChecker : public EvaluatedExprVisitor<SequenceChecker> {
     class Seq {
       friend class SequenceTree;
 
-      unsigned Index = 0;
+      unsigned Index;
 
       explicit Seq(unsigned N) : Index(N) {}
 
     public:
-      Seq() = default;
+      Seq() : Index(0) {}
     };
 
     SequenceTree() { Values.push_back(Value(0)); }
@@ -11465,19 +12195,19 @@ class SequenceChecker : public EvaluatedExprVisitor<SequenceChecker> {
   };
 
   struct Usage {
-    Expr *Use = nullptr;
+    Expr *Use;
     SequenceTree::Seq Seq;
 
-    Usage() = default;
+    Usage() : Use(nullptr), Seq() {}
   };
 
   struct UsageInfo {
     Usage Uses[UK_Count];
 
     /// Have we issued a diagnostic for this variable already?
-    bool Diagnosed = false;
+    bool Diagnosed;
 
-    UsageInfo() = default;
+    UsageInfo() : Uses(), Diagnosed(false) {}
   };
   using UsageInfoMap = llvm::SmallDenseMap<Object, UsageInfo, 16>;
 
@@ -11546,7 +12276,8 @@ class SequenceChecker : public EvaluatedExprVisitor<SequenceChecker> {
     bool evaluate(const Expr *E, bool &Result) {
       if (!EvalOK || E->isValueDependent())
         return false;
-      EvalOK = E->EvaluateAsBooleanCondition(Result, Self.SemaRef.Context);
+      EvalOK = E->EvaluateAsBooleanCondition(
+          Result, Self.SemaRef.Context, Self.SemaRef.isConstantEvaluated());
       return EvalOK;
     }
 
@@ -11604,10 +12335,11 @@ class SequenceChecker : public EvaluatedExprVisitor<SequenceChecker> {
     if (OtherKind == UK_Use)
       std::swap(Mod, ModOrUse);
 
-    SemaRef.Diag(Mod->getExprLoc(),
-                 IsModMod ? diag::warn_unsequenced_mod_mod
-                          : diag::warn_unsequenced_mod_use)
-      << O << SourceRange(ModOrUse->getExprLoc());
+    SemaRef.DiagRuntimeBehavior(
+        Mod->getExprLoc(), {Mod, ModOrUse},
+        SemaRef.PDiag(IsModMod ? diag::warn_unsequenced_mod_mod
+                               : diag::warn_unsequenced_mod_use)
+            << O << SourceRange(ModOrUse->getExprLoc()));
     UI.Diagnosed = true;
   }
 
@@ -11663,30 +12395,42 @@ public:
       notePostUse(O, E);
   }
 
+  void VisitSequencedExpressions(Expr *SequencedBefore, Expr *SequencedAfter) {
+    SequenceTree::Seq BeforeRegion = Tree.allocate(Region);
+    SequenceTree::Seq AfterRegion = Tree.allocate(Region);
+    SequenceTree::Seq OldRegion = Region;
+
+    {
+      SequencedSubexpression SeqBefore(*this);
+      Region = BeforeRegion;
+      Visit(SequencedBefore);
+    }
+
+    Region = AfterRegion;
+    Visit(SequencedAfter);
+
+    Region = OldRegion;
+
+    Tree.merge(BeforeRegion);
+    Tree.merge(AfterRegion);
+  }
+
+  void VisitArraySubscriptExpr(ArraySubscriptExpr *ASE) {
+    // C++17 [expr.sub]p1:
+    //   The expression E1[E2] is identical (by definition) to *((E1)+(E2)). The
+    //   expression E1 is sequenced before the expression E2.
+    if (SemaRef.getLangOpts().CPlusPlus17)
+      VisitSequencedExpressions(ASE->getLHS(), ASE->getRHS());
+    else
+      Base::VisitStmt(ASE);
+  }
+
   void VisitBinComma(BinaryOperator *BO) {
     // C++11 [expr.comma]p1:
     //   Every value computation and side effect associated with the left
     //   expression is sequenced before every value computation and side
     //   effect associated with the right expression.
-    SequenceTree::Seq LHS = Tree.allocate(Region);
-    SequenceTree::Seq RHS = Tree.allocate(Region);
-    SequenceTree::Seq OldRegion = Region;
-
-    {
-      SequencedSubexpression SeqLHS(*this);
-      Region = LHS;
-      Visit(BO->getLHS());
-    }
-
-    Region = RHS;
-    Visit(BO->getRHS());
-
-    Region = OldRegion;
-
-    // Forget that LHS and RHS are sequenced. They are both unsequenced
-    // with respect to other stuff.
-    Tree.merge(LHS);
-    Tree.merge(RHS);
+    VisitSequencedExpressions(BO->getLHS(), BO->getRHS());
   }
 
   void VisitBinAssign(BinaryOperator *BO) {
@@ -11886,6 +12630,8 @@ void Sema::CheckUnsequencedOperations(Expr *E) {
 
 void Sema::CheckCompletedExpr(Expr *E, SourceLocation CheckLoc,
                               bool IsConstexpr) {
+  llvm::SaveAndRestore<bool> ConstantContext(
+      isConstantEvaluatedOverride, IsConstexpr || isa<ConstantExpr>(E));
   CheckImplicitConversions(E, CheckLoc);
   if (!E->isInstantiationDependent())
     CheckUnsequencedOperations(E);
@@ -11992,6 +12738,18 @@ bool Sema::CheckParmsForFunctionDef(ArrayRef<ParmVarDecl *> Parameters,
       if (!Param->getType().isConstQualified())
         Diag(Param->getLocation(), diag::err_attribute_pointers_only)
             << Attr->getSpelling() << 1;
+
+    // Check for parameter names shadowing fields from the class.
+    if (LangOpts.CPlusPlus && !Param->isInvalidDecl()) {
+      // The owning context for the parameter should be the function, but we
+      // want to see if this function's declaration context is a record.
+      DeclContext *DC = Param->getDeclContext();
+      if (DC && DC->isFunctionOrMethod()) {
+        if (auto *RD = dyn_cast<CXXRecordDecl>(DC->getParent()))
+          CheckShadowInheritedFields(Param->getLocation(), Param->getDeclName(),
+                                     RD, /*DeclIsField*/ false);
+      }
+    }
   }
 
   return HasInvalidParm;
@@ -12112,6 +12870,10 @@ static bool IsTailPaddedMemberArray(Sema &S, const llvm::APInt &Size,
 void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
                             const ArraySubscriptExpr *ASE,
                             bool AllowOnePastEnd, bool IndexNegated) {
+  // Already diagnosed by the constant evaluator.
+  if (isConstantEvaluated())
+    return;
+
   IndexExpr = IndexExpr->IgnoreParenImpCasts();
   if (IndexExpr->isValueDependent())
     return;
@@ -12120,13 +12882,20 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       BaseExpr->getType()->getPointeeOrArrayElementType();
   BaseExpr = BaseExpr->IgnoreParenCasts();
   const ConstantArrayType *ArrayTy =
-    Context.getAsConstantArrayType(BaseExpr->getType());
+      Context.getAsConstantArrayType(BaseExpr->getType());
+
   if (!ArrayTy)
     return;
 
-  llvm::APSInt index;
-  if (!IndexExpr->EvaluateAsInt(index, Context, Expr::SE_AllowSideEffects))
+  const Type *BaseType = ArrayTy->getElementType().getTypePtr();
+  if (EffectiveType->isDependentType() || BaseType->isDependentType())
     return;
+
+  Expr::EvalResult Result;
+  if (!IndexExpr->EvaluateAsInt(Result, Context, Expr::SE_AllowSideEffects))
+    return;
+
+  llvm::APSInt index = Result.Val.getInt();
   if (IndexNegated)
     index = -index;
 
@@ -12137,11 +12906,19 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     ND = ME->getMemberDecl();
 
   if (index.isUnsigned() || !index.isNegative()) {
+    // It is possible that the type of the base expression after
+    // IgnoreParenCasts is incomplete, even though the type of the base
+    // expression before IgnoreParenCasts is complete (see PR39746 for an
+    // example). In this case we have no information about whether the array
+    // access exceeds the array bounds. However we can still diagnose an array
+    // access which precedes the array bounds.
+    if (BaseType->isIncompleteType())
+      return;
+
     llvm::APInt size = ArrayTy->getSize();
     if (!size.isStrictlyPositive())
       return;
 
-    const Type *BaseType = BaseExpr->getType()->getPointeeOrArrayElementType();
     if (BaseType != EffectiveType) {
       // Make sure we're comparing apples to apples when comparing index to size
       uint64_t ptrarith_typesize = Context.getTypeSize(EffectiveType);
@@ -12183,8 +12960,8 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       SourceLocation RBracketLoc = SourceMgr.getSpellingLoc(
           ASE->getRBracketLoc());
       if (SourceMgr.isInSystemHeader(RBracketLoc)) {
-        SourceLocation IndexLoc = SourceMgr.getSpellingLoc(
-            IndexExpr->getLocStart());
+        SourceLocation IndexLoc =
+            SourceMgr.getSpellingLoc(IndexExpr->getBeginLoc());
         if (SourceMgr.isWrittenInSameFile(RBracketLoc, IndexLoc))
           return;
       }
@@ -12194,11 +12971,11 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
     if (ASE)
       DiagID = diag::warn_array_index_exceeds_bounds;
 
-    DiagRuntimeBehavior(BaseExpr->getLocStart(), BaseExpr,
+    DiagRuntimeBehavior(BaseExpr->getBeginLoc(), BaseExpr,
                         PDiag(DiagID) << index.toString(10, true)
-                          << size.toString(10, true)
-                          << (unsigned)size.getLimitedValue(~0U)
-                          << IndexExpr->getSourceRange());
+                                      << size.toString(10, true)
+                                      << (unsigned)size.getLimitedValue(~0U)
+                                      << IndexExpr->getSourceRange());
   } else {
     unsigned DiagID = diag::warn_array_index_precedes_bounds;
     if (!ASE) {
@@ -12206,9 +12983,9 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       if (index.isNegative()) index = -index;
     }
 
-    DiagRuntimeBehavior(BaseExpr->getLocStart(), BaseExpr,
+    DiagRuntimeBehavior(BaseExpr->getBeginLoc(), BaseExpr,
                         PDiag(DiagID) << index.toString(10, true)
-                          << IndexExpr->getSourceRange());
+                                      << IndexExpr->getSourceRange());
   }
 
   if (!ND) {
@@ -12223,9 +13000,9 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
   }
 
   if (ND)
-    DiagRuntimeBehavior(ND->getLocStart(), BaseExpr,
+    DiagRuntimeBehavior(ND->getBeginLoc(), BaseExpr,
                         PDiag(diag::note_array_index_out_of_bounds)
-                          << ND->getDeclName());
+                            << ND->getDeclName());
 }
 
 void Sema::CheckArrayAccess(const Expr *expr) {
@@ -12965,15 +13742,13 @@ void Sema::DiagnoseEmptyLoopBody(const Stmt *S,
   if (!ProbableTypo) {
     bool BodyColInvalid;
     unsigned BodyCol = SourceMgr.getPresumedColumnNumber(
-                             PossibleBody->getLocStart(),
-                             &BodyColInvalid);
+        PossibleBody->getBeginLoc(), &BodyColInvalid);
     if (BodyColInvalid)
       return;
 
     bool StmtColInvalid;
-    unsigned StmtCol = SourceMgr.getPresumedColumnNumber(
-                             S->getLocStart(),
-                             &StmtColInvalid);
+    unsigned StmtCol =
+        SourceMgr.getPresumedColumnNumber(S->getBeginLoc(), &StmtColInvalid);
     if (StmtColInvalid)
       return;
 
@@ -13236,8 +14011,13 @@ static bool isLayoutCompatible(ASTContext &C, QualType T1, QualType T2) {
 /// \param VD Declaration of an identifier that appears in a type tag.
 ///
 /// \param MagicValue Type tag magic value.
+///
+/// \param isConstantEvaluated wether the evalaution should be performed in
+
+/// constant context.
 static bool FindTypeTagExpr(const Expr *TypeExpr, const ASTContext &Ctx,
-                            const ValueDecl **VD, uint64_t *MagicValue) {
+                            const ValueDecl **VD, uint64_t *MagicValue,
+                            bool isConstantEvaluated) {
   while(true) {
     if (!TypeExpr)
       return false;
@@ -13275,7 +14055,8 @@ static bool FindTypeTagExpr(const Expr *TypeExpr, const ASTContext &Ctx,
       const AbstractConditionalOperator *ACO =
           cast<AbstractConditionalOperator>(TypeExpr);
       bool Result;
-      if (ACO->getCond()->EvaluateAsBooleanCondition(Result, Ctx)) {
+      if (ACO->getCond()->EvaluateAsBooleanCondition(Result, Ctx,
+                                                     isConstantEvaluated)) {
         if (Result)
           TypeExpr = ACO->getTrueExpr();
         else
@@ -13311,14 +14092,17 @@ static bool FindTypeTagExpr(const Expr *TypeExpr, const ASTContext &Ctx,
 ///
 /// \param TypeInfo Information about the corresponding C type.
 ///
+/// \param isConstantEvaluated wether the evalaution should be performed in
+/// constant context.
+///
 /// \returns true if the corresponding C type was found.
 static bool GetMatchingCType(
-        const IdentifierInfo *ArgumentKind,
-        const Expr *TypeExpr, const ASTContext &Ctx,
-        const llvm::DenseMap<Sema::TypeTagMagicValue,
-                             Sema::TypeTagData> *MagicValues,
-        bool &FoundWrongKind,
-        Sema::TypeTagData &TypeInfo) {
+    const IdentifierInfo *ArgumentKind, const Expr *TypeExpr,
+    const ASTContext &Ctx,
+    const llvm::DenseMap<Sema::TypeTagMagicValue, Sema::TypeTagData>
+        *MagicValues,
+    bool &FoundWrongKind, Sema::TypeTagData &TypeInfo,
+    bool isConstantEvaluated) {
   FoundWrongKind = false;
 
   // Variable declaration that has type_tag_for_datatype attribute.
@@ -13326,7 +14110,7 @@ static bool GetMatchingCType(
 
   uint64_t MagicValue;
 
-  if (!FindTypeTagExpr(TypeExpr, Ctx, &VD, &MagicValue))
+  if (!FindTypeTagExpr(TypeExpr, Ctx, &VD, &MagicValue, isConstantEvaluated))
     return false;
 
   if (VD) {
@@ -13404,8 +14188,8 @@ void Sema::CheckArgumentWithTypeTag(const ArgumentWithTypeTagAttr *Attr,
   bool FoundWrongKind;
   TypeTagData TypeInfo;
   if (!GetMatchingCType(ArgumentKind, TypeTagExpr, Context,
-                        TypeTagForDatatypeMagicValues.get(),
-                        FoundWrongKind, TypeInfo)) {
+                        TypeTagForDatatypeMagicValues.get(), FoundWrongKind,
+                        TypeInfo, isConstantEvaluated())) {
     if (FoundWrongKind)
       Diag(TypeTagExpr->getExprLoc(),
            diag::warn_type_tag_for_datatype_wrong_kind)
@@ -13493,7 +14277,7 @@ void Sema::DiagnoseMisalignedMembers() {
       if (const TypedefNameDecl *TD = m.RD->getTypedefNameForAnonDecl())
         ND = TD;
     }
-    Diag(m.E->getLocStart(), diag::warn_taking_address_of_packed_member)
+    Diag(m.E->getBeginLoc(), diag::warn_taking_address_of_packed_member)
         << m.MD << ND << m.E->getSourceRange();
   }
   MisalignedMembers.clear();
@@ -13507,8 +14291,7 @@ void Sema::DiscardMisalignedMemberAddress(const Type *T, Expr *E) {
       cast<UnaryOperator>(E)->getOpcode() == UO_AddrOf) {
     auto *Op = cast<UnaryOperator>(E)->getSubExpr()->IgnoreParens();
     if (isa<MemberExpr>(Op)) {
-      auto MA = std::find(MisalignedMembers.begin(), MisalignedMembers.end(),
-                          MisalignedMember(Op));
+      auto MA = llvm::find(MisalignedMembers, MisalignedMember(Op));
       if (MA != MisalignedMembers.end() &&
           (T->isIntegerType() ||
            (T->isPointerType() && (T->getPointeeType()->isIncompleteType() ||

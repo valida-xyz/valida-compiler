@@ -1,9 +1,8 @@
 //===--- InefficientVectorOperationCheck.cpp - clang-tidy------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -168,7 +167,7 @@ void InefficientVectorOperationCheck::check(
     // FIXME: make it more intelligent to identify the pre-allocating operations
     // before the for loop.
     if (SM.isBeforeInTranslationUnit(Ref->getLocation(),
-                                     LoopStmt->getLocStart())) {
+                                     LoopStmt->getBeginLoc())) {
       return;
     }
   }
@@ -200,13 +199,13 @@ void InefficientVectorOperationCheck::check(
   }
 
   auto Diag =
-      diag(VectorAppendCall->getLocStart(),
+      diag(VectorAppendCall->getBeginLoc(),
            "%0 is called inside a loop; "
            "consider pre-allocating the vector capacity before the loop")
       << VectorAppendCall->getMethodDecl()->getDeclName();
 
   if (!ReserveStmt.empty())
-    Diag << FixItHint::CreateInsertion(LoopStmt->getLocStart(), ReserveStmt);
+    Diag << FixItHint::CreateInsertion(LoopStmt->getBeginLoc(), ReserveStmt);
 }
 
 } // namespace performance

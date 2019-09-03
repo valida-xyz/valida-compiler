@@ -1,9 +1,8 @@
 //===------------ option.h - NVPTX OpenMP GPU options ------------ CUDA -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.txt for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -34,7 +33,10 @@
 
 // Maximum number of omp state objects per SM allocated statically in global
 // memory.
-#if __CUDA_ARCH__ >= 600
+#if __CUDA_ARCH__ >= 700
+#define OMP_STATE_COUNT 32
+#define MAX_SM 84
+#elif __CUDA_ARCH__ >= 600
 #define OMP_STATE_COUNT 32
 #define MAX_SM 56
 #else
@@ -42,23 +44,18 @@
 #define MAX_SM 16
 #endif
 
+#define OMP_ACTIVE_PARALLEL_LEVEL 128
+
 ////////////////////////////////////////////////////////////////////////////////
 // algo options
 ////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-// data options
-////////////////////////////////////////////////////////////////////////////////
-
-// decide if counters are 32 or 64 bit
-#define Counter unsigned long long
 
 ////////////////////////////////////////////////////////////////////////////////
 // misc options (by def everythig here is device)
 ////////////////////////////////////////////////////////////////////////////////
 
 #define EXTERN extern "C" __device__
-#define INLINE __inline__ __device__
+#define INLINE __forceinline__ __device__
 #define NOINLINE __noinline__ __device__
 #ifndef TRUE
 #define TRUE 1

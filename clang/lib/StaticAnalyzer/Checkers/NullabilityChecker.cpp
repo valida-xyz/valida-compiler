@@ -1,9 +1,8 @@
-//== Nullabilityhecker.cpp - Nullability checker ----------------*- C++ -*--==//
+//===-- NullabilityChecker.cpp - Nullability checker ----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -25,7 +24,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -138,10 +137,9 @@ private:
       ID.AddPointer(Region);
     }
 
-    std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
-                                                   BugReporterContext &BRC,
-                                                   BugReport &BR) override;
+    PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
+                                     BugReporterContext &BRC,
+                                     BugReport &BR) override;
 
   private:
     // The tracked region.
@@ -165,17 +163,18 @@ private:
     if (!BT)
       BT.reset(new BugType(this, "Nullability", categories::MemoryError));
 
-    auto R = llvm::make_unique<BugReport>(*BT, Msg, N);
+    auto R = std::make_unique<BugReport>(*BT, Msg, N);
     if (Region) {
       R->markInteresting(Region);
-      R->addVisitor(llvm::make_unique<NullabilityBugVisitor>(Region));
+      R->addVisitor(std::make_unique<NullabilityBugVisitor>(Region));
     }
     if (ValueExpr) {
       R->addRange(ValueExpr->getSourceRange());
       if (Error == ErrorKind::NilAssignedToNonnull ||
           Error == ErrorKind::NilPassedToNonnull ||
           Error == ErrorKind::NilReturnedToNonnull)
-        bugreporter::trackNullOrUndefValue(N, ValueExpr, *R);
+        if (const auto *Ex = dyn_cast<Expr>(ValueExpr))
+          bugreporter::trackExpressionValue(N, Ex, *R);
     }
     BR.emitReport(std::move(R));
   }
@@ -185,7 +184,7 @@ private:
   const SymbolicRegion *getTrackRegion(SVal Val,
                                        bool CheckSuperRegion = false) const;
 
-  /// Returns true if the call is diagnosable in the currrent analyzer
+  /// Returns true if the call is diagnosable in the current analyzer
   /// configuration.
   bool isDiagnosableCall(const CallEvent &Call) const {
     if (NoDiagnoseCallsToSystemHeaders && Call.isInSystemHeader())
@@ -291,13 +290,10 @@ NullabilityChecker::getTrackRegion(SVal Val, bool CheckSuperRegion) const {
   return dyn_cast<SymbolicRegion>(Region);
 }
 
-std::shared_ptr<PathDiagnosticPiece>
-NullabilityChecker::NullabilityBugVisitor::VisitNode(const ExplodedNode *N,
-                                                     const ExplodedNode *PrevN,
-                                                     BugReporterContext &BRC,
-                                                     BugReport &BR) {
+PathDiagnosticPieceRef NullabilityChecker::NullabilityBugVisitor::VisitNode(
+    const ExplodedNode *N, BugReporterContext &BRC, BugReport &BR) {
   ProgramStateRef State = N->getState();
-  ProgramStateRef StatePrev = PrevN->getState();
+  ProgramStateRef StatePrev = N->getFirstPred()->getState();
 
   const NullabilityState *TrackedNullab = State->get<NullabilityMap>(Region);
   const NullabilityState *TrackedNullabPrev =
@@ -311,7 +307,7 @@ NullabilityChecker::NullabilityBugVisitor::VisitNode(const ExplodedNode *N,
 
   // Retrieve the associated statement.
   const Stmt *S = TrackedNullab->getNullabilitySource();
-  if (!S || S->getLocStart().isInvalid()) {
+  if (!S || S->getBeginLoc().isInvalid()) {
     S = PathDiagnosticLocation::getStmt(N);
   }
 
@@ -330,8 +326,8 @@ NullabilityChecker::NullabilityBugVisitor::VisitNode(const ExplodedNode *N,
                                                     nullptr);
 }
 
-/// Returns true when the value stored at the given location is null
-/// and the passed in type is nonnnull.
+/// Returns true when the value stored at the given location has been
+/// constrained to null after being passed through an object of nonnnull type.
 static bool checkValueAtLValForInvariantViolation(ProgramStateRef State,
                                                   SVal LV, QualType T) {
   if (getNullabilityAnnotation(T) != Nullability::Nonnull)
@@ -341,9 +337,14 @@ static bool checkValueAtLValForInvariantViolation(ProgramStateRef State,
   if (!RegionVal)
     return false;
 
-  auto StoredVal =
-  State->getSVal(RegionVal->getRegion()).getAs<DefinedOrUnknownSVal>();
-  if (!StoredVal)
+  // If the value was constrained to null *after* it was passed through that
+  // location, it could not have been a concrete pointer *when* it was passed.
+  // In that case we would have handled the situation when the value was
+  // bound to that location, by emitting (or not emitting) a report.
+  // Therefore we are only interested in symbolic regions that can be either
+  // null or non-null depending on the value of their respective symbol.
+  auto StoredVal = State->getSVal(*RegionVal).getAs<loc::MemRegionVal>();
+  if (!StoredVal || !isa<SymbolicRegion>(StoredVal->getRegion()))
     return false;
 
   if (getNullConstraint(*StoredVal, State) == NullConstraint::IsNull)
@@ -447,9 +448,6 @@ void NullabilityChecker::reportBugIfInvariantHolds(StringRef Msg,
 /// Cleaning up the program state.
 void NullabilityChecker::checkDeadSymbols(SymbolReaper &SR,
                                           CheckerContext &C) const {
-  if (!SR.hasDeadSymbols())
-    return;
-
   ProgramStateRef State = C.getState();
   NullabilityMapTy Nullabilities = State->get<NullabilityMap>();
   for (NullabilityMapTy::iterator I = Nullabilities.begin(),
@@ -478,7 +476,7 @@ void NullabilityChecker::checkEvent(ImplicitNullDerefEvent Event) const {
     return;
 
   const MemRegion *Region =
-      getTrackRegion(Event.Location, /*CheckSuperregion=*/true);
+      getTrackRegion(Event.Location, /*CheckSuperRegion=*/true);
   if (!Region)
     return;
 
@@ -766,7 +764,7 @@ void NullabilityChecker::checkPostCall(const CallEvent &Call,
   // CG headers are misannotated. Do not warn for symbols that are the results
   // of CG calls.
   const SourceManager &SM = C.getSourceManager();
-  StringRef FilePath = SM.getFilename(SM.getSpellingLoc(Decl->getLocStart()));
+  StringRef FilePath = SM.getFilename(SM.getSpellingLoc(Decl->getBeginLoc()));
   if (llvm::sys::path::filename(FilePath).startswith("CG")) {
     State = State->set<NullabilityMap>(Region, Nullability::Contradicted);
     C.addTransition(State);
@@ -1174,10 +1172,15 @@ void NullabilityChecker::printState(raw_ostream &Out, ProgramStateRef State,
 
   NullabilityMapTy B = State->get<NullabilityMap>();
 
+  if (State->get<InvariantViolated>())
+    Out << Sep << NL
+        << "Nullability invariant was violated, warnings suppressed." << NL;
+
   if (B.isEmpty())
     return;
 
-  Out << Sep << NL;
+  if (!State->get<InvariantViolated>())
+    Out << Sep << NL;
 
   for (NullabilityMapTy::iterator I = B.begin(), E = B.end(); I != E; ++I) {
     Out << I->first << " : ";
@@ -1186,16 +1189,28 @@ void NullabilityChecker::printState(raw_ostream &Out, ProgramStateRef State,
   }
 }
 
+void ento::registerNullabilityBase(CheckerManager &mgr) {
+  mgr.registerChecker<NullabilityChecker>();
+}
+
+bool ento::shouldRegisterNullabilityBase(const LangOptions &LO) {
+  return true;
+}
+
 #define REGISTER_CHECKER(name, trackingRequired)                               \
   void ento::register##name##Checker(CheckerManager &mgr) {                    \
-    NullabilityChecker *checker = mgr.registerChecker<NullabilityChecker>();   \
+    NullabilityChecker *checker = mgr.getChecker<NullabilityChecker>();        \
     checker->Filter.Check##name = true;                                        \
     checker->Filter.CheckName##name = mgr.getCurrentCheckName();               \
     checker->NeedTracking = checker->NeedTracking || trackingRequired;         \
     checker->NoDiagnoseCallsToSystemHeaders =                                  \
         checker->NoDiagnoseCallsToSystemHeaders ||                             \
-        mgr.getAnalyzerOptions().getBooleanOption(                             \
-                      "NoDiagnoseCallsToSystemHeaders", false, checker, true); \
+        mgr.getAnalyzerOptions().getCheckerBooleanOption(                      \
+                      checker, "NoDiagnoseCallsToSystemHeaders", true);        \
+  }                                                                            \
+                                                                               \
+  bool ento::shouldRegister##name##Checker(const LangOptions &LO) {            \
+    return true;                                                               \
   }
 
 // The checks are likely to be turned on by default and it is possible to do

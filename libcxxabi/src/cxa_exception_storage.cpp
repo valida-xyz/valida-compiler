@@ -1,17 +1,16 @@
 //===--------------------- cxa_exception_storage.cpp ----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //  
 //  This file implements the storage for the "Caught Exception Stack"
-//  http://mentorembedded.github.io/cxx-abi/abi-eh.html (section 2.2.2)
+//  https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html#cxx-exc-stack
 //  
 //===----------------------------------------------------------------------===//
 
-#include "cxa_exception.hpp"
+#include "cxa_exception.h"
 
 #include <__threading_support>
 
@@ -46,6 +45,10 @@ extern "C" {
 
 #include "abort_message.h"
 #include "fallback_malloc.h"
+
+#if defined(__unix__) && !defined(__ANDROID__) && defined(__ELF__) && defined(_LIBCXXABI_HAS_COMMENT_LIB_PRAGMA)
+#pragma comment(lib, "pthread")
+#endif
 
 //  In general, we treat all threading errors as fatal.
 //  We cannot call std::terminate() because that will in turn

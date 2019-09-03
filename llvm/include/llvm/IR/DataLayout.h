@@ -1,9 +1,8 @@
 //===- llvm/DataLayout.h - Data size & alignment info -----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -30,6 +29,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/Alignment.h"
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -109,13 +109,23 @@ struct PointerAlignElem {
 /// generating LLVM IR is required to generate the right target data for the
 /// target being codegen'd to.
 class DataLayout {
+public:
+  enum class FunctionPtrAlignType {
+    /// The function pointer alignment is independent of the function alignment.
+    Independent,
+    /// The function pointer alignment is a multiple of the function alignment.
+    MultipleOfFunctionAlign,
+  };
 private:
   /// Defaults to false.
   bool BigEndian;
 
   unsigned AllocaAddrSpace;
-  unsigned StackNaturalAlign;
+  MaybeAlign StackNaturalAlign;
   unsigned ProgramAddrSpace;
+
+  MaybeAlign FunctionPtrAlign;
+  FunctionPtrAlignType TheFunctionPtrAlignType;
 
   enum ManglingModeT {
     MM_None,
@@ -200,6 +210,8 @@ public:
     BigEndian = DL.isBigEndian();
     AllocaAddrSpace = DL.AllocaAddrSpace;
     StackNaturalAlign = DL.StackNaturalAlign;
+    FunctionPtrAlign = DL.FunctionPtrAlign;
+    TheFunctionPtrAlignType = DL.TheFunctionPtrAlignType;
     ProgramAddrSpace = DL.ProgramAddrSpace;
     ManglingMode = DL.ManglingMode;
     LegalIntWidths = DL.LegalIntWidths;
@@ -250,12 +262,23 @@ public:
   bool isIllegalInteger(uint64_t Width) const { return !isLegalInteger(Width); }
 
   /// Returns true if the given alignment exceeds the natural stack alignment.
-  bool exceedsNaturalStackAlignment(unsigned Align) const {
-    return (StackNaturalAlign != 0) && (Align > StackNaturalAlign);
+  bool exceedsNaturalStackAlignment(llvm::Align Align) const {
+    return StackNaturalAlign && (Align > StackNaturalAlign);
   }
 
-  unsigned getStackAlignment() const { return StackNaturalAlign; }
+  unsigned getStackAlignment() const { return StackNaturalAlign ? StackNaturalAlign->value() : 0; }
   unsigned getAllocaAddrSpace() const { return AllocaAddrSpace; }
+
+  /// Returns the alignment of function pointers, which may or may not be
+  /// related to the alignment of functions.
+  /// \see getFunctionPtrAlignType
+  MaybeAlign getFunctionPtrAlign() const { return FunctionPtrAlign; }
+
+  /// Return the type of function pointer alignment.
+  /// \see getFunctionPtrAlign
+  FunctionPtrAlignType getFunctionPtrAlignType() const {
+    return TheFunctionPtrAlignType;
+  }
 
   unsigned getProgramAddressSpace() const { return ProgramAddrSpace; }
 
@@ -334,6 +357,9 @@ public:
   /// the backends/clients are updated.
   unsigned getPointerSize(unsigned AS = 0) const;
 
+  /// Returns the maximum pointer size over all address spaces.
+  unsigned getMaxPointerSize() const;
+
   // Index size used for address calculation.
   unsigned getIndexSize(unsigned AS) const;
 
@@ -343,10 +369,13 @@ public:
     return NonIntegralAddressSpaces;
   }
 
-  bool isNonIntegralPointerType(PointerType *PT) const {
+  bool isNonIntegralAddressSpace(unsigned AddrSpace) const {
     ArrayRef<unsigned> NonIntegralSpaces = getNonIntegralAddressSpaces();
-    return find(NonIntegralSpaces, PT->getAddressSpace()) !=
-           NonIntegralSpaces.end();
+    return find(NonIntegralSpaces, AddrSpace) != NonIntegralSpaces.end();
+  }
+
+  bool isNonIntegralPointerType(PointerType *PT) const {
+    return isNonIntegralAddressSpace(PT->getAddressSpace());
   }
 
   bool isNonIntegralPointerType(Type *Ty) const {
@@ -359,6 +388,11 @@ public:
   /// the backends/clients are updated.
   unsigned getPointerSizeInBits(unsigned AS = 0) const {
     return getPointerSize(AS) * 8;
+  }
+
+  /// Returns the maximum pointer size over all address spaces.
+  unsigned getMaxPointerSizeInBits() const {
+    return getMaxPointerSize() * 8;
   }
 
   /// Size in bits of index used for address calculation in getelementptr.
@@ -420,6 +454,14 @@ public:
     return 8 * getTypeStoreSize(Ty);
   }
 
+  /// Returns true if no extra padding bits are needed when storing the
+  /// specified type.
+  ///
+  /// For example, returns false for i19 that has a 24-bit store size.
+  bool typeSizeEqualsStoreSize(Type *Ty) const {
+    return getTypeSizeInBits(Ty) == getTypeStoreSizeInBits(Ty);
+  }
+
   /// Returns the offset in bytes between successive objects of the
   /// specified type, including alignment padding.
   ///
@@ -451,10 +493,6 @@ public:
   ///
   /// This is always at least as good as the ABI alignment.
   unsigned getPrefTypeAlignment(Type *Ty) const;
-
-  /// Returns the preferred alignment for the specified type, returned as
-  /// log2 of the value (a shift amount).
-  unsigned getPreferredTypeAlignmentShift(Type *Ty) const;
 
   /// Returns an integer type with size at least as big as that of a
   /// pointer in the given address space.

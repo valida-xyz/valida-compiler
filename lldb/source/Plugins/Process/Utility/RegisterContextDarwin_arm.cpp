@@ -1,26 +1,25 @@
 //===-- RegisterContextDarwin_arm.cpp ---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "RegisterContextDarwin_arm.h"
 #include "RegisterContextDarwinConstants.h"
 
-// C++ Includes
-// Other libraries and framework includes
-#include "lldb/Core/RegisterValue.h"
-#include "lldb/Core/Scalar.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/DataExtractor.h"
 #include "lldb/Utility/Endian.h"
 #include "lldb/Utility/Log.h"
+#include "lldb/Utility/RegisterValue.h"
+#include "lldb/Utility/Scalar.h"
 #include "llvm/Support/Compiler.h"
 
 #include "Plugins/Process/Utility/InstructionUtils.h"
+
+#include <memory>
 
 // Support building against older versions of LLVM, this macro was added
 // recently.
@@ -28,7 +27,6 @@
 #define LLVM_EXTENSION
 #endif
 
-// Project includes
 #include "Utility/ARM_DWARF_Registers.h"
 #include "Utility/ARM_ehframe_Registers.h"
 
@@ -200,7 +198,7 @@ static RegisterInfo g_register_infos[] = {
     //  ===============         ===============     =========================
     //  =====================   =============
     {"r0",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(0),
      eEncodingUint,
@@ -211,7 +209,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r1",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(1),
      eEncodingUint,
@@ -222,7 +220,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r2",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(2),
      eEncodingUint,
@@ -233,7 +231,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r3",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(3),
      eEncodingUint,
@@ -244,7 +242,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r4",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(4),
      eEncodingUint,
@@ -255,7 +253,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r5",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(5),
      eEncodingUint,
@@ -266,7 +264,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r6",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(6),
      eEncodingUint,
@@ -277,7 +275,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r7",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(7),
      eEncodingUint,
@@ -289,7 +287,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r8",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(8),
      eEncodingUint,
@@ -300,7 +298,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r9",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(9),
      eEncodingUint,
@@ -311,7 +309,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r10",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(10),
      eEncodingUint,
@@ -323,7 +321,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r11",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(11),
      eEncodingUint,
@@ -335,7 +333,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"r12",
-     NULL,
+     nullptr,
      4,
      GPR_OFFSET(12),
      eEncodingUint,
@@ -396,7 +394,7 @@ static RegisterInfo g_register_infos[] = {
      0},
 
     {"s0",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(0),
      eEncodingIEEE754,
@@ -408,7 +406,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s1",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(1),
      eEncodingIEEE754,
@@ -420,7 +418,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s2",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(2),
      eEncodingIEEE754,
@@ -432,7 +430,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s3",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(3),
      eEncodingIEEE754,
@@ -444,7 +442,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s4",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(4),
      eEncodingIEEE754,
@@ -456,7 +454,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s5",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(5),
      eEncodingIEEE754,
@@ -468,7 +466,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s6",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(6),
      eEncodingIEEE754,
@@ -480,7 +478,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s7",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(7),
      eEncodingIEEE754,
@@ -492,7 +490,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s8",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(8),
      eEncodingIEEE754,
@@ -504,7 +502,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s9",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(9),
      eEncodingIEEE754,
@@ -516,7 +514,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s10",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(10),
      eEncodingIEEE754,
@@ -528,7 +526,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s11",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(11),
      eEncodingIEEE754,
@@ -540,7 +538,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s12",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(12),
      eEncodingIEEE754,
@@ -552,7 +550,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s13",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(13),
      eEncodingIEEE754,
@@ -564,7 +562,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s14",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(14),
      eEncodingIEEE754,
@@ -576,7 +574,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s15",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(15),
      eEncodingIEEE754,
@@ -588,7 +586,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s16",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(16),
      eEncodingIEEE754,
@@ -600,7 +598,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s17",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(17),
      eEncodingIEEE754,
@@ -612,7 +610,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s18",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(18),
      eEncodingIEEE754,
@@ -624,7 +622,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s19",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(19),
      eEncodingIEEE754,
@@ -636,7 +634,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s20",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(20),
      eEncodingIEEE754,
@@ -648,7 +646,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s21",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(21),
      eEncodingIEEE754,
@@ -660,7 +658,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s22",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(22),
      eEncodingIEEE754,
@@ -672,7 +670,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s23",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(23),
      eEncodingIEEE754,
@@ -684,7 +682,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s24",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(24),
      eEncodingIEEE754,
@@ -696,7 +694,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s25",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(25),
      eEncodingIEEE754,
@@ -708,7 +706,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s26",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(26),
      eEncodingIEEE754,
@@ -720,7 +718,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s27",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(27),
      eEncodingIEEE754,
@@ -732,7 +730,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s28",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(28),
      eEncodingIEEE754,
@@ -744,7 +742,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s29",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(29),
      eEncodingIEEE754,
@@ -756,7 +754,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s30",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(30),
      eEncodingIEEE754,
@@ -768,7 +766,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"s31",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(31),
      eEncodingIEEE754,
@@ -780,7 +778,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"fpscr",
-     NULL,
+     nullptr,
      4,
      FPU_OFFSET(32),
      eEncodingUint,
@@ -793,7 +791,7 @@ static RegisterInfo g_register_infos[] = {
      0},
 
     {"exception",
-     NULL,
+     nullptr,
      4,
      EXC_OFFSET(0),
      eEncodingUint,
@@ -805,7 +803,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"fsr",
-     NULL,
+     nullptr,
      4,
      EXC_OFFSET(1),
      eEncodingUint,
@@ -817,7 +815,7 @@ static RegisterInfo g_register_infos[] = {
      nullptr,
      0},
     {"far",
-     NULL,
+     nullptr,
      4,
      EXC_OFFSET(2),
      eEncodingUint,
@@ -946,7 +944,7 @@ RegisterContextDarwin_arm::GetRegisterInfoAtIndex(size_t reg) {
   assert(k_num_register_infos == k_num_registers);
   if (reg < k_num_registers)
     return &g_register_infos[reg];
-  return NULL;
+  return nullptr;
 }
 
 size_t RegisterContextDarwin_arm::GetRegisterInfosCount() {
@@ -962,11 +960,9 @@ const size_t k_num_gpr_registers = llvm::array_lengthof(g_gpr_regnums);
 const size_t k_num_fpu_registers = llvm::array_lengthof(g_fpu_regnums);
 const size_t k_num_exc_registers = llvm::array_lengthof(g_exc_regnums);
 
-//----------------------------------------------------------------------
 // Register set definitions. The first definitions at register set index of
 // zero is for all registers, followed by other registers sets. The register
 // information for the all register set need not be filled in.
-//----------------------------------------------------------------------
 static const RegisterSet g_reg_sets[] = {
     {
         "General Purpose Registers", "gpr", k_num_gpr_registers, g_gpr_regnums,
@@ -983,12 +979,10 @@ size_t RegisterContextDarwin_arm::GetRegisterSetCount() {
 const RegisterSet *RegisterContextDarwin_arm::GetRegisterSet(size_t reg_set) {
   if (reg_set < k_num_regsets)
     return &g_reg_sets[reg_set];
-  return NULL;
+  return nullptr;
 }
 
-//----------------------------------------------------------------------
 // Register information definitions for 32 bit i386.
-//----------------------------------------------------------------------
 int RegisterContextDarwin_arm::GetSetForNativeRegNum(int reg) {
   if (reg < fpu_s0)
     return GPRRegSet;
@@ -1117,9 +1111,10 @@ int RegisterContextDarwin_arm::WriteRegisterSet(uint32_t set) {
 void RegisterContextDarwin_arm::LogDBGRegisters(Log *log, const DBG &dbg) {
   if (log) {
     for (uint32_t i = 0; i < 16; i++)
-      log->Printf("BVR%-2u/BCR%-2u = { 0x%8.8x, 0x%8.8x } WVR%-2u/WCR%-2u = { "
-                  "0x%8.8x, 0x%8.8x }",
-                  i, i, dbg.bvr[i], dbg.bcr[i], i, i, dbg.wvr[i], dbg.wcr[i]);
+      LLDB_LOGF(log,
+                "BVR%-2u/BCR%-2u = { 0x%8.8x, 0x%8.8x } WVR%-2u/WCR%-2u = { "
+                "0x%8.8x, 0x%8.8x }",
+                i, i, dbg.bvr[i], dbg.bcr[i], i, i, dbg.wvr[i], dbg.wcr[i]);
   }
 }
 
@@ -1300,7 +1295,7 @@ bool RegisterContextDarwin_arm::WriteRegister(const RegisterInfo *reg_info,
 
 bool RegisterContextDarwin_arm::ReadAllRegisterValues(
     lldb::DataBufferSP &data_sp) {
-  data_sp.reset(new DataBufferHeap(REG_CONTEXT_SIZE, 0));
+  data_sp = std::make_shared<DataBufferHeap>(REG_CONTEXT_SIZE, 0);
   if (data_sp && ReadGPR(false) == KERN_SUCCESS &&
       ReadFPU(false) == KERN_SUCCESS && ReadEXC(false) == KERN_SUCCESS) {
     uint8_t *dst = data_sp->GetBytes();
@@ -1520,8 +1515,6 @@ uint32_t RegisterContextDarwin_arm::NumSupportedHardwareBreakpoints() {
     // Zero is reserved for the BRP count, so don't increment it if it is zero
     if (g_num_supported_hw_breakpoints > 0)
       g_num_supported_hw_breakpoints++;
-    //        if (log) log->Printf ("DBGDIDR=0x%8.8x (number BRP pairs = %u)",
-    //        register_DBGDIDR, g_num_supported_hw_breakpoints);
   }
   return g_num_supported_hw_breakpoints;
 #else
@@ -1648,8 +1641,6 @@ uint32_t RegisterContextDarwin_arm::NumSupportedHardwareWatchpoints() {
     uint32_t register_DBGDIDR;
     asm("mrc p14, 0, %0, c0, c0, 0" : "=r"(register_DBGDIDR));
     g_num_supported_hw_watchpoints = Bits32(register_DBGDIDR, 31, 28) + 1;
-    //        if (log) log->Printf ("DBGDIDR=0x%8.8x (number WRP pairs = %u)",
-    //        register_DBGDIDR, g_num_supported_hw_watchpoints);
   }
   return g_num_supported_hw_watchpoints;
 #else
@@ -1662,10 +1653,6 @@ uint32_t RegisterContextDarwin_arm::SetHardwareWatchpoint(lldb::addr_t addr,
                                                           size_t size,
                                                           bool read,
                                                           bool write) {
-  //    if (log) log->Printf
-  //    ("RegisterContextDarwin_arm::EnableHardwareWatchpoint(addr = %8.8p, size
-  //    = %u, read = %u, write = %u)", addr, size, read, write);
-
   const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
 
   // Can't watch zero bytes
@@ -1673,7 +1660,7 @@ uint32_t RegisterContextDarwin_arm::SetHardwareWatchpoint(lldb::addr_t addr,
     return LLDB_INVALID_INDEX32;
 
   // We must watch for either read or write
-  if (read == false && write == false)
+  if (!read && !write)
     return LLDB_INVALID_INDEX32;
 
   // Can't watch more than 4 bytes per WVR/WCR pair

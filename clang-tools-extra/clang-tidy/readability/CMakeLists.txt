@@ -3,7 +3,9 @@ set(LLVM_LINK_COMPONENTS support)
 add_clang_library(clangTidyReadabilityModule
   AvoidConstParamsInDecls.cpp
   BracesAroundStatementsCheck.cpp
+  ConstReturnTypeCheck.cpp
   ContainerSizeEmptyCheck.cpp
+  ConvertMemberFunctionsToStatic.cpp
   DeleteNullPointerCheck.cpp
   DeletedDefaultCheck.cpp
   ElseAfterReturnCheck.cpp
@@ -11,6 +13,8 @@ add_clang_library(clangTidyReadabilityModule
   IdentifierNamingCheck.cpp
   ImplicitBoolConversionCheck.cpp
   InconsistentDeclarationParameterNameCheck.cpp
+  IsolateDeclarationCheck.cpp
+  MagicNumbersCheck.cpp
   MisleadingIndentationCheck.cpp
   MisplacedArrayIndexCheck.cpp
   NamedParameterCheck.cpp
@@ -21,8 +25,9 @@ add_clang_library(clangTidyReadabilityModule
   RedundantDeclarationCheck.cpp
   RedundantFunctionPtrDereferenceCheck.cpp
   RedundantMemberInitCheck.cpp
-  RedundantStringCStrCheck.cpp
+  RedundantPreprocessorCheck.cpp
   RedundantSmartptrGetCheck.cpp
+  RedundantStringCStrCheck.cpp
   RedundantStringInitCheck.cpp
   SimplifyBooleanExprCheck.cpp
   SimplifySubscriptExprCheck.cpp
@@ -30,6 +35,7 @@ add_clang_library(clangTidyReadabilityModule
   StaticDefinitionInAnonymousNamespaceCheck.cpp
   StringCompareCheck.cpp
   UniqueptrDeleteReleaseCheck.cpp
+  UppercaseLiteralSuffixCheck.cpp
 
   LINK_LIBS
   clangAST

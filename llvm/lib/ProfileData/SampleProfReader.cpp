@@ -1,9 +1,8 @@
 //===- SampleProfReader.cpp - Read LLVM sample profile data ---------------===//
 //
-//                      The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -30,6 +29,7 @@
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/LineIterator.h"
+#include "llvm/Support/MD5.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -320,6 +320,21 @@ ErrorOr<StringRef> SampleProfileReaderBinary::readString() {
 }
 
 template <typename T>
+ErrorOr<T> SampleProfileReaderBinary::readUnencodedNumber() {
+  std::error_code EC;
+
+  if (Data + sizeof(T) > End) {
+    EC = sampleprof_error::truncated;
+    reportError(0, EC.message());
+    return EC;
+  }
+
+  using namespace support;
+  T Val = endian::readNext<T, little, unaligned>(Data);
+  return Val;
+}
+
+template <typename T>
 inline ErrorOr<uint32_t> SampleProfileReaderBinary::readStringIndex(T &Table) {
   std::error_code EC;
   auto Idx = readNumber<uint32_t>();
@@ -330,7 +345,7 @@ inline ErrorOr<uint32_t> SampleProfileReaderBinary::readStringIndex(T &Table) {
   return *Idx;
 }
 
-ErrorOr<StringRef> SampleProfileReaderRawBinary::readStringFromTable() {
+ErrorOr<StringRef> SampleProfileReaderBinary::readStringFromTable() {
   auto Idx = readStringIndex(NameTable);
   if (std::error_code EC = Idx.getError())
     return EC;
@@ -423,31 +438,142 @@ SampleProfileReaderBinary::readProfile(FunctionSamples &FProfile) {
   return sampleprof_error::success;
 }
 
+std::error_code SampleProfileReaderBinary::readFuncProfile() {
+  auto NumHeadSamples = readNumber<uint64_t>();
+  if (std::error_code EC = NumHeadSamples.getError())
+    return EC;
+
+  auto FName(readStringFromTable());
+  if (std::error_code EC = FName.getError())
+    return EC;
+
+  Profiles[*FName] = FunctionSamples();
+  FunctionSamples &FProfile = Profiles[*FName];
+  FProfile.setName(*FName);
+
+  FProfile.addHeadSamples(*NumHeadSamples);
+
+  if (std::error_code EC = readProfile(FProfile))
+    return EC;
+  return sampleprof_error::success;
+}
+
 std::error_code SampleProfileReaderBinary::read() {
   while (!at_eof()) {
-    auto NumHeadSamples = readNumber<uint64_t>();
-    if (std::error_code EC = NumHeadSamples.getError())
-      return EC;
-
-    auto FName(readStringFromTable());
-    if (std::error_code EC = FName.getError())
-      return EC;
-
-    Profiles[*FName] = FunctionSamples();
-    FunctionSamples &FProfile = Profiles[*FName];
-    FProfile.setName(*FName);
-
-    FProfile.addHeadSamples(*NumHeadSamples);
-
-    if (std::error_code EC = readProfile(FProfile))
+    if (std::error_code EC = readFuncProfile())
       return EC;
   }
 
   return sampleprof_error::success;
 }
 
+std::error_code
+SampleProfileReaderExtBinary::readOneSection(const uint8_t *Start,
+                                             uint64_t Size, SecType Type) {
+  Data = Start;
+  switch (Type) {
+  case SecProfSummary:
+    if (std::error_code EC = readSummary())
+      return EC;
+    break;
+  case SecNameTable:
+    if (std::error_code EC = readNameTable())
+      return EC;
+    break;
+  case SecLBRProfile:
+    while (Data < Start + Size) {
+      if (std::error_code EC = readFuncProfile())
+        return EC;
+    }
+    break;
+  case SecProfileSymbolList:
+    if (std::error_code EC = readProfileSymbolList())
+      return EC;
+    break;
+  default:
+    break;
+  }
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderExtBinary::readProfileSymbolList() {
+  auto UncompressSize = readNumber<uint64_t>();
+  if (std::error_code EC = UncompressSize.getError())
+    return EC;
+
+  auto CompressSize = readNumber<uint64_t>();
+  if (std::error_code EC = CompressSize.getError())
+    return EC;
+
+  if (!ProfSymList)
+    ProfSymList = std::make_unique<ProfileSymbolList>();
+
+  if (std::error_code EC =
+          ProfSymList->read(*CompressSize, *UncompressSize, Data))
+    return EC;
+
+  // CompressSize is zero only when ProfileSymbolList is not compressed.
+  if (*CompressSize == 0)
+    Data = Data + *UncompressSize;
+  else
+    Data = Data + *CompressSize;
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderExtBinaryBase::read() {
+  const uint8_t *BufStart =
+      reinterpret_cast<const uint8_t *>(Buffer->getBufferStart());
+
+  for (auto &Entry : SecHdrTable) {
+    // Skip empty section.
+    if (!Entry.Size)
+      continue;
+    const uint8_t *SecStart = BufStart + Entry.Offset;
+    if (std::error_code EC = readOneSection(SecStart, Entry.Size, Entry.Type))
+      return EC;
+    if (Data != SecStart + Entry.Size)
+      return sampleprof_error::malformed;
+  }
+
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderCompactBinary::read() {
+  std::vector<uint64_t> OffsetsToUse;
+  if (UseAllFuncs) {
+    for (auto FuncEntry : FuncOffsetTable) {
+      OffsetsToUse.push_back(FuncEntry.second);
+    }
+  }
+  else {
+    for (auto Name : FuncsToUse) {
+      auto GUID = std::to_string(MD5Hash(Name));
+      auto iter = FuncOffsetTable.find(StringRef(GUID));
+      if (iter == FuncOffsetTable.end())
+        continue;
+      OffsetsToUse.push_back(iter->second);
+    }
+  }
+
+  for (auto Offset : OffsetsToUse) {
+    const uint8_t *SavedData = Data;
+    Data = reinterpret_cast<const uint8_t *>(Buffer->getBufferStart()) +
+           Offset;
+    if (std::error_code EC = readFuncProfile())
+      return EC;
+    Data = SavedData;
+  }
+  return sampleprof_error::success;
+}
+
 std::error_code SampleProfileReaderRawBinary::verifySPMagic(uint64_t Magic) {
   if (Magic == SPMagic())
+    return sampleprof_error::success;
+  return sampleprof_error::bad_magic;
+}
+
+std::error_code SampleProfileReaderExtBinary::verifySPMagic(uint64_t Magic) {
+  if (Magic == SPMagic(SPF_Ext_Binary))
     return sampleprof_error::success;
   return sampleprof_error::bad_magic;
 }
@@ -459,7 +585,7 @@ SampleProfileReaderCompactBinary::verifySPMagic(uint64_t Magic) {
   return sampleprof_error::bad_magic;
 }
 
-std::error_code SampleProfileReaderRawBinary::readNameTable() {
+std::error_code SampleProfileReaderBinary::readNameTable() {
   auto Size = readNumber<uint32_t>();
   if (std::error_code EC = Size.getError())
     return EC;
@@ -488,10 +614,60 @@ std::error_code SampleProfileReaderCompactBinary::readNameTable() {
   return sampleprof_error::success;
 }
 
-std::error_code SampleProfileReaderBinary::readHeader() {
-  Data = reinterpret_cast<const uint8_t *>(Buffer->getBufferStart());
-  End = Data + Buffer->getBufferSize();
+std::error_code SampleProfileReaderExtBinaryBase::readSecHdrTableEntry() {
+  SecHdrTableEntry Entry;
+  auto Type = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = Type.getError())
+    return EC;
+  Entry.Type = static_cast<SecType>(*Type);
 
+  auto Flag = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = Flag.getError())
+    return EC;
+  Entry.Flag = *Flag;
+
+  auto Offset = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = Offset.getError())
+    return EC;
+  Entry.Offset = *Offset;
+
+  auto Size = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = Size.getError())
+    return EC;
+  Entry.Size = *Size;
+
+  SecHdrTable.push_back(std::move(Entry));
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderExtBinaryBase::readSecHdrTable() {
+  auto EntryNum = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = EntryNum.getError())
+    return EC;
+
+  for (uint32_t i = 0; i < (*EntryNum); i++)
+    if (std::error_code EC = readSecHdrTableEntry())
+      return EC;
+
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderExtBinaryBase::readHeader() {
+  const uint8_t *BufStart =
+      reinterpret_cast<const uint8_t *>(Buffer->getBufferStart());
+  Data = BufStart;
+  End = BufStart + Buffer->getBufferSize();
+
+  if (std::error_code EC = readMagicIdent())
+    return EC;
+
+  if (std::error_code EC = readSecHdrTable())
+    return EC;
+
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderBinary::readMagicIdent() {
   // Read and check the magic identifier.
   auto Magic = readNumber<uint64_t>();
   if (std::error_code EC = Magic.getError())
@@ -506,12 +682,70 @@ std::error_code SampleProfileReaderBinary::readHeader() {
   else if (*Version != SPVersion())
     return sampleprof_error::unsupported_version;
 
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderBinary::readHeader() {
+  Data = reinterpret_cast<const uint8_t *>(Buffer->getBufferStart());
+  End = Data + Buffer->getBufferSize();
+
+  if (std::error_code EC = readMagicIdent())
+    return EC;
+
   if (std::error_code EC = readSummary())
     return EC;
 
   if (std::error_code EC = readNameTable())
     return EC;
   return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderCompactBinary::readHeader() {
+  SampleProfileReaderBinary::readHeader();
+  if (std::error_code EC = readFuncOffsetTable())
+    return EC;
+  return sampleprof_error::success;
+}
+
+std::error_code SampleProfileReaderCompactBinary::readFuncOffsetTable() {
+  auto TableOffset = readUnencodedNumber<uint64_t>();
+  if (std::error_code EC = TableOffset.getError())
+    return EC;
+
+  const uint8_t *SavedData = Data;
+  const uint8_t *TableStart =
+      reinterpret_cast<const uint8_t *>(Buffer->getBufferStart()) +
+      *TableOffset;
+  Data = TableStart;
+
+  auto Size = readNumber<uint64_t>();
+  if (std::error_code EC = Size.getError())
+    return EC;
+
+  FuncOffsetTable.reserve(*Size);
+  for (uint32_t I = 0; I < *Size; ++I) {
+    auto FName(readStringFromTable());
+    if (std::error_code EC = FName.getError())
+      return EC;
+
+    auto Offset = readNumber<uint64_t>();
+    if (std::error_code EC = Offset.getError())
+      return EC;
+
+    FuncOffsetTable[*FName] = *Offset;
+  }
+  End = TableStart;
+  Data = SavedData;
+  return sampleprof_error::success;
+}
+
+void SampleProfileReaderCompactBinary::collectFuncsToUse(const Module &M) {
+  UseAllFuncs = false;
+  FuncsToUse.clear();
+  for (auto &F : M) {
+    StringRef CanonName = FunctionSamples::getCanonicalFnName(F);
+    FuncsToUse.insert(CanonName);
+  }
 }
 
 std::error_code SampleProfileReaderBinary::readSummaryEntry(
@@ -563,7 +797,7 @@ std::error_code SampleProfileReaderBinary::readSummary() {
     if (EC != sampleprof_error::success)
       return EC;
   }
-  Summary = llvm::make_unique<ProfileSummary>(
+  Summary = std::make_unique<ProfileSummary>(
       ProfileSummary::PSK_Sample, Entries, *TotalCount, *MaxBlockCount, 0,
       *MaxFunctionCount, *NumBlocks, *NumFunctions);
 
@@ -575,6 +809,13 @@ bool SampleProfileReaderRawBinary::hasFormat(const MemoryBuffer &Buffer) {
       reinterpret_cast<const uint8_t *>(Buffer.getBufferStart());
   uint64_t Magic = decodeULEB128(Data);
   return Magic == SPMagic();
+}
+
+bool SampleProfileReaderExtBinary::hasFormat(const MemoryBuffer &Buffer) {
+  const uint8_t *Data =
+      reinterpret_cast<const uint8_t *>(Buffer.getBufferStart());
+  uint64_t Magic = decodeULEB128(Data);
+  return Magic == SPMagic(SPF_Ext_Binary);
 }
 
 bool SampleProfileReaderCompactBinary::hasFormat(const MemoryBuffer &Buffer) {
@@ -827,6 +1068,40 @@ bool SampleProfileReaderGCC::hasFormat(const MemoryBuffer &Buffer) {
   return Magic == "adcg*704";
 }
 
+std::error_code SampleProfileReaderItaniumRemapper::read() {
+  // If the underlying data is in compact format, we can't remap it because
+  // we don't know what the original function names were.
+  if (getFormat() == SPF_Compact_Binary) {
+    Ctx.diagnose(DiagnosticInfoSampleProfile(
+        Buffer->getBufferIdentifier(),
+        "Profile data remapping cannot be applied to profile data "
+        "in compact format (original mangled names are not available).",
+        DS_Warning));
+    return sampleprof_error::success;
+  }
+
+  if (Error E = Remappings.read(*Buffer)) {
+    handleAllErrors(
+        std::move(E), [&](const SymbolRemappingParseError &ParseError) {
+          reportError(ParseError.getLineNum(), ParseError.getMessage());
+        });
+    return sampleprof_error::malformed;
+  }
+
+  for (auto &Sample : getProfiles())
+    if (auto Key = Remappings.insert(Sample.first()))
+      SampleMap.insert({Key, &Sample.second});
+
+  return sampleprof_error::success;
+}
+
+FunctionSamples *
+SampleProfileReaderItaniumRemapper::getSamplesFor(StringRef Fname) {
+  if (auto Key = Remappings.lookup(Fname))
+    return SampleMap.lookup(Key);
+  return SampleProfileReader::getSamplesFor(Fname);
+}
+
 /// Prepare a memory buffer for the contents of \p Filename.
 ///
 /// \returns an error code indicating the status of the buffer.
@@ -859,6 +1134,27 @@ SampleProfileReader::create(const Twine &Filename, LLVMContext &C) {
   return create(BufferOrError.get(), C);
 }
 
+/// Create a sample profile remapper from the given input, to remap the
+/// function names in the given profile data.
+///
+/// \param Filename The file to open.
+///
+/// \param C The LLVM context to use to emit diagnostics.
+///
+/// \param Underlying The underlying profile data reader to remap.
+///
+/// \returns an error code indicating the status of the created reader.
+ErrorOr<std::unique_ptr<SampleProfileReader>>
+SampleProfileReaderItaniumRemapper::create(
+    const Twine &Filename, LLVMContext &C,
+    std::unique_ptr<SampleProfileReader> Underlying) {
+  auto BufferOrError = setupMemoryBuffer(Filename);
+  if (std::error_code EC = BufferOrError.getError())
+    return EC;
+  return std::make_unique<SampleProfileReaderItaniumRemapper>(
+      std::move(BufferOrError.get()), C, std::move(Underlying));
+}
+
 /// Create a sample profile reader based on the format of the input data.
 ///
 /// \param B The memory buffer to create the reader from (assumes ownership).
@@ -871,6 +1167,8 @@ SampleProfileReader::create(std::unique_ptr<MemoryBuffer> &B, LLVMContext &C) {
   std::unique_ptr<SampleProfileReader> Reader;
   if (SampleProfileReaderRawBinary::hasFormat(*B))
     Reader.reset(new SampleProfileReaderRawBinary(std::move(B), C));
+  else if (SampleProfileReaderExtBinary::hasFormat(*B))
+    Reader.reset(new SampleProfileReaderExtBinary(std::move(B), C));
   else if (SampleProfileReaderCompactBinary::hasFormat(*B))
     Reader.reset(new SampleProfileReaderCompactBinary(std::move(B), C));
   else if (SampleProfileReaderGCC::hasFormat(*B))
@@ -880,8 +1178,10 @@ SampleProfileReader::create(std::unique_ptr<MemoryBuffer> &B, LLVMContext &C) {
   else
     return sampleprof_error::unrecognized_format;
 
-  if (std::error_code EC = Reader->readHeader())
+  FunctionSamples::Format = Reader->getFormat();
+  if (std::error_code EC = Reader->readHeader()) {
     return EC;
+  }
 
   return std::move(Reader);
 }

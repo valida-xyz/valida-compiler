@@ -1,4 +1,5 @@
-; RUN: llc < %s -filetype=obj | llvm-readobj - -codeview | FileCheck %s
+; RUN: llc < %s -filetype=obj | llvm-readobj - --codeview | FileCheck %s
+; RUN: llc < %s | llvm-mc -filetype=obj --triple=i686-windows | llvm-readobj - --codeview | FileCheck %s
 
 ; Check for the appropriate MethodKind below.
 
@@ -28,7 +29,7 @@
 ; CHECK-NEXT:    TypeLeafKind: LF_MFUNCTION (0x1009)
 ; CHECK-NEXT:    ReturnType: void (0x3)
 ; CHECK-NEXT:    ClassType: A ({{.*}})
-; CHECK-NEXT:    ThisType: A* ({{.*}})
+; CHECK-NEXT:    ThisType: A* const ({{.*}})
 ; CHECK-NEXT:    CallingConvention: ThisCall (0xB)
 ; CHECK-NEXT:    FunctionOptions [ (0x0)
 ; CHECK-NEXT:    ]

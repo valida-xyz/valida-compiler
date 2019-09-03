@@ -1,9 +1,8 @@
 //===- Attributes.cpp - Implement AttributesList --------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -122,6 +121,27 @@ Attribute Attribute::get(LLVMContext &Context, StringRef Kind, StringRef Val) {
   return Attribute(PA);
 }
 
+Attribute Attribute::get(LLVMContext &Context, Attribute::AttrKind Kind,
+                         Type *Ty) {
+  LLVMContextImpl *pImpl = Context.pImpl;
+  FoldingSetNodeID ID;
+  ID.AddInteger(Kind);
+  ID.AddPointer(Ty);
+
+  void *InsertPoint;
+  AttributeImpl *PA = pImpl->AttrsSet.FindNodeOrInsertPos(ID, InsertPoint);
+
+  if (!PA) {
+    // If we didn't find any existing attributes of the same shape then create a
+    // new one and insert it.
+    PA = new TypeAttributeImpl(Kind, Ty);
+    pImpl->AttrsSet.InsertNode(PA, InsertPoint);
+  }
+
+  // Return the Attribute that we found or created.
+  return Attribute(PA);
+}
+
 Attribute Attribute::getWithAlignment(LLVMContext &Context, uint64_t Align) {
   assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
   assert(Align <= 0x40000000 && "Alignment too large.");
@@ -145,6 +165,10 @@ Attribute Attribute::getWithDereferenceableOrNullBytes(LLVMContext &Context,
                                                        uint64_t Bytes) {
   assert(Bytes && "Bytes must be non-zero.");
   return get(Context, DereferenceableOrNull, Bytes);
+}
+
+Attribute Attribute::getWithByValType(LLVMContext &Context, Type *Ty) {
+  return get(Context, ByVal, Ty);
 }
 
 Attribute
@@ -171,9 +195,13 @@ bool Attribute::isStringAttribute() const {
   return pImpl && pImpl->isStringAttribute();
 }
 
+bool Attribute::isTypeAttribute() const {
+  return pImpl && pImpl->isTypeAttribute();
+}
+
 Attribute::AttrKind Attribute::getKindAsEnum() const {
   if (!pImpl) return None;
-  assert((isEnumAttribute() || isIntAttribute()) &&
+  assert((isEnumAttribute() || isIntAttribute() || isTypeAttribute()) &&
          "Invalid attribute type to get the kind as an enum!");
   return pImpl->getKindAsEnum();
 }
@@ -198,6 +226,14 @@ StringRef Attribute::getValueAsString() const {
          "Invalid attribute type to get the value as a string!");
   return pImpl->getValueAsString();
 }
+
+Type *Attribute::getValueAsType() const {
+  if (!pImpl) return {};
+  assert(isTypeAttribute() &&
+         "Invalid attribute type to get the value as a type!");
+  return pImpl->getValueAsType();
+}
+
 
 bool Attribute::hasAttribute(AttrKind Kind) const {
   return (pImpl && pImpl->hasAttribute(Kind)) || (!pImpl && Kind == None);
@@ -247,14 +283,14 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "sanitize_address";
   if (hasAttribute(Attribute::SanitizeHWAddress))
     return "sanitize_hwaddress";
+  if (hasAttribute(Attribute::SanitizeMemTag))
+    return "sanitize_memtag";
   if (hasAttribute(Attribute::AlwaysInline))
     return "alwaysinline";
   if (hasAttribute(Attribute::ArgMemOnly))
     return "argmemonly";
   if (hasAttribute(Attribute::Builtin))
     return "builtin";
-  if (hasAttribute(Attribute::ByVal))
-    return "byval";
   if (hasAttribute(Attribute::Convergent))
     return "convergent";
   if (hasAttribute(Attribute::SwiftError))
@@ -287,6 +323,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "nocapture";
   if (hasAttribute(Attribute::NoDuplicate))
     return "noduplicate";
+  if (hasAttribute(Attribute::NoFree))
+    return "nofree";
   if (hasAttribute(Attribute::NoImplicitFloat))
     return "noimplicitfloat";
   if (hasAttribute(Attribute::NoInline))
@@ -299,6 +337,10 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "noredzone";
   if (hasAttribute(Attribute::NoReturn))
     return "noreturn";
+  if (hasAttribute(Attribute::NoSync))
+    return "nosync";
+  if (hasAttribute(Attribute::WillReturn))
+    return "willreturn";
   if (hasAttribute(Attribute::NoCfCheck))
     return "nocf_check";
   if (hasAttribute(Attribute::NoRecurse))
@@ -323,6 +365,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "returns_twice";
   if (hasAttribute(Attribute::SExt))
     return "signext";
+  if (hasAttribute(Attribute::SpeculativeLoadHardening))
+    return "speculative_load_hardening";
   if (hasAttribute(Attribute::Speculatable))
     return "speculatable";
   if (hasAttribute(Attribute::StackProtect))
@@ -349,6 +393,21 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "zeroext";
   if (hasAttribute(Attribute::Cold))
     return "cold";
+  if (hasAttribute(Attribute::ImmArg))
+    return "immarg";
+
+  if (hasAttribute(Attribute::ByVal)) {
+    std::string Result;
+    Result += "byval";
+    if (Type *Ty = getValueAsType()) {
+      raw_string_ostream OS(Result);
+      Result += '(';
+      Ty->print(OS, false, true);
+      OS.flush();
+      Result += ')';
+    }
+    return Result;
+  }
 
   // FIXME: These should be output like this:
   //
@@ -448,6 +507,8 @@ void IntAttributeImpl::anchor() {}
 
 void StringAttributeImpl::anchor() {}
 
+void TypeAttributeImpl::anchor() {}
+
 bool AttributeImpl::hasAttribute(Attribute::AttrKind A) const {
   if (isStringAttribute()) return false;
   return getKindAsEnum() == A;
@@ -459,7 +520,7 @@ bool AttributeImpl::hasAttribute(StringRef Kind) const {
 }
 
 Attribute::AttrKind AttributeImpl::getKindAsEnum() const {
-  assert(isEnumAttribute() || isIntAttribute());
+  assert(isEnumAttribute() || isIntAttribute() || isTypeAttribute());
   return static_cast<const EnumAttributeImpl *>(this)->getEnumKind();
 }
 
@@ -478,6 +539,11 @@ StringRef AttributeImpl::getValueAsString() const {
   return static_cast<const StringAttributeImpl *>(this)->getStringValue();
 }
 
+Type *AttributeImpl::getValueAsType() const {
+  assert(isTypeAttribute());
+  return static_cast<const TypeAttributeImpl *>(this)->getTypeValue();
+}
+
 bool AttributeImpl::operator<(const AttributeImpl &AI) const {
   // This sorts the attributes with Attribute::AttrKinds coming first (sorted
   // relative to their enum value) and then strings.
@@ -485,10 +551,23 @@ bool AttributeImpl::operator<(const AttributeImpl &AI) const {
     if (AI.isEnumAttribute()) return getKindAsEnum() < AI.getKindAsEnum();
     if (AI.isIntAttribute()) return true;
     if (AI.isStringAttribute()) return true;
+    if (AI.isTypeAttribute()) return true;
+  }
+
+  if (isTypeAttribute()) {
+    if (AI.isEnumAttribute()) return false;
+    if (AI.isTypeAttribute()) {
+      assert(getKindAsEnum() != AI.getKindAsEnum() &&
+             "Comparison of types would be unstable");
+      return getKindAsEnum() < AI.getKindAsEnum();
+    }
+    if (AI.isIntAttribute()) return true;
+    if (AI.isStringAttribute()) return true;
   }
 
   if (isIntAttribute()) {
     if (AI.isEnumAttribute()) return false;
+    if (AI.isTypeAttribute()) return false;
     if (AI.isIntAttribute()) {
       if (getKindAsEnum() == AI.getKindAsEnum())
         return getValueAsInt() < AI.getValueAsInt();
@@ -497,7 +576,9 @@ bool AttributeImpl::operator<(const AttributeImpl &AI) const {
     if (AI.isStringAttribute()) return true;
   }
 
+  assert(isStringAttribute());
   if (AI.isEnumAttribute()) return false;
+  if (AI.isTypeAttribute()) return false;
   if (AI.isIntAttribute()) return false;
   if (getKindAsString() == AI.getKindAsString())
     return getValueAsString() < AI.getValueAsString();
@@ -605,6 +686,10 @@ uint64_t AttributeSet::getDereferenceableOrNullBytes() const {
   return SetNode ? SetNode->getDereferenceableOrNullBytes() : 0;
 }
 
+Type *AttributeSet::getByValType() const {
+  return SetNode ? SetNode->getByValType() : nullptr;
+}
+
 std::pair<unsigned, Optional<unsigned>> AttributeSet::getAllocSizeArgs() const {
   return SetNode ? SetNode->getAllocSizeArgs()
                  : std::pair<unsigned, Optional<unsigned>>(0, 0);
@@ -635,13 +720,18 @@ LLVM_DUMP_METHOD void AttributeSet::dump() const {
 //===----------------------------------------------------------------------===//
 
 AttributeSetNode::AttributeSetNode(ArrayRef<Attribute> Attrs)
-    : AvailableAttrs(0), NumAttrs(Attrs.size()) {
+    : NumAttrs(Attrs.size()) {
   // There's memory after the node where we can store the entries in.
-  std::copy(Attrs.begin(), Attrs.end(), getTrailingObjects<Attribute>());
+  llvm::copy(Attrs, getTrailingObjects<Attribute>());
+
+  static_assert(Attribute::EndAttrKinds <=
+                    sizeof(AvailableAttrs) * CHAR_BIT,
+                "Too many attributes");
 
   for (const auto I : *this) {
     if (!I.isStringAttribute()) {
-      AvailableAttrs |= ((uint64_t)1) << I.getKindAsEnum();
+      Attribute::AttrKind Kind = I.getKindAsEnum();
+      AvailableAttrs[Kind / 8] |= 1ULL << (Kind % 8);
     }
   }
 }
@@ -656,7 +746,7 @@ AttributeSetNode *AttributeSetNode::get(LLVMContext &C,
   FoldingSetNodeID ID;
 
   SmallVector<Attribute, 8> SortedAttrs(Attrs.begin(), Attrs.end());
-  llvm::sort(SortedAttrs.begin(), SortedAttrs.end());
+  llvm::sort(SortedAttrs);
 
   for (const auto Attr : SortedAttrs)
     Attr.Profile(ID);
@@ -688,6 +778,9 @@ AttributeSetNode *AttributeSetNode::get(LLVMContext &C, const AttrBuilder &B) {
 
     Attribute Attr;
     switch (Kind) {
+    case Attribute::ByVal:
+      Attr = Attribute::getWithByValType(C, B.getByValType());
+      break;
     case Attribute::Alignment:
       Attr = Attribute::getWithAlignment(C, B.getAlignment());
       break;
@@ -757,6 +850,13 @@ unsigned AttributeSetNode::getStackAlignment() const {
   return 0;
 }
 
+Type *AttributeSetNode::getByValType() const {
+  for (const auto I : *this)
+    if (I.hasAttribute(Attribute::ByVal))
+      return I.getValueAsType();
+  return 0;
+}
+
 uint64_t AttributeSetNode::getDereferenceableBytes() const {
   for (const auto I : *this)
     if (I.hasAttribute(Attribute::Dereferenceable))
@@ -803,11 +903,11 @@ static constexpr unsigned attrIdxToArrayIdx(unsigned Index) {
 
 AttributeListImpl::AttributeListImpl(LLVMContext &C,
                                      ArrayRef<AttributeSet> Sets)
-    : AvailableFunctionAttrs(0), Context(C), NumAttrSets(Sets.size()) {
+    : Context(C), NumAttrSets(Sets.size()) {
   assert(!Sets.empty() && "pointless AttributeListImpl");
 
   // There's memory after the node where we can store the entries in.
-  std::copy(Sets.begin(), Sets.end(), getTrailingObjects<AttributeSet>());
+  llvm::copy(Sets, getTrailingObjects<AttributeSet>());
 
   // Initialize AvailableFunctionAttrs summary bitset.
   static_assert(Attribute::EndAttrKinds <=
@@ -816,8 +916,10 @@ AttributeListImpl::AttributeListImpl(LLVMContext &C,
   static_assert(attrIdxToArrayIdx(AttributeList::FunctionIndex) == 0U,
                 "function should be stored in slot 0");
   for (const auto I : Sets[0]) {
-    if (!I.isStringAttribute())
-      AvailableFunctionAttrs |= 1ULL << I.getKindAsEnum();
+    if (!I.isStringAttribute()) {
+      Attribute::AttrKind Kind = I.getKindAsEnum();
+      AvailableFunctionAttrs[Kind / 8] |= 1ULL << (Kind % 8);
+    }
   }
 }
 
@@ -1255,6 +1357,11 @@ unsigned AttributeList::getParamAlignment(unsigned ArgNo) const {
   return getAttributes(ArgNo + FirstArgIndex).getAlignment();
 }
 
+Type *AttributeList::getParamByValType(unsigned Index) const {
+  return getAttributes(Index+FirstArgIndex).getByValType();
+}
+
+
 unsigned AttributeList::getStackAlignment(unsigned Index) const {
   return getAttributes(Index).getStackAlignment();
 }
@@ -1331,8 +1438,11 @@ AttrBuilder::AttrBuilder(AttributeSet AS) {
 void AttrBuilder::clear() {
   Attrs.reset();
   TargetDepAttrs.clear();
-  Alignment = StackAlignment = DerefBytes = DerefOrNullBytes = 0;
+  Alignment.reset();
+  StackAlignment.reset();
+  DerefBytes = DerefOrNullBytes = 0;
   AllocSizeArgs = 0;
+  ByValType = nullptr;
 }
 
 AttrBuilder &AttrBuilder::addAttribute(Attribute::AttrKind Val) {
@@ -1354,9 +1464,11 @@ AttrBuilder &AttrBuilder::addAttribute(Attribute Attr) {
   Attrs[Kind] = true;
 
   if (Kind == Attribute::Alignment)
-    Alignment = Attr.getAlignment();
+    Alignment = MaybeAlign(Attr.getAlignment());
   else if (Kind == Attribute::StackAlignment)
-    StackAlignment = Attr.getStackAlignment();
+    StackAlignment = MaybeAlign(Attr.getStackAlignment());
+  else if (Kind == Attribute::ByVal)
+    ByValType = Attr.getValueAsType();
   else if (Kind == Attribute::Dereferenceable)
     DerefBytes = Attr.getDereferenceableBytes();
   else if (Kind == Attribute::DereferenceableOrNull)
@@ -1376,9 +1488,11 @@ AttrBuilder &AttrBuilder::removeAttribute(Attribute::AttrKind Val) {
   Attrs[Val] = false;
 
   if (Val == Attribute::Alignment)
-    Alignment = 0;
+    Alignment.reset();
   else if (Val == Attribute::StackAlignment)
-    StackAlignment = 0;
+    StackAlignment.reset();
+  else if (Val == Attribute::ByVal)
+    ByValType = nullptr;
   else if (Val == Attribute::Dereferenceable)
     DerefBytes = 0;
   else if (Val == Attribute::DereferenceableOrNull)
@@ -1405,23 +1519,25 @@ std::pair<unsigned, Optional<unsigned>> AttrBuilder::getAllocSizeArgs() const {
   return unpackAllocSizeArgs(AllocSizeArgs);
 }
 
-AttrBuilder &AttrBuilder::addAlignmentAttr(unsigned Align) {
-  if (Align == 0) return *this;
+AttrBuilder &AttrBuilder::addAlignmentAttr(unsigned A) {
+  MaybeAlign Align(A);
+  if (!Align)
+    return *this;
 
-  assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
-  assert(Align <= 0x40000000 && "Alignment too large.");
+  assert(*Align <= 0x40000000 && "Alignment too large.");
 
   Attrs[Attribute::Alignment] = true;
   Alignment = Align;
   return *this;
 }
 
-AttrBuilder &AttrBuilder::addStackAlignmentAttr(unsigned Align) {
+AttrBuilder &AttrBuilder::addStackAlignmentAttr(unsigned A) {
+  MaybeAlign Align(A);
   // Default alignment, allow the target to define how to align it.
-  if (Align == 0) return *this;
+  if (!Align)
+    return *this;
 
-  assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
-  assert(Align <= 0x100 && "Alignment too large.");
+  assert(*Align <= 0x100 && "Alignment too large.");
 
   Attrs[Attribute::StackAlignment] = true;
   StackAlignment = Align;
@@ -1461,6 +1577,12 @@ AttrBuilder &AttrBuilder::addAllocSizeAttrFromRawRepr(uint64_t RawArgs) {
   return *this;
 }
 
+AttrBuilder &AttrBuilder::addByValAttr(Type *Ty) {
+  Attrs[Attribute::ByVal] = true;
+  ByValType = Ty;
+  return *this;
+}
+
 AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
   // FIXME: What if both have alignments, but they don't match?!
   if (!Alignment)
@@ -1478,6 +1600,9 @@ AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
   if (!AllocSizeArgs)
     AllocSizeArgs = B.AllocSizeArgs;
 
+  if (!ByValType)
+    ByValType = B.ByValType;
+
   Attrs |= B.Attrs;
 
   for (auto I : B.td_attrs())
@@ -1489,10 +1614,10 @@ AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
 AttrBuilder &AttrBuilder::remove(const AttrBuilder &B) {
   // FIXME: What if both have alignments, but they don't match?!
   if (B.Alignment)
-    Alignment = 0;
+    Alignment.reset();
 
   if (B.StackAlignment)
-    StackAlignment = 0;
+    StackAlignment.reset();
 
   if (B.DerefBytes)
     DerefBytes = 0;
@@ -1502,6 +1627,9 @@ AttrBuilder &AttrBuilder::remove(const AttrBuilder &B) {
 
   if (B.AllocSizeArgs)
     AllocSizeArgs = 0;
+
+  if (B.ByValType)
+    ByValType = nullptr;
 
   Attrs &= ~B.Attrs;
 
@@ -1562,7 +1690,7 @@ bool AttrBuilder::operator==(const AttrBuilder &B) {
       return false;
 
   return Alignment == B.Alignment && StackAlignment == B.StackAlignment &&
-         DerefBytes == B.DerefBytes;
+         DerefBytes == B.DerefBytes && ByValType == B.ByValType;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1683,28 +1811,32 @@ adjustCallerStackProbeSize(Function &Caller, const Function &Callee) {
 }
 
 /// If the inlined function defines a min legal vector width, then ensure
-/// the calling function has the same or larger min legal vector width. This
-/// function is called after the inlining decision has been made so we have to
-/// merge the attribute this way. Heuristics that would use
+/// the calling function has the same or larger min legal vector width. If the
+/// caller has the attribute, but the callee doesn't, we need to remove the
+/// attribute from the caller since we can't make any guarantees about the
+/// caller's requirements.
+/// This function is called after the inlining decision has been made so we have
+/// to merge the attribute this way. Heuristics that would use
 /// min-legal-vector-width to determine inline compatibility would need to be
 /// handled as part of inline cost analysis.
 static void
 adjustMinLegalVectorWidth(Function &Caller, const Function &Callee) {
-  if (Callee.hasFnAttribute("min-legal-vector-width")) {
-    uint64_t CalleeVectorWidth;
-    Callee.getFnAttribute("min-legal-vector-width")
-          .getValueAsString()
-          .getAsInteger(0, CalleeVectorWidth);
-    if (Caller.hasFnAttribute("min-legal-vector-width")) {
+  if (Caller.hasFnAttribute("min-legal-vector-width")) {
+    if (Callee.hasFnAttribute("min-legal-vector-width")) {
       uint64_t CallerVectorWidth;
       Caller.getFnAttribute("min-legal-vector-width")
             .getValueAsString()
             .getAsInteger(0, CallerVectorWidth);
-      if (CallerVectorWidth < CalleeVectorWidth) {
+      uint64_t CalleeVectorWidth;
+      Callee.getFnAttribute("min-legal-vector-width")
+            .getValueAsString()
+            .getAsInteger(0, CalleeVectorWidth);
+      if (CallerVectorWidth < CalleeVectorWidth)
         Caller.addFnAttr(Callee.getFnAttribute("min-legal-vector-width"));
-      }
     } else {
-      Caller.addFnAttr(Callee.getFnAttribute("min-legal-vector-width"));
+      // If the callee doesn't have the attribute then we don't know anything
+      // and must drop the attribute from the caller.
+      Caller.removeFnAttr("min-legal-vector-width");
     }
   }
 }

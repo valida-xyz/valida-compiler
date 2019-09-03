@@ -1,9 +1,8 @@
 //===----------------------------------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,7 +26,7 @@
 #endif
 #endif
 
-int main()
+int main(int, char**)
 {
     std::clock_t c = 0;
     std::size_t s = 0;
@@ -45,7 +44,7 @@ int main()
     static_assert((std::is_same<decltype(std::difftime(t,t)), double>::value), "");
     static_assert((std::is_same<decltype(std::mktime(&tm)), std::time_t>::value), "");
     static_assert((std::is_same<decltype(std::time(&t)), std::time_t>::value), "");
-#if TEST_STD_VER > 14 && defined(TEST_HAS_C11_FEATURES)
+#if TEST_STD_VER > 14 && defined(TEST_HAS_TIMESPEC_GET)
     static_assert((std::is_same<decltype(std::timespec_get(nullptr, 0)), int>::value), "");
 #endif
 #ifndef _LIBCPP_HAS_NO_THREAD_UNSAFE_C_FUNCTIONS
@@ -59,4 +58,6 @@ int main()
     ((void)c1); // Prevent unused warning
     ((void)c2); // Prevent unused warning
     static_assert((std::is_same<decltype(std::strftime(c1,s,c2,&tm)), std::size_t>::value), "");
+
+  return 0;
 }

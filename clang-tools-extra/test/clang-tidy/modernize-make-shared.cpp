@@ -1,5 +1,4 @@
-// RUN: %check_clang_tidy %s modernize-make-shared %t -- -- -std=c++11 \
-// RUN:   -I%S/Inputs/modernize-smart-ptr
+// RUN: %check_clang_tidy %s modernize-make-shared %t -- -- -I %S/Inputs/modernize-smart-ptr
 
 #include "shared_ptr.h"
 // CHECK-FIXES: #include <memory>
@@ -69,6 +68,18 @@ void basic() {
   auto P3 = std::shared_ptr<int>(new int());
   // CHECK-MESSAGES: :[[@LINE-1]]:13: warning: use std::make_shared instead
   // CHECK-FIXES: auto P3 = std::make_shared<int>();
+
+  std::shared_ptr<int> P4 = std::shared_ptr<int>((new int));
+  // CHECK-MESSAGES: :[[@LINE-1]]:29: warning: use std::make_shared instead [modernize-make-shared]
+  // CHECK-FIXES: std::shared_ptr<int> P4 = std::make_shared<int>();
+
+  P4.reset((((new int()))));
+  // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: use std::make_shared instead [modernize-make-shared]
+  // CHECK-FIXES: P4 = std::make_shared<int>();
+
+  P4 = std::shared_ptr<int>(((new int)));
+  // CHECK-MESSAGES: :[[@LINE-1]]:8: warning: use std::make_shared instead [modernize-make-shared]
+  // CHECK-FIXES: P4 = std::make_shared<int>();
 
   {
     // No std.

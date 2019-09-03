@@ -1,9 +1,8 @@
-//===--- ToolChains.cpp - ToolChain Implementations -----------------------===//
+//===-- MSVC.cpp - MSVC ToolChain Implementations -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -355,6 +354,15 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                   options::OPT__SLASH_Zd))
     CmdArgs.push_back("-debug");
 
+  // Pass on /Brepro if it was passed to the compiler.
+  // Note that /Brepro maps to -mno-incremental-linker-compatible.
+  bool DefaultIncrementalLinkerCompatible =
+      C.getDefaultToolChain().getTriple().isWindowsMSVCEnvironment();
+  if (!Args.hasFlag(options::OPT_mincremental_linker_compatible,
+                    options::OPT_mno_incremental_linker_compatible,
+                    DefaultIncrementalLinkerCompatible))
+    CmdArgs.push_back("-Brepro");
+
   bool DLL = Args.hasArg(options::OPT__SLASH_LD, options::OPT__SLASH_LDd,
                          options::OPT_shared);
   if (DLL) {
@@ -363,6 +371,17 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     SmallString<128> ImplibName(Output.getFilename());
     llvm::sys::path::replace_extension(ImplibName, "lib");
     CmdArgs.push_back(Args.MakeArgString(std::string("-implib:") + ImplibName));
+  }
+
+  if (TC.getSanitizerArgs().needsFuzzer()) {
+    if (!Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back(
+          Args.MakeArgString(std::string("-wholearchive:") +
+                             TC.getCompilerRTArgString(Args, "fuzzer")));
+    CmdArgs.push_back(Args.MakeArgString("-debug"));
+    // Prevent the linker from padding sections we use for instrumentation
+    // arrays.
+    CmdArgs.push_back(Args.MakeArgString("-incremental:no"));
   }
 
   if (TC.getSanitizerArgs().needsAsanRt()) {
@@ -469,15 +488,25 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     // their own link.exe which may come first.
     linkPath = FindVisualStudioExecutable(TC, "link.exe");
 
-    if (!TC.FoundMSVCInstall() && !llvm::sys::fs::can_execute(linkPath))
-      C.getDriver().Diag(clang::diag::warn_drv_msvc_not_found);
+    if (!TC.FoundMSVCInstall() && !llvm::sys::fs::can_execute(linkPath)) {
+      llvm::SmallString<128> ClPath;
+      ClPath = TC.GetProgramPath("cl.exe");
+      if (llvm::sys::fs::can_execute(ClPath)) {
+        linkPath = llvm::sys::path::parent_path(ClPath);
+        llvm::sys::path::append(linkPath, "link.exe");
+        if (!llvm::sys::fs::can_execute(linkPath))
+          C.getDriver().Diag(clang::diag::warn_drv_msvc_not_found);
+      } else {
+        C.getDriver().Diag(clang::diag::warn_drv_msvc_not_found);
+      }
+    }
 
 #ifdef _WIN32
     // When cross-compiling with VS2017 or newer, link.exe expects to have
     // its containing bin directory at the top of PATH, followed by the
     // native target bin directory.
     // e.g. when compiling for x86 on an x64 host, PATH should start with:
-    // /bin/HostX64/x86;/bin/HostX64/x64
+    // /bin/Hostx64/x86;/bin/Hostx64/x64
     // This doesn't attempt to handle ToolsetLayout::DevDivInternal.
     if (TC.getIsVS2017OrNewer() &&
         llvm::Triple(llvm::sys::getProcessTriple()).getArch() != TC.getArch()) {
@@ -536,7 +565,7 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     linkPath = TC.GetProgramPath(Linker.str().c_str());
   }
 
-  auto LinkCmd = llvm::make_unique<Command>(
+  auto LinkCmd = std::make_unique<Command>(
       JA, *this, Args.MakeArgString(linkPath), CmdArgs, Inputs);
   if (!Environment.empty())
     LinkCmd->setEnvironment(Environment);
@@ -597,11 +626,11 @@ std::unique_ptr<Command> visualstudio::Compiler::GetCommand(
   // FIXME: How can we ensure this stays in sync with relevant clang-cl options?
 
   if (Args.hasFlag(options::OPT__SLASH_GR_, options::OPT__SLASH_GR,
-                   /*default=*/false))
+                   /*Default=*/false))
     CmdArgs.push_back("/GR-");
 
   if (Args.hasFlag(options::OPT__SLASH_GS_, options::OPT__SLASH_GS,
-                   /*default=*/false))
+                   /*Default=*/false))
     CmdArgs.push_back("/GS-");
 
   if (Arg *A = Args.getLastArg(options::OPT_ffunction_sections,
@@ -666,7 +695,7 @@ std::unique_ptr<Command> visualstudio::Compiler::GetCommand(
   CmdArgs.push_back(Fo);
 
   std::string Exec = FindVisualStudioExecutable(getToolChain(), "cl.exe");
-  return llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Exec),
+  return std::make_unique<Command>(JA, *this, Args.MakeArgString(Exec),
                                     CmdArgs, Inputs);
 }
 
@@ -702,15 +731,15 @@ bool MSVCToolChain::IsIntegratedAssemblerDefault() const {
 }
 
 bool MSVCToolChain::IsUnwindTablesDefault(const ArgList &Args) const {
-  // Emit unwind tables by default on Win64. All non-x86_32 Windows platforms
-  // such as ARM and PPC actually require unwind tables, but LLVM doesn't know
-  // how to generate them yet.
-
   // Don't emit unwind tables by default for MachO targets.
   if (getTriple().isOSBinFormatMachO())
     return false;
 
-  return getArch() == llvm::Triple::x86_64;
+  // All non-x86_32 Windows targets require unwind tables. However, LLVM
+  // doesn't know how to generate them for all targets, so only enable
+  // the ones that are actually implemented.
+  return getArch() == llvm::Triple::x86_64 ||
+         getArch() == llvm::Triple::aarch64;
 }
 
 bool MSVCToolChain::isPICDefault() const {
@@ -819,7 +848,7 @@ MSVCToolChain::getSubDirectoryPath(SubDirectoryType Type,
     if (VSLayout == ToolsetLayout::VS2017OrNewer) {
       const bool HostIsX64 =
           llvm::Triple(llvm::sys::getProcessTriple()).isArch64Bit();
-      const char *const HostName = HostIsX64 ? "HostX64" : "HostX86";
+      const char *const HostName = HostIsX64 ? "Hostx64" : "Hostx86";
       llvm::sys::path::append(Path, "bin", HostName, SubdirName);
     } else { // OlderVS or DevDivInternal
       llvm::sys::path::append(Path, "bin", SubdirName);
@@ -1266,7 +1295,7 @@ VersionTuple MSVCToolChain::computeMSVCVersion(const Driver *D,
   if (MSVT.empty() &&
       Args.hasFlag(options::OPT_fms_extensions, options::OPT_fno_ms_extensions,
                    IsWindowsMSVC)) {
-    // -fms-compatibility-version=19.11 is default, aka 2017
+    // -fms-compatibility-version=19.11 is default, aka 2017, 15.3
     MSVT = VersionTuple(19, 11);
   }
   return MSVT;
@@ -1298,6 +1327,10 @@ MSVCToolChain::ComputeEffectiveClangTriple(const ArgList &Args,
 SanitizerMask MSVCToolChain::getSupportedSanitizers() const {
   SanitizerMask Res = ToolChain::getSupportedSanitizers();
   Res |= SanitizerKind::Address;
+  Res |= SanitizerKind::PointerCompare;
+  Res |= SanitizerKind::PointerSubtract;
+  Res |= SanitizerKind::Fuzzer;
+  Res |= SanitizerKind::FuzzerNoLink;
   Res &= ~SanitizerKind::CFIMFCall;
   return Res;
 }
@@ -1356,6 +1389,7 @@ static void TranslateOptArg(Arg *A, llvm::opt::DerivedArgList &DAL,
       }
       break;
     case 'g':
+      A->claim();
       break;
     case 'i':
       if (I + 1 != E && OptStr[I + 1] == '-') {
@@ -1385,10 +1419,10 @@ static void TranslateOptArg(Arg *A, llvm::opt::DerivedArgList &DAL,
           DAL.AddFlagArg(
               A, Opts.getOption(options::OPT_fno_omit_frame_pointer));
       } else {
-        // Don't warn about /Oy- in 64-bit builds (where
+        // Don't warn about /Oy- in x86-64 builds (where
         // SupportsForcingFramePointer is false).  The flag having no effect
         // there is a compiler-internal optimization, and people shouldn't have
-        // to special-case their build files for 64-bit clang-cl.
+        // to special-case their build files for x86-64 clang-cl.
         A->claim();
       }
       break;
@@ -1419,8 +1453,8 @@ MSVCToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
   DerivedArgList *DAL = new DerivedArgList(Args.getBaseArgs());
   const OptTable &Opts = getDriver().getOpts();
 
-  // /Oy and /Oy- only has an effect under X86-32.
-  bool SupportsForcingFramePointer = getArch() == llvm::Triple::x86;
+  // /Oy and /Oy- don't have an effect on X86-64
+  bool SupportsForcingFramePointer = getArch() != llvm::Triple::x86_64;
 
   // The -O[12xd] flag actually expands to several flags.  We must desugar the
   // flags so that options embedded can be negated.  For example, the '-O2' flag

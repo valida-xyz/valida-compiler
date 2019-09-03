@@ -56,11 +56,11 @@ define void @f_thunk(i8* %this, ...) {
 ; LINUX-NEXT:    movaps %xmm6, {{[0-9]+}}(%rsp)
 ; LINUX-NEXT:    movaps %xmm7, {{[0-9]+}}(%rsp)
 ; LINUX-NEXT:  .LBB0_2:
-; LINUX-NEXT:    movq %r15, {{[0-9]+}}(%rsp)
-; LINUX-NEXT:    movq %r12, {{[0-9]+}}(%rsp)
-; LINUX-NEXT:    movq %r13, {{[0-9]+}}(%rsp)
-; LINUX-NEXT:    movq %rbp, {{[0-9]+}}(%rsp)
 ; LINUX-NEXT:    movq %rbx, {{[0-9]+}}(%rsp)
+; LINUX-NEXT:    movq %rbp, {{[0-9]+}}(%rsp)
+; LINUX-NEXT:    movq %r13, {{[0-9]+}}(%rsp)
+; LINUX-NEXT:    movq %r12, {{[0-9]+}}(%rsp)
+; LINUX-NEXT:    movq %r15, {{[0-9]+}}(%rsp)
 ; LINUX-NEXT:    leaq {{[0-9]+}}(%rsp), %rax
 ; LINUX-NEXT:    movq %rax, {{[0-9]+}}(%rsp)
 ; LINUX-NEXT:    leaq {{[0-9]+}}(%rsp), %rax
@@ -150,11 +150,11 @@ define void @f_thunk(i8* %this, ...) {
 ; LINUX-X32-NEXT:    movaps %xmm6, {{[0-9]+}}(%esp)
 ; LINUX-X32-NEXT:    movaps %xmm7, {{[0-9]+}}(%esp)
 ; LINUX-X32-NEXT:  .LBB0_2:
-; LINUX-X32-NEXT:    movq %r15, {{[0-9]+}}(%esp)
-; LINUX-X32-NEXT:    movq %r12, {{[0-9]+}}(%esp)
-; LINUX-X32-NEXT:    movq %r13, {{[0-9]+}}(%esp)
-; LINUX-X32-NEXT:    movq %rbp, {{[0-9]+}}(%esp)
 ; LINUX-X32-NEXT:    movq %rbx, {{[0-9]+}}(%esp)
+; LINUX-X32-NEXT:    movq %rbp, {{[0-9]+}}(%esp)
+; LINUX-X32-NEXT:    movq %r13, {{[0-9]+}}(%esp)
+; LINUX-X32-NEXT:    movq %r12, {{[0-9]+}}(%esp)
+; LINUX-X32-NEXT:    movq %r15, {{[0-9]+}}(%esp)
 ; LINUX-X32-NEXT:    leal {{[0-9]+}}(%rsp), %eax
 ; LINUX-X32-NEXT:    movl %eax, {{[0-9]+}}(%esp)
 ; LINUX-X32-NEXT:    leal {{[0-9]+}}(%rsp), %eax
@@ -206,15 +206,15 @@ define void @f_thunk(i8* %this, ...) {
 ; WINDOWS-LABEL: f_thunk:
 ; WINDOWS:       # %bb.0:
 ; WINDOWS-NEXT:    pushq %r14
-; WINDOWS-NEXT:    .seh_pushreg 14
+; WINDOWS-NEXT:    .seh_pushreg %r14
 ; WINDOWS-NEXT:    pushq %rsi
-; WINDOWS-NEXT:    .seh_pushreg 6
+; WINDOWS-NEXT:    .seh_pushreg %rsi
 ; WINDOWS-NEXT:    pushq %rdi
-; WINDOWS-NEXT:    .seh_pushreg 7
+; WINDOWS-NEXT:    .seh_pushreg %rdi
 ; WINDOWS-NEXT:    pushq %rbp
-; WINDOWS-NEXT:    .seh_pushreg 5
+; WINDOWS-NEXT:    .seh_pushreg %rbp
 ; WINDOWS-NEXT:    pushq %rbx
-; WINDOWS-NEXT:    .seh_pushreg 3
+; WINDOWS-NEXT:    .seh_pushreg %rbx
 ; WINDOWS-NEXT:    subq $64, %rsp
 ; WINDOWS-NEXT:    .seh_stackalloc 64
 ; WINDOWS-NEXT:    .seh_endprologue
@@ -223,9 +223,9 @@ define void @f_thunk(i8* %this, ...) {
 ; WINDOWS-NEXT:    movq %r8, %rdi
 ; WINDOWS-NEXT:    movq %rdx, %rbx
 ; WINDOWS-NEXT:    movq %rcx, %rbp
-; WINDOWS-NEXT:    movq %r9, {{[0-9]+}}(%rsp)
-; WINDOWS-NEXT:    movq %r8, {{[0-9]+}}(%rsp)
 ; WINDOWS-NEXT:    movq %rdx, {{[0-9]+}}(%rsp)
+; WINDOWS-NEXT:    movq %r8, {{[0-9]+}}(%rsp)
+; WINDOWS-NEXT:    movq %r9, {{[0-9]+}}(%rsp)
 ; WINDOWS-NEXT:    leaq {{[0-9]+}}(%rsp), %rax
 ; WINDOWS-NEXT:    movq %rax, {{[0-9]+}}(%rsp)
 ; WINDOWS-NEXT:    callq get_f

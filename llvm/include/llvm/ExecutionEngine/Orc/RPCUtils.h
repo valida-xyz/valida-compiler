@@ -1,9 +1,8 @@
-//===------- RPCUTils.h - Utilities for building RPC APIs -------*- C++ -*-===//
+//===- RPCUtils.h - Utilities for building RPC APIs -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -25,6 +24,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ExecutionEngine/Orc/OrcError.h"
 #include "llvm/ExecutionEngine/Orc/RPCSerialization.h"
+#include "llvm/Support/MSVCErrorWorkarounds.h"
 
 #include <future>
 
@@ -151,24 +151,16 @@ public:
 
   /// Returns the full function prototype as a string.
   static const char *getPrototype() {
-    std::lock_guard<std::mutex> Lock(NameMutex);
-    if (Name.empty())
+    static std::string Name = [] {
+      std::string Name;
       raw_string_ostream(Name)
           << RPCTypeName<RetT>::getName() << " " << DerivedFunc::getName()
           << "(" << llvm::orc::rpc::RPCTypeNameSequence<ArgTs...>() << ")";
+      return Name;
+    }();
     return Name.data();
   }
-
-private:
-  static std::mutex NameMutex;
-  static std::string Name;
 };
-
-template <typename DerivedFunc, typename RetT, typename... ArgTs>
-std::mutex Function<DerivedFunc, RetT(ArgTs...)>::NameMutex;
-
-template <typename DerivedFunc, typename RetT, typename... ArgTs>
-std::string Function<DerivedFunc, RetT(ArgTs...)>::Name;
 
 /// Allocates RPC function ids during autonegotiation.
 /// Specializations of this class must provide four members:
@@ -207,73 +199,6 @@ private:
 
 namespace detail {
 
-// FIXME: Remove MSVCPError/MSVCPExpected once MSVC's future implementation
-//        supports classes without default constructors.
-#ifdef _MSC_VER
-
-namespace msvc_hacks {
-
-// Work around MSVC's future implementation's use of default constructors:
-// A default constructed value in the promise will be overwritten when the
-// real error is set - so the default constructed Error has to be checked
-// already.
-class MSVCPError : public Error {
-public:
-  MSVCPError() { (void)!!*this; }
-
-  MSVCPError(MSVCPError &&Other) : Error(std::move(Other)) {}
-
-  MSVCPError &operator=(MSVCPError Other) {
-    Error::operator=(std::move(Other));
-    return *this;
-  }
-
-  MSVCPError(Error Err) : Error(std::move(Err)) {}
-};
-
-// Work around MSVC's future implementation, similar to MSVCPError.
-template <typename T> class MSVCPExpected : public Expected<T> {
-public:
-  MSVCPExpected()
-      : Expected<T>(make_error<StringError>("", inconvertibleErrorCode())) {
-    consumeError(this->takeError());
-  }
-
-  MSVCPExpected(MSVCPExpected &&Other) : Expected<T>(std::move(Other)) {}
-
-  MSVCPExpected &operator=(MSVCPExpected &&Other) {
-    Expected<T>::operator=(std::move(Other));
-    return *this;
-  }
-
-  MSVCPExpected(Error Err) : Expected<T>(std::move(Err)) {}
-
-  template <typename OtherT>
-  MSVCPExpected(
-      OtherT &&Val,
-      typename std::enable_if<std::is_convertible<OtherT, T>::value>::type * =
-          nullptr)
-      : Expected<T>(std::move(Val)) {}
-
-  template <class OtherT>
-  MSVCPExpected(
-      Expected<OtherT> &&Other,
-      typename std::enable_if<std::is_convertible<OtherT, T>::value>::type * =
-          nullptr)
-      : Expected<T>(std::move(Other)) {}
-
-  template <class OtherT>
-  explicit MSVCPExpected(
-      Expected<OtherT> &&Other,
-      typename std::enable_if<!std::is_convertible<OtherT, T>::value>::type * =
-          nullptr)
-      : Expected<T>(std::move(Other)) {}
-};
-
-} // end namespace msvc_hacks
-
-#endif // _MSC_VER
-
 /// Provides a typedef for a tuple containing the decayed argument types.
 template <typename T> class FunctionArgsTuple;
 
@@ -293,10 +218,10 @@ public:
 
 #ifdef _MSC_VER
   // The ErrorReturnType wrapped in a std::promise.
-  using ReturnPromiseType = std::promise<msvc_hacks::MSVCPExpected<RetT>>;
+  using ReturnPromiseType = std::promise<MSVCPExpected<RetT>>;
 
   // The ErrorReturnType wrapped in a std::future.
-  using ReturnFutureType = std::future<msvc_hacks::MSVCPExpected<RetT>>;
+  using ReturnFutureType = std::future<MSVCPExpected<RetT>>;
 #else
   // The ErrorReturnType wrapped in a std::promise.
   using ReturnPromiseType = std::promise<ErrorReturnType>;
@@ -325,10 +250,10 @@ public:
 
 #ifdef _MSC_VER
   // The ErrorReturnType wrapped in a std::promise.
-  using ReturnPromiseType = std::promise<msvc_hacks::MSVCPError>;
+  using ReturnPromiseType = std::promise<MSVCPError>;
 
   // The ErrorReturnType wrapped in a std::future.
-  using ReturnFutureType = std::future<msvc_hacks::MSVCPError>;
+  using ReturnFutureType = std::future<MSVCPError>;
 #else
   // The ErrorReturnType wrapped in a std::promise.
   using ReturnPromiseType = std::promise<ErrorReturnType>;
@@ -577,7 +502,7 @@ public:
   static typename WrappedHandlerReturn<RetT>::Type
   unpackAndRun(HandlerT &Handler, std::tuple<TArgTs...> &Args) {
     return unpackAndRunHelper(Handler, Args,
-                              llvm::index_sequence_for<TArgTs...>());
+                              std::index_sequence_for<TArgTs...>());
   }
 
   // Call the given handler with the given arguments.
@@ -585,7 +510,7 @@ public:
   static Error unpackAndRunAsync(HandlerT &Handler, ResponderT &Responder,
                                  std::tuple<TArgTs...> &Args) {
     return unpackAndRunAsyncHelper(Handler, Responder, Args,
-                                   llvm::index_sequence_for<TArgTs...>());
+                                   std::index_sequence_for<TArgTs...>());
   }
 
   // Call the given handler with the given arguments.
@@ -615,14 +540,13 @@ public:
   // Deserialize arguments from the channel.
   template <typename ChannelT, typename... CArgTs>
   static Error deserializeArgs(ChannelT &C, std::tuple<CArgTs...> &Args) {
-    return deserializeArgsHelper(C, Args,
-                                 llvm::index_sequence_for<CArgTs...>());
+    return deserializeArgsHelper(C, Args, std::index_sequence_for<CArgTs...>());
   }
 
 private:
   template <typename ChannelT, typename... CArgTs, size_t... Indexes>
   static Error deserializeArgsHelper(ChannelT &C, std::tuple<CArgTs...> &Args,
-                                     llvm::index_sequence<Indexes...> _) {
+                                     std::index_sequence<Indexes...> _) {
     return SequenceSerialization<ChannelT, ArgTs...>::deserialize(
         C, std::get<Indexes>(Args)...);
   }
@@ -631,18 +555,16 @@ private:
   static typename WrappedHandlerReturn<
       typename HandlerTraits<HandlerT>::ReturnType>::Type
   unpackAndRunHelper(HandlerT &Handler, ArgTuple &Args,
-                     llvm::index_sequence<Indexes...>) {
+                     std::index_sequence<Indexes...>) {
     return run(Handler, std::move(std::get<Indexes>(Args))...);
   }
-
 
   template <typename HandlerT, typename ResponderT, typename ArgTuple,
             size_t... Indexes>
   static typename WrappedHandlerReturn<
       typename HandlerTraits<HandlerT>::ReturnType>::Type
   unpackAndRunAsyncHelper(HandlerT &Handler, ResponderT &Responder,
-                          ArgTuple &Args,
-                          llvm::index_sequence<Indexes...>) {
+                          ArgTuple &Args, std::index_sequence<Indexes...>) {
     return run(Handler, Responder, std::move(std::get<Indexes>(Args))...);
   }
 };
@@ -842,7 +764,7 @@ private:
 // Create a ResponseHandler from a given user handler.
 template <typename ChannelT, typename FuncRetT, typename HandlerT>
 std::unique_ptr<ResponseHandler<ChannelT>> createResponseHandler(HandlerT H) {
-  return llvm::make_unique<ResponseHandlerImpl<ChannelT, FuncRetT, HandlerT>>(
+  return std::make_unique<ResponseHandlerImpl<ChannelT, FuncRetT, HandlerT>>(
       std::move(H));
 }
 

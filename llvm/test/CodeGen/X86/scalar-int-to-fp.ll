@@ -25,7 +25,7 @@ define float @u32_to_f(i32 %a) nounwind {
 ;
 ; AVX512_64-LABEL: u32_to_f:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtusi2ssl %edi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtusi2ss %edi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; SSE2_32-LABEL: u32_to_f:
@@ -45,7 +45,7 @@ define float @u32_to_f(i32 %a) nounwind {
 ; SSE2_64-LABEL: u32_to_f:
 ; SSE2_64:       # %bb.0:
 ; SSE2_64-NEXT:    movl %edi, %eax
-; SSE2_64-NEXT:    cvtsi2ssq %rax, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %rax, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: u32_to_f:
@@ -77,7 +77,7 @@ define float @s32_to_f(i32 %a) nounwind {
 ;
 ; AVX512_64-LABEL: s32_to_f:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtsi2ssl %edi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2ss %edi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; SSE2_32-LABEL: s32_to_f:
@@ -91,7 +91,7 @@ define float @s32_to_f(i32 %a) nounwind {
 ;
 ; SSE2_64-LABEL: s32_to_f:
 ; SSE2_64:       # %bb.0:
-; SSE2_64-NEXT:    cvtsi2ssl %edi, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %edi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s32_to_f:
@@ -122,7 +122,7 @@ define double @u32_to_d(i32 %a) nounwind {
 ;
 ; AVX512_64-LABEL: u32_to_d:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtusi2sdl %edi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtusi2sd %edi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; SSE2_32-LABEL: u32_to_d:
@@ -144,7 +144,7 @@ define double @u32_to_d(i32 %a) nounwind {
 ; SSE2_64-LABEL: u32_to_d:
 ; SSE2_64:       # %bb.0:
 ; SSE2_64-NEXT:    movl %edi, %eax
-; SSE2_64-NEXT:    cvtsi2sdq %rax, %xmm0
+; SSE2_64-NEXT:    cvtsi2sd %rax, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: u32_to_d:
@@ -180,7 +180,7 @@ define double @s32_to_d(i32 %a) nounwind {
 ;
 ; AVX512_64-LABEL: s32_to_d:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtsi2sdl %edi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2sd %edi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; SSE2_32-LABEL: s32_to_d:
@@ -198,7 +198,7 @@ define double @s32_to_d(i32 %a) nounwind {
 ;
 ; SSE2_64-LABEL: s32_to_d:
 ; SSE2_64:       # %bb.0:
-; SSE2_64-NEXT:    cvtsi2sdl %edi, %xmm0
+; SSE2_64-NEXT:    cvtsi2sd %edi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s32_to_d:
@@ -230,15 +230,12 @@ define x86_fp80 @u32_to_x(i32 %a) nounwind {
 ; AVX512_32-NEXT:    popl %ebp
 ; AVX512_32-NEXT:    retl
 ;
-; AVX512_64-LABEL: u32_to_x:
-; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vmovq {{.*#+}} xmm0 = mem[0],zero
-; AVX512_64-NEXT:    vmovd %edi, %xmm1
-; AVX512_64-NEXT:    vpor %xmm0, %xmm1, %xmm1
-; AVX512_64-NEXT:    vsubsd %xmm0, %xmm1, %xmm0
-; AVX512_64-NEXT:    vmovsd %xmm0, -{{[0-9]+}}(%rsp)
-; AVX512_64-NEXT:    fldl -{{[0-9]+}}(%rsp)
-; AVX512_64-NEXT:    retq
+; CHECK64-LABEL: u32_to_x:
+; CHECK64:       # %bb.0:
+; CHECK64-NEXT:    movl %edi, %eax
+; CHECK64-NEXT:    movq %rax, -{{[0-9]+}}(%rsp)
+; CHECK64-NEXT:    fildll -{{[0-9]+}}(%rsp)
+; CHECK64-NEXT:    retq
 ;
 ; SSE2_32-LABEL: u32_to_x:
 ; SSE2_32:       # %bb.0:
@@ -255,13 +252,6 @@ define x86_fp80 @u32_to_x(i32 %a) nounwind {
 ; SSE2_32-NEXT:    movl %ebp, %esp
 ; SSE2_32-NEXT:    popl %ebp
 ; SSE2_32-NEXT:    retl
-;
-; SSE2_64-LABEL: u32_to_x:
-; SSE2_64:       # %bb.0:
-; SSE2_64-NEXT:    movl %edi, %eax
-; SSE2_64-NEXT:    movq %rax, -{{[0-9]+}}(%rsp)
-; SSE2_64-NEXT:    fildll -{{[0-9]+}}(%rsp)
-; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: u32_to_x:
 ; X87:       # %bb.0:
@@ -313,7 +303,7 @@ define float @u64_to_f(i64 %a) nounwind {
 ;
 ; AVX512_64-LABEL: u64_to_f:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtusi2ssq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtusi2ss %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: u64_to_f:
@@ -374,14 +364,14 @@ define float @u64_to_f(i64 %a) nounwind {
 ; SSE2_64-NEXT:    testq %rdi, %rdi
 ; SSE2_64-NEXT:    js .LBB6_1
 ; SSE2_64-NEXT:  # %bb.2:
-; SSE2_64-NEXT:    cvtsi2ssq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %rdi, %xmm0
 ; SSE2_64-NEXT:    retq
 ; SSE2_64-NEXT:  .LBB6_1:
 ; SSE2_64-NEXT:    movq %rdi, %rax
 ; SSE2_64-NEXT:    shrq %rax
 ; SSE2_64-NEXT:    andl $1, %edi
 ; SSE2_64-NEXT:    orq %rax, %rdi
-; SSE2_64-NEXT:    cvtsi2ssq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %rdi, %xmm0
 ; SSE2_64-NEXT:    addss %xmm0, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
@@ -423,7 +413,7 @@ define float @s64_to_f(i64 %a) nounwind {
 ;
 ; AVX512_64-LABEL: s64_to_f:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtsi2ssq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2ss %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: s64_to_f:
@@ -457,7 +447,7 @@ define float @s64_to_f(i64 %a) nounwind {
 ;
 ; SSE2_64-LABEL: s64_to_f:
 ; SSE2_64:       # %bb.0:
-; SSE2_64-NEXT:    cvtsi2ssq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %rdi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s64_to_f:
@@ -488,7 +478,7 @@ define float @s64_to_f_2(i64 %a) nounwind {
 ; AVX512_64-LABEL: s64_to_f_2:
 ; AVX512_64:       # %bb.0:
 ; AVX512_64-NEXT:    addq $5, %rdi
-; AVX512_64-NEXT:    vcvtsi2ssq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2ss %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: s64_to_f_2:
@@ -551,7 +541,7 @@ define float @s64_to_f_2(i64 %a) nounwind {
 ; SSE2_64-LABEL: s64_to_f_2:
 ; SSE2_64:       # %bb.0:
 ; SSE2_64-NEXT:    addq $5, %rdi
-; SSE2_64-NEXT:    cvtsi2ssq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2ss %rdi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s64_to_f_2:
@@ -593,7 +583,7 @@ define double @u64_to_d(i64 %a) nounwind {
 ;
 ; AVX512_64-LABEL: u64_to_d:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtusi2sdq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtusi2sd %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: u64_to_d:
@@ -636,9 +626,10 @@ define double @u64_to_d(i64 %a) nounwind {
 ; SSE2_32-NEXT:    movsd {{.*#+}} xmm0 = mem[0],zero
 ; SSE2_32-NEXT:    unpcklps {{.*#+}} xmm0 = xmm0[0],mem[0],xmm0[1],mem[1]
 ; SSE2_32-NEXT:    subpd {{\.LCPI.*}}, %xmm0
-; SSE2_32-NEXT:    pshufd {{.*#+}} xmm1 = xmm0[2,3,0,1]
-; SSE2_32-NEXT:    addpd %xmm0, %xmm1
-; SSE2_32-NEXT:    movlpd %xmm1, (%esp)
+; SSE2_32-NEXT:    movapd %xmm0, %xmm1
+; SSE2_32-NEXT:    unpckhpd {{.*#+}} xmm1 = xmm1[1],xmm0[1]
+; SSE2_32-NEXT:    addsd %xmm0, %xmm1
+; SSE2_32-NEXT:    movsd %xmm1, (%esp)
 ; SSE2_32-NEXT:    fldl (%esp)
 ; SSE2_32-NEXT:    movl %ebp, %esp
 ; SSE2_32-NEXT:    popl %ebp
@@ -649,8 +640,9 @@ define double @u64_to_d(i64 %a) nounwind {
 ; SSE2_64-NEXT:    movq %rdi, %xmm1
 ; SSE2_64-NEXT:    punpckldq {{.*#+}} xmm1 = xmm1[0],mem[0],xmm1[1],mem[1]
 ; SSE2_64-NEXT:    subpd {{.*}}(%rip), %xmm1
-; SSE2_64-NEXT:    pshufd {{.*#+}} xmm0 = xmm1[2,3,0,1]
-; SSE2_64-NEXT:    addpd %xmm1, %xmm0
+; SSE2_64-NEXT:    movapd %xmm1, %xmm0
+; SSE2_64-NEXT:    unpckhpd {{.*#+}} xmm0 = xmm0[1],xmm1[1]
+; SSE2_64-NEXT:    addsd %xmm1, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: u64_to_d:
@@ -695,7 +687,7 @@ define double @s64_to_d(i64 %a) nounwind {
 ;
 ; AVX512_64-LABEL: s64_to_d:
 ; AVX512_64:       # %bb.0:
-; AVX512_64-NEXT:    vcvtsi2sdq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2sd %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: s64_to_d:
@@ -741,7 +733,7 @@ define double @s64_to_d(i64 %a) nounwind {
 ;
 ; SSE2_64-LABEL: s64_to_d:
 ; SSE2_64:       # %bb.0:
-; SSE2_64-NEXT:    cvtsi2sdq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2sd %rdi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s64_to_d:
@@ -776,7 +768,7 @@ define double @s64_to_d_2(i64 %a) nounwind {
 ; AVX512_64-LABEL: s64_to_d_2:
 ; AVX512_64:       # %bb.0:
 ; AVX512_64-NEXT:    addq $5, %rdi
-; AVX512_64-NEXT:    vcvtsi2sdq %rdi, %xmm0, %xmm0
+; AVX512_64-NEXT:    vcvtsi2sd %rdi, %xmm0, %xmm0
 ; AVX512_64-NEXT:    retq
 ;
 ; AVX512DQ_32-LABEL: s64_to_d_2:
@@ -843,7 +835,7 @@ define double @s64_to_d_2(i64 %a) nounwind {
 ; SSE2_64-LABEL: s64_to_d_2:
 ; SSE2_64:       # %bb.0:
 ; SSE2_64-NEXT:    addq $5, %rdi
-; SSE2_64-NEXT:    cvtsi2sdq %rdi, %xmm0
+; SSE2_64-NEXT:    cvtsi2sd %rdi, %xmm0
 ; SSE2_64-NEXT:    retq
 ;
 ; X87-LABEL: s64_to_d_2:

@@ -1,9 +1,8 @@
 //===- llvm/Attributes.h - Container for Attributes -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -23,6 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
 #include <bitset>
 #include <cassert>
@@ -91,6 +91,7 @@ public:
   static Attribute get(LLVMContext &Context, AttrKind Kind, uint64_t Val = 0);
   static Attribute get(LLVMContext &Context, StringRef Kind,
                        StringRef Val = StringRef());
+  static Attribute get(LLVMContext &Context, AttrKind Kind, Type *Ty);
 
   /// Return a uniquified Attribute object that has the specific
   /// alignment set.
@@ -103,6 +104,7 @@ public:
   static Attribute getWithAllocSizeArgs(LLVMContext &Context,
                                         unsigned ElemSizeArg,
                                         const Optional<unsigned> &NumElemsArg);
+  static Attribute getWithByValType(LLVMContext &Context, Type *Ty);
 
   //===--------------------------------------------------------------------===//
   // Attribute Accessors
@@ -117,6 +119,9 @@ public:
   /// Return true if the attribute is a string (target-dependent)
   /// attribute.
   bool isStringAttribute() const;
+
+  /// Return true if the attribute is a type attribute.
+  bool isTypeAttribute() const;
 
   /// Return true if the attribute is present.
   bool hasAttribute(AttrKind Val) const;
@@ -139,6 +144,10 @@ public:
   /// Return the attribute's value as a string. This requires the
   /// attribute to be a string attribute.
   StringRef getValueAsString() const;
+
+  /// Return the attribute's value as a Type. This requires the attribute to be
+  /// a type attribute.
+  Type *getValueAsType() const;
 
   /// Returns the alignment field of an attribute as a byte alignment
   /// value.
@@ -230,29 +239,33 @@ public:
 
   /// Add an argument attribute. Returns a new set because attribute sets are
   /// immutable.
-  AttributeSet addAttribute(LLVMContext &C, Attribute::AttrKind Kind) const;
+  LLVM_NODISCARD AttributeSet addAttribute(LLVMContext &C,
+                                           Attribute::AttrKind Kind) const;
 
   /// Add a target-dependent attribute. Returns a new set because attribute sets
   /// are immutable.
-  AttributeSet addAttribute(LLVMContext &C, StringRef Kind,
-                            StringRef Value = StringRef()) const;
+  LLVM_NODISCARD AttributeSet addAttribute(LLVMContext &C, StringRef Kind,
+                                           StringRef Value = StringRef()) const;
 
   /// Add attributes to the attribute set. Returns a new set because attribute
   /// sets are immutable.
-  AttributeSet addAttributes(LLVMContext &C, AttributeSet AS) const;
+  LLVM_NODISCARD AttributeSet addAttributes(LLVMContext &C,
+                                            AttributeSet AS) const;
 
   /// Remove the specified attribute from this set. Returns a new set because
   /// attribute sets are immutable.
-  AttributeSet removeAttribute(LLVMContext &C, Attribute::AttrKind Kind) const;
+  LLVM_NODISCARD AttributeSet removeAttribute(LLVMContext &C,
+                                              Attribute::AttrKind Kind) const;
 
   /// Remove the specified attribute from this set. Returns a new set because
   /// attribute sets are immutable.
-  AttributeSet removeAttribute(LLVMContext &C, StringRef Kind) const;
+  LLVM_NODISCARD AttributeSet removeAttribute(LLVMContext &C,
+                                              StringRef Kind) const;
 
   /// Remove the specified attributes from this set. Returns a new set because
   /// attribute sets are immutable.
-  AttributeSet removeAttributes(LLVMContext &C,
-                                const AttrBuilder &AttrsToRemove) const;
+  LLVM_NODISCARD AttributeSet
+  removeAttributes(LLVMContext &C, const AttrBuilder &AttrsToRemove) const;
 
   /// Return the number of attributes in this set.
   unsigned getNumAttributes() const;
@@ -276,6 +289,7 @@ public:
   unsigned getStackAlignment() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
+  Type *getByValType() const;
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
   std::string getAsString(bool InAttrGrp = false) const;
 
@@ -375,133 +389,140 @@ public:
 
   /// Add an attribute to the attribute set at the given index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAttribute(LLVMContext &C, unsigned Index,
-                             Attribute::AttrKind Kind) const;
+  LLVM_NODISCARD AttributeList addAttribute(LLVMContext &C, unsigned Index,
+                                            Attribute::AttrKind Kind) const;
 
   /// Add an attribute to the attribute set at the given index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAttribute(LLVMContext &C, unsigned Index, StringRef Kind,
-                             StringRef Value = StringRef()) const;
+  LLVM_NODISCARD AttributeList
+  addAttribute(LLVMContext &C, unsigned Index, StringRef Kind,
+               StringRef Value = StringRef()) const;
 
   /// Add an attribute to the attribute set at the given index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAttribute(LLVMContext &C, unsigned Index, Attribute A) const;
+  LLVM_NODISCARD AttributeList addAttribute(LLVMContext &C, unsigned Index,
+                                            Attribute A) const;
 
   /// Add attributes to the attribute set at the given index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAttributes(LLVMContext &C, unsigned Index,
-                              const AttrBuilder &B) const;
+  LLVM_NODISCARD AttributeList addAttributes(LLVMContext &C, unsigned Index,
+                                             const AttrBuilder &B) const;
 
   /// Add an argument attribute to the list. Returns a new list because
   /// attribute lists are immutable.
-  AttributeList addParamAttribute(LLVMContext &C, unsigned ArgNo,
-                                  Attribute::AttrKind Kind) const {
+  LLVM_NODISCARD AttributeList addParamAttribute(
+      LLVMContext &C, unsigned ArgNo, Attribute::AttrKind Kind) const {
     return addAttribute(C, ArgNo + FirstArgIndex, Kind);
   }
 
   /// Add an argument attribute to the list. Returns a new list because
   /// attribute lists are immutable.
-  AttributeList addParamAttribute(LLVMContext &C, unsigned ArgNo,
-                                  StringRef Kind,
-                                  StringRef Value = StringRef()) const {
+  LLVM_NODISCARD AttributeList
+  addParamAttribute(LLVMContext &C, unsigned ArgNo, StringRef Kind,
+                    StringRef Value = StringRef()) const {
     return addAttribute(C, ArgNo + FirstArgIndex, Kind, Value);
   }
 
   /// Add an attribute to the attribute list at the given arg indices. Returns a
   /// new list because attribute lists are immutable.
-  AttributeList addParamAttribute(LLVMContext &C, ArrayRef<unsigned> ArgNos,
-                                  Attribute A) const;
+  LLVM_NODISCARD AttributeList addParamAttribute(LLVMContext &C,
+                                                 ArrayRef<unsigned> ArgNos,
+                                                 Attribute A) const;
 
   /// Add an argument attribute to the list. Returns a new list because
   /// attribute lists are immutable.
-  AttributeList addParamAttributes(LLVMContext &C, unsigned ArgNo,
-                                   const AttrBuilder &B) const {
+  LLVM_NODISCARD AttributeList addParamAttributes(LLVMContext &C,
+                                                  unsigned ArgNo,
+                                                  const AttrBuilder &B) const {
     return addAttributes(C, ArgNo + FirstArgIndex, B);
   }
 
   /// Remove the specified attribute at the specified index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeAttribute(LLVMContext &C, unsigned Index,
-                                Attribute::AttrKind Kind) const;
+  LLVM_NODISCARD AttributeList removeAttribute(LLVMContext &C, unsigned Index,
+                                               Attribute::AttrKind Kind) const;
 
   /// Remove the specified attribute at the specified index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeAttribute(LLVMContext &C, unsigned Index,
-                                StringRef Kind) const;
+  LLVM_NODISCARD AttributeList removeAttribute(LLVMContext &C, unsigned Index,
+                                               StringRef Kind) const;
 
   /// Remove the specified attributes at the specified index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeAttributes(LLVMContext &C, unsigned Index,
-                                 const AttrBuilder &AttrsToRemove) const;
+  LLVM_NODISCARD AttributeList removeAttributes(
+      LLVMContext &C, unsigned Index, const AttrBuilder &AttrsToRemove) const;
 
   /// Remove all attributes at the specified index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeAttributes(LLVMContext &C, unsigned Index) const;
+  LLVM_NODISCARD AttributeList removeAttributes(LLVMContext &C,
+                                                unsigned Index) const;
 
   /// Remove the specified attribute at the specified arg index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeParamAttribute(LLVMContext &C, unsigned ArgNo,
-                                     Attribute::AttrKind Kind) const {
+  LLVM_NODISCARD AttributeList removeParamAttribute(
+      LLVMContext &C, unsigned ArgNo, Attribute::AttrKind Kind) const {
     return removeAttribute(C, ArgNo + FirstArgIndex, Kind);
   }
 
   /// Remove the specified attribute at the specified arg index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeParamAttribute(LLVMContext &C, unsigned ArgNo,
-                                     StringRef Kind) const {
+  LLVM_NODISCARD AttributeList removeParamAttribute(LLVMContext &C,
+                                                    unsigned ArgNo,
+                                                    StringRef Kind) const {
     return removeAttribute(C, ArgNo + FirstArgIndex, Kind);
   }
 
   /// Remove the specified attribute at the specified arg index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeParamAttributes(LLVMContext &C, unsigned ArgNo,
-                                      const AttrBuilder &AttrsToRemove) const {
+  LLVM_NODISCARD AttributeList removeParamAttributes(
+      LLVMContext &C, unsigned ArgNo, const AttrBuilder &AttrsToRemove) const {
     return removeAttributes(C, ArgNo + FirstArgIndex, AttrsToRemove);
   }
 
   /// Remove all attributes at the specified arg index from this
   /// attribute list. Returns a new list because attribute lists are immutable.
-  AttributeList removeParamAttributes(LLVMContext &C, unsigned ArgNo) const {
+  LLVM_NODISCARD AttributeList removeParamAttributes(LLVMContext &C,
+                                                     unsigned ArgNo) const {
     return removeAttributes(C, ArgNo + FirstArgIndex);
   }
 
   /// \brief Add the dereferenceable attribute to the attribute set at the given
   /// index. Returns a new list because attribute lists are immutable.
-  AttributeList addDereferenceableAttr(LLVMContext &C, unsigned Index,
-                                       uint64_t Bytes) const;
+  LLVM_NODISCARD AttributeList addDereferenceableAttr(LLVMContext &C,
+                                                      unsigned Index,
+                                                      uint64_t Bytes) const;
 
   /// \brief Add the dereferenceable attribute to the attribute set at the given
   /// arg index. Returns a new list because attribute lists are immutable.
-  AttributeList addDereferenceableParamAttr(LLVMContext &C, unsigned ArgNo,
-                                            uint64_t Bytes) const {
+  LLVM_NODISCARD AttributeList addDereferenceableParamAttr(
+      LLVMContext &C, unsigned ArgNo, uint64_t Bytes) const {
     return addDereferenceableAttr(C, ArgNo + FirstArgIndex, Bytes);
   }
 
   /// Add the dereferenceable_or_null attribute to the attribute set at
   /// the given index. Returns a new list because attribute lists are immutable.
-  AttributeList addDereferenceableOrNullAttr(LLVMContext &C, unsigned Index,
-                                             uint64_t Bytes) const;
+  LLVM_NODISCARD AttributeList addDereferenceableOrNullAttr(
+      LLVMContext &C, unsigned Index, uint64_t Bytes) const;
 
   /// Add the dereferenceable_or_null attribute to the attribute set at
   /// the given arg index. Returns a new list because attribute lists are
   /// immutable.
-  AttributeList addDereferenceableOrNullParamAttr(LLVMContext &C,
-                                                  unsigned ArgNo,
-                                                  uint64_t Bytes) const {
+  LLVM_NODISCARD AttributeList addDereferenceableOrNullParamAttr(
+      LLVMContext &C, unsigned ArgNo, uint64_t Bytes) const {
     return addDereferenceableOrNullAttr(C, ArgNo + FirstArgIndex, Bytes);
   }
 
   /// Add the allocsize attribute to the attribute set at the given index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAllocSizeAttr(LLVMContext &C, unsigned Index,
-                                 unsigned ElemSizeArg,
-                                 const Optional<unsigned> &NumElemsArg);
+  LLVM_NODISCARD AttributeList
+  addAllocSizeAttr(LLVMContext &C, unsigned Index, unsigned ElemSizeArg,
+                   const Optional<unsigned> &NumElemsArg);
 
   /// Add the allocsize attribute to the attribute set at the given arg index.
   /// Returns a new list because attribute lists are immutable.
-  AttributeList addAllocSizeParamAttr(LLVMContext &C, unsigned ArgNo,
-                                      unsigned ElemSizeArg,
-                                      const Optional<unsigned> &NumElemsArg) {
+  LLVM_NODISCARD AttributeList
+  addAllocSizeParamAttr(LLVMContext &C, unsigned ArgNo, unsigned ElemSizeArg,
+                        const Optional<unsigned> &NumElemsArg) {
     return addAllocSizeAttr(C, ArgNo + FirstArgIndex, ElemSizeArg, NumElemsArg);
   }
 
@@ -587,6 +608,9 @@ public:
 
   /// Return the alignment for the specified function parameter.
   unsigned getParamAlignment(unsigned ArgNo) const;
+
+  /// Return the byval type for the specified function parameter.
+  Type *getParamByValType(unsigned ArgNo) const;
 
   /// Get the stack alignment.
   unsigned getStackAlignment(unsigned Index) const;
@@ -681,12 +705,13 @@ template <> struct DenseMapInfo<AttributeList> {
 /// equality, presence of attributes, etc.
 class AttrBuilder {
   std::bitset<Attribute::EndAttrKinds> Attrs;
-  std::map<std::string, std::string> TargetDepAttrs;
-  uint64_t Alignment = 0;
-  uint64_t StackAlignment = 0;
+  std::map<std::string, std::string, std::less<>> TargetDepAttrs;
+  MaybeAlign Alignment;
+  MaybeAlign StackAlignment;
   uint64_t DerefBytes = 0;
   uint64_t DerefOrNullBytes = 0;
   uint64_t AllocSizeArgs = 0;
+  Type *ByValType = nullptr;
 
 public:
   AttrBuilder() = default;
@@ -749,10 +774,12 @@ public:
   bool hasAlignmentAttr() const;
 
   /// Retrieve the alignment attribute, if it exists.
-  uint64_t getAlignment() const { return Alignment; }
+  uint64_t getAlignment() const { return Alignment ? Alignment->value() : 0; }
 
   /// Retrieve the stack alignment attribute, if it exists.
-  uint64_t getStackAlignment() const { return StackAlignment; }
+  uint64_t getStackAlignment() const {
+    return StackAlignment ? StackAlignment->value() : 0;
+  }
 
   /// Retrieve the number of dereferenceable bytes, if the
   /// dereferenceable attribute exists (zero is returned otherwise).
@@ -761,6 +788,9 @@ public:
   /// Retrieve the number of dereferenceable_or_null bytes, if the
   /// dereferenceable_or_null attribute exists (zero is returned otherwise).
   uint64_t getDereferenceableOrNullBytes() const { return DerefOrNullBytes; }
+
+  /// Retrieve the byval type.
+  Type *getByValType() const { return ByValType; }
 
   /// Retrieve the allocsize args, if the allocsize attribute exists.  If it
   /// doesn't exist, pair(0, 0) is returned.
@@ -785,6 +815,9 @@ public:
   /// This turns one (or two) ints into the form used internally in Attribute.
   AttrBuilder &addAllocSizeAttr(unsigned ElemSizeArg,
                                 const Optional<unsigned> &NumElemsArg);
+
+  /// This turns a byval type into the form used internally in Attribute.
+  AttrBuilder &addByValAttr(Type *Ty);
 
   /// Add an allocsize attribute, using the representation returned by
   /// Attribute.getIntValue().

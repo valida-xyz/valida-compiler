@@ -1,85 +1,70 @@
 //===-- Debugger.h ----------------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef liblldb_Debugger_h_
 #define liblldb_Debugger_h_
 
-// C Includes
 #include <stdint.h>
 
-// C++ Includes
 #include <memory>
 #include <vector>
 
-// Other libraries and framework includes
-// Project includes
-#include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/FormatEntity.h"
 #include "lldb/Core/IOHandler.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Core/UserSettingsController.h"
 #include "lldb/Host/HostThread.h"
 #include "lldb/Host/Terminal.h"
-#include "lldb/Target/ExecutionContext.h" // for ExecutionContext
+#include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/TargetList.h"
-#include "lldb/Utility/ConstString.h" // for ConstString
-#include "lldb/Utility/FileSpec.h"    // for FileSpec
-#include "lldb/Utility/Status.h"      // for Status
+#include "lldb/Utility/Broadcaster.h"
+#include "lldb/Utility/ConstString.h"
+#include "lldb/Utility/FileSpec.h"
+#include "lldb/Utility/Status.h"
 #include "lldb/Utility/UserID.h"
-#include "lldb/lldb-defines.h"              // for DISALLOW_COPY_AND_ASSIGN
-#include "lldb/lldb-enumerations.h"         // for ScriptLanguage, Langua...
-#include "lldb/lldb-forward.h"              // for StreamFileSP, DebuggerSP
-#include "lldb/lldb-private-enumerations.h" // for VarSetOperationType
-#include "lldb/lldb-private-types.h"        // for LoadPluginCallbackType
-#include "lldb/lldb-types.h"                // for LogOutputCallback, thr...
+#include "lldb/lldb-defines.h"
+#include "lldb/lldb-enumerations.h"
+#include "lldb/lldb-forward.h"
+#include "lldb/lldb-private-enumerations.h"
+#include "lldb/lldb-private-types.h"
+#include "lldb/lldb-types.h"
 
-#include "llvm/ADT/ArrayRef.h"           // for ArrayRef
-#include "llvm/ADT/StringMap.h"          // for StringMap
-#include "llvm/ADT/StringRef.h"          // for StringRef
-#include "llvm/Support/DynamicLibrary.h" // for DynamicLibrary
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Threading.h"
 
-#include <assert.h> // for assert
-#include <stddef.h> // for size_t
+#include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 
-namespace lldb_private {
-class Address;
-}
-namespace lldb_private {
-class CommandInterpreter;
-}
-namespace lldb_private {
-class Process;
-}
-namespace lldb_private {
-class Stream;
-}
-namespace lldb_private {
-class SymbolContext;
-}
-namespace lldb_private {
-class Target;
-}
 namespace llvm {
 class raw_ostream;
 }
 
 namespace lldb_private {
+class Address;
+class CommandInterpreter;
+class Process;
+class Stream;
+class SymbolContext;
+class Target;
 
-//----------------------------------------------------------------------
-/// @class Debugger Debugger.h "lldb/Core/Debugger.h"
+namespace repro {
+class DataRecorder;
+}
+
+/// \class Debugger Debugger.h "lldb/Core/Debugger.h"
 /// A class to manage flag bits.
 ///
 /// Provides a global root objects for the debugger core.
-//----------------------------------------------------------------------
 
 class Debugger : public std::enable_shared_from_this<Debugger>,
                  public UserID,
@@ -110,7 +95,7 @@ public:
   static lldb::DebuggerSP FindDebuggerWithID(lldb::user_id_t id);
 
   static lldb::DebuggerSP
-  FindDebuggerWithInstanceName(const ConstString &instance_name);
+  FindDebuggerWithInstanceName(ConstString instance_name);
 
   static size_t GetNumDebuggers();
 
@@ -134,7 +119,10 @@ public:
 
   lldb::StreamFileSP GetErrorFile() { return m_error_file_sp; }
 
-  void SetInputFileHandle(FILE *fh, bool tranfer_ownership);
+  repro::DataRecorder *GetInputRecorder();
+
+  void SetInputFileHandle(FILE *fh, bool tranfer_ownership,
+                          repro::DataRecorder *recorder = nullptr);
 
   void SetOutputFileHandle(FILE *fh, bool tranfer_ownership);
 
@@ -149,9 +137,11 @@ public:
   lldb::StreamSP GetAsyncErrorStream();
 
   CommandInterpreter &GetCommandInterpreter() {
-    assert(m_command_interpreter_ap.get());
-    return *m_command_interpreter_ap;
+    assert(m_command_interpreter_up.get());
+    return *m_command_interpreter_up;
   }
+
+  ScriptInterpreter *GetScriptInterpreter(bool can_create = true);
 
   lldb::ListenerSP GetListener() { return m_listener_sp; }
 
@@ -166,16 +156,14 @@ public:
   }
 
   ExecutionContext GetSelectedExecutionContext();
-  //------------------------------------------------------------------
   /// Get accessor for the target list.
   ///
   /// The target list is part of the global debugger object. This the single
   /// debugger shared instance to control where targets get created and to
   /// allow for tracking and searching for targets based on certain criteria.
   ///
-  /// @return
+  /// \return
   ///     A global shared target list.
-  //------------------------------------------------------------------
   TargetList &GetTargetList() { return m_target_list; }
 
   PlatformList &GetPlatformList() { return m_platform_list; }
@@ -184,15 +172,14 @@ public:
 
   void DispatchInputEndOfFile();
 
-  //------------------------------------------------------------------
   // If any of the streams are not set, set them to the in/out/err stream of
   // the top most input reader to ensure they at least have something
-  //------------------------------------------------------------------
   void AdoptTopIOHandlerFilesIfInvalid(lldb::StreamFileSP &in,
                                        lldb::StreamFileSP &out,
                                        lldb::StreamFileSP &err);
 
-  void PushIOHandler(const lldb::IOHandlerSP &reader_sp);
+  void PushIOHandler(const lldb::IOHandlerSP &reader_sp,
+                     bool cancel_top_handler = true);
 
   bool PopIOHandler(const lldb::IOHandlerSP &reader_sp);
 
@@ -225,9 +212,7 @@ public:
 
   void SetLoggingCallback(lldb::LogOutputCallback log_callback, void *baton);
 
-  //----------------------------------------------------------------------
   // Properties Functions
-  //----------------------------------------------------------------------
   enum StopDisassemblyType {
     eStopDisassemblyTypeNever = 0,
     eStopDisassemblyTypeNoDebugInfo,
@@ -264,6 +249,8 @@ public:
   void SetPrompt(llvm::StringRef p);
   void SetPrompt(const char *) = delete;
 
+  llvm::StringRef GetReproducerPath() const;
+
   bool GetUseExternalEditor() const;
 
   bool SetUseExternalEditor(bool use_external_editor_p);
@@ -272,11 +259,13 @@ public:
 
   bool SetUseColor(bool use_color);
 
+  bool GetHighlightSource() const;
+
   lldb::StopShowColumn GetStopShowColumn() const;
 
-  const FormatEntity::Entry *GetStopShowColumnAnsiPrefix() const;
+  llvm::StringRef GetStopShowColumnAnsiPrefix() const;
 
-  const FormatEntity::Entry *GetStopShowColumnAnsiSuffix() const;
+  llvm::StringRef GetStopShowColumnAnsiSuffix() const;
 
   uint32_t GetStopSourceLineCount(bool before) const;
 
@@ -302,7 +291,7 @@ public:
 
   bool GetNotifyVoid() const;
 
-  const ConstString &GetInstanceName() { return m_instance_name; }
+  ConstString GetInstanceName() { return m_instance_name; }
 
   bool LoadPlugin(const FileSpec &spec, Status &error);
 
@@ -322,7 +311,7 @@ public:
   // selected target, or if no target is present you want to prime the dummy
   // target with entities that will be copied over to new targets.
   Target *GetSelectedOrDummyTarget(bool prefer_dummy = false);
-  Target *GetDummyTarget();
+  Target *GetDummyTarget() { return m_dummy_target_sp.get(); }
 
   lldb::BroadcasterManagerSP GetBroadcasterManager() {
     return m_broadcaster_manager_sp;
@@ -356,9 +345,10 @@ protected:
 
   void HandleThreadEvent(const lldb::EventSP &event_sp);
 
-  size_t GetProcessSTDOUT(Process *process, Stream *stream);
-
-  size_t GetProcessSTDERR(Process *process, Stream *stream);
+  // Ensures two threads don't attempt to flush process output in parallel.
+  std::mutex m_output_flush_mutex;
+  void FlushProcessOutput(Process &process, bool flush_stdout,
+                          bool flush_stderr);
 
   SourceManager::SourceFileCache &GetSourceFileCache() {
     return m_source_file_cache;
@@ -369,6 +359,9 @@ protected:
   lldb::StreamFileSP m_input_file_sp;
   lldb::StreamFileSP m_output_file_sp;
   lldb::StreamFileSP m_error_file_sp;
+
+  /// Used for shadowing the input file when capturing a reproducer.
+  repro::DataRecorder *m_input_recorder;
 
   lldb::BroadcasterManagerSP m_broadcaster_manager_sp; // The debugger acts as a
                                                        // broadcaster manager of
@@ -381,7 +374,7 @@ protected:
 
   PlatformList m_platform_list;
   lldb::ListenerSP m_listener_sp;
-  std::unique_ptr<SourceManager> m_source_manager_ap; // This is a scratch
+  std::unique_ptr<SourceManager> m_source_manager_up; // This is a scratch
                                                       // source manager that we
                                                       // return if we have no
                                                       // targets.
@@ -390,7 +383,10 @@ protected:
                                                       // this debugger used this
                                                       // shared
                                                       // source file cache.
-  std::unique_ptr<CommandInterpreter> m_command_interpreter_ap;
+  std::unique_ptr<CommandInterpreter> m_command_interpreter_up;
+
+  lldb::ScriptInterpreterSP m_script_interpreter_sp;
+  std::recursive_mutex m_script_interpreter_mutex;
 
   IOHandlerStack m_input_reader_stack;
   llvm::StringMap<std::weak_ptr<llvm::raw_ostream>> m_log_streams;
@@ -404,10 +400,9 @@ protected:
   Broadcaster m_sync_broadcaster;
   lldb::ListenerSP m_forward_listener_sp;
   llvm::once_flag m_clear_once;
+  lldb::TargetSP m_dummy_target_sp;
 
-  //----------------------------------------------------------------------
   // Events for m_sync_broadcaster
-  //----------------------------------------------------------------------
   enum {
     eBroadcastBitEventThreadIsListening = (1 << 0),
   };

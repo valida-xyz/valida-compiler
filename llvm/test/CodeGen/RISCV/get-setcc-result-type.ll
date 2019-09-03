@@ -2,26 +2,22 @@
 ; RUN: llc -mtriple=riscv32 -verify-machineinstrs < %s \
 ; RUN:   | FileCheck -check-prefix=RV32I %s
 
-define void @getSetCCResultType(<4 x i32>* %p, <4 x i32>* %q) {
+define void @getSetCCResultType(<4 x i32>* %p, <4 x i32>* %q) nounwind {
 ; RV32I-LABEL: getSetCCResultType:
 ; RV32I:       # %bb.0: # %entry
 ; RV32I-NEXT:    lw a1, 12(a0)
-; RV32I-NEXT:    xor a1, a1, zero
 ; RV32I-NEXT:    seqz a1, a1
 ; RV32I-NEXT:    neg a1, a1
 ; RV32I-NEXT:    sw a1, 12(a0)
 ; RV32I-NEXT:    lw a1, 8(a0)
-; RV32I-NEXT:    xor a1, a1, zero
 ; RV32I-NEXT:    seqz a1, a1
 ; RV32I-NEXT:    neg a1, a1
 ; RV32I-NEXT:    sw a1, 8(a0)
 ; RV32I-NEXT:    lw a1, 4(a0)
-; RV32I-NEXT:    xor a1, a1, zero
 ; RV32I-NEXT:    seqz a1, a1
 ; RV32I-NEXT:    neg a1, a1
 ; RV32I-NEXT:    sw a1, 4(a0)
 ; RV32I-NEXT:    lw a1, 0(a0)
-; RV32I-NEXT:    xor a1, a1, zero
 ; RV32I-NEXT:    seqz a1, a1
 ; RV32I-NEXT:    neg a1, a1
 ; RV32I-NEXT:    sw a1, 0(a0)

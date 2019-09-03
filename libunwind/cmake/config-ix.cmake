@@ -1,12 +1,14 @@
-
+include(CMakePushCheckState)
 include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 include(CheckLibraryExists)
+include(CheckCSourceCompiles)
 
 check_library_exists(c fopen "" LIBUNWIND_HAS_C_LIB)
 
 if (NOT LIBUNWIND_USE_COMPILER_RT)
   check_library_exists(gcc_s __gcc_personality_v0 "" LIBUNWIND_HAS_GCC_S_LIB)
+  check_library_exists(gcc __absvdi2 "" LIBUNWIND_HAS_GCC_LIB)
 endif()
 
 # libunwind is built with -nodefaultlibs, so we want all our checks to also
@@ -23,11 +25,15 @@ if (LIBUNWIND_HAS_NODEFAULTLIBS_FLAG)
     list(APPEND CMAKE_REQUIRED_LIBRARIES c)
   endif ()
   if (LIBUNWIND_USE_COMPILER_RT)
-    list(APPEND CMAKE_REQUIRED_FLAGS -rtlib=compiler-rt)
     find_compiler_rt_library(builtins LIBUNWIND_BUILTINS_LIBRARY)
     list(APPEND CMAKE_REQUIRED_LIBRARIES "${LIBUNWIND_BUILTINS_LIBRARY}")
-  elseif (LIBUNWIND_HAS_GCC_S_LIB)
-    list(APPEND CMAKE_REQUIRED_LIBRARIES gcc_s)
+  else ()
+    if (LIBUNWIND_HAS_GCC_S_LIB)
+      list(APPEND CMAKE_REQUIRED_LIBRARIES gcc_s)
+    endif ()
+    if (LIBUNWIND_HAS_GCC_LIB)
+      list(APPEND CMAKE_REQUIRED_LIBRARIES gcc)
+    endif ()
   endif ()
   if (MINGW)
     # Mingw64 requires quite a few "C" runtime libraries in order for basic
@@ -49,6 +55,17 @@ if (LIBUNWIND_HAS_NODEFAULTLIBS_FLAG)
     set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -fno-sanitize-coverage=edge,trace-cmp,indirect-calls,8bit-counters")
   endif ()
 endif ()
+
+# Check compiler pragmas
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  cmake_push_check_state()
+  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -Werror=unknown-pragmas")
+  check_c_source_compiles("
+#pragma comment(lib, \"c\")
+int main() { return 0; }
+" LIBUNWIND_HAS_COMMENT_LIB_PRAGMA)
+  cmake_pop_check_state()
+endif()
 
 # Check compiler flags
 check_c_compiler_flag(-funwind-tables         LIBUNWIND_HAS_FUNWIND_TABLES)
@@ -91,4 +108,3 @@ endif()
 
 check_library_exists(dl dladdr "" LIBUNWIND_HAS_DL_LIB)
 check_library_exists(pthread pthread_once "" LIBUNWIND_HAS_PTHREAD_LIB)
-

@@ -1,7 +1,7 @@
 // REQUIRES: aarch64
-// RUN: llvm-mc -filetype=obj -triple=aarch64-none-linux %s -o %t
-// RUN: ld.lld %t -o %t2 2>&1
-// RUN: llvm-objdump -triple=aarch64-none-linux -d %t2 | FileCheck %s
+// RUN: llvm-mc -filetype=obj -triple=aarch64-none-linux %s -o %t.o
+// RUN: ld.lld %t.o -o %t
+// RUN: llvm-objdump -d --no-show-raw-insn %t | FileCheck %s
 
 // Check that the ARM 64-bit ABI rules for undefined weak symbols are applied.
 // Branch instructions are resolved to the next instruction. Undefined
@@ -34,16 +34,17 @@ _start:
  ldr x8, target
 
 // CHECK: Disassembly of section .text:
-// 131072 = 0x20000
-// CHECK:         20000: {{.*}} b       #4
-// CHECK-NEXT:    20004: {{.*}} bl      #4
-// CHECK-NEXT:    20008: {{.*}} b.eq    #4
-// CHECK-NEXT:    2000c: {{.*}} cbz     x1, #4
-// CHECK-NEXT:    20010: {{.*}} adr     x0, #0
-// CHECK-NEXT:    20014: {{.*}} adrp    x0, #-131072
-// CHECK:         20018: {{.*}} .word   0x00000000
-// CHECK-NEXT:    2001c: {{.*}} .word   0x00000000
-// CHECK-NEXT:    20020: {{.*}} .word   0x00000000
-// CHECK-NEXT:    20024: {{.*}} .short  0x0000
+// CHECK-EMPTY:
+// 2162688 = 0x210000
+// CHECK:         210120:       b       #4
+// CHECK-NEXT:    210124:       bl      #4
+// CHECK-NEXT:    210128:       b.eq    #4
+// CHECK-NEXT:    21012c:       cbz     x1, #4
+// CHECK-NEXT:    210130:       adr     x0, #0
+// CHECK-NEXT:    210134:       adrp    x0, #0
+// CHECK:         210138:       00 00 00 00 .word   0x00000000
+// CHECK-NEXT:    21013c:       00 00 00 00 .word   0x00000000
+// CHECK-NEXT:    210140:       00 00 00 00 .word   0x00000000
+// CHECK-NEXT:    210144:       00 00 .short  0x0000
 // CHECK:         $x.2:
-// CHECK-NEXT:    20026: {{.*}} ldr     x8, #0
+// CHECK-NEXT:    210146:       ldr     x8, #0

@@ -1,15 +1,15 @@
 // REQUIRES: aarch64
 // RUN: llvm-mc -filetype=obj -triple=aarch64-pc-freebsd %s -o %t.o
 // RUN: llvm-mc -filetype=obj -triple=aarch64-pc-freebsd %p/Inputs/plt-aarch64.s -o %t2.o
-// RUN: ld.lld -shared %t2.o -o %t2.so
+// RUN: ld.lld -shared %t2.o -soname=t2.so -o %t2.so
 // RUN: ld.lld -shared %t.o %t2.so -o %t.so
 // RUN: ld.lld %t.o %t2.so -o %t.exe
-// RUN: llvm-readobj -s -r %t.so | FileCheck --check-prefix=CHECKDSO %s
+// RUN: llvm-readobj -S -r %t.so | FileCheck --check-prefix=CHECKDSO %s
 // RUN: llvm-objdump -s -section=.got.plt %t.so | FileCheck --check-prefix=DUMPDSO %s
-// RUN: llvm-objdump -d %t.so | FileCheck --check-prefix=DISASMDSO %s
-// RUN: llvm-readobj -s -r %t.exe | FileCheck --check-prefix=CHECKEXE %s
+// RUN: llvm-objdump -d --no-show-raw-insn --print-imm-hex %t.so | FileCheck --check-prefix=DISASMDSO %s
+// RUN: llvm-readobj -S -r %t.exe | FileCheck --check-prefix=CHECKEXE %s
 // RUN: llvm-objdump -s -section=.got.plt %t.exe | FileCheck --check-prefix=DUMPEXE %s
-// RUN: llvm-objdump -d %t.exe | FileCheck --check-prefix=DISASMEXE %s
+// RUN: llvm-objdump -d --no-show-raw-insn --print-imm-hex %t.exe | FileCheck --check-prefix=DISASMEXE %s
 
 // CHECKDSO:     Name: .plt
 // CHECKDSO-NEXT:     Type: SHT_PROGBITS
@@ -17,7 +17,7 @@
 // CHECKDSO-NEXT:       SHF_ALLOC
 // CHECKDSO-NEXT:       SHF_EXECINSTR
 // CHECKDSO-NEXT:     ]
-// CHECKDSO-NEXT:     Address: 0x10010
+// CHECKDSO-NEXT:     Address: 0x10340
 // CHECKDSO-NEXT:     Offset:
 // CHECKDSO-NEXT:     Size: 80
 // CHECKDSO-NEXT:     Link:
@@ -30,7 +30,7 @@
 // CHECKDSO-NEXT:       SHF_ALLOC
 // CHECKDSO-NEXT:       SHF_WRITE
 // CHECKDSO-NEXT:     ]
-// CHECKDSO-NEXT:     Address: 0x20000
+// CHECKDSO-NEXT:     Address: 0x30450
 // CHECKDSO-NEXT:     Offset:
 // CHECKDSO-NEXT:     Size: 48
 // CHECKDSO-NEXT:     Link:
@@ -40,72 +40,71 @@
 // CHECKDSO: Relocations [
 // CHECKDSO-NEXT:   Section ({{.*}}) .rela.plt {
 
-// &(.got.plt[3]) = 0x20000 + 3 * 8 = 0x30018
-// CHECKDSO-NEXT:     0x20018 R_AARCH64_JUMP_SLOT foo
+// &(.got.plt[3]) = 0x30450 + 3 * 8 = 0x30468
+// CHECKDSO-NEXT:     0x30468 R_AARCH64_JUMP_SLOT foo
 
-// &(.got.plt[4]) = 0x20000 + 4 * 8 = 0x30020
-// CHECKDSO-NEXT:     0x20020 R_AARCH64_JUMP_SLOT bar
+// &(.got.plt[4]) = 0x30450 + 4 * 8 = 0x30470
+// CHECKDSO-NEXT:     0x30470 R_AARCH64_JUMP_SLOT bar
 
-// &(.got.plt[5]) = 0x20000 + 5 * 8 = 0x30028
-// CHECKDSO-NEXT:     0x20028 R_AARCH64_JUMP_SLOT weak
+// &(.got.plt[5]) = 0x30000 + 5 * 8 = 0x30470
+// CHECKDSO-NEXT:     0x30478 R_AARCH64_JUMP_SLOT weak
 // CHECKDSO-NEXT:   }
 // CHECKDSO-NEXT: ]
 
 // DUMPDSO: Contents of section .got.plt:
 // .got.plt[0..2] = 0 (reserved)
 // .got.plt[3..5] = .plt = 0x10010
-// DUMPDSO-NEXT: 20000 00000000 00000000 00000000 00000000  ................
-// DUMPDSO-NEXT: 20010 00000000 00000000 10000100 00000000  ................
-// DUMPDSO-NEXT: 20020 10000100 00000000 10000100 00000000  ................
+// DUMPDSO-NEXT: 30450 00000000 00000000 00000000 00000000
+// DUMPDSO-NEXT: 30460 00000000 00000000 40030100 00000000
+// DUMPDSO-NEXT: 30470 40030100 00000000 40030100 00000000
 
 // DISASMDSO: _start:
-// 0x10030 - 0x10000 = 0x30 = 48
-// DISASMDSO-NEXT:     10000:	0c 00 00 14 	b	#48
-// 0x10040 - 0x10004 = 0x3c = 60
-// DISASMDSO-NEXT:     10004:	0f 00 00 14 	b	#60
-// 0x10050 - 0x10008 = 0x48 = 72
-// DISASMDSO-NEXT:     10008:	12 00 00 14 	b	#72
+// DISASMDSO-NEXT:     10330: b       #0x30 <foo@plt>
+// DISASMDSO-NEXT:     10334: b       #0x3c <bar@plt>
+// DISASMDSO-NEXT:     10338: b       #0x48 <weak@plt>
 
 // DISASMDSO: foo:
-// DISASMDSO-NEXT:     1000c:	1f 20 03 d5 	nop
+// DISASMDSO-NEXT:     1033c: nop
 
 // DISASMDSO: Disassembly of section .plt:
+// DISASMDSO-EMPTY:
 // DISASMDSO-NEXT: .plt:
-// DISASMDSO-NEXT:     10010:	f0 7b bf a9 	stp	x16, x30, [sp, #-16]!
-// &(.got.plt[2]) = 0x3000 + 2 * 8 = 0x3010
-// Page(0x20010) - Page(0x10014) = 0x20000 - 0x10000 = 0x10000 = 65536
-// DISASMDSO-NEXT:     10014:	90 00 00 90 	adrp	x16, #65536
-// 0x3010 & 0xFFF = 0x10 = 16
-// DISASMDSO-NEXT:     10018:	11 0a 40 f9 ldr x17, [x16, #16]
-// DISASMDSO-NEXT:     1001c:	10 42 00 91 	add	x16, x16, #16
-// DISASMDSO-NEXT:     10020:	20 02 1f d6 	br	x17
-// DISASMDSO-NEXT:     10024:	1f 20 03 d5 	nop
-// DISASMDSO-NEXT:     10028:	1f 20 03 d5 	nop
-// DISASMDSO-NEXT:     1002c:	1f 20 03 d5 	nop
+// DISASMDSO-NEXT:     10340: stp     x16, x30, [sp, #-0x10]!
+// &(.got.plt[2]) = 0x30450 + 2 * 8 = 0x30460
+// DISASMDSO-NEXT:     10344: adrp    x16, #0x20000
+// DISASMDSO-NEXT:     10348: ldr     x17, [x16, #0x460]
+// DISASMDSO-NEXT:     1034c: add     x16, x16, #0x460
+// DISASMDSO-NEXT:     10350: br      x17
+// DISASMDSO-NEXT:     10354: nop
+// DISASMDSO-NEXT:     10358: nop
+// DISASMDSO-NEXT:     1035c: nop
 
-// foo@plt
-// Page(0x30018) - Page(0x10030) = 0x20000 - 0x10000 = 0x10000 = 65536
-// DISASMDSO-NEXT:     10030:	90 00 00 90 	adrp	x16, #65536
-// 0x3018 & 0xFFF = 0x18 = 24
-// DISASMDSO-NEXT:     10034:	11 0e 40 f9 	ldr	x17, [x16, #24]
-// DISASMDSO-NEXT:     10038:	10 62 00 91 	add	x16, x16, #24
-// DISASMDSO-NEXT:     1003c:	20 02 1f d6 	br	x17
+// foo@plt 0x30468
+// &.got.plt[foo] = 0x30468
+// DISASMDSO-EMPTY:
+// DISASMDSO-NEXT:   foo@plt:
+// DISASMDSO-NEXT:     10360: adrp    x16, #0x20000
+// DISASMDSO-NEXT:     10364: ldr     x17, [x16, #0x468]
+// DISASMDSO-NEXT:     10368: add     x16, x16, #0x468
+// DISASMDSO-NEXT:     1036c: br      x17
 
 // bar@plt
-// Page(0x30020) - Page(0x10040) = 0x20000 - 0x10000 = 0x10000 = 65536
-// DISASMDSO-NEXT:     10040:	90 00 00 90 	adrp	x16, #65536
-// 0x3020 & 0xFFF = 0x20 = 32
-// DISASMDSO-NEXT:     10044:	11 12 40 f9 	ldr	x17, [x16, #32]
-// DISASMDSO-NEXT:     10048:	10 82 00 91 	add	x16, x16, #32
-// DISASMDSO-NEXT:     1004c:	20 02 1f d6 	br	x17
+// &.got.plt[foo] = 0x30470
+// DISASMDSO-EMPTY:
+// DISASMDSO-NEXT:   bar@plt:
+// DISASMDSO-NEXT:     10370: adrp    x16, #0x20000
+// DISASMDSO-NEXT:     10374: ldr     x17, [x16, #0x470]
+// DISASMDSO-NEXT:     10378: add     x16, x16, #0x470
+// DISASMDSO-NEXT:     1037c: br      x17
 
 // weak@plt
-// Page(0x30028) - Page(0x10050) = 0x20000 - 0x10000 = 0x10000 = 65536
-// DISASMDSO-NEXT:     10050:	90 00 00 90 	adrp	x16, #65536
-// 0x3028 & 0xFFF = 0x28 = 40
-// DISASMDSO-NEXT:     10054:	11 16 40 f9 	ldr	x17, [x16, #40]
-// DISASMDSO-NEXT:     10058:	10 a2 00 91 	add	x16, x16, #40
-// DISASMDSO-NEXT:     1005c:	20 02 1f d6 	br	x17
+// 0x30468 = 0x10000 + 131072 + 1128
+// DISASMDSO-EMPTY:
+// DISASMDSO-NEXT:   weak@plt:
+// DISASMDSO-NEXT:     10380: adrp    x16, #0x20000
+// DISASMDSO-NEXT:     10384: ldr     x17, [x16, #0x478]
+// DISASMDSO-NEXT:     10388: add     x16, x16, #0x478
+// DISASMDSO-NEXT:     1038c: br      x17
 
 // CHECKEXE:     Name: .plt
 // CHECKEXE-NEXT:     Type: SHT_PROGBITS
@@ -113,7 +112,7 @@
 // CHECKEXE-NEXT:       SHF_ALLOC
 // CHECKEXE-NEXT:       SHF_EXECINSTR
 // CHECKEXE-NEXT:     ]
-// CHECKEXE-NEXT:     Address: 0x20010
+// CHECKEXE-NEXT:     Address: 0x2102E0
 // CHECKEXE-NEXT:     Offset:
 // CHECKEXE-NEXT:     Size: 64
 // CHECKEXE-NEXT:     Link:
@@ -126,7 +125,7 @@
 // CHECKEXE-NEXT:       SHF_ALLOC
 // CHECKEXE-NEXT:       SHF_WRITE
 // CHECKEXE-NEXT:     ]
-// CHECKEXE-NEXT:     Address: 0x30000
+// CHECKEXE-NEXT:     Address: 0x2303F0
 // CHECKEXE-NEXT:     Offset:
 // CHECKEXE-NEXT:     Size: 40
 // CHECKEXE-NEXT:     Link:
@@ -136,59 +135,57 @@
 // CHECKEXE: Relocations [
 // CHECKEXE-NEXT:   Section ({{.*}}) .rela.plt {
 
-// &(.got.plt[3]) = 0x30000 + 3 * 8 = 0x30018
-// CHECKEXE-NEXT:     0x30018 R_AARCH64_JUMP_SLOT bar 0x0
+// &(.got.plt[3]) = 0x2303f0 + 3 * 8 = 0x230408
+// CHECKEXE-NEXT:     0x230408 R_AARCH64_JUMP_SLOT bar 0x0
 
-// &(.got.plt[4]) = 0x30000 + 4 * 8 = 0x30020
-// CHECKEXE-NEXT:     0x30020 R_AARCH64_JUMP_SLOT weak 0x0
+// &(.got.plt[4]) = 0x2303f0 + 4 * 8 = 0x230410
+// CHECKEXE-NEXT:     0x230410 R_AARCH64_JUMP_SLOT weak 0x0
 // CHECKEXE-NEXT:   }
 // CHECKEXE-NEXT: ]
 
 // DUMPEXE: Contents of section .got.plt:
 // .got.plt[0..2] = 0 (reserved)
 // .got.plt[3..4] = .plt = 0x40010
-// DUMPEXE-NEXT:  30000 00000000 00000000 00000000 00000000  ................
-// DUMPEXE-NEXT:  30010 00000000 00000000 10000200 00000000  ................
-// DUMPEXE-NEXT:  30020 10000200 00000000                    ........
+// DUMPEXE-NEXT:  2303f0 00000000 00000000 00000000 00000000
+// DUMPEXE-NEXT:  230400 00000000 00000000 e0022100 00000000
+// DUMPEXE-NEXT:  230410 e0022100 00000000
 
 // DISASMEXE: _start:
-// 0x2000c - 0x20000 = 0xc = 12
-// DISASMEXE-NEXT:    20000:	03 00 00 14 	b	#12
-// 0x20030 - 0x20004 = 0x2c = 44
-// DISASMEXE-NEXT:    20004:	0b 00 00 14 	b	#44
-// 0x20040 - 0x20008 = 0x38 = 56
-// DISASMEXE-NEXT:    20008:	0e 00 00 14 	b	#56
+// DISASMEXE-NEXT:    2102c8: b #0xc <foo>
+// DISASMEXE-NEXT:    2102cc: b #0x34 <bar@plt>
+// DISASMEXE-NEXT:    2102d0: b #0x40 <weak@plt>
 
 // DISASMEXE: foo:
-// DISASMEXE-NEXT:    2000c:	1f 20 03 d5 	nop
+// DISASMEXE-NEXT:    2102d4: nop
 
 // DISASMEXE: Disassembly of section .plt:
+// DISASMEXE-EMPTY:
 // DISASMEXE-NEXT: .plt:
-// DISASMEXE-NEXT:    20010:	f0 7b bf a9 	stp	x16, x30, [sp, #-16]!
-// &(.got.plt[2]) = 0x300B0 + 2 * 8 = 0x300C0
-// Page(0x30010) - Page(0x20014) = 0x30000 - 0x20000 = 0x10000 = 65536
-// DISASMEXE-NEXT:    20014:	90 00 00 90  	adrp	x16, #65536
-// 0x120c0 & 0xFFF = 0xC0 = 192
-// DISASMEXE-NEXT:    20018:	11 0a 40 f9 	ldr	x17, [x16, #16]
-// DISASMEXE-NEXT:    2001c:	10 42 00 91 	add	x16, x16, #16
-// DISASMEXE-NEXT:    20020:	20 02 1f d6 	br	x17
-// DISASMEXE-NEXT:    20024:	1f 20 03 d5 	nop
-// DISASMEXE-NEXT:    20028:	1f 20 03 d5 	nop
-// DISASMEXE-NEXT:    2002c:	1f 20 03 d5 	nop
+// DISASMEXE-NEXT:    2102e0: stp     x16, x30, [sp, #-0x10]!
+// &(.got.plt[2]) = 0x2303f0 + 2 * 8 = 0x230400
+// DISASMEXE-NEXT:    2102e4: adrp    x16, #0x20000
+// DISASMEXE-NEXT:    2102e8: ldr     x17, [x16, #0x400]
+// DISASMEXE-NEXT:    2102ec: add     x16, x16, #0x400
+// DISASMEXE-NEXT:    2102f0: br      x17
+// DISASMEXE-NEXT:    2102f4: nop
+// DISASMEXE-NEXT:    2102f8: nop
+// DISASMEXE-NEXT:    2102fc: nop
 
 // bar@plt
-// Page(0x40018) - Page(0x20030) = 0x30000 - 0x20000 = 0x10000 = 65536
-// DISASMEXE-NEXT:    20030:	90 00 00 90 	adrp	x16, #65536
-// DISASMEXE-NEXT:    20034:	11 0e 40 f9 	ldr	x17, [x16, #24]
-// DISASMEXE-NEXT:    20038:	10 62 00 91 	add	x16, x16, #24
-// DISASMEXE-NEXT:    2003c:	20 02 1f d6 	br	x17
+// DISASMEXE-EMPTY:
+// DISASMEXE-NEXT:   bar@plt:
+// DISASMEXE-NEXT:    210300: adrp    x16, #0x20000
+// DISASMEXE-NEXT:    210304: ldr     x17, [x16, #0x408]
+// DISASMEXE-NEXT:    210308: add     x16, x16, #0x408
+// DISASMEXE-NEXT:    21030c: br      x17
 
 // weak@plt
-// Page(0x40020) - Page(0x20040) = 0x30000 - 0x20000 = 0x10000 = 65536
-// DISASMEXE-NEXT:    20040:	90 00 00 90 	adrp	x16, #65536
-// DISASMEXE-NEXT:    20044:	11 12 40 f9 	ldr	x17, [x16, #32]
-// DISASMEXE-NEXT:    20048:	10 82 00 91 	add	x16, x16, #32
-// DISASMEXE-NEXT:    2004c:	20 02 1f d6 	br	x17
+// DISASMEXE-EMPTY:
+// DISASMEXE-NEXT:   weak@plt:
+// DISASMEXE-NEXT:    210310: adrp    x16, #0x20000
+// DISASMEXE-NEXT:    210314: ldr     x17, [x16, #0x410]
+// DISASMEXE-NEXT:    210318: add     x16, x16, #0x410
+// DISASMEXE-NEXT:    21031c: br      x17
 
 .global _start,foo,bar
 .weak weak

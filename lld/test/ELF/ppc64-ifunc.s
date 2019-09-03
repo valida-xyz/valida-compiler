@@ -1,79 +1,70 @@
 # REQUIRES: ppc
 
 # RUN: llvm-mc -filetype=obj -triple=powerpc64le-unknown-linux %s -o %t.o
-# RUN: llvm-mc -filetype=obj -triple=powerpc64le-unknown-linux %p/Inputs/shared-ppc64.s -o %t2.o
-# RUN: ld.lld -shared %t2.o -o %t2.so
-# RUN: ld.lld %t.o %t2.so -o %t
-# RUN: llvm-objdump -D %t | FileCheck %s
-# RUN: llvm-readelf -dynamic-table %t | FileCheck --check-prefix=DT %s
-# RUN: llvm-readelf -dyn-relocations %t | FileCheck --check-prefix=DYNREL %s
+# RUN: ld.lld %t.o -o %t
+# RUN: llvm-nm %t | FileCheck --check-prefix=NM %s
+# RUN: llvm-readelf -S %t | FileCheck --check-prefix=SECTIONS %s
+# RUN: llvm-objdump -d --no-show-raw-insn %t | FileCheck %s
+# RUN: llvm-readobj -r %t | FileCheck --check-prefix=REL %s
 
 # RUN: llvm-mc -filetype=obj -triple=powerpc64-unknown-linux %s -o %t.o
-# RUN: llvm-mc -filetype=obj -triple=powerpc64-unknown-linux %p/Inputs/shared-ppc64.s -o %t2.o
-# RUN: ld.lld -shared %t2.o -o %t2.so
-# RUN: ld.lld %t.o %t2.so -o %t
-# RUN: llvm-objdump -D %t | FileCheck %s
-# RUN: llvm-readelf -dynamic-table %t | FileCheck --check-prefix=DT %s
-# RUN: llvm-readelf -dyn-relocations %t | FileCheck --check-prefix=DYNREL %s
+# RUN: ld.lld %t.o -o %t
+# RUN: llvm-nm %t | FileCheck --check-prefix=NM %s
+# RUN: llvm-readelf -S %t | FileCheck --check-prefix=SECTIONS %s
+# RUN: llvm-objdump -d --no-show-raw-insn %t | FileCheck %s
+# RUN: llvm-readobj -r %t | FileCheck --check-prefix=REL %s
 
-# CHECK: Disassembly of section .text:
+# NM-DAG: 0000000010028248 d .TOC.
+# NM-DAG: 00000000100101f8 T ifunc
+# NM-DAG: 00000000100101fc T ifunc2
 
-# Tocbase    + (0 << 16) + 32560
-# 0x100280e0 +  0        + 32560 = 0x10030010 (.plt[2])
-# CHECK: __plt_foo:
-# CHECK-NEXT:     std 2, 24(1)
-# CHECK-NEXT:     addis 12, 2, 0
-# CHECK-NEXT:     ld 12, 32560(12)
-# CHECK-NEXT:     mtctr 12
-# CHECK-NEXT:     bctr
+# SECTIONS: .plt NOBITS 0000000010030250 000250 000010 00 WA 0 0 8
 
-# Tocbase    + (0 << 16)  +  32568
-# 0x100280e0 +  0          + 32568 = 0x1003018 (.plt[3])
+# __plt_ifunc - . = 0x10010218 - 0x10010208 = 16
+# __plt_ifunc2 - . = 0x1001022c - 0x10010210 = 28
+# CHECK: _start:
+# CHECK-NEXT:                 addis 2, 12, 2
+# CHECK-NEXT:                 addi 2, 2, -32696
+# CHECK-NEXT: 10010208:       bl .+16
+# CHECK-NEXT:                 ld 2, 24(1)
+# CHECK-NEXT: 10010210:       bl .+28
+# CHECK-NEXT:                 ld 2, 24(1)
+
+# .plt[0] - .TOC. = 0x10030250 - 0x10028248 = (1<<16) - 32760
 # CHECK: __plt_ifunc:
 # CHECK-NEXT:     std 2, 24(1)
-# CHECK-NEXT:     addis 12, 2, 0
-# CHECK-NEXT:     ld 12, 32568(12)
+# CHECK-NEXT:     addis 12, 2, 1
+# CHECK-NEXT:     ld 12, -32760(12)
 # CHECK-NEXT:     mtctr 12
 # CHECK-NEXT:     bctr
 
-# CHECK: ifunc:
-# CHECK-NEXT: 10010028:  {{.*}} nop
+# .plt[1] - .TOC. = 0x10030250+8 - 0x10028248 = (1<<16) - 32752
+# CHECK: __plt_ifunc2:
+# CHECK-NEXT:     std 2, 24(1)
+# CHECK-NEXT:     addis 12, 2, 1
+# CHECK-NEXT:     ld 12, -32752(12)
+# CHECK-NEXT:     mtctr 12
+# CHECK-NEXT:     bctr
 
-# CHECK: _start:
-# CHECK-NEXT:     addis 2, 12, 2
-# CHECK-NEXT:     addi 2, 2, -32588
-# CHECK-NEXT:     bl .+67108812
-# CHECK-NEXT:     ld 2, 24(1)
-# CHECK-NEXT:     bl .+67108824
-# CHECK-NEXT:     ld 2, 24(1)
-
-# Check tocbase
-# CHECK:       Disassembly of section .got:
-# CHECK-NEXT:    .got:
-# CHECK-NEXT:    100200e0
-
-# Check .plt address
-# DT_PLTGOT should point to the start of the .plt section.
-# DT: 0x0000000000000003 PLTGOT 0x10030000
-
-# Check that we emit the correct dynamic relocation type for an ifunc
-# DYNREL: 'PLT' relocation section at offset 0x{{[0-9a-f]+}} contains 48 bytes:
-# 48 bytes --> 2 Elf64_Rela relocations
-# DYNREL-NEXT: Offset        Info           Type               Symbol's Value  Symbol's Name + Addend
-# DYNREL-NEXT: {{[0-9a-f]+}} {{[0-9a-f]+}}  R_PPC64_JMP_SLOT      {{0+}}            foo + 0
-# DYNREL-NEXT: {{[0-9a-f]+}} {{[0-9a-f]+}}  R_PPC64_IRELATIVE     10010028
-
-
-    .text
-    .abiversion 2
+## Check that we emit 2 R_PPC64_IRELATIVE in .rela.dyn.
+## glibc powerpc64 does not eagerly resolve R_PPC64_IRELATIVE if they are in .rela.plt.
+# REL:      .rela.dyn {
+# REL-NEXT:   0x10030250 R_PPC64_IRELATIVE - 0x100101F8
+# REL-NEXT:   0x10030258 R_PPC64_IRELATIVE - 0x100101FC
+# REL-NEXT: }
 
 .type ifunc STT_GNU_IFUNC
 .globl ifunc
 ifunc:
- nop
+  nop
 
-    .global _start
-    .type   _start,@function
+.type ifunc2 STT_GNU_IFUNC
+.globl ifunc2
+ifunc2:
+  nop
+
+.global _start
+.type   _start,@function
 
 _start:
 .Lfunc_gep0:
@@ -81,7 +72,7 @@ _start:
   addi 2, 2, .TOC.-.Lfunc_gep0@l
 .Lfunc_lep0:
   .localentry     _start, .Lfunc_lep0-.Lfunc_gep0
-  bl foo
-  nop
   bl ifunc
+  nop
+  bl ifunc2
   nop

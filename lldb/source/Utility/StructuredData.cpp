@@ -1,9 +1,8 @@
 //===---------------------StructuredData.cpp ---------------------*- C++-*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,20 +11,18 @@
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/JSON.h"
 #include "lldb/Utility/Status.h"
-#include "lldb/Utility/Stream.h" // for Stream
+#include "lldb/Utility/Stream.h"
 #include "lldb/Utility/StreamString.h"
-#include "llvm/ADT/STLExtras.h" // for make_unique
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cerrno>
 #include <cstdlib>
 #include <inttypes.h>
-#include <limits> // for numeric_limits
+#include <limits>
 
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // Functions that use a JSONParser to parse JSON into StructuredData
-//----------------------------------------------------------------------
 static StructuredData::ObjectSP ParseJSONValue(JSONParser &json_parser);
 static StructuredData::ObjectSP ParseJSONObject(JSONParser &json_parser);
 static StructuredData::ObjectSP ParseJSONArray(JSONParser &json_parser);
@@ -33,11 +30,6 @@ static StructuredData::ObjectSP ParseJSONArray(JSONParser &json_parser);
 StructuredData::ObjectSP
 StructuredData::ParseJSONFromFile(const FileSpec &input_spec, Status &error) {
   StructuredData::ObjectSP return_sp;
-  if (!input_spec.Exists()) {
-    error.SetErrorStringWithFormatv("input file {0} does not exist.",
-                                    input_spec);
-    return return_sp;
-  }
 
   auto buffer_or_error = llvm::MemoryBuffer::getFile(input_spec.GetPath());
   if (!buffer_or_error) {
@@ -55,11 +47,11 @@ StructuredData::ParseJSONFromFile(const FileSpec &input_spec, Status &error) {
 static StructuredData::ObjectSP ParseJSONObject(JSONParser &json_parser) {
   // The "JSONParser::Token::ObjectStart" token should have already been
   // consumed by the time this function is called
-  auto dict_up = llvm::make_unique<StructuredData::Dictionary>();
+  auto dict_up = std::make_unique<StructuredData::Dictionary>();
 
   std::string value;
   std::string key;
-  while (1) {
+  while (true) {
     JSONParser::Token token = json_parser.GetToken(value);
 
     if (token == JSONParser::Token::String) {
@@ -86,11 +78,11 @@ static StructuredData::ObjectSP ParseJSONObject(JSONParser &json_parser) {
 static StructuredData::ObjectSP ParseJSONArray(JSONParser &json_parser) {
   // The "JSONParser::Token::ObjectStart" token should have already been
   // consumed by the time this function is called
-  auto array_up = llvm::make_unique<StructuredData::Array>();
+  auto array_up = std::make_unique<StructuredData::Array>();
 
   std::string value;
   std::string key;
-  while (1) {
+  while (true) {
     StructuredData::ObjectSP value_sp = ParseJSONValue(json_parser);
     if (value_sp)
       array_up->AddItem(value_sp);
@@ -149,7 +141,7 @@ static StructuredData::ObjectSP ParseJSONValue(JSONParser &json_parser) {
 }
 
 StructuredData::ObjectSP StructuredData::ParseJSON(std::string json_text) {
-  JSONParser json_parser(json_text.c_str());
+  JSONParser json_parser(json_text);
   StructuredData::ObjectSP object_sp = ParseJSONValue(json_parser);
   return object_sp;
 }
@@ -174,11 +166,11 @@ StructuredData::Object::GetObjectForDotSeparatedPath(llvm::StringRef path) {
 
   if (this->GetType() == lldb::eStructuredDataTypeArray) {
     std::pair<llvm::StringRef, llvm::StringRef> match = path.split('[');
-    if (match.second.size() == 0) {
+    if (match.second.empty()) {
       return this->shared_from_this();
     }
     errno = 0;
-    uint64_t val = strtoul(match.second.str().c_str(), NULL, 10);
+    uint64_t val = strtoul(match.second.str().c_str(), nullptr, 10);
     if (errno == 0) {
       return this->GetAsArray()->GetItemAtIndex(val);
     }
@@ -231,7 +223,7 @@ void StructuredData::Float::Dump(Stream &s, bool pretty_print) const {
 }
 
 void StructuredData::Boolean::Dump(Stream &s, bool pretty_print) const {
-  if (m_value == true)
+  if (m_value)
     s.PutCString("true");
   else
     s.PutCString("false");

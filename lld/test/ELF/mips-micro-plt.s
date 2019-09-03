@@ -3,11 +3,11 @@
 
 # RUN: llvm-mc -filetype=obj -triple=mips-unknown-linux \
 # RUN:         -mattr=micromips %S/Inputs/mips-dynamic.s -o %t-dso.o
-# RUN: ld.lld %t-dso.o -shared -o %t.so
+# RUN: ld.lld %t-dso.o -shared -soname=t.so -o %t.so
 # RUN: llvm-mc -filetype=obj -triple=mips-unknown-linux \
 # RUN:         -mattr=micromips %s -o %t-exe.o
 # RUN: ld.lld %t-exe.o %t.so -o %t.exe
-# RUN: llvm-readobj -t -dt -mips-plt-got %t.exe | FileCheck %s
+# RUN: llvm-readobj --symbols --dyn-syms --mips-plt-got %t.exe | FileCheck %s
 # RUN: llvm-objdump -d -mattr=micromips %t.exe | FileCheck --check-prefix=ASM %s
 
 # CHECK:      Symbols [
@@ -80,16 +80,16 @@
 # CHECK-NEXT:       Value: 0x20041
 # CHECK-NEXT:       Type: Function
 # CHECK-NEXT:       Section: Undefined
-# CHECK-NEXT:       Name: foo0@
+# CHECK-NEXT:       Name: foo0
 # CHECK-NEXT:     }
 # CHECK-NEXT:   ]
 # CHECK-NEXT: }
 
 # ASM:      __start:
 # ASM-NEXT:    20000:       fd 1c 80 18     lw      $8, -32744($gp)
-# ASM-NEXT:    20004:       11 08 00 10     addi    $8, $8, 16
+# ASM-NEXT:    20004:       11 08 00 11     addi    $8, $8, 17
 # ASM-NEXT:    20008:       41 a8 00 02     lui     $8, 2
-# ASM-NEXT:    2000c:       11 08 00 40     addi    $8, $8, 64
+# ASM-NEXT:    2000c:       11 08 00 41     addi    $8, $8, 65
 #
 # ASM:      foo:
 # ASM-NEXT:    20010:       f4 01 00 20     jal     131136

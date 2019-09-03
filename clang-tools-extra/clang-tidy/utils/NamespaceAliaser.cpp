@@ -1,9 +1,8 @@
 //===---------- NamespaceAliaser.cpp - clang-tidy -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -70,7 +69,7 @@ NamespaceAliaser::createAlias(ASTContext &Context, const Stmt &Statement,
         (llvm::Twine("\nnamespace ") + Abbreviation + " = " + Namespace + ";")
             .str();
     SourceLocation Loc =
-        Lexer::getLocForEndOfToken(Function->getBody()->getLocStart(), 0,
+        Lexer::getLocForEndOfToken(Function->getBody()->getBeginLoc(), 0,
                                    SourceMgr, Context.getLangOpts());
     AddedAliases[Function][Namespace.str()] = Abbreviation;
     return FixItHint::CreateInsertion(Loc, Declaration);

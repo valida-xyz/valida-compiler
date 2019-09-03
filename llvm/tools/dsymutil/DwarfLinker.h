@@ -1,9 +1,8 @@
 //===- tools/dsymutil/DwarfLinker.h - Dwarf debug info linker ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -57,8 +56,8 @@ using UnitListTy = std::vector<std::unique_ptr<CompileUnit>>;
 class DwarfLinker {
 public:
   DwarfLinker(raw_fd_ostream &OutFile, BinaryHolder &BinHolder,
-              const LinkOptions &Options)
-      : OutFile(OutFile), BinHolder(BinHolder), Options(Options) {}
+              LinkOptions Options)
+      : OutFile(OutFile), BinHolder(BinHolder), Options(std::move(Options)) {}
 
   /// Link the contents of the DebugMap.
   bool link(const DebugMap &);
@@ -83,12 +82,12 @@ private:
   /// Keeps track of relocations.
   class RelocationManager {
     struct ValidReloc {
-      uint32_t Offset;
+      uint64_t Offset;
       uint32_t Size;
       uint64_t Addend;
       const DebugMapObject::DebugMapEntry *Mapping;
 
-      ValidReloc(uint32_t Offset, uint32_t Size, uint64_t Addend,
+      ValidReloc(uint64_t Offset, uint32_t Size, uint64_t Addend,
                  const DebugMapObject::DebugMapEntry *Mapping)
           : Offset(Offset), Size(Size), Addend(Addend), Mapping(Mapping) {}
 
@@ -133,11 +132,11 @@ private:
                               const DebugMapObject &DMO);
     /// @}
 
-    bool hasValidRelocation(uint32_t StartOffset, uint32_t EndOffset,
+    bool hasValidRelocation(uint64_t StartOffset, uint64_t EndOffset,
                             CompileUnit::DIEInfo &Info);
 
-    bool applyValidRelocs(MutableArrayRef<char> Data, uint32_t BaseOffset,
-                          bool isLittleEndian);
+    bool applyValidRelocs(MutableArrayRef<char> Data, uint64_t BaseOffset,
+                          bool IsLittleEndian);
   };
 
   /// Keeps track of data associated with one object during linking.
@@ -194,24 +193,27 @@ private:
   /// A skeleton CU is a CU without children, a DW_AT_gnu_dwo_name
   /// pointing to the module, and a DW_AT_gnu_dwo_id with the module
   /// hash.
-  bool registerModuleReference(const DWARFDie &CUDie, const DWARFUnit &Unit,
+  bool registerModuleReference(DWARFDie CUDie, const DWARFUnit &Unit,
                                DebugMap &ModuleMap, const DebugMapObject &DMO,
                                RangesTy &Ranges,
                                OffsetsStringPool &OffsetsStringPool,
                                UniquingStringPool &UniquingStringPoolStringPool,
-                               DeclContextTree &ODRContexts, unsigned &UnitID,
-                               unsigned Indent = 0);
+                               DeclContextTree &ODRContexts,
+                               uint64_t ModulesEndOffset, unsigned &UnitID,
+                               bool IsLittleEndian, unsigned Indent = 0,
+                               bool Quiet = false);
 
   /// Recursively add the debug info in this clang module .pcm
   /// file (and all the modules imported by it in a bottom-up fashion)
   /// to Units.
-  Error loadClangModule(StringRef Filename, StringRef ModulePath,
+  Error loadClangModule(DWARFDie CUDie, StringRef FilePath,
                         StringRef ModuleName, uint64_t DwoId,
                         DebugMap &ModuleMap, const DebugMapObject &DMO,
                         RangesTy &Ranges, OffsetsStringPool &OffsetsStringPool,
                         UniquingStringPool &UniquingStringPool,
-                        DeclContextTree &ODRContexts, unsigned &UnitID,
-                        unsigned Indent = 0);
+                        DeclContextTree &ODRContexts, uint64_t ModulesEndOffset,
+                        unsigned &UnitID, bool IsLittleEndian,
+                        unsigned Indent = 0, bool Quiet = false);
 
   /// Flags passed to DwarfLinker::lookForDIEsToKeep
   enum TraversalFlags {
@@ -235,6 +237,8 @@ private:
                          CompileUnit &Unit, CompileUnit::DIEInfo &MyInfo,
                          unsigned Flags);
 
+  /// Check if a variable describing DIE should be kept.
+  /// \returns updated TraversalFlags.
   unsigned shouldKeepVariableDIE(RelocationManager &RelocMgr,
                                  const DWARFDie &DIE, CompileUnit &Unit,
                                  CompileUnit::DIEInfo &MyInfo, unsigned Flags);
@@ -285,14 +289,15 @@ private:
     DIE *cloneDIE(const DWARFDie &InputDIE, const DebugMapObject &DMO,
                   CompileUnit &U, OffsetsStringPool &StringPool,
                   int64_t PCOffset, uint32_t OutOffset, unsigned Flags,
-                  DIE *Die = nullptr);
+                  bool IsLittleEndian, DIE *Die = nullptr);
 
     /// Construct the output DIE tree by cloning the DIEs we
     /// chose to keep above. If there are no valid relocs, then there's
     /// nothing to clone/emit.
     void cloneAllCompileUnits(DWARFContext &DwarfContext,
                               const DebugMapObject &DMO, RangesTy &Ranges,
-                              OffsetsStringPool &StringPool);
+                              OffsetsStringPool &StringPool,
+                              bool IsLittleEndian);
 
   private:
     using AttributeSpec = DWARFAbbreviationDeclaration::AttributeSpec;
@@ -334,7 +339,7 @@ private:
                             OffsetsStringPool &StringPool,
                             const DWARFFormValue &Val,
                             const AttributeSpec AttrSpec, unsigned AttrSize,
-                            AttributesInfo &AttrInfo);
+                            AttributesInfo &AttrInfo, bool IsLittleEndian);
 
     /// Clone a string attribute described by \p AttrSpec and add
     /// it to \p Die.
@@ -354,11 +359,18 @@ private:
                                         const DebugMapObject &DMO,
                                         CompileUnit &Unit);
 
+    /// Clone a DWARF expression that may be referencing another DIE.
+    void cloneExpression(DataExtractor &Data, DWARFExpression Expression,
+                         const DebugMapObject &DMO, CompileUnit &Unit,
+                         SmallVectorImpl<uint8_t> &OutputBuffer);
+
     /// Clone an attribute referencing another DIE and add
     /// it to \p Die.
     /// \returns the size of the new attribute.
-    unsigned cloneBlockAttribute(DIE &Die, AttributeSpec AttrSpec,
-                                 const DWARFFormValue &Val, unsigned AttrSize);
+    unsigned cloneBlockAttribute(DIE &Die, const DebugMapObject &DMO,
+                                 CompileUnit &Unit, AttributeSpec AttrSpec,
+                                 const DWARFFormValue &Val, unsigned AttrSize,
+                                 bool IsLittleEndian);
 
     /// Clone an attribute referencing another DIE and add
     /// it to \p Die.
@@ -481,6 +493,12 @@ private:
 
   /// Mapping the PCM filename to the DwoId.
   StringMap<uint64_t> ClangModules;
+
+  /// A list of all .swiftinterface files referenced by the debug
+  /// info, mapping Module name to path on disk. The entries need to
+  /// be uniqued and sorted and there are only few entries expected
+  /// per compile unit, which is why this is a std::map.
+  std::map<std::string, std::string> ParseableSwiftInterfaces;
 
   bool ModuleCacheHintDisplayed = false;
   bool ArchiveHintDisplayed = false;

@@ -1,15 +1,16 @@
 //===--- IdentifierNamingCheck.cpp - clang-tidy ---------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "IdentifierNamingCheck.h"
 
+#include "../utils/ASTUtils.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/AST/CXXInheritance.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
@@ -77,8 +78,12 @@ namespace readability {
     m(ClassConstant) \
     m(ClassMember) \
     m(GlobalConstant) \
+    m(GlobalConstantPointer) \
+    m(GlobalPointer) \
     m(GlobalVariable) \
     m(LocalConstant) \
+    m(LocalConstantPointer) \
+    m(LocalPointer) \
     m(LocalVariable) \
     m(StaticConstant) \
     m(StaticVariable) \
@@ -87,6 +92,8 @@ namespace readability {
     m(ConstantParameter) \
     m(ParameterPack) \
     m(Parameter) \
+    m(PointerParameter) \
+    m(ConstantPointerParameter) \
     m(AbstractClass) \
     m(Struct) \
     m(Class) \
@@ -234,10 +241,11 @@ void IdentifierNamingCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(nestedNameSpecifierLoc().bind("nestedNameLoc"), this);
 }
 
-void IdentifierNamingCheck::registerPPCallbacks(CompilerInstance &Compiler) {
-  Compiler.getPreprocessor().addPPCallbacks(
-      llvm::make_unique<IdentifierNamingCheckPPCallbacks>(
-          &Compiler.getPreprocessor(), this));
+void IdentifierNamingCheck::registerPPCallbacks(
+    const SourceManager &SM, Preprocessor *PP, Preprocessor *ModuleExpanderPP) {
+  ModuleExpanderPP->addPPCallbacks(
+      std::make_unique<IdentifierNamingCheckPPCallbacks>(ModuleExpanderPP,
+                                                          this));
 }
 
 static bool matchesStyle(StringRef Name,
@@ -385,6 +393,9 @@ static StyleKind findStyleKind(
     const NamedDecl *D,
     const std::vector<llvm::Optional<IdentifierNamingCheck::NamingStyle>>
         &NamingStyles) {
+  assert(D && D->getIdentifier() && !D->getName().empty() && !D->isImplicit() &&
+         "Decl must be an explicit identifier with a name.");
+
   if (isa<ObjCIvarDecl>(D) && NamingStyles[SK_ObjcIvar])
     return SK_ObjcIvar;
   
@@ -483,6 +494,9 @@ static StyleKind findStyleKind(
       return SK_ConstexprVariable;
 
     if (!Type.isNull() && Type.isConstQualified()) {
+      if (Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_ConstantPointerParameter])
+        return SK_ConstantPointerParameter;
+
       if (NamingStyles[SK_ConstantParameter])
         return SK_ConstantParameter;
 
@@ -492,6 +506,9 @@ static StyleKind findStyleKind(
 
     if (Decl->isParameterPack() && NamingStyles[SK_ParameterPack])
       return SK_ParameterPack;
+
+    if (!Type.isNull() && Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_PointerParameter])
+        return SK_PointerParameter;
 
     if (NamingStyles[SK_Parameter])
       return SK_Parameter;
@@ -509,11 +526,17 @@ static StyleKind findStyleKind(
       if (Decl->isStaticDataMember() && NamingStyles[SK_ClassConstant])
         return SK_ClassConstant;
 
+      if (Decl->isFileVarDecl() && Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_GlobalConstantPointer])
+        return SK_GlobalConstantPointer;
+
       if (Decl->isFileVarDecl() && NamingStyles[SK_GlobalConstant])
         return SK_GlobalConstant;
 
       if (Decl->isStaticLocal() && NamingStyles[SK_StaticConstant])
         return SK_StaticConstant;
+
+      if (Decl->isLocalVarDecl() && Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_LocalConstantPointer])
+        return SK_LocalConstantPointer;
 
       if (Decl->isLocalVarDecl() && NamingStyles[SK_LocalConstant])
         return SK_LocalConstant;
@@ -528,11 +551,17 @@ static StyleKind findStyleKind(
     if (Decl->isStaticDataMember() && NamingStyles[SK_ClassMember])
       return SK_ClassMember;
 
+    if (Decl->isFileVarDecl() && Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_GlobalPointer])
+      return SK_GlobalPointer;
+
     if (Decl->isFileVarDecl() && NamingStyles[SK_GlobalVariable])
       return SK_GlobalVariable;
 
     if (Decl->isStaticLocal() && NamingStyles[SK_StaticVariable])
       return SK_StaticVariable;
+ 
+    if (Decl->isLocalVarDecl() && Type.getTypePtr()->isAnyPointerType() && NamingStyles[SK_LocalPointer])
+      return SK_LocalPointer;
 
     if (Decl->isLocalVarDecl() && NamingStyles[SK_LocalVariable])
       return SK_LocalVariable;
@@ -548,9 +577,16 @@ static StyleKind findStyleKind(
 
   if (const auto *Decl = dyn_cast<CXXMethodDecl>(D)) {
     if (Decl->isMain() || !Decl->isUserProvided() ||
-        Decl->isUsualDeallocationFunction() ||
-        Decl->isCopyAssignmentOperator() || Decl->isMoveAssignmentOperator() ||
         Decl->size_overridden_methods() > 0)
+      return SK_Invalid;
+
+    // If this method has the same name as any base method, this is likely
+    // necessary even if it's not an override. e.g. CRTP.
+    auto FindHidden = [&](const CXXBaseSpecifier *S, clang::CXXBasePath &P) {
+      return CXXRecordDecl::FindOrdinaryMember(S, P, Decl->getDeclName());
+    };
+    CXXBasePaths UnusedPaths;
+    if (Decl->getParent()->lookupInBases(FindHidden, UnusedPaths))
       return SK_Invalid;
 
     if (Decl->isConstexpr() && NamingStyles[SK_ConstexprMethod])
@@ -656,25 +692,7 @@ static void addUsage(IdentifierNamingCheck::NamingCheckFailureMap &Failures,
   if (!Failure.ShouldFix)
     return;
 
-  // Check if the range is entirely contained within a macro argument.
-  SourceLocation MacroArgExpansionStartForRangeBegin;
-  SourceLocation MacroArgExpansionStartForRangeEnd;
-  bool RangeIsEntirelyWithinMacroArgument =
-      SourceMgr &&
-      SourceMgr->isMacroArgExpansion(Range.getBegin(),
-                                     &MacroArgExpansionStartForRangeBegin) &&
-      SourceMgr->isMacroArgExpansion(Range.getEnd(),
-                                     &MacroArgExpansionStartForRangeEnd) &&
-      MacroArgExpansionStartForRangeBegin == MacroArgExpansionStartForRangeEnd;
-
-  // Check if the range contains any locations from a macro expansion.
-  bool RangeContainsMacroExpansion = RangeIsEntirelyWithinMacroArgument ||
-                                     Range.getBegin().isMacroID() ||
-                                     Range.getEnd().isMacroID();
-
-  bool RangeCanBeFixed =
-      RangeIsEntirelyWithinMacroArgument || !RangeContainsMacroExpansion;
-  Failure.ShouldFix = RangeCanBeFixed;
+  Failure.ShouldFix = utils::rangeCanBeFixed(Range, SourceMgr);
 }
 
 /// Convenience method when the usage to be added is a NamedDecl
@@ -792,10 +810,11 @@ void IdentifierNamingCheck::check(const MatchFinder::MatchResult &Result) {
 
     // Fix type aliases in value declarations
     if (const auto *Value = Result.Nodes.getNodeAs<ValueDecl>("decl")) {
-      if (const auto *Typedef =
-              Value->getType().getTypePtr()->getAs<TypedefType>()) {
-        addUsage(NamingCheckFailures, Typedef->getDecl(),
-                 Value->getSourceRange());
+      if (const auto *TypePtr = Value->getType().getTypePtrOrNull()) {
+        if (const auto *Typedef = TypePtr->getAs<TypedefType>()) {
+          addUsage(NamingCheckFailures, Typedef->getDecl(),
+                   Value->getSourceRange());
+        }
       }
     }
 
@@ -841,7 +860,7 @@ void IdentifierNamingCheck::check(const MatchFinder::MatchResult &Result) {
     if (StringRef(Fixup).equals(Name)) {
       if (!IgnoreFailedSplit) {
         LLVM_DEBUG(llvm::dbgs()
-                   << Decl->getLocStart().printToString(*Result.SourceManager)
+                   << Decl->getBeginLoc().printToString(*Result.SourceManager)
                    << llvm::format(": unable to split words for %s '%s'\n",
                                    KindName.c_str(), Name.str().c_str()));
       }

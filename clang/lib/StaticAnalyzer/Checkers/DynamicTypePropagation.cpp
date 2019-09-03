@@ -1,9 +1,8 @@
 //===- DynamicTypePropagation.cpp ------------------------------*- C++ -*--===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -21,16 +20,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Builtins.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/DynamicTypeMap.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/DynamicType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 
 using namespace clang;
@@ -84,10 +83,9 @@ class DynamicTypePropagation:
       ID.AddPointer(Sym);
     }
 
-    std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
-                                                   BugReporterContext &BRC,
-                                                   BugReport &BR) override;
+    PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
+                                     BugReporterContext &BRC,
+                                     BugReport &BR) override;
 
   private:
     // The tracked symbol.
@@ -115,19 +113,7 @@ public:
 
 void DynamicTypePropagation::checkDeadSymbols(SymbolReaper &SR,
                                               CheckerContext &C) const {
-  ProgramStateRef State = C.getState();
-  DynamicTypeMapImpl TypeMap = State->get<DynamicTypeMap>();
-  for (DynamicTypeMapImpl::iterator I = TypeMap.begin(), E = TypeMap.end();
-       I != E; ++I) {
-    if (!SR.isLiveRegion(I->first)) {
-      State = State->remove<DynamicTypeMap>(I->first);
-    }
-  }
-
-  if (!SR.hasDeadSymbols()) {
-    C.addTransition(State);
-    return;
-  }
+  ProgramStateRef State = removeDeadTypes(C.getState(), SR);
 
   MostSpecializedTypeArgsMapTy TyArgMap =
       State->get<MostSpecializedTypeArgsMap>();
@@ -151,7 +137,7 @@ static void recordFixedType(const MemRegion *Region, const CXXMethodDecl *MD,
   QualType Ty = Ctx.getPointerType(Ctx.getRecordType(MD->getParent()));
 
   ProgramStateRef State = C.getState();
-  State = setDynamicTypeInfo(State, Region, Ty, /*CanBeSubclass=*/false);
+  State = setDynamicTypeInfo(State, Region, Ty, /*CanBeSubClassed=*/false);
   C.addTransition(State);
 }
 
@@ -314,7 +300,7 @@ void DynamicTypePropagation::checkPostStmt(const CXXNewExpr *NewE,
     return;
 
   C.addTransition(setDynamicTypeInfo(C.getState(), MR, NewE->getType(),
-                                     /*CanBeSubclass=*/false));
+                                     /*CanBeSubClassed=*/false));
 }
 
 const ObjCObjectType *
@@ -408,11 +394,11 @@ static const ObjCObjectPointerType *getMostInformativeDerivedClassImpl(
   }
 
   const auto *SuperOfTo =
-      To->getObjectType()->getSuperClassType()->getAs<ObjCObjectType>();
+      To->getObjectType()->getSuperClassType()->castAs<ObjCObjectType>();
   assert(SuperOfTo);
   QualType SuperPtrOfToQual =
       C.getObjCObjectPointerType(QualType(SuperOfTo, 0));
-  const auto *SuperPtrOfTo = SuperPtrOfToQual->getAs<ObjCObjectPointerType>();
+  const auto *SuperPtrOfTo = SuperPtrOfToQual->castAs<ObjCObjectPointerType>();
   if (To->isUnspecialized())
     return getMostInformativeDerivedClassImpl(From, SuperPtrOfTo, SuperPtrOfTo,
                                               C);
@@ -841,16 +827,15 @@ void DynamicTypePropagation::checkPostObjCMessage(const ObjCMethodCall &M,
   if (MessageExpr->getReceiverKind() == ObjCMessageExpr::Class &&
       Sel.getAsString() == "class") {
     QualType ReceiverType = MessageExpr->getClassReceiver();
-    const auto *ReceiverClassType = ReceiverType->getAs<ObjCObjectType>();
+    const auto *ReceiverClassType = ReceiverType->castAs<ObjCObjectType>();
+    if (!ReceiverClassType->isSpecialized())
+      return;
+
     QualType ReceiverClassPointerType =
         C.getASTContext().getObjCObjectPointerType(
             QualType(ReceiverClassType, 0));
-
-    if (!ReceiverClassType->isSpecialized())
-      return;
     const auto *InferredType =
-        ReceiverClassPointerType->getAs<ObjCObjectPointerType>();
-    assert(InferredType);
+        ReceiverClassPointerType->castAs<ObjCObjectPointerType>();
 
     State = State->set<MostSpecializedTypeArgsMap>(RetSym, InferredType);
     C.addTransition(State);
@@ -889,12 +874,12 @@ void DynamicTypePropagation::checkPostObjCMessage(const ObjCMethodCall &M,
   // When there is an entry available for the return symbol in DynamicTypeMap,
   // the call was inlined, and the information in the DynamicTypeMap is should
   // be precise.
-  if (RetRegion && !State->get<DynamicTypeMap>(RetRegion)) {
+  if (RetRegion && !getRawDynamicTypeInfo(State, RetRegion)) {
     // TODO: we have duplicated information in DynamicTypeMap and
     // MostSpecializedTypeArgsMap. We should only store anything in the later if
     // the stored data differs from the one stored in the former.
     State = setDynamicTypeInfo(State, RetRegion, ResultType,
-                               /*CanBeSubclass=*/true);
+                               /*CanBeSubClassed=*/true);
     Pred = C.addTransition(State);
   }
 
@@ -929,19 +914,16 @@ void DynamicTypePropagation::reportGenericsBug(
   std::unique_ptr<BugReport> R(
       new BugReport(*ObjCGenericsBugType, OS.str(), N));
   R->markInteresting(Sym);
-  R->addVisitor(llvm::make_unique<GenericsBugVisitor>(Sym));
+  R->addVisitor(std::make_unique<GenericsBugVisitor>(Sym));
   if (ReportedNode)
     R->addRange(ReportedNode->getSourceRange());
   C.emitReport(std::move(R));
 }
 
-std::shared_ptr<PathDiagnosticPiece>
-DynamicTypePropagation::GenericsBugVisitor::VisitNode(const ExplodedNode *N,
-                                                      const ExplodedNode *PrevN,
-                                                      BugReporterContext &BRC,
-                                                      BugReport &BR) {
+PathDiagnosticPieceRef DynamicTypePropagation::GenericsBugVisitor::VisitNode(
+    const ExplodedNode *N, BugReporterContext &BRC, BugReport &BR) {
   ProgramStateRef state = N->getState();
-  ProgramStateRef statePrev = PrevN->getState();
+  ProgramStateRef statePrev = N->getFirstPred()->getState();
 
   const ObjCObjectPointerType *const *TrackedType =
       state->get<MostSpecializedTypeArgsMap>(Sym);
@@ -995,11 +977,18 @@ DynamicTypePropagation::GenericsBugVisitor::VisitNode(const ExplodedNode *N,
 
 /// Register checkers.
 void ento::registerObjCGenericsChecker(CheckerManager &mgr) {
-  DynamicTypePropagation *checker =
-      mgr.registerChecker<DynamicTypePropagation>();
+  DynamicTypePropagation *checker = mgr.getChecker<DynamicTypePropagation>();
   checker->CheckGenerics = true;
+}
+
+bool ento::shouldRegisterObjCGenericsChecker(const LangOptions &LO) {
+  return true;
 }
 
 void ento::registerDynamicTypePropagation(CheckerManager &mgr) {
   mgr.registerChecker<DynamicTypePropagation>();
+}
+
+bool ento::shouldRegisterDynamicTypePropagation(const LangOptions &LO) {
+  return true;
 }

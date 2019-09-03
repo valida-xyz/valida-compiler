@@ -1,9 +1,8 @@
 //===--- AArch64.cpp - Implement AArch64 target feature support -----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -37,11 +36,11 @@ const Builtin::Info AArch64TargetInfo::BuiltinInfo[] = {
 AArch64TargetInfo::AArch64TargetInfo(const llvm::Triple &Triple,
                                      const TargetOptions &Opts)
     : TargetInfo(Triple), ABI("aapcs") {
-  if (getTriple().getOS() == llvm::Triple::OpenBSD) {
+  if (getTriple().isOSOpenBSD()) {
     Int64Type = SignedLongLong;
     IntMaxType = SignedLongLong;
   } else {
-    if (!getTriple().isOSDarwin() && getTriple().getOS() != llvm::Triple::NetBSD)
+    if (!getTriple().isOSDarwin() && !getTriple().isOSNetBSD())
       WCharType = UnsignedInt;
 
     Int64Type = SignedLong;
@@ -50,6 +49,7 @@ AArch64TargetInfo::AArch64TargetInfo(const llvm::Triple &Triple,
 
   // All AArch64 implementations support ARMv8 FP, which makes half a legal type.
   HasLegalHalfType = true;
+  HasFloat16 = true;
 
   LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
   MaxVectorAlign = 128;
@@ -61,6 +61,16 @@ AArch64TargetInfo::AArch64TargetInfo(const llvm::Triple &Triple,
 
   // Make __builtin_ms_va_list available.
   HasBuiltinMSVaList = true;
+
+  // Make the SVE types available.  Note that this deliberately doesn't
+  // depend on SveMode, since in principle it should be possible to turn
+  // SVE on and off within a translation unit.  It should also be possible
+  // to compile the global declaration:
+  //
+  // __SVInt8_t *ptr;
+  //
+  // even without SVE.
+  HasAArch64SVETypes = true;
 
   // {} in inline assembly are neon specifiers, not assembly variant
   // specifiers.
@@ -118,14 +128,35 @@ void AArch64TargetInfo::getTargetDefinesARMV82A(const LangOptions &Opts,
   getTargetDefinesARMV81A(Opts, Builder);
 }
 
+void AArch64TargetInfo::getTargetDefinesARMV83A(const LangOptions &Opts,
+                                                MacroBuilder &Builder) const {
+  Builder.defineMacro("__ARM_FEATURE_JCVT", "1");
+  // Also include the Armv8.2 defines
+  getTargetDefinesARMV82A(Opts, Builder);
+}
+
+void AArch64TargetInfo::getTargetDefinesARMV84A(const LangOptions &Opts,
+                                                MacroBuilder &Builder) const {
+  // Also include the Armv8.3 defines
+  // FIXME: Armv8.4 makes some extensions mandatory. Handle them here.
+  getTargetDefinesARMV83A(Opts, Builder);
+}
+
+void AArch64TargetInfo::getTargetDefinesARMV85A(const LangOptions &Opts,
+                                                MacroBuilder &Builder) const {
+  // Also include the Armv8.4 defines
+  // FIXME: Armv8.5 makes some extensions mandatory. Handle them here.
+  getTargetDefinesARMV84A(Opts, Builder);
+}
+
+
 void AArch64TargetInfo::getTargetDefines(const LangOptions &Opts,
                                          MacroBuilder &Builder) const {
   // Target identification.
   Builder.defineMacro("__aarch64__");
-  // For bare-metal none-eabi.
+  // For bare-metal.
   if (getTriple().getOS() == llvm::Triple::UnknownOS &&
-      (getTriple().getEnvironment() == llvm::Triple::EABI ||
-       getTriple().getEnvironment() == llvm::Triple::EABIHF))
+      getTriple().isOSBinFormatELF())
     Builder.defineMacro("__ELF__");
 
   // Target properties.
@@ -175,16 +206,13 @@ void AArch64TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__ARM_NEON_FP", "0xE");
   }
 
-  if (FPU & SveMode)
-    Builder.defineMacro("__ARM_FEATURE_SVE", "1");
-
-  if (CRC)
+  if (HasCRC)
     Builder.defineMacro("__ARM_FEATURE_CRC32", "1");
 
-  if (Crypto)
+  if (HasCrypto)
     Builder.defineMacro("__ARM_FEATURE_CRYPTO", "1");
 
-  if (Unaligned)
+  if (HasUnaligned)
     Builder.defineMacro("__ARM_FEATURE_UNALIGNED", "1");
 
   if ((FPU & NeonMode) && HasFullFP16)
@@ -195,6 +223,15 @@ void AArch64TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasDotProd)
     Builder.defineMacro("__ARM_FEATURE_DOTPROD", "1");
 
+  if (HasMTE)
+    Builder.defineMacro("__ARM_FEATURE_MEMORY_TAGGING", "1");
+
+  if (HasTME)
+    Builder.defineMacro("__ARM_FEATURE_TME", "1");
+
+  if ((FPU & NeonMode) && HasFP16FML)
+    Builder.defineMacro("__ARM_FEATURE_FP16FML", "1");
+
   switch (ArchKind) {
   default:
     break;
@@ -203,6 +240,15 @@ void AArch64TargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   case llvm::AArch64::ArchKind::ARMV8_2A:
     getTargetDefinesARMV82A(Opts, Builder);
+    break;
+  case llvm::AArch64::ArchKind::ARMV8_3A:
+    getTargetDefinesARMV83A(Opts, Builder);
+    break;
+  case llvm::AArch64::ArchKind::ARMV8_4A:
+    getTargetDefinesARMV84A(Opts, Builder);
+    break;
+  case llvm::AArch64::ArchKind::ARMV8_5A:
+    getTargetDefinesARMV85A(Opts, Builder);
     break;
   }
 
@@ -227,11 +273,14 @@ bool AArch64TargetInfo::hasFeature(StringRef Feature) const {
 bool AArch64TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                              DiagnosticsEngine &Diags) {
   FPU = FPUMode;
-  CRC = 0;
-  Crypto = 0;
-  Unaligned = 1;
-  HasFullFP16 = 0;
-  HasDotProd = 0;
+  HasCRC = false;
+  HasCrypto = false;
+  HasUnaligned = true;
+  HasFullFP16 = false;
+  HasDotProd = false;
+  HasFP16FML = false;
+  HasMTE = false;
+  HasTME = false;
   ArchKind = llvm::AArch64::ArchKind::ARMV8A;
 
   for (const auto &Feature : Features) {
@@ -240,19 +289,31 @@ bool AArch64TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
     if (Feature == "+sve")
       FPU |= SveMode;
     if (Feature == "+crc")
-      CRC = 1;
+      HasCRC = true;
     if (Feature == "+crypto")
-      Crypto = 1;
+      HasCrypto = true;
     if (Feature == "+strict-align")
-      Unaligned = 0;
+      HasUnaligned = false;
     if (Feature == "+v8.1a")
       ArchKind = llvm::AArch64::ArchKind::ARMV8_1A;
     if (Feature == "+v8.2a")
       ArchKind = llvm::AArch64::ArchKind::ARMV8_2A;
+    if (Feature == "+v8.3a")
+      ArchKind = llvm::AArch64::ArchKind::ARMV8_3A;
+    if (Feature == "+v8.4a")
+      ArchKind = llvm::AArch64::ArchKind::ARMV8_4A;
+    if (Feature == "+v8.5a")
+      ArchKind = llvm::AArch64::ArchKind::ARMV8_5A;
     if (Feature == "+fullfp16")
-      HasFullFP16 = 1;
+      HasFullFP16 = true;
     if (Feature == "+dotprod")
-      HasDotProd = 1;
+      HasDotProd = true;
+    if (Feature == "+fp16fml")
+      HasFP16FML = true;
+    if (Feature == "+mte")
+      HasMTE = true;
+    if (Feature == "+tme")
+      HasTME = true;
   }
 
   setDataLayout();
@@ -268,6 +329,7 @@ AArch64TargetInfo::checkCallingConvention(CallingConv CC) const {
   case CC_PreserveMost:
   case CC_PreserveAll:
   case CC_OpenCLKernel:
+  case CC_AArch64VectorCall:
   case CC_Win64:
     return CCCR_OK;
   default:
@@ -302,10 +364,19 @@ const char *const AArch64TargetInfo::GCCRegNames[] = {
     "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21", "d22",
     "d23", "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31",
 
-    // Vector registers
+    // Neon vector registers
     "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11",
     "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19", "v20", "v21", "v22",
-    "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"
+    "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
+
+    // SVE vector registers
+    "z0",  "z1",  "z2",  "z3",  "z4",  "z5",  "z6",  "z7",  "z8",  "z9",  "z10",
+    "z11", "z12", "z13", "z14", "z15", "z16", "z17", "z18", "z19", "z20", "z21",
+    "z22", "z23", "z24", "z25", "z26", "z27", "z28", "z29", "z30", "z31",
+
+    // SVE predicate registers
+    "p0",  "p1",  "p2",  "p3",  "p4",  "p5",  "p6",  "p7",  "p8",  "p9",  "p10",
+    "p11", "p12", "p13", "p14", "p15"
 };
 
 ArrayRef<const char *> AArch64TargetInfo::getGCCRegNames() const {
@@ -508,6 +579,7 @@ WindowsARM64TargetInfo::checkCallingConvention(CallingConv CC) const {
   case CC_OpenCLKernel:
   case CC_PreserveMost:
   case CC_PreserveAll:
+  case CC_Swift:
   case CC_Win64:
     return CCCR_OK;
   default:
@@ -521,21 +593,32 @@ MicrosoftARM64TargetInfo::MicrosoftARM64TargetInfo(const llvm::Triple &Triple,
   TheCXXABI.set(TargetCXXABI::Microsoft);
 }
 
-void MicrosoftARM64TargetInfo::getVisualStudioDefines(
-    const LangOptions &Opts, MacroBuilder &Builder) const {
-  WindowsTargetInfo<AArch64leTargetInfo>::getVisualStudioDefines(Opts, Builder);
-  Builder.defineMacro("_M_ARM64", "1");
-}
-
 void MicrosoftARM64TargetInfo::getTargetDefines(const LangOptions &Opts,
                                                 MacroBuilder &Builder) const {
-  WindowsTargetInfo::getTargetDefines(Opts, Builder);
-  getVisualStudioDefines(Opts, Builder);
+  WindowsARM64TargetInfo::getTargetDefines(Opts, Builder);
+  Builder.defineMacro("_M_ARM64", "1");
 }
 
 TargetInfo::CallingConvKind
 MicrosoftARM64TargetInfo::getCallingConvKind(bool ClangABICompat4) const {
   return CCK_MicrosoftWin64;
+}
+
+unsigned MicrosoftARM64TargetInfo::getMinGlobalAlign(uint64_t TypeSize) const {
+  unsigned Align = WindowsARM64TargetInfo::getMinGlobalAlign(TypeSize);
+
+  // MSVC does size based alignment for arm64 based on alignment section in
+  // below document, replicate that to keep alignment consistent with object
+  // files compiled by MSVC.
+  // https://docs.microsoft.com/en-us/cpp/build/arm64-windows-abi-conventions
+  if (TypeSize >= 512) {              // TypeSize >= 64 bytes
+    Align = std::max(Align, 128u);    // align type at least 16 bytes
+  } else if (TypeSize >= 64) {        // TypeSize >= 8 bytes
+    Align = std::max(Align, 64u);     // align type at least 8 butes
+  } else if (TypeSize >= 16) {        // TypeSize >= 2 bytes
+    Align = std::max(Align, 32u);     // align type at least 4 bytes
+  }
+  return Align;
 }
 
 MinGWARM64TargetInfo::MinGWARM64TargetInfo(const llvm::Triple &Triple,

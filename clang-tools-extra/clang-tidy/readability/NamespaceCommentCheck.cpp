@@ -1,15 +1,15 @@
 //===--- NamespaceCommentCheck.cpp - clang-tidy ---------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "NamespaceCommentCheck.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -69,12 +69,12 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *ND = Result.Nodes.getNodeAs<NamespaceDecl>("namespace");
   const SourceManager &Sources = *Result.SourceManager;
 
-  if (!locationsInSameFile(Sources, ND->getLocStart(), ND->getRBraceLoc()))
+  if (!locationsInSameFile(Sources, ND->getBeginLoc(), ND->getRBraceLoc()))
     return;
 
   // Don't require closing comments for namespaces spanning less than certain
   // number of lines.
-  unsigned StartLine = Sources.getSpellingLineNumber(ND->getLocStart());
+  unsigned StartLine = Sources.getSpellingLineNumber(ND->getBeginLoc());
   unsigned EndLine = Sources.getSpellingLineNumber(ND->getRBraceLoc());
   if (EndLine - StartLine + 1 <= ShortNamespaceLines)
     return;
@@ -103,11 +103,14 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
     }
   }
 
+  // FIXME: This probably breaks on comments between the namespace and its '{'.
   auto TextRange =
       Lexer::getAsCharRange(SourceRange(NestedNamespaceBegin, LBracketLocation),
                             Sources, getLangOpts());
   StringRef NestedNamespaceName =
-      Lexer::getSourceText(TextRange, Sources, getLangOpts()).rtrim();
+      Lexer::getSourceText(TextRange, Sources, getLangOpts())
+          .rtrim('{') // Drop the { itself.
+          .rtrim();   // Drop any whitespace before it.
   bool IsNested = NestedNamespaceName.contains(':');
 
   if (IsNested)
@@ -179,7 +182,13 @@ void NamespaceCommentCheck::check(const MatchFinder::MatchResult &Result) {
           ? "anonymous namespace"
           : ("namespace '" + NestedNamespaceName.str() + "'");
 
-  diag(AfterRBrace, Message)
+  // Place diagnostic at an old comment, or closing brace if we did not have it.
+  SourceLocation DiagLoc =
+      OldCommentRange.getBegin() != OldCommentRange.getEnd()
+          ? OldCommentRange.getBegin()
+          : ND->getRBraceLoc();
+
+  diag(DiagLoc, Message)
       << NamespaceName
       << FixItHint::CreateReplacement(
              CharSourceRange::getCharRange(OldCommentRange),

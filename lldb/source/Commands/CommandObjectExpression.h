@@ -1,19 +1,14 @@
 //===-- CommandObjectExpression.h -------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef liblldb_CommandObjectExpression_h_
 #define liblldb_CommandObjectExpression_h_
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/Core/IOHandler.h"
 #include "lldb/Interpreter/CommandObject.h"
 #include "lldb/Interpreter/OptionGroupBoolean.h"
@@ -39,9 +34,6 @@ public:
 
     void OptionParsingStarting(ExecutionContext *execution_context) override;
 
-    // Options table: Required for subclasses of Options.
-
-    static OptionDefinition g_option_table[];
     bool top_level;
     bool unwind_on_error;
     bool ignore_breakpoints;
@@ -62,10 +54,10 @@ public:
 
   Options *GetOptions() override;
 
+  void HandleCompletion(CompletionRequest &request) override;
+
 protected:
-  //------------------------------------------------------------------
   // IOHandler::Delegate functions
-  //------------------------------------------------------------------
   void IOHandlerInputComplete(IOHandler &io_handler,
                               std::string &line) override;
 
@@ -76,7 +68,7 @@ protected:
 
   bool EvaluateExpression(llvm::StringRef expr, Stream *output_stream,
                           Stream *error_stream,
-                          CommandReturnObject *result = NULL);
+                          CommandReturnObject *result = nullptr);
 
   void GetMultilineExpression();
 

@@ -1,21 +1,16 @@
 //===-- CommandObjectBugreport.cpp ------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "CommandObjectBugreport.h"
 
-// C Includes
 #include <cstdio>
 
-// C++ Includes
-// Other libraries and framework includes
 
-// Project includes
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionGroupOutputFile.h"
@@ -24,9 +19,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//-------------------------------------------------------------------------
 // "bugreport unwind"
-//-------------------------------------------------------------------------
 
 class CommandObjectBugreportUnwind : public CommandObjectParsed {
 public:
@@ -72,8 +65,6 @@ protected:
     const FileSpec &outfile_spec =
         m_outfile_options.GetFile().GetCurrentValue();
     if (outfile_spec) {
-      char path[PATH_MAX];
-      outfile_spec.GetPath(path, sizeof(path));
 
       uint32_t open_options =
           File::eOpenOptionWrite | File::eOpenOptionCanCreate |
@@ -84,10 +75,13 @@ protected:
         open_options |= File::eOpenOptionTruncate;
 
       StreamFileSP outfile_stream = std::make_shared<StreamFile>();
-      Status error = outfile_stream->GetFile().Open(path, open_options);
+      File &file = outfile_stream->GetFile();
+      Status error =
+          FileSystem::Instance().Open(file, outfile_spec, open_options);
       if (error.Fail()) {
+        auto path = outfile_spec.GetPath();
         result.AppendErrorWithFormat("Failed to open file '%s' for %s: %s\n",
-                                     path, append ? "append" : "write",
+                                     path.c_str(), append ? "append" : "write",
                                      error.AsCString());
         result.SetStatus(eReturnStatusFailed);
         return false;
@@ -100,6 +94,7 @@ protected:
     options.SetStopOnError(false);
     options.SetEchoCommands(true);
     options.SetPrintResults(true);
+    options.SetPrintErrors(true);
     options.SetAddToHistory(false);
     m_interpreter.HandleCommands(commands, &m_exe_ctx, options, result);
 
@@ -113,9 +108,7 @@ private:
 
 #pragma mark CommandObjectMultiwordBugreport
 
-//-------------------------------------------------------------------------
 // CommandObjectMultiwordBugreport
-//-------------------------------------------------------------------------
 
 CommandObjectMultiwordBugreport::CommandObjectMultiwordBugreport(
     CommandInterpreter &interpreter)

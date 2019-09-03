@@ -4,7 +4,24 @@ Clang-Tidy Checks
 =================
 
 .. toctree::
+
+   abseil-duration-addition
+   abseil-duration-comparison
+   abseil-duration-conversion-cast
+   abseil-duration-division
+   abseil-duration-factory-float
+   abseil-duration-factory-scale
+   abseil-duration-subtraction
+   abseil-duration-unnecessary-conversion
+   abseil-faster-strsplit-delimiter
+   abseil-no-internal-dependencies
+   abseil-no-namespace
+   abseil-redundant-strcat-calls
+   abseil-str-cat-append
    abseil-string-find-startswith
+   abseil-time-comparison
+   abseil-time-subtraction
+   abseil-upgrade-duration-conversions
    android-cloexec-accept
    android-cloexec-accept4
    android-cloexec-creat
@@ -16,14 +33,18 @@ Clang-Tidy Checks
    android-cloexec-inotify-init1
    android-cloexec-memfd-create
    android-cloexec-open
+   android-cloexec-pipe
+   android-cloexec-pipe2
    android-cloexec-socket
    android-comparison-in-temp-failure-retry
    boost-use-to-string
    bugprone-argument-comment
    bugprone-assert-side-effect
    bugprone-bool-pointer-implicit-conversion
+   bugprone-branch-clone
    bugprone-copy-constructor-init
    bugprone-dangling-handle
+   bugprone-dynamic-static-initializers
    bugprone-exception-escape
    bugprone-fold-init-type
    bugprone-forward-declaration-namespace
@@ -39,6 +60,7 @@ Clang-Tidy Checks
    bugprone-move-forwarding-reference
    bugprone-multiple-statement-macro
    bugprone-parent-virtual-call
+   bugprone-posix-return
    bugprone-sizeof-container
    bugprone-sizeof-expression
    bugprone-string-constructor
@@ -52,13 +74,16 @@ Clang-Tidy Checks
    bugprone-swapped-arguments
    bugprone-terminating-continue
    bugprone-throw-keyword-missing
+   bugprone-too-small-loop-variable
    bugprone-undefined-memory-manipulation
    bugprone-undelegated-constructor
+   bugprone-unhandled-self-assignment
    bugprone-unused-raii
    bugprone-unused-return-value
    bugprone-use-after-move
    bugprone-virtual-near-miss
    cert-dcl03-c (redirects to misc-static-assert) <cert-dcl03-c>
+   cert-dcl16-c (redirects to readability-uppercase-literal-suffix) <cert-dcl16-c>
    cert-dcl21-cpp
    cert-dcl50-cpp
    cert-dcl54-cpp (redirects to misc-new-delete-overloads) <cert-dcl54-cpp>
@@ -78,11 +103,101 @@ Clang-Tidy Checks
    cert-msc50-cpp
    cert-msc51-cpp
    cert-oop11-cpp (redirects to performance-move-constructor-init) <cert-oop11-cpp>
+   cert-oop54-cpp (redirects to bugprone-unhandled-self-assignment) <cert-oop54-cpp>
+   clang-analyzer-core.CallAndMessage
+   clang-analyzer-core.DivideZero
+   clang-analyzer-core.DynamicTypePropagation
+   clang-analyzer-core.NonNullParamChecker
+   clang-analyzer-core.NullDereference
+   clang-analyzer-core.StackAddressEscape
+   clang-analyzer-core.UndefinedBinaryOperatorResult
+   clang-analyzer-core.VLASize
+   clang-analyzer-core.uninitialized.ArraySubscript
+   clang-analyzer-core.uninitialized.Assign
+   clang-analyzer-core.uninitialized.Branch
+   clang-analyzer-core.uninitialized.CapturedBlockVariable
+   clang-analyzer-core.uninitialized.UndefReturn
+   clang-analyzer-cplusplus.InnerPointer
+   clang-analyzer-cplusplus.Move
+   clang-analyzer-cplusplus.NewDelete
+   clang-analyzer-cplusplus.NewDeleteLeaks
+   clang-analyzer-deadcode.DeadStores
+   clang-analyzer-nullability.NullPassedToNonnull
+   clang-analyzer-nullability.NullReturnedFromNonnull
+   clang-analyzer-nullability.NullableDereferenced
+   clang-analyzer-nullability.NullablePassedToNonnull
+   clang-analyzer-nullability.NullableReturnedFromNonnull
+   clang-analyzer-optin.cplusplus.UninitializedObject
+   clang-analyzer-optin.cplusplus.VirtualCall
+   clang-analyzer-optin.mpi.MPI-Checker
+   clang-analyzer-optin.osx.OSObjectCStyleCast
+   clang-analyzer-optin.osx.cocoa.localizability.EmptyLocalizationContextChecker
+   clang-analyzer-optin.osx.cocoa.localizability.NonLocalizedStringChecker
+   clang-analyzer-optin.performance.GCDAntipattern
+   clang-analyzer-optin.performance.Padding
+   clang-analyzer-optin.portability.UnixAPI
+   clang-analyzer-osx.API
+   clang-analyzer-osx.MIG
+   clang-analyzer-osx.NumberObjectConversion
+   clang-analyzer-osx.OSObjectRetainCount
+   clang-analyzer-osx.ObjCProperty
+   clang-analyzer-osx.SecKeychainAPI
+   clang-analyzer-osx.cocoa.AtSync
+   clang-analyzer-osx.cocoa.AutoreleaseWrite
+   clang-analyzer-osx.cocoa.ClassRelease
+   clang-analyzer-osx.cocoa.Dealloc
+   clang-analyzer-osx.cocoa.IncompatibleMethodTypes
+   clang-analyzer-osx.cocoa.Loops
+   clang-analyzer-osx.cocoa.MissingSuperCall
+   clang-analyzer-osx.cocoa.NSAutoreleasePool
+   clang-analyzer-osx.cocoa.NSError
+   clang-analyzer-osx.cocoa.NilArg
+   clang-analyzer-osx.cocoa.NonNilReturnValue
+   clang-analyzer-osx.cocoa.ObjCGenerics
+   clang-analyzer-osx.cocoa.RetainCount
+   clang-analyzer-osx.cocoa.RunLoopAutoreleaseLeak
+   clang-analyzer-osx.cocoa.SelfInit
+   clang-analyzer-osx.cocoa.SuperDealloc
+   clang-analyzer-osx.cocoa.UnusedIvars
+   clang-analyzer-osx.cocoa.VariadicMethodTypes
+   clang-analyzer-osx.coreFoundation.CFError
+   clang-analyzer-osx.coreFoundation.CFNumber
+   clang-analyzer-osx.coreFoundation.CFRetainRelease
+   clang-analyzer-osx.coreFoundation.containers.OutOfBounds
+   clang-analyzer-osx.coreFoundation.containers.PointerSizedValues
+   clang-analyzer-security.FloatLoopCounter
+   clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+   clang-analyzer-security.insecureAPI.UncheckedReturn
+   clang-analyzer-security.insecureAPI.bcmp
+   clang-analyzer-security.insecureAPI.bcopy
+   clang-analyzer-security.insecureAPI.bzero
+   clang-analyzer-security.insecureAPI.getpw
+   clang-analyzer-security.insecureAPI.gets
+   clang-analyzer-security.insecureAPI.mkstemp
+   clang-analyzer-security.insecureAPI.mktemp
+   clang-analyzer-security.insecureAPI.rand
+   clang-analyzer-security.insecureAPI.strcpy
+   clang-analyzer-security.insecureAPI.vfork
+   clang-analyzer-unix.API
+   clang-analyzer-unix.Malloc
+   clang-analyzer-unix.MallocSizeof
+   clang-analyzer-unix.MismatchedDeallocator
+   clang-analyzer-unix.Vfork
+   clang-analyzer-unix.cstring.BadSizeArg
+   clang-analyzer-unix.cstring.NullArg
+   clang-analyzer-valist.CopyToSelf
+   clang-analyzer-valist.Uninitialized
+   clang-analyzer-valist.Unterminated
+   cppcoreguidelines-avoid-c-arrays (redirects to modernize-avoid-c-arrays) <cppcoreguidelines-avoid-c-arrays>
    cppcoreguidelines-avoid-goto
+   cppcoreguidelines-avoid-magic-numbers (redirects to readability-magic-numbers) <cppcoreguidelines-avoid-magic-numbers>
    cppcoreguidelines-c-copy-assignment-signature (redirects to misc-unconventional-assign-operator) <cppcoreguidelines-c-copy-assignment-signature>
+   cppcoreguidelines-explicit-virtual-functions (redirects to modernize-use-override) <cppcoreguidelines-explicit-virtual-functions>
    cppcoreguidelines-interfaces-global-init
+   cppcoreguidelines-macro-usage
    cppcoreguidelines-narrowing-conversions
    cppcoreguidelines-no-malloc
+   cppcoreguidelines-non-private-member-variables-in-classes (redirects to misc-non-private-member-variables-in-classes) <cppcoreguidelines-non-private-member-variables-in-classes>
    cppcoreguidelines-owning-memory
    cppcoreguidelines-pro-bounds-array-to-pointer-decay
    cppcoreguidelines-pro-bounds-constant-array-index
@@ -96,7 +211,8 @@ Clang-Tidy Checks
    cppcoreguidelines-pro-type-vararg
    cppcoreguidelines-slicing
    cppcoreguidelines-special-member-functions
-   fuchsia-default-arguments
+   fuchsia-default-arguments-calls
+   fuchsia-default-arguments-declarations
    fuchsia-header-anon-namespaces (redirects to google-build-namespaces) <fuchsia-header-anon-namespaces>
    fuchsia-multiple-inheritance
    fuchsia-overloaded-operator
@@ -110,8 +226,11 @@ Clang-Tidy Checks
    google-default-arguments
    google-explicit-constructor
    google-global-names-in-headers
+   google-objc-avoid-nsobject-new
    google-objc-avoid-throwing-exception
+   google-objc-function-naming
    google-objc-global-variable-declaration
+   google-readability-avoid-underscore-in-googletest-name
    google-readability-braces-around-statements (redirects to readability-braces-around-statements) <google-readability-braces-around-statements>
    google-readability-casting
    google-readability-function-size (redirects to readability-function-size) <google-readability-function-size>
@@ -120,6 +239,8 @@ Clang-Tidy Checks
    google-runtime-int
    google-runtime-operator
    google-runtime-references
+   google-upgrade-googletest-case
+   hicpp-avoid-c-arrays (redirects to modernize-avoid-c-arrays) <hicpp-avoid-c-arrays>
    hicpp-avoid-goto
    hicpp-braces-around-statements (redirects to readability-braces-around-statements) <hicpp-braces-around-statements>
    hicpp-deprecated-headers (redirects to modernize-deprecated-headers) <hicpp-deprecated-headers>
@@ -140,6 +261,7 @@ Clang-Tidy Checks
    hicpp-special-member-functions (redirects to cppcoreguidelines-special-member-functions) <hicpp-special-member-functions>
    hicpp-static-assert (redirects to misc-static-assert) <hicpp-static-assert>
    hicpp-undelegated-constructor (redirects to bugprone-undelegated-constructor) <hicpp-undelegated-constructor>
+   hicpp-uppercase-literal-suffix (redirects to readability-uppercase-literal-suffix) <hicpp-uppercase-literal-suffix>
    hicpp-use-auto (redirects to modernize-use-auto) <hicpp-use-auto>
    hicpp-use-emplace (redirects to modernize-use-emplace) <hicpp-use-emplace>
    hicpp-use-equals-default (redirects to modernize-use-equals-default) <hicpp-use-equals-default>
@@ -148,14 +270,18 @@ Clang-Tidy Checks
    hicpp-use-nullptr (redirects to modernize-use-nullptr) <hicpp-use-nullptr>
    hicpp-use-override (redirects to modernize-use-override) <hicpp-use-override>
    hicpp-vararg (redirects to cppcoreguidelines-pro-type-vararg) <hicpp-vararg>
+   linuxkernel-must-use-errs
    llvm-header-guard
    llvm-include-order
    llvm-namespace-comment
+   llvm-prefer-isa-or-dyn-cast-in-conditionals
+   llvm-prefer-register-over-unsigned
    llvm-twine-local
    misc-definitions-in-headers
    misc-misplaced-const
    misc-new-delete-overloads
    misc-non-copyable-objects
+   misc-non-private-member-variables-in-classes
    misc-redundant-expression
    misc-static-assert
    misc-throw-by-value-catch-by-reference
@@ -165,7 +291,10 @@ Clang-Tidy Checks
    misc-unused-parameters
    misc-unused-using-decls
    modernize-avoid-bind
+   modernize-avoid-c-arrays
+   modernize-concat-nested-namespaces
    modernize-deprecated-headers
+   modernize-deprecated-ios-base-aliases
    modernize-loop-convert
    modernize-make-shared
    modernize-make-unique
@@ -183,9 +312,11 @@ Clang-Tidy Checks
    modernize-use-emplace
    modernize-use-equals-default
    modernize-use-equals-delete
+   modernize-use-nodiscard
    modernize-use-noexcept
    modernize-use-nullptr
    modernize-use-override
+   modernize-use-trailing-return-type
    modernize-use-transparent-functors
    modernize-use-uncaught-exceptions
    modernize-use-using
@@ -195,6 +326,9 @@ Clang-Tidy Checks
    objc-avoid-spinlock
    objc-forbidden-subclassing
    objc-property-declaration
+   objc-super-self
+   openmp-exception-escape
+   openmp-use-default-none
    performance-faster-string-find
    performance-for-range-copy
    performance-implicit-conversion-in-loop
@@ -210,7 +344,9 @@ Clang-Tidy Checks
    portability-simd-intrinsics
    readability-avoid-const-params-in-decls
    readability-braces-around-statements
+   readability-const-return-type
    readability-container-size-empty
+   readability-convert-member-functions-to-static
    readability-delete-null-pointer
    readability-deleted-default
    readability-else-after-return
@@ -218,6 +354,8 @@ Clang-Tidy Checks
    readability-identifier-naming
    readability-implicit-bool-conversion
    readability-inconsistent-declaration-parameter-name
+   readability-isolate-declaration
+   readability-magic-numbers
    readability-misleading-indentation
    readability-misplaced-array-index
    readability-named-parameter
@@ -226,6 +364,7 @@ Clang-Tidy Checks
    readability-redundant-declaration
    readability-redundant-function-ptr-dereference
    readability-redundant-member-init
+   readability-redundant-preprocessor
    readability-redundant-smartptr-get
    readability-redundant-string-cstr
    readability-redundant-string-init
@@ -235,4 +374,5 @@ Clang-Tidy Checks
    readability-static-definition-in-anonymous-namespace
    readability-string-compare
    readability-uniqueptr-delete-release
+   readability-uppercase-literal-suffix
    zircon-temporary-objects

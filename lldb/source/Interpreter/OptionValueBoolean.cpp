@@ -1,18 +1,13 @@
 //===-- OptionValueBoolean.cpp ----------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Interpreter/OptionValueBoolean.h"
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 #include "lldb/Host/PosixApi.h"
 #include "lldb/Interpreter/OptionArgParser.h"
 #include "lldb/Utility/Stream.h"
@@ -76,9 +71,8 @@ lldb::OptionValueSP OptionValueBoolean::DeepCopy() const {
   return OptionValueSP(new OptionValueBoolean(*this));
 }
 
-size_t OptionValueBoolean::AutoComplete(CommandInterpreter &interpreter,
-                                        CompletionRequest &request) {
-  request.SetWordComplete(false);
+void OptionValueBoolean::AutoComplete(CommandInterpreter &interpreter,
+                                      CompletionRequest &request) {
   static const llvm::StringRef g_autocomplete_entries[] = {
       "true", "false", "on", "off", "yes", "no", "1", "0"};
 
@@ -92,5 +86,4 @@ size_t OptionValueBoolean::AutoComplete(CommandInterpreter &interpreter,
     if (entry.startswith_lower(request.GetCursorArgumentPrefix()))
       request.AddCompletion(entry);
   }
-  return request.GetNumberOfMatches();
 }

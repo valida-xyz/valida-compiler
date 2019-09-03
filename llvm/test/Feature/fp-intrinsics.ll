@@ -242,6 +242,53 @@ entry:
   ret double %result
 }
 
+; Verify that fptoui(42.1) isn't simplified when the rounding mode is
+; unknown.
+; CHECK-LABEL: f18
+; CHECK: call zeroext i32 @llvm.experimental.constrained.fptoui
+define zeroext i32 @f18() {
+entry:
+  %result = call zeroext i32 @llvm.experimental.constrained.fptoui.i32.f64(
+                                               double 42.1,
+                                               metadata !"fpexcept.strict")
+  ret i32 %result
+}
+
+; Verify that fptosi(42.1) isn't simplified when the rounding mode is
+; unknown.
+; CHECK-LABEL: f19
+; CHECK: call i32 @llvm.experimental.constrained.fptosi
+define i32 @f19() {
+entry:
+  %result = call i32 @llvm.experimental.constrained.fptosi.i32.f64(double 42.1,
+                                               metadata !"fpexcept.strict")
+  ret i32 %result
+}
+
+; Verify that fptrunc(42.1) isn't simplified when the rounding mode is
+; unknown.
+; CHECK-LABEL: f20
+; CHECK: call float @llvm.experimental.constrained.fptrunc
+define float @f20() {
+entry:
+  %result = call float @llvm.experimental.constrained.fptrunc.f32.f64(
+                                               double 42.1,
+                                               metadata !"round.dynamic",
+                                               metadata !"fpexcept.strict")
+  ret float %result
+}
+
+; Verify that fpext(42.1) isn't simplified when the rounding mode is
+; unknown.
+; CHECK-LABEL: f21
+; CHECK: call double @llvm.experimental.constrained.fpext
+define double @f21() {
+entry:
+  %result = call double @llvm.experimental.constrained.fpext.f64.f32(float 42.0,
+                                               metadata !"fpexcept.strict")
+  ret double %result
+}
+
 @llvm.fp.env = thread_local global i8 zeroinitializer, section "llvm.metadata"
 declare double @llvm.experimental.constrained.fdiv.f64(double, double, metadata, metadata)
 declare double @llvm.experimental.constrained.fmul.f64(double, double, metadata, metadata)
@@ -260,3 +307,7 @@ declare double @llvm.experimental.constrained.log2.f64(double, metadata, metadat
 declare double @llvm.experimental.constrained.rint.f64(double, metadata, metadata)
 declare double @llvm.experimental.constrained.nearbyint.f64(double, metadata, metadata)
 declare double @llvm.experimental.constrained.fma.f64(double, double, double, metadata, metadata)
+declare i32 @llvm.experimental.constrained.fptosi.i32.f64(double, metadata)
+declare i32 @llvm.experimental.constrained.fptoui.i32.f64(double, metadata)
+declare float @llvm.experimental.constrained.fptrunc.f32.f64(double, metadata, metadata)
+declare double @llvm.experimental.constrained.fpext.f64.f32(float, metadata)

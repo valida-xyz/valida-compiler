@@ -1,9 +1,8 @@
 //===--- StringLiteralWithEmbeddedNulCheck.cpp - clang-tidy----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -68,14 +67,14 @@ void StringLiteralWithEmbeddedNulCheck::check(
           SL->getCodeUnit(Offset + 1) == 'x' &&
           isDigit(SL->getCodeUnit(Offset + 2)) &&
           isDigit(SL->getCodeUnit(Offset + 3))) {
-        diag(SL->getLocStart(), "suspicious embedded NUL character");
+        diag(SL->getBeginLoc(), "suspicious embedded NUL character");
         return;
       }
     }
   }
 
   if (const auto *SL = Result.Nodes.getNodeAs<StringLiteral>("truncated")) {
-    diag(SL->getLocStart(),
+    diag(SL->getBeginLoc(),
          "truncated string literal with embedded NUL character");
   }
 }

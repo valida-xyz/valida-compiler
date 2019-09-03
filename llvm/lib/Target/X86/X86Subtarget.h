@@ -1,9 +1,8 @@
 //===-- X86Subtarget.h - Define Subtarget for the X86 ----------*- C++ -*--===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -52,21 +51,15 @@ enum Style {
 
 class X86Subtarget final : public X86GenSubtargetInfo {
 public:
+  // NOTE: Do not add anything new to this list. Coarse, CPU name based flags
+  // are not a good idea. We should be migrating away from these.
   enum X86ProcFamilyEnum {
     Others,
     IntelAtom,
     IntelSLM,
     IntelGLM,
     IntelGLP,
-    IntelTRM,
-    IntelHaswell,
-    IntelBroadwell,
-    IntelSkylake,
-    IntelKNL,
-    IntelSKX,
-    IntelCannonlake,
-    IntelIcelakeClient,
-    IntelIcelakeServer,
+    IntelTRM
   };
 
 protected:
@@ -94,6 +87,9 @@ protected:
 
   /// True if the processor supports X87 instructions.
   bool HasX87 = false;
+
+  /// True if the processor supports CMPXCHG8B.
+  bool HasCmpxchg8b = false;
 
   /// True if this processor has NOPL instruction
   /// (generally pentium pro+).
@@ -229,6 +225,9 @@ protected:
   //  PMULUDQ.
   bool IsPMULLDSlow = false;
 
+  /// True if the PMADDWD instruction is slow compared to PMULLD.
+  bool IsPMADDWDSlow = false;
+
   /// True if unaligned memory accesses of 16-bytes are slow.
   bool IsUAMem16Slow = false;
 
@@ -298,6 +297,9 @@ protected:
   /// True if the processor supports macrofusion.
   bool HasMacroFusion = false;
 
+  /// True if the processor supports branch fusion.
+  bool HasBranchFusion = false;
+
   /// True if the processor has enhanced REP MOVSB/STOSB.
   bool HasERMSB = false;
 
@@ -351,11 +353,20 @@ protected:
   /// Processor has AVX-512 Vector Neural Network Instructions
   bool HasVNNI = false;
 
+  /// Processor has AVX-512 bfloat16 floating-point extensions
+  bool HasBF16 = false;
+
+  /// Processor supports ENQCMD instructions
+  bool HasENQCMD = false;
+
   /// Processor has AVX-512 Bit Algorithms instructions
   bool HasBITALG = false;
 
-  /// Processor supports MPX - Memory Protection Extensions
-  bool HasMPX = false;
+  /// Processor has AVX-512 vp2intersect instructions
+  bool HasVP2INTERSECT = false;
+
+  /// Deprecated flag for MPX instructions.
+  bool DeprecatedHasMPX = false;
 
   /// Processor supports CET SHSTK - Control-Flow Enforcement Technology
   /// using Shadow Stack
@@ -385,9 +396,29 @@ protected:
   /// Processor supports PCONFIG instruction
   bool HasPCONFIG = false;
 
+  /// Processor has a single uop BEXTR implementation.
+  bool HasFastBEXTR = false;
+
+  /// Try harder to combine to horizontal vector ops if they are fast.
+  bool HasFastHorizontalOps = false;
+
+  /// Prefer a left/right scalar logical shifts pair over a shift+and pair.
+  bool HasFastScalarShiftMasks = false;
+
+  /// Prefer a left/right vector logical shifts pair over a shift+and pair.
+  bool HasFastVectorShiftMasks = false;
+
   /// Use a retpoline thunk rather than indirect calls to block speculative
   /// execution.
-  bool UseRetpoline = false;
+  bool UseRetpolineIndirectCalls = false;
+
+  /// Use a retpoline thunk or remove any indirect branch to block speculative
+  /// execution.
+  bool UseRetpolineIndirectBranches = false;
+
+  /// Deprecated flag, query `UseRetpolineIndirectCalls` and
+  /// `UseRetpolineIndirectBranches` instead.
+  bool DeprecatedUseRetpoline = false;
 
   /// When using a retpoline thunk, call an externally provided thunk rather
   /// than emitting one inside the compiler.
@@ -407,6 +438,9 @@ protected:
 
   /// Indicates target prefers 256 bit instructions.
   bool Prefer256Bit = false;
+
+  /// Threeway branch is profitable in this subtarget.
+  bool ThreewayBranchProfitable = false;
 
   /// What processor and OS we're targeting.
   Triple TargetTriple;
@@ -493,7 +527,7 @@ public:
 
   /// Methods used by Global ISel
   const CallLowering *getCallLowering() const override;
-  const InstructionSelector *getInstructionSelector() const override;
+  InstructionSelector *getInstructionSelector() const override;
   const LegalizerInfo *getLegalizerInfo() const override;
   const RegisterBankInfo *getRegBankInfo() const override;
 
@@ -533,8 +567,11 @@ public:
   void setPICStyle(PICStyles::Style Style)  { PICStyle = Style; }
 
   bool hasX87() const { return HasX87; }
+  bool hasCmpxchg8b() const { return HasCmpxchg8b; }
   bool hasNOPL() const { return HasNOPL; }
-  bool hasCMov() const { return HasCMov; }
+  // SSE codegen depends on cmovs, and all SSE1+ processors support them.
+  // All 64-bit processors support cmov.
+  bool hasCMov() const { return HasCMov || X86SSELevel >= SSE1 || is64Bit(); }
   bool hasSSE1() const { return X86SSELevel >= SSE1; }
   bool hasSSE2() const { return X86SSELevel >= SSE2; }
   bool hasSSE3() const { return X86SSELevel >= SSE3; }
@@ -599,12 +636,13 @@ public:
   bool hasPTWRITE() const { return HasPTWRITE; }
   bool isSHLDSlow() const { return IsSHLDSlow; }
   bool isPMULLDSlow() const { return IsPMULLDSlow; }
+  bool isPMADDWDSlow() const { return IsPMADDWDSlow; }
   bool isUnalignedMem16Slow() const { return IsUAMem16Slow; }
   bool isUnalignedMem32Slow() const { return IsUAMem32Slow; }
   int getGatherOverhead() const { return GatherOverhead; }
   int getScatterOverhead() const { return ScatterOverhead; }
   bool hasSSEUnalignedMem() const { return HasSSEUnalignedMem; }
-  bool hasCmpxchg16b() const { return HasCmpxchg16b; }
+  bool hasCmpxchg16b() const { return HasCmpxchg16b && is64Bit(); }
   bool useLeaForSP() const { return UseLeaForSP; }
   bool hasPOPCNTFalseDeps() const { return HasPOPCNTFalseDeps; }
   bool hasLZCNTFalseDeps() const { return HasLZCNTFalseDeps; }
@@ -619,7 +657,12 @@ public:
   bool hasFastVectorFSQRT() const { return HasFastVectorFSQRT; }
   bool hasFastLZCNT() const { return HasFastLZCNT; }
   bool hasFastSHLDRotate() const { return HasFastSHLDRotate; }
+  bool hasFastBEXTR() const { return HasFastBEXTR; }
+  bool hasFastHorizontalOps() const { return HasFastHorizontalOps; }
+  bool hasFastScalarShiftMasks() const { return HasFastScalarShiftMasks; }
+  bool hasFastVectorShiftMasks() const { return HasFastVectorShiftMasks; }
   bool hasMacroFusion() const { return HasMacroFusion; }
+  bool hasBranchFusion() const { return HasBranchFusion; }
   bool hasERMSB() const { return HasERMSB; }
   bool hasSlowDivide32() const { return HasSlowDivide32; }
   bool hasSlowDivide64() const { return HasSlowDivide64; }
@@ -638,8 +681,9 @@ public:
   bool hasVLX() const { return HasVLX; }
   bool hasPKU() const { return HasPKU; }
   bool hasVNNI() const { return HasVNNI; }
+  bool hasBF16() const { return HasBF16; }
+  bool hasVP2INTERSECT() const { return HasVP2INTERSECT; }
   bool hasBITALG() const { return HasBITALG; }
-  bool hasMPX() const { return HasMPX; }
   bool hasSHSTK() const { return HasSHSTK; }
   bool hasCLFLUSHOPT() const { return HasCLFLUSHOPT; }
   bool hasCLWB() const { return HasCLWB; }
@@ -648,8 +692,13 @@ public:
   bool hasWAITPKG() const { return HasWAITPKG; }
   bool hasPCONFIG() const { return HasPCONFIG; }
   bool hasSGX() const { return HasSGX; }
+  bool threewayBranchProfitable() const { return ThreewayBranchProfitable; }
   bool hasINVPCID() const { return HasINVPCID; }
-  bool useRetpoline() const { return UseRetpoline; }
+  bool hasENQCMD() const { return HasENQCMD; }
+  bool useRetpolineIndirectCalls() const { return UseRetpolineIndirectCalls; }
+  bool useRetpolineIndirectBranches() const {
+    return UseRetpolineIndirectBranches;
+  }
   bool useRetpolineExternalThunk() const { return UseRetpolineExternalThunk; }
 
   unsigned getPreferVectorWidth() const { return PreferVectorWidth; }
@@ -719,10 +768,6 @@ public:
 
   bool isTargetWindowsMSVC() const {
     return TargetTriple.isWindowsMSVCEnvironment();
-  }
-
-  bool isTargetKnownWindowsMSVC() const {
-    return TargetTriple.isKnownWindowsMSVCEnvironment();
   }
 
   bool isTargetWindowsCoreCLR() const {
@@ -804,15 +849,17 @@ public:
 
   /// If we are using retpolines, we need to expand indirectbr to avoid it
   /// lowering to an actual indirect jump.
-  bool enableIndirectBrExpand() const override { return useRetpoline(); }
+  bool enableIndirectBrExpand() const override {
+    return useRetpolineIndirectBranches();
+  }
 
   /// Enable the MachineScheduler pass for all X86 subtargets.
   bool enableMachineScheduler() const override { return true; }
 
-  // TODO: Update the regression tests and return true.
-  bool supportPrintSchedInfo() const override { return false; }
-
   bool enableEarlyIfConversion() const override;
+
+  void getPostRAMutations(std::vector<std::unique_ptr<ScheduleDAGMutation>>
+                              &Mutations) const override;
 
   AntiDepBreakMode getAntiDepBreakMode() const override {
     return TargetSubtargetInfo::ANTIDEP_CRITICAL;

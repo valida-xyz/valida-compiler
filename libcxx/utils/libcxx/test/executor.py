@@ -1,9 +1,8 @@
 #===----------------------------------------------------------------------===##
 #
-#                     The LLVM Compiler Infrastructure
-#
-# This file is dual licensed under the MIT and the University of Illinois Open
-# Source Licenses. See LICENSE.TXT for details.
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 #===----------------------------------------------------------------------===##
 
@@ -188,7 +187,7 @@ class SSHExecutor(RemoteExecutor):
         remote = self.user_prefix + self.host
         ssh_cmd = [self.ssh_command, '-oBatchMode=yes', remote]
         if env:
-            env_cmd = ['env'] + ['%s=%s' % (k, v) for k, v in env.items()]
+            env_cmd = ['env'] + ['%s="%s"' % (k, v) for k, v in env.items()]
         else:
             env_cmd = []
         remote_cmd = ' '.join(env_cmd + cmd)

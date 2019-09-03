@@ -3,8 +3,6 @@
 from __future__ import print_function
 
 
-import os
-import time
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -25,6 +23,7 @@ class TestObjCIvarsInBlocks(TestBase):
 
     @skipUnlessDarwin
     @add_test_categories(['pyapi'])
+    @skipIf(dwarf_version=['<', '4'])
     @expectedFailureAll(
         archs=["i[3-6]86"],
         bugnumber="This test requires the 2.0 runtime, so it will fail on i386")

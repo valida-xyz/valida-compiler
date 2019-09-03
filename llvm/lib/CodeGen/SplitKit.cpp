@@ -1,9 +1,8 @@
 //===- SplitKit.cpp - Toolkit for splitting live ranges -------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -438,7 +437,7 @@ void SplitEditor::addDeadDef(LiveInterval &LI, VNInfo *VNI, bool Original) {
     assert(DefMI != nullptr);
     LaneBitmask LM;
     for (const MachineOperand &DefOp : DefMI->defs()) {
-      unsigned R = DefOp.getReg();
+      Register R = DefOp.getReg();
       if (R != LI.reg)
         continue;
       if (unsigned SR = DefOp.getSubReg())
@@ -521,17 +520,18 @@ SlotIndex SplitEditor::buildSingleSubRegCopy(unsigned FromReg, unsigned ToReg,
       .addReg(FromReg, 0, SubIdx);
 
   BumpPtrAllocator &Allocator = LIS.getVNInfoAllocator();
+  SlotIndexes &Indexes = *LIS.getSlotIndexes();
   if (FirstCopy) {
-    SlotIndexes &Indexes = *LIS.getSlotIndexes();
     Def = Indexes.insertMachineInstrInMaps(*CopyMI, Late).getRegSlot();
   } else {
     CopyMI->bundleWithPred();
   }
   LaneBitmask LaneMask = TRI.getSubRegIndexLaneMask(SubIdx);
   DestLI.refineSubRanges(Allocator, LaneMask,
-                         [Def, &Allocator](LiveInterval::SubRange& SR) {
-    SR.createDeadDef(Def, Allocator);
-  });
+                         [Def, &Allocator](LiveInterval::SubRange &SR) {
+                           SR.createDeadDef(Def, Allocator);
+                         },
+                         Indexes, TRI);
   return Def;
 }
 
@@ -1373,7 +1373,7 @@ void SplitEditor::rewriteAssigned(bool ExtendRanges) {
     assert(LI.hasSubRanges());
 
     LiveRangeCalc SubLRC;
-    unsigned Reg = EP.MO.getReg(), Sub = EP.MO.getSubReg();
+    Register Reg = EP.MO.getReg(), Sub = EP.MO.getSubReg();
     LaneBitmask LM = Sub != 0 ? TRI.getSubRegIndexLaneMask(Sub)
                               : MRI.getMaxLaneMaskForVReg(Reg);
     for (LiveInterval::SubRange &S : LI.subranges()) {

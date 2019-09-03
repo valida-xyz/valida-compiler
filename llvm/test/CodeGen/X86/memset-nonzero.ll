@@ -144,8 +144,8 @@ define void @memset_256_nonzero_bytes(i8* %x) {
 ; SSE:       # %bb.0:
 ; SSE-NEXT:    pushq %rax
 ; SSE-NEXT:    .cfi_def_cfa_offset 16
-; SSE-NEXT:    movl $42, %esi
 ; SSE-NEXT:    movl $256, %edx # imm = 0x100
+; SSE-NEXT:    movl $42, %esi
 ; SSE-NEXT:    callq memset
 ; SSE-NEXT:    popq %rax
 ; SSE-NEXT:    .cfi_def_cfa_offset 8
@@ -259,9 +259,8 @@ define void @memset_32_nonconst_bytes(i8* %x, i8 %c) {
 ; AVX1-NEXT:    vmovd %esi, %xmm0
 ; AVX1-NEXT:    vpxor %xmm1, %xmm1, %xmm1
 ; AVX1-NEXT:    vpshufb %xmm1, %xmm0, %xmm0
-; AVX1-NEXT:    vinsertf128 $1, %xmm0, %ymm0, %ymm0
-; AVX1-NEXT:    vmovups %ymm0, (%rdi)
-; AVX1-NEXT:    vzeroupper
+; AVX1-NEXT:    vmovdqu %xmm0, 16(%rdi)
+; AVX1-NEXT:    vmovdqu %xmm0, (%rdi)
 ; AVX1-NEXT:    retq
 ;
 ; AVX2-LABEL: memset_32_nonconst_bytes:

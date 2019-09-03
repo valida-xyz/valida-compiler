@@ -9,10 +9,9 @@
 #
 #//===----------------------------------------------------------------------===//
 #//
-#//                     The LLVM Compiler Infrastructure
-#//
-#// This file is dual licensed under the MIT and the University of Illinois Open
-#// Source Licenses. See LICENSE.txt for details.
+#// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+#// See https://llvm.org/LICENSE.txt for license information.
+#// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #//
 #//===----------------------------------------------------------------------===//
 #
@@ -157,6 +156,8 @@ if ( 0 ) {
         $values{ hardware_platform } = "mips64";
     } elsif ( $values{ machine } =~ m{\Amips\z} ) {
         $values{ hardware_platform } = "mips";
+    } elsif ( $values{ machine } =~ m{\Ariscv64\z} ) {
+        $values{ hardware_platform } = "riscv64";
     } else {
         die "Unsupported machine (\"$values{ machine }\") returned by POSIX::uname(); stopped";
     }; # if

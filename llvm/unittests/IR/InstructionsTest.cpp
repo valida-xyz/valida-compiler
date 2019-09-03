@@ -1,9 +1,8 @@
 //===- llvm/unittest/IR/InstructionsTest.cpp - Instructions unit tests ----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -505,14 +504,15 @@ TEST(InstructionsTest, CloneCall) {
   LLVMContext C;
   Type *Int32Ty = Type::getInt32Ty(C);
   Type *ArgTys[] = {Int32Ty, Int32Ty, Int32Ty};
-  Type *FnTy = FunctionType::get(Int32Ty, ArgTys, /*isVarArg=*/false);
+  FunctionType *FnTy = FunctionType::get(Int32Ty, ArgTys, /*isVarArg=*/false);
   Value *Callee = Constant::getNullValue(FnTy->getPointerTo());
   Value *Args[] = {
     ConstantInt::get(Int32Ty, 1),
     ConstantInt::get(Int32Ty, 2),
     ConstantInt::get(Int32Ty, 3)
   };
-  std::unique_ptr<CallInst> Call(CallInst::Create(Callee, Args, "result"));
+  std::unique_ptr<CallInst> Call(
+      CallInst::Create(FnTy, Callee, Args, "result"));
 
   // Test cloning the tail call kind.
   CallInst::TailCallKind Kinds[] = {CallInst::TCK_None, CallInst::TCK_Tail,
@@ -538,12 +538,12 @@ TEST(InstructionsTest, CloneCall) {
 TEST(InstructionsTest, AlterCallBundles) {
   LLVMContext C;
   Type *Int32Ty = Type::getInt32Ty(C);
-  Type *FnTy = FunctionType::get(Int32Ty, Int32Ty, /*isVarArg=*/false);
+  FunctionType *FnTy = FunctionType::get(Int32Ty, Int32Ty, /*isVarArg=*/false);
   Value *Callee = Constant::getNullValue(FnTy->getPointerTo());
   Value *Args[] = {ConstantInt::get(Int32Ty, 42)};
   OperandBundleDef OldBundle("before", UndefValue::get(Int32Ty));
   std::unique_ptr<CallInst> Call(
-      CallInst::Create(Callee, Args, OldBundle, "result"));
+      CallInst::Create(FnTy, Callee, Args, OldBundle, "result"));
   Call->setTailCallKind(CallInst::TailCallKind::TCK_NoTail);
   AttrBuilder AB;
   AB.addAttribute(Attribute::Cold);
@@ -565,14 +565,15 @@ TEST(InstructionsTest, AlterCallBundles) {
 TEST(InstructionsTest, AlterInvokeBundles) {
   LLVMContext C;
   Type *Int32Ty = Type::getInt32Ty(C);
-  Type *FnTy = FunctionType::get(Int32Ty, Int32Ty, /*isVarArg=*/false);
+  FunctionType *FnTy = FunctionType::get(Int32Ty, Int32Ty, /*isVarArg=*/false);
   Value *Callee = Constant::getNullValue(FnTy->getPointerTo());
   Value *Args[] = {ConstantInt::get(Int32Ty, 42)};
   std::unique_ptr<BasicBlock> NormalDest(BasicBlock::Create(C));
   std::unique_ptr<BasicBlock> UnwindDest(BasicBlock::Create(C));
   OperandBundleDef OldBundle("before", UndefValue::get(Int32Ty));
-  std::unique_ptr<InvokeInst> Invoke(InvokeInst::Create(
-      Callee, NormalDest.get(), UnwindDest.get(), Args, OldBundle, "result"));
+  std::unique_ptr<InvokeInst> Invoke(
+      InvokeInst::Create(FnTy, Callee, NormalDest.get(), UnwindDest.get(), Args,
+                         OldBundle, "result"));
   AttrBuilder AB;
   AB.addAttribute(Attribute::Cold);
   Invoke->setAttributes(
@@ -646,7 +647,8 @@ TEST_F(ModuleWithFunctionTest, DropPoisonGeneratingFlags) {
 
   {
     Value *GEPBase = Constant::getNullValue(B.getInt8PtrTy());
-    auto *GI = cast<GetElementPtrInst>(B.CreateInBoundsGEP(GEPBase, {Arg0}));
+    auto *GI = cast<GetElementPtrInst>(
+        B.CreateInBoundsGEP(B.getInt8Ty(), GEPBase, Arg0));
     ASSERT_TRUE(GI->isInBounds());
     GI->dropPoisonGeneratingFlags();
     ASSERT_FALSE(GI->isInBounds());
@@ -751,6 +753,47 @@ TEST(InstructionsTest, SwitchInst) {
   EXPECT_EQ(BB1.get(), Handle.getCaseSuccessor());
 }
 
+TEST(InstructionsTest, SwitchInstProfUpdateWrapper) {
+  LLVMContext C;
+
+  std::unique_ptr<BasicBlock> BB1, BB2, BB3;
+  BB1.reset(BasicBlock::Create(C));
+  BB2.reset(BasicBlock::Create(C));
+  BB3.reset(BasicBlock::Create(C));
+
+  // We create block 0 after the others so that it gets destroyed first and
+  // clears the uses of the other basic blocks.
+  std::unique_ptr<BasicBlock> BB0(BasicBlock::Create(C));
+
+  auto *Int32Ty = Type::getInt32Ty(C);
+
+  SwitchInst *SI =
+      SwitchInst::Create(UndefValue::get(Int32Ty), BB0.get(), 4, BB0.get());
+  SI->addCase(ConstantInt::get(Int32Ty, 1), BB1.get());
+  SI->addCase(ConstantInt::get(Int32Ty, 2), BB2.get());
+  SI->setMetadata(LLVMContext::MD_prof,
+                  MDBuilder(C).createBranchWeights({ 9, 1, 22 }));
+
+  {
+    SwitchInstProfUpdateWrapper SIW(*SI);
+    EXPECT_EQ(*SIW.getSuccessorWeight(0), 9u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(1), 1u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(2), 22u);
+    SIW.setSuccessorWeight(0, 99u);
+    SIW.setSuccessorWeight(1, 11u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(0), 99u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(1), 11u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(2), 22u);
+  }
+
+  { // Create another wrapper and check that the data persist.
+    SwitchInstProfUpdateWrapper SIW(*SI);
+    EXPECT_EQ(*SIW.getSuccessorWeight(0), 99u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(1), 11u);
+    EXPECT_EQ(*SIW.getSuccessorWeight(2), 22u);
+  }
+}
+
 TEST(InstructionsTest, CommuteShuffleMask) {
   SmallVector<int, 16> Indices({-1, 0, 7});
   ShuffleVectorInst::commuteShuffleMask(Indices, 4);
@@ -837,6 +880,119 @@ TEST(InstructionsTest, ShuffleMaskQueries) {
 
   EXPECT_TRUE(ShuffleVectorInst::isTransposeMask(ConstantVector::get({C1, C5, C3, C7})));
   EXPECT_TRUE(ShuffleVectorInst::isTransposeMask(ConstantVector::get({C1, C3})));
+
+  // Nothing special about the values here - just re-using inputs to reduce code. 
+  Constant *V0 = ConstantVector::get({C0, C1, C2, C3});
+  Constant *V1 = ConstantVector::get({C3, C2, C1, C0});
+
+  // Identity with undef elts.
+  ShuffleVectorInst *Id1 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C0, C1, CU, CU}));
+  EXPECT_TRUE(Id1->isIdentity());
+  EXPECT_FALSE(Id1->isIdentityWithPadding());
+  EXPECT_FALSE(Id1->isIdentityWithExtract());
+  EXPECT_FALSE(Id1->isConcat());
+  delete Id1;
+
+  // Result has less elements than operands.
+  ShuffleVectorInst *Id2 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C0, C1, C2}));
+  EXPECT_FALSE(Id2->isIdentity());
+  EXPECT_FALSE(Id2->isIdentityWithPadding());
+  EXPECT_TRUE(Id2->isIdentityWithExtract());
+  EXPECT_FALSE(Id2->isConcat());
+  delete Id2;
+
+  // Result has less elements than operands; choose from Op1.
+  ShuffleVectorInst *Id3 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C4, CU, C6}));
+  EXPECT_FALSE(Id3->isIdentity());
+  EXPECT_FALSE(Id3->isIdentityWithPadding());
+  EXPECT_TRUE(Id3->isIdentityWithExtract());
+  EXPECT_FALSE(Id3->isConcat());
+  delete Id3;
+
+  // Result has less elements than operands; choose from Op0 and Op1 is not identity.
+  ShuffleVectorInst *Id4 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C4, C1, C6}));
+  EXPECT_FALSE(Id4->isIdentity());
+  EXPECT_FALSE(Id4->isIdentityWithPadding());
+  EXPECT_FALSE(Id4->isIdentityWithExtract());
+  EXPECT_FALSE(Id4->isConcat());
+  delete Id4;
+
+  // Result has more elements than operands, and extra elements are undef.
+  ShuffleVectorInst *Id5 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({CU, C1, C2, C3, CU, CU}));
+  EXPECT_FALSE(Id5->isIdentity());
+  EXPECT_TRUE(Id5->isIdentityWithPadding());
+  EXPECT_FALSE(Id5->isIdentityWithExtract());
+  EXPECT_FALSE(Id5->isConcat());
+  delete Id5;
+
+  // Result has more elements than operands, and extra elements are undef; choose from Op1.
+  ShuffleVectorInst *Id6 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C4, C5, C6, CU, CU, CU}));
+  EXPECT_FALSE(Id6->isIdentity());
+  EXPECT_TRUE(Id6->isIdentityWithPadding());
+  EXPECT_FALSE(Id6->isIdentityWithExtract());
+  EXPECT_FALSE(Id6->isConcat());
+  delete Id6;
+  
+  // Result has more elements than operands, but extra elements are not undef.
+  ShuffleVectorInst *Id7 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C0, C1, C2, C3, CU, C1}));
+  EXPECT_FALSE(Id7->isIdentity());
+  EXPECT_FALSE(Id7->isIdentityWithPadding());
+  EXPECT_FALSE(Id7->isIdentityWithExtract());
+  EXPECT_FALSE(Id7->isConcat());
+  delete Id7;
+  
+  // Result has more elements than operands; choose from Op0 and Op1 is not identity.
+  ShuffleVectorInst *Id8 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C4, CU, C2, C3, CU, CU}));
+  EXPECT_FALSE(Id8->isIdentity());
+  EXPECT_FALSE(Id8->isIdentityWithPadding());
+  EXPECT_FALSE(Id8->isIdentityWithExtract());
+  EXPECT_FALSE(Id8->isConcat());
+  delete Id8;
+
+  // Result has twice as many elements as operands; choose consecutively from Op0 and Op1 is concat.
+  ShuffleVectorInst *Id9 = new ShuffleVectorInst(V0, V1,
+                                                 ConstantVector::get({C0, CU, C2, C3, CU, CU, C6, C7}));
+  EXPECT_FALSE(Id9->isIdentity());
+  EXPECT_FALSE(Id9->isIdentityWithPadding());
+  EXPECT_FALSE(Id9->isIdentityWithExtract());
+  EXPECT_TRUE(Id9->isConcat());
+  delete Id9;
+
+  // Result has less than twice as many elements as operands, so not a concat.
+  ShuffleVectorInst *Id10 = new ShuffleVectorInst(V0, V1,
+                                                  ConstantVector::get({C0, CU, C2, C3, CU, CU, C6}));
+  EXPECT_FALSE(Id10->isIdentity());
+  EXPECT_FALSE(Id10->isIdentityWithPadding());
+  EXPECT_FALSE(Id10->isIdentityWithExtract());
+  EXPECT_FALSE(Id10->isConcat());
+  delete Id10;
+
+  // Result has more than twice as many elements as operands, so not a concat.
+  ShuffleVectorInst *Id11 = new ShuffleVectorInst(V0, V1,
+                                                  ConstantVector::get({C0, CU, C2, C3, CU, CU, C6, C7, CU}));
+  EXPECT_FALSE(Id11->isIdentity());
+  EXPECT_FALSE(Id11->isIdentityWithPadding());
+  EXPECT_FALSE(Id11->isIdentityWithExtract());
+  EXPECT_FALSE(Id11->isConcat());
+  delete Id11;
+
+  // If an input is undef, it's not a concat.
+  // TODO: IdentityWithPadding should be true here even though the high mask values are not undef.
+  ShuffleVectorInst *Id12 = new ShuffleVectorInst(V0, ConstantVector::get({CU, CU, CU, CU}),
+                                                  ConstantVector::get({C0, CU, C2, C3, CU, CU, C6, C7}));
+  EXPECT_FALSE(Id12->isIdentity());
+  EXPECT_FALSE(Id12->isIdentityWithPadding());
+  EXPECT_FALSE(Id12->isIdentityWithExtract());
+  EXPECT_FALSE(Id12->isConcat());
+  delete Id12;
 }
 
 TEST(InstructionsTest, SkipDebug) {
@@ -876,6 +1032,33 @@ TEST(InstructionsTest, SkipDebug) {
 
   // After the terminator, there are no non-debug instructions.
   EXPECT_EQ(nullptr, Term->getNextNonDebugInstruction());
+}
+
+TEST(InstructionsTest, PhiIsNotFPMathOperator) {
+  LLVMContext Context;
+  IRBuilder<> Builder(Context);
+  MDBuilder MDHelper(Context);
+  Instruction *I = Builder.CreatePHI(Builder.getDoubleTy(), 0);
+  EXPECT_FALSE(isa<FPMathOperator>(I));
+  I->deleteValue();
+}
+
+TEST(InstructionsTest, FNegInstruction) {
+  LLVMContext Context;
+  Type *FltTy = Type::getFloatTy(Context);
+  Constant *One = ConstantFP::get(FltTy, 1.0);
+  BinaryOperator *FAdd = BinaryOperator::CreateFAdd(One, One);
+  FAdd->setHasNoNaNs(true);
+  UnaryOperator *FNeg = UnaryOperator::CreateFNegFMF(One, FAdd);
+  EXPECT_TRUE(FNeg->hasNoNaNs());
+  EXPECT_FALSE(FNeg->hasNoInfs());
+  EXPECT_FALSE(FNeg->hasNoSignedZeros());
+  EXPECT_FALSE(FNeg->hasAllowReciprocal());
+  EXPECT_FALSE(FNeg->hasAllowContract());
+  EXPECT_FALSE(FNeg->hasAllowReassoc());
+  EXPECT_FALSE(FNeg->hasApproxFunc());
+  FAdd->deleteValue();
+  FNeg->deleteValue();
 }
 
 } // end anonymous namespace

@@ -1,8 +1,21 @@
 include(CheckCXXSymbolExists)
+include(CheckTypeSize)
 
 set(LLDB_PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(LLDB_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/source")
 set(LLDB_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+set(LLDB_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(LLDB_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR
+    "In-source builds are not allowed. CMake would overwrite the makefiles "
+    "distributed with LLDB. Please create a directory and run cmake from "
+    "there, passing the path to this source directory as the last argument. "
+    "This process created the file `CMakeCache.txt' and the directory "
+    "`CMakeFiles'. Please delete them.")
+endif()
 
 set(LLDB_LINKER_SUPPORTS_GROUPS OFF)
 if (LLVM_COMPILER_IS_GCC_COMPATIBLE AND NOT "${CMAKE_SYSTEM_NAME}" MATCHES "Darwin")
@@ -10,28 +23,63 @@ if (LLVM_COMPILER_IS_GCC_COMPATIBLE AND NOT "${CMAKE_SYSTEM_NAME}" MATCHES "Darw
   set(LLDB_LINKER_SUPPORTS_GROUPS ON)
 endif()
 
-set(LLDB_DEFAULT_DISABLE_PYTHON 0)
-set(LLDB_DEFAULT_DISABLE_CURSES 0)
+set(default_disable_python OFF)
+set(default_disable_curses OFF)
+set(default_disable_libedit OFF)
 
-if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
-  set(LLDB_DEFAULT_DISABLE_CURSES 1)
-elseif (CMAKE_SYSTEM_NAME MATCHES "Android" )
-  set(LLDB_DEFAULT_DISABLE_PYTHON 1)
-  set(LLDB_DEFAULT_DISABLE_CURSES 1)
-elseif(IOS)
-  set(LLDB_DEFAULT_DISABLE_PYTHON 1)
+if(DEFINED LLVM_ENABLE_LIBEDIT AND NOT LLVM_ENABLE_LIBEDIT)
+  set(default_disable_libedit ON)
 endif()
 
-set(LLDB_DISABLE_PYTHON ${LLDB_DEFAULT_DISABLE_PYTHON} CACHE BOOL
-  "Disables the Python scripting integration.")
-set(LLDB_DISABLE_CURSES ${LLDB_DEFAULT_DISABLE_CURSES} CACHE BOOL
-  "Disables the Curses integration.")
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(default_disable_curses ON)
+  set(default_disable_libedit ON)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
+  set(default_disable_python ON)
+  set(default_disable_curses ON)
+  set(default_disable_libedit ON)
+elseif(IOS)
+  set(default_disable_python ON)
+endif()
 
-set(LLDB_RELOCATABLE_PYTHON 0 CACHE BOOL
-  "Causes LLDB to use the PYTHONHOME environment variable to locate Python.")
+option(LLDB_DISABLE_PYTHON "Disable Python scripting integration." ${default_disable_python})
+option(LLDB_DISABLE_CURSES "Disable Curses integration." ${default_disable_curses})
+option(LLDB_DISABLE_LIBEDIT "Disable the use of editline." ${default_disable_libedit})
+option(LLDB_RELOCATABLE_PYTHON "Use the PYTHONHOME environment variable to locate Python." OFF)
+option(LLDB_USE_SYSTEM_SIX "Use six.py shipped with system and do not install a copy of it" OFF)
+option(LLDB_USE_ENTITLEMENTS "When codesigning, use entitlements if available" ON)
+option(LLDB_BUILD_FRAMEWORK "Build LLDB.framework (Darwin only)" OFF)
+option(LLDB_NO_INSTALL_DEFAULT_RPATH "Disable default RPATH settings in binaries" OFF)
+option(LLDB_USE_SYSTEM_DEBUGSERVER "Use the system's debugserver for testing (Darwin only)." OFF)
 
-set(LLDB_USE_SYSTEM_SIX 0 CACHE BOOL
-  "Use six.py shipped with system and do not install a copy of it")
+if(LLDB_BUILD_FRAMEWORK)
+  if(NOT APPLE)
+    message(FATAL_ERROR "LLDB.framework can only be generated when targeting Apple platforms")
+  endif()
+  # CMake 3.6 did not correctly emit POST_BUILD commands for Apple Framework targets
+  # CMake < 3.8 did not have the BUILD_RPATH target property
+  if(CMAKE_VERSION VERSION_LESS 3.8)
+    message(FATAL_ERROR "LLDB_BUILD_FRAMEWORK is not supported on CMake < 3.8")
+  endif()
+
+  set(LLDB_FRAMEWORK_VERSION A CACHE STRING "LLDB.framework version (default is A)")
+  set(LLDB_FRAMEWORK_BUILD_DIR bin CACHE STRING "Output directory for LLDB.framework")
+  set(LLDB_FRAMEWORK_INSTALL_DIR Library/Frameworks CACHE STRING "Install directory for LLDB.framework")
+
+  # Essentially, emit the framework's dSYM outside of the framework directory.
+  set(LLDB_DEBUGINFO_INSTALL_PREFIX ${CMAKE_BINARY_DIR}/${CMAKE_CFG_INTDIR}/bin CACHE STRING
+      "Directory to emit dSYM files stripped from executables and libraries (Darwin Only)")
+endif()
+
+if(APPLE AND CMAKE_GENERATOR STREQUAL Xcode)
+  if(NOT LLDB_EXPLICIT_XCODE_CACHE_USED)
+    message(WARNING
+      "When building with Xcode, we recommend using the corresponding cache script. "
+      "If this was a mistake, clean your build directory and re-run CMake with:\n"
+      "  -C ${CMAKE_SOURCE_DIR}/cmake/caches/Apple-lldb-Xcode.cmake\n"
+      "See: https://lldb.llvm.org/resources/build.html#cmakegeneratedxcodeproject\n")
+  endif()
+endif()
 
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(LLDB_EXPORT_ALL_SYMBOLS 0 CACHE BOOL
@@ -50,6 +98,29 @@ if (LLDB_DISABLE_CURSES)
   add_definitions( -DLLDB_DISABLE_CURSES )
 endif()
 
+if (LLDB_DISABLE_LIBEDIT)
+  add_definitions( -DLLDB_DISABLE_LIBEDIT )
+else()
+  find_package(LibEdit REQUIRED)
+
+  # Check if we libedit capable of handling wide characters (built with
+  # '--enable-widec').
+  set(CMAKE_REQUIRED_LIBRARIES ${libedit_LIBRARIES})
+  set(CMAKE_REQUIRED_INCLUDES ${libedit_INCLUDE_DIRS})
+  check_symbol_exists(el_winsertstr histedit.h LLDB_EDITLINE_USE_WCHAR)
+  set(CMAKE_EXTRA_INCLUDE_FILES histedit.h)
+  check_type_size(el_rfunc_t LLDB_EL_RFUNC_T_SIZE)
+  if (LLDB_EL_RFUNC_T_SIZE STREQUAL "")
+    set(LLDB_HAVE_EL_RFUNC_T 0)
+  else()
+    set(LLDB_HAVE_EL_RFUNC_T 1)
+  endif()
+  set(CMAKE_REQUIRED_LIBRARIES)
+  set(CMAKE_REQUIRED_INCLUDES)
+  set(CMAKE_EXTRA_INCLUDE_FILES)
+endif()
+
+
 # On Windows, we can't use the normal FindPythonLibs module that comes with CMake,
 # for a number of reasons.
 # 1) Prior to MSVC 2015, it is only possible to embed Python if python itself was
@@ -65,111 +136,85 @@ endif()
 # addresses them, but it can be improved and extended on an as-needed basis.
 function(find_python_libs_windows)
   if ("${PYTHON_HOME}" STREQUAL "")
-    message("LLDB embedded Python on Windows requires specifying a value for PYTHON_HOME.  Python support disabled.")
+    message(WARNING "LLDB embedded Python on Windows requires specifying a value for PYTHON_HOME.  Python support disabled.")
     set(LLDB_DISABLE_PYTHON 1 PARENT_SCOPE)
     return()
   endif()
 
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/Include" PYTHON_INCLUDE_DIRS)
+  file(TO_CMAKE_PATH "${PYTHON_HOME}/Include" PYTHON_INCLUDE_DIR)
 
-  if(EXISTS "${PYTHON_INCLUDE_DIRS}/patchlevel.h")
-    file(STRINGS "${PYTHON_INCLUDE_DIRS}/patchlevel.h" python_version_str
+  if(EXISTS "${PYTHON_INCLUDE_DIR}/patchlevel.h")
+    file(STRINGS "${PYTHON_INCLUDE_DIR}/patchlevel.h" python_version_str
          REGEX "^#define[ \t]+PY_VERSION[ \t]+\"[^\"]+\"")
     string(REGEX REPLACE "^#define[ \t]+PY_VERSION[ \t]+\"([^\"+]+)[+]?\".*" "\\1"
          PYTHONLIBS_VERSION_STRING "${python_version_str}")
-    message("-- Found Python version ${PYTHONLIBS_VERSION_STRING}")
+    message(STATUS "Found Python library version ${PYTHONLIBS_VERSION_STRING}")
     string(REGEX REPLACE "([0-9]+)[.]([0-9]+)[.][0-9]+" "python\\1\\2" PYTHONLIBS_BASE_NAME "${PYTHONLIBS_VERSION_STRING}")
     unset(python_version_str)
   else()
-    message("Unable to find ${PYTHON_INCLUDE_DIRS}/patchlevel.h, Python installation is corrupt.")
-    message("Python support will be disabled for this build.")
+    message(WARNING "Unable to find ${PYTHON_INCLUDE_DIR}/patchlevel.h, Python installation is corrupt.")
+    message(WARNING "Python support will be disabled for this build.")
     set(LLDB_DISABLE_PYTHON 1 PARENT_SCOPE)
     return()
   endif()
 
   file(TO_CMAKE_PATH "${PYTHON_HOME}" PYTHON_HOME)
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/python_d.exe" PYTHON_DEBUG_EXE)
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/libs/${PYTHONLIBS_BASE_NAME}_d.lib" PYTHON_DEBUG_LIB)
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/${PYTHONLIBS_BASE_NAME}_d.dll" PYTHON_DEBUG_DLL)
-
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/python.exe" PYTHON_RELEASE_EXE)
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/libs/${PYTHONLIBS_BASE_NAME}.lib" PYTHON_RELEASE_LIB)
-  file(TO_CMAKE_PATH "${PYTHON_HOME}/${PYTHONLIBS_BASE_NAME}.dll" PYTHON_RELEASE_DLL)
-
-  if (NOT EXISTS ${PYTHON_DEBUG_EXE})
-    message("Unable to find ${PYTHON_DEBUG_EXE}")
-    unset(PYTHON_DEBUG_EXE)
+  # TODO(compnerd) when CMake Policy `CMP0091` is set to NEW, we should use
+  # if(CMAKE_MSVC_RUNTIME_LIBRARY MATCHES MultiThreadedDebug)
+  if(CMAKE_BUILD_TYPE STREQUAL Debug)
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/python_d.exe" PYTHON_EXE)
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/libs/${PYTHONLIBS_BASE_NAME}_d.lib" PYTHON_LIB)
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/${PYTHONLIBS_BASE_NAME}_d.dll" PYTHON_DLL)
+  else()
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/python.exe" PYTHON_EXE)
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/libs/${PYTHONLIBS_BASE_NAME}.lib" PYTHON_LIB)
+    file(TO_CMAKE_PATH "${PYTHON_HOME}/${PYTHONLIBS_BASE_NAME}.dll" PYTHON_DLL)
   endif()
 
-  if (NOT EXISTS ${PYTHON_RELEASE_EXE})
-    message("Unable to find ${PYTHON_RELEASE_EXE}")
-    unset(PYTHON_RELEASE_EXE)
-  endif()
+  foreach(component PYTHON_EXE;PYTHON_LIB;PYTHON_DLL)
+    if(NOT EXISTS ${${component}})
+      message(WARNING "unable to find ${component}")
+      unset(${component})
+    endif()
+  endforeach()
 
-  if (NOT EXISTS ${PYTHON_DEBUG_LIB})
-    message("Unable to find ${PYTHON_DEBUG_LIB}")
-    unset(PYTHON_DEBUG_LIB)
-  endif()
-
-  if (NOT EXISTS ${PYTHON_RELEASE_LIB})
-    message("Unable to find ${PYTHON_RELEASE_LIB}")
-    unset(PYTHON_RELEASE_LIB)
-  endif()
-
-  if (NOT EXISTS ${PYTHON_DEBUG_DLL})
-    message("Unable to find ${PYTHON_DEBUG_DLL}")
-    unset(PYTHON_DEBUG_DLL)
-  endif()
-
-  if (NOT EXISTS ${PYTHON_RELEASE_DLL})
-    message("Unable to find ${PYTHON_RELEASE_DLL}")
-    unset(PYTHON_RELEASE_DLL)
-  endif()
-
-  if (NOT (PYTHON_DEBUG_EXE AND PYTHON_RELEASE_EXE AND PYTHON_DEBUG_LIB AND PYTHON_RELEASE_LIB AND PYTHON_DEBUG_DLL AND PYTHON_RELEASE_DLL))
-    message("Python installation is corrupt. Python support will be disabled for this build.")
+  if (NOT PYTHON_EXE OR NOT PYTHON_LIB OR NOT PYTHON_DLL)
+    message(WARNING "Unable to find all Python components.  Python support will be disabled for this build.")
     set(LLDB_DISABLE_PYTHON 1 PARENT_SCOPE)
     return()
   endif()
 
-  # Generator expressions are evaluated in the context of each build configuration generated
-  # by CMake. Here we use the $<CONFIG:Debug>:VALUE logical generator expression to ensure
-  # that the debug Python library, DLL, and executable are used in the Debug build configuration.
-  #
-  # Generator expressions can be difficult to grok at first so here's a breakdown of the one
-  # used for PYTHON_LIBRARY:
-  #
-  # 1. $<CONFIG:Debug> evaluates to 1 when the Debug configuration is being generated,
-  #    or 0 in all other cases.
-  # 2. $<$<CONFIG:Debug>:${PYTHON_DEBUG_LIB}> expands to ${PYTHON_DEBUG_LIB} when the Debug
-  #    configuration is being generated, or nothing (literally) in all other cases.
-  # 3. $<$<NOT:$<CONFIG:Debug>>:${PYTHON_RELEASE_LIB}> expands to ${PYTHON_RELEASE_LIB} when
-  #    any configuration other than Debug is being generated, or nothing in all other cases.
-  # 4. The conditionals in 2 & 3 are mutually exclusive.
-  # 5. A logical expression with a conditional that evaluates to 0 yields no value at all.
-  #
-  # Due to 4 & 5 it's possible to concatenate 2 & 3 to obtain a single value specific to each
-  # build configuration. In this example the value will be ${PYTHON_DEBUG_LIB} when generating the
-  # Debug configuration, or ${PYTHON_RELEASE_LIB} when generating any other configuration.
-  # Note that it's imperative that there is no whitespace between the two expressions, otherwise
-  # CMake will insert a semicolon between the two.
-  set (PYTHON_EXECUTABLE $<$<CONFIG:Debug>:${PYTHON_DEBUG_EXE}>$<$<NOT:$<CONFIG:Debug>>:${PYTHON_RELEASE_EXE}>)
-  set (PYTHON_LIBRARY $<$<CONFIG:Debug>:${PYTHON_DEBUG_LIB}>$<$<NOT:$<CONFIG:Debug>>:${PYTHON_RELEASE_LIB}>)
-  set (PYTHON_DLL $<$<CONFIG:Debug>:${PYTHON_DEBUG_DLL}>$<$<NOT:$<CONFIG:Debug>>:${PYTHON_RELEASE_DLL}>)
+  # Find the version of the Python interpreter.
+  execute_process(COMMAND "${PYTHON_EXE}" -c
+                  "import sys; sys.stdout.write(';'.join([str(x) for x in sys.version_info[:3]]))"
+                  OUTPUT_VARIABLE PYTHON_VERSION_OUTPUT
+                  RESULT_VARIABLE PYTHON_VERSION_RESULT
+                  ERROR_QUIET)
+  if(NOT PYTHON_VERSION_RESULT)
+    string(REPLACE ";" "." PYTHON_VERSION_STRING "${PYTHON_VERSION_OUTPUT}")
+    list(GET PYTHON_VERSION_OUTPUT 0 PYTHON_VERSION_MAJOR)
+    list(GET PYTHON_VERSION_OUTPUT 1 PYTHON_VERSION_MINOR)
+    list(GET PYTHON_VERSION_OUTPUT 2 PYTHON_VERSION_PATCH)
+  endif()
 
-  set (PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE} PARENT_SCOPE)
-  set (PYTHON_LIBRARY ${PYTHON_LIBRARY} PARENT_SCOPE)
-  set (PYTHON_DLL ${PYTHON_DLL} PARENT_SCOPE)
-  set (PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS} PARENT_SCOPE)
+  # Set the same variables as FindPythonInterp and FindPythonLibs.
+  set(PYTHON_EXECUTABLE ${PYTHON_EXE} PARENT_SCOPE)
+  set(PYTHON_LIBRARY ${PYTHON_LIB} PARENT_SCOPE)
+  set(PYTHON_DLL ${PYTHON_DLL} PARENT_SCOPE)
+  set(PYTHON_INCLUDE_DIR ${PYTHON_INCLUDE_DIR} PARENT_SCOPE)
+  set(PYTHONLIBS_VERSION_STRING "${PYTHONLIBS_VERSION_STRING}" PARENT_SCOPE)
+  set(PYTHON_VERSION_STRING ${PYTHON_VERSION_STRING} PARENT_SCOPE)
+  set(PYTHON_VERSION_MAJOR ${PYTHON_VERSION_MAJOR} PARENT_SCOPE)
+  set(PYTHON_VERSION_MINOR ${PYTHON_VERSION_MINOR} PARENT_SCOPE)
+  set(PYTHON_VERSION_PATCH ${PYTHON_VERSION_PATCH} PARENT_SCOPE)
 
-  message("-- LLDB Found PythonExecutable: ${PYTHON_RELEASE_EXE} and ${PYTHON_DEBUG_EXE}")
-  message("-- LLDB Found PythonLibs: ${PYTHON_RELEASE_LIB} and ${PYTHON_DEBUG_LIB}")
-  message("-- LLDB Found PythonDLL: ${PYTHON_RELEASE_DLL} and ${PYTHON_DEBUG_DLL}")
-  message("-- LLDB Found PythonIncludeDirs: ${PYTHON_INCLUDE_DIRS}")
+  message(STATUS "LLDB Found PythonExecutable: ${PYTHON_EXECUTABLE} (${PYTHON_VERSION_STRING})")
+  message(STATUS "LLDB Found PythonLibs: ${PYTHON_LIB} (${PYTHONLIBS_VERSION_STRING})")
+  message(STATUS "LLDB Found PythonDLL: ${PYTHON_DLL}")
+  message(STATUS "LLDB Found PythonIncludeDirs: ${PYTHON_INCLUDE_DIR}")
 endfunction(find_python_libs_windows)
 
 if (NOT LLDB_DISABLE_PYTHON)
-
   if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
     find_python_libs_windows()
 
@@ -178,17 +223,33 @@ if (NOT LLDB_DISABLE_PYTHON)
       add_definitions( -DLLDB_PYTHON_HOME="${LLDB_PYTHON_HOME}" )
     endif()
   else()
+    find_package(PythonInterp REQUIRED)
     find_package(PythonLibs REQUIRED)
   endif()
-  
-  if (PYTHON_INCLUDE_DIRS)
-    include_directories(${PYTHON_INCLUDE_DIRS})
+
+  if (NOT CMAKE_CROSSCOMPILING)
+    string(REPLACE "." ";" pythonlibs_version_list ${PYTHONLIBS_VERSION_STRING})
+    list(GET pythonlibs_version_list 0 pythonlibs_major)
+    list(GET pythonlibs_version_list 1 pythonlibs_minor)
+
+    # Ignore the patch version. Some versions of macOS report a different patch
+    # version for the system provided interpreter and libraries.
+    if (NOT PYTHON_VERSION_MAJOR VERSION_EQUAL pythonlibs_major OR
+        NOT PYTHON_VERSION_MINOR VERSION_EQUAL pythonlibs_minor)
+      message(FATAL_ERROR "Found incompatible Python interpreter (${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR})"
+                          " and Python libraries (${pythonlibs_major}.${pythonlibs_minor})")
+    endif()
+  endif()
+
+  if (PYTHON_INCLUDE_DIR)
+    include_directories(${PYTHON_INCLUDE_DIR})
   endif()
 endif()
 
 if (LLDB_DISABLE_PYTHON)
-  unset(PYTHON_INCLUDE_DIRS)
+  unset(PYTHON_INCLUDE_DIR)
   unset(PYTHON_LIBRARY)
+  unset(PYTHON_EXECUTABLE)
   add_definitions( -DLLDB_DISABLE_PYTHON )
 endif()
 
@@ -243,6 +304,7 @@ if( MSVC )
     -wd4018 # Suppress 'warning C4018: '>=' : signed/unsigned mismatch'
     -wd4068 # Suppress 'warning C4068: unknown pragma'
     -wd4150 # Suppress 'warning C4150: deletion of pointer to incomplete type'
+    -wd4201 # Suppress 'warning C4201: nonstandard extension used: nameless struct/union'
     -wd4251 # Suppress 'warning C4251: T must have dll-interface to be used by clients of class U.'
     -wd4521 # Suppress 'warning C4521: 'type' : multiple copy constructors specified'
     -wd4530 # Suppress 'warning C4530: C++ exception handler used, but unwind semantics are not enabled.'
@@ -254,25 +316,25 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     add_definitions( -D_UNICODE -DUNICODE )
 endif()
 
-set(LLDB_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(LLDB_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
-
-if (CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
-  message(FATAL_ERROR "In-source builds are not allowed. CMake would overwrite "
-"the makefiles distributed with LLDB. Please create a directory and run cmake "
-"from there, passing the path to this source directory as the last argument. "
-"This process created the file `CMakeCache.txt' and the directory "
-"`CMakeFiles'. Please delete them.")
+# If LLDB_VERSION_* is specified, use it, if not use LLVM_VERSION_*.
+if(NOT DEFINED LLDB_VERSION_MAJOR)
+  set(LLDB_VERSION_MAJOR ${LLVM_VERSION_MAJOR})
 endif()
-
-# Compute the LLDB version from the LLVM version.
-string(REGEX MATCH "[0-9]+\\.[0-9]+(\\.[0-9]+)?" LLDB_VERSION
-  ${PACKAGE_VERSION})
+if(NOT DEFINED LLDB_VERSION_MINOR)
+  set(LLDB_VERSION_MINOR ${LLVM_VERSION_MINOR})
+endif()
+if(NOT DEFINED LLDB_VERSION_PATCH)
+  set(LLDB_VERSION_PATCH ${LLVM_VERSION_PATCH})
+endif()
+if(NOT DEFINED LLDB_VERSION_SUFFIX)
+  set(LLDB_VERSION_SUFFIX ${LLVM_VERSION_SUFFIX})
+endif()
+set(LLDB_VERSION "${LLDB_VERSION_MAJOR}.${LLDB_VERSION_MINOR}.${LLDB_VERSION_PATCH}${LLDB_VERSION_SUFFIX}")
 message(STATUS "LLDB version: ${LLDB_VERSION}")
 
 include_directories(BEFORE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
   )
 
 if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
@@ -283,7 +345,6 @@ if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
     PATTERN "*.h"
     PATTERN ".svn" EXCLUDE
     PATTERN ".cmake" EXCLUDE
-    PATTERN "Config.h" EXCLUDE
     )
 
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/
@@ -296,7 +357,7 @@ if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
     )
 
   add_custom_target(lldb-headers)
-  set_target_properties(lldb-headers PROPERTIES FOLDER "Misc")
+  set_target_properties(lldb-headers PROPERTIES FOLDER "lldb misc")
 
   if (NOT CMAKE_CONFIGURATION_TYPES)
     add_llvm_install_targets(install-lldb-headers
@@ -304,11 +365,7 @@ if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
   endif()
 endif()
 
-if (NOT LIBXML2_FOUND AND NOT (CMAKE_SYSTEM_NAME MATCHES "Windows"))
-  # Skip Libxml2 on Windows.  In CMake 3.4 and higher, the algorithm for
-  # finding libxml2 got "smarter", and it can now locate the version which is
-  # in gnuwin32, even though that version does not contain the headers that
-  # LLDB uses.
+if (NOT LIBXML2_FOUND)
   find_package(LibXml2)
 endif()
 
@@ -317,16 +374,10 @@ if (APPLE)
   if(NOT IOS)
     find_library(CARBON_LIBRARY Carbon)
     find_library(CORE_SERVICES_LIBRARY CoreServices)
-    find_library(DEBUG_SYMBOLS_LIBRARY DebugSymbols PATHS "/System/Library/PrivateFrameworks")
   endif()
   find_library(FOUNDATION_LIBRARY Foundation)
   find_library(CORE_FOUNDATION_LIBRARY CoreFoundation)
   find_library(SECURITY_LIBRARY Security)
-
-  set(LLDB_FRAMEWORK_INSTALL_DIR Library/Frameworks CACHE STRING "Output directory for LLDB.framework")
-  set(LLDB_FRAMEWORK_VERSION A CACHE STRING "LLDB.framework version (default is A)")
-  set(LLDB_FRAMEWORK_RESOURCE_DIR
-    LLDB.framework/Versions/${LLDB_FRAMEWORK_VERSION}/Resources)
 
   add_definitions( -DLIBXML2_DEFINED )
   list(APPEND system_libs xml2
@@ -336,14 +387,11 @@ if (APPLE)
        ${CORE_SERVICES_LIBRARY}
        ${SECURITY_LIBRARY}
        ${DEBUG_SYMBOLS_LIBRARY})
-
-else()
-  if (LIBXML2_FOUND)
-    add_definitions( -DLIBXML2_DEFINED )
-    list(APPEND system_libs ${LIBXML2_LIBRARIES})
-    include_directories(${LIBXML2_INCLUDE_DIR})
-  endif()
-
+  include_directories(${LIBXML2_INCLUDE_DIR})
+elseif(LIBXML2_FOUND AND LIBXML2_VERSION_STRING VERSION_GREATER 2.8)
+  add_definitions( -DLIBXML2_DEFINED )
+  list(APPEND system_libs ${LIBXML2_LIBRARIES})
+  include_directories(${LIBXML2_INCLUDE_DIR})
 endif()
 
 if( WIN32 AND NOT CYGWIN )
@@ -360,18 +408,18 @@ list(APPEND system_libs ${CMAKE_DL_LIBS})
 
 # Figure out if lldb could use lldb-server.  If so, then we'll
 # ensure we build lldb-server when an lldb target is being built.
-if (CMAKE_SYSTEM_NAME MATCHES "Android|Darwin|FreeBSD|Linux|NetBSD")
-    set(LLDB_CAN_USE_LLDB_SERVER 1)
+if (CMAKE_SYSTEM_NAME MATCHES "Android|Darwin|FreeBSD|Linux|NetBSD|Windows")
+  set(LLDB_CAN_USE_LLDB_SERVER ON)
 else()
-    set(LLDB_CAN_USE_LLDB_SERVER 0)
+  set(LLDB_CAN_USE_LLDB_SERVER OFF)
 endif()
 
 # Figure out if lldb could use debugserver.  If so, then we'll
 # ensure we build debugserver when we build lldb.
-if ( CMAKE_SYSTEM_NAME MATCHES "Darwin" )
-    set(LLDB_CAN_USE_DEBUGSERVER 1)
+if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    set(LLDB_CAN_USE_DEBUGSERVER ON)
 else()
-    set(LLDB_CAN_USE_DEBUGSERVER 0)
+    set(LLDB_CAN_USE_DEBUGSERVER OFF)
 endif()
 
 if (NOT LLDB_DISABLE_CURSES)
@@ -388,28 +436,6 @@ if (NOT LLDB_DISABLE_CURSES)
     list(APPEND system_libs ${CURSES_LIBRARIES})
     include_directories(${CURSES_INCLUDE_DIR})
 endif ()
-
-check_cxx_symbol_exists("__GLIBCXX__" "string" LLDB_USING_LIBSTDCXX)
-if(LLDB_USING_LIBSTDCXX)
-    # There doesn't seem to be an easy way to check the library version. Instead, we rely on the
-    # fact that std::set did not have the allocator constructor available until version 4.9
-    check_cxx_source_compiles("
-            #include <set>
-            std::set<int> s = std::set<int>(std::allocator<int>());
-            int main() { return 0; }"
-            LLDB_USING_LIBSTDCXX_4_9)
-    if (NOT LLDB_USING_LIBSTDCXX_4_9 AND NOT LLVM_ENABLE_EH)
-        message(WARNING
-            "You appear to be linking to libstdc++ version lesser than 4.9 without exceptions "
-            "enabled. These versions of the library have an issue, which causes occasional "
-            "lldb crashes. See <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59656> for "
-            "details. Possible courses of action are:\n"
-            "- use libstdc++ version 4.9 or newer\n"
-            "- use libc++ (via LLVM_ENABLE_LIBCXX)\n"
-            "- enable exceptions (via LLVM_ENABLE_EH)\n"
-            "- ignore this warning and accept occasional instability")
-    endif()
-endif()
 
 if ((CMAKE_SYSTEM_NAME MATCHES "Android") AND LLVM_BUILD_STATIC AND
     ((ANDROID_ABI MATCHES "armeabi") OR (ANDROID_ABI MATCHES "mips")))

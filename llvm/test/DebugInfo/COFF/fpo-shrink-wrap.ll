@@ -1,5 +1,5 @@
 ; RUN: llc -enable-shrink-wrap=true < %s | FileCheck %s --check-prefix=ASM
-; RUN: llc -enable-shrink-wrap=true -filetype=obj < %s | llvm-readobj -codeview | FileCheck %s --check-prefix=OBJ
+; RUN: llc -enable-shrink-wrap=true -filetype=obj < %s | llvm-readobj --codeview | FileCheck %s --check-prefix=OBJ
 
 ; C source:
 ; int doSomething(int*);
@@ -33,7 +33,7 @@
 ; ASM:         popl    %ebx
 ; ASM: [[EPILOGUE]]:                                 # %return
 ; ASM:         retl    $8
-; ASM: Ltmp11:
+; ASM: Ltmp10:
 ; ASM:         .cv_fpo_endproc
 
 ; Note how RvaStart advances 7 bytes to skip the shrink-wrapped portion.
@@ -41,26 +41,48 @@
 ; OBJ:    FrameData {
 ; OBJ:      RvaStart: 0x0
 ; OBJ:      CodeSize: 0x34
-; OBJ:      FrameFunc: $T0 .raSearch = $eip $T0 ^ = $esp $T0 4 + =
 ; OBJ:      PrologSize: 0x9
+; OBJ:      FrameFunc [
+; OBJ-NEXT:   $T0 .raSearch =
+; OBJ-NEXT:   $eip $T0 ^ =
+; OBJ-NEXT:   $esp $T0 4 + =
+; OBJ-NEXT: ]
 ; OBJ:    }
 ; OBJ:    FrameData {
 ; OBJ:      RvaStart: 0x7
 ; OBJ:      CodeSize: 0x2D
-; OBJ:      FrameFunc: $T0 .raSearch = $eip $T0 ^ = $esp $T0 4 + = $ebx $T0 4 - ^ =
 ; OBJ:      PrologSize: 0x2
+; OBJ:      FrameFunc [
+; OBJ-NEXT:   $T0 .raSearch =
+; OBJ-NEXT:   $eip $T0 ^ =
+; OBJ-NEXT:   $esp $T0 4 + =
+; OBJ-NEXT:   $ebx $T0 4 - ^ =
+; OBJ-NEXT: ]
 ; OBJ:    }
 ; OBJ:    FrameData {
 ; OBJ:      RvaStart: 0x8
 ; OBJ:      CodeSize: 0x2C
-; OBJ:      FrameFunc: $T0 .raSearch = $eip $T0 ^ = $esp $T0 4 + = $ebx $T0 4 - ^ = $edi $T0 8 - ^ =
 ; OBJ:      PrologSize: 0x1
+; OBJ:      FrameFunc [
+; OBJ-NEXT:   $T0 .raSearch =
+; OBJ-NEXT:   $eip $T0 ^ =
+; OBJ-NEXT:   $esp $T0 4 + =
+; OBJ-NEXT:   $ebx $T0 4 - ^ =
+; OBJ-NEXT:   $edi $T0 8 - ^ =
+; OBJ-NEXT: ]
 ; OBJ:    }
 ; OBJ:    FrameData {
 ; OBJ:      RvaStart: 0x9
 ; OBJ:      CodeSize: 0x2B
-; OBJ:      FrameFunc: $T0 .raSearch = $eip $T0 ^ = $esp $T0 4 + = $ebx $T0 4 - ^ = $edi $T0 8 - ^ = $esi $T0 12 - ^ =
 ; OBJ:      PrologSize: 0x0
+; OBJ:      FrameFunc [
+; OBJ-NEXT:   $T0 .raSearch =
+; OBJ-NEXT:   $eip $T0 ^ =
+; OBJ-NEXT:   $esp $T0 4 + =
+; OBJ-NEXT:   $ebx $T0 4 - ^ =
+; OBJ-NEXT:   $edi $T0 8 - ^ =
+; OBJ-NEXT:   $esi $T0 12 - ^ =
+; OBJ-NEXT: ]
 ; OBJ:    }
 ; OBJ-NOT: FrameData
 

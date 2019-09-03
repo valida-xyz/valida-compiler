@@ -1,9 +1,8 @@
 //===- Diagnostic.h - C Language Family Diagnostic Handling -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -26,6 +25,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/Error.h"
 #include <cassert>
 #include <cstdint>
 #include <limits>
@@ -177,6 +177,9 @@ public:
     /// IdentifierInfo
     ak_identifierinfo,
 
+    /// Qualifiers
+    ak_qual,
+
     /// QualType
     ak_qualtype,
 
@@ -207,8 +210,8 @@ private:
   // Used by __extension__
   unsigned char AllExtensionsSilenced = 0;
 
-  // Suppress diagnostics after a fatal error?
-  bool SuppressAfterFatalError = true;
+  // Treat fatal errors like errors.
+  bool FatalsAsError = false;
 
   // Suppress all diagnostics.
   bool SuppressAllDiagnostics = false;
@@ -486,10 +489,8 @@ public:
   DiagnosticsEngine &operator=(const DiagnosticsEngine &) = delete;
   ~DiagnosticsEngine();
 
-  LLVM_DUMP_METHOD void dump() const { DiagStatesByLoc.dump(*SourceMgr); }
-  LLVM_DUMP_METHOD void dump(StringRef DiagName) const {
-    DiagStatesByLoc.dump(*SourceMgr, DiagName);
-  }
+  LLVM_DUMP_METHOD void dump() const;
+  LLVM_DUMP_METHOD void dump(StringRef DiagName) const;
 
   const IntrusiveRefCntPtr<DiagnosticIDs> &getDiagnosticIDs() const {
     return Diags;
@@ -614,9 +615,11 @@ public:
   void setErrorsAsFatal(bool Val) { GetCurDiagState()->ErrorsAsFatal = Val; }
   bool getErrorsAsFatal() const { return GetCurDiagState()->ErrorsAsFatal; }
 
-  /// When set to true (the default), suppress further diagnostics after
-  /// a fatal error.
-  void setSuppressAfterFatalError(bool Val) { SuppressAfterFatalError = Val; }
+  /// \brief When set to true, any fatal error reported is made an error.
+  ///
+  /// This setting takes precedence over the setErrorsAsFatal setting above.
+  void setFatalsAsError(bool Val) { FatalsAsError = Val; }
+  bool getFatalsAsError() const { return FatalsAsError; }
 
   /// When set to true mask warnings that come from system headers.
   void setSuppressSystemWarnings(bool Val) {
@@ -1299,6 +1302,12 @@ inline DiagnosticBuilder DiagnosticsEngine::Report(SourceLocation Loc,
   CurDiagID = DiagID;
   FlagValue.clear();
   return DiagnosticBuilder(this);
+}
+
+inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
+                                           llvm::Error &&E) {
+  DB.AddString(toString(std::move(E)));
+  return DB;
 }
 
 inline DiagnosticBuilder DiagnosticsEngine::Report(unsigned DiagID) {

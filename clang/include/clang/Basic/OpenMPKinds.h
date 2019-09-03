@@ -1,9 +1,8 @@
 //===--- OpenMPKinds.h - OpenMP enums ---------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -36,6 +35,7 @@ enum OpenMPClauseKind {
 #include "clang/Basic/OpenMPKinds.def"
   OMPC_threadprivate,
   OMPC_uniform,
+  OMPC_device_type,
   OMPC_unknown
 };
 
@@ -96,6 +96,31 @@ enum OpenMPMapClauseKind {
   OMPC_MAP_unknown
 };
 
+/// OpenMP modifier kind for 'map' clause.
+enum OpenMPMapModifierKind {
+  OMPC_MAP_MODIFIER_unknown = OMPC_MAP_unknown,
+#define OPENMP_MAP_MODIFIER_KIND(Name) \
+  OMPC_MAP_MODIFIER_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_MAP_MODIFIER_last
+};
+
+/// OpenMP modifier kind for 'to' clause.
+enum OpenMPToModifierKind {
+#define OPENMP_TO_MODIFIER_KIND(Name) \
+  OMPC_TO_MODIFIER_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_TO_MODIFIER_unknown
+};
+
+/// OpenMP modifier kind for 'from' clause.
+enum OpenMPFromModifierKind {
+#define OPENMP_FROM_MODIFIER_KIND(Name) \
+  OMPC_FROM_MODIFIER_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_FROM_MODIFIER_unknown
+};
+
 /// OpenMP attributes for 'dist_schedule' clause.
 enum OpenMPDistScheduleClauseKind {
 #define OPENMP_DIST_SCHEDULE_KIND(Name) OMPC_DIST_SCHEDULE_##Name,
@@ -118,6 +143,22 @@ enum OpenMPDefaultmapClauseModifier {
   OMPC_DEFAULTMAP_MODIFIER_##Name,
 #include "clang/Basic/OpenMPKinds.def"
   OMPC_DEFAULTMAP_MODIFIER_last
+};
+
+/// OpenMP attributes for 'atomic_default_mem_order' clause.
+enum OpenMPAtomicDefaultMemOrderClauseKind {
+#define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)  \
+  OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown
+};
+
+/// OpenMP device type for 'device_type' clause.
+enum OpenMPDeviceType {
+#define OPENMP_DEVICE_TYPE_KIND(Name) \
+  OMPC_DEVICE_TYPE_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_DEVICE_TYPE_unknown
 };
 
 /// Scheduling data for loop-based OpenMP directives.

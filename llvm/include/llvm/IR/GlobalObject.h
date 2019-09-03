@@ -1,9 +1,8 @@
 //===-- llvm/GlobalObject.h - Class to represent global objects -*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -18,6 +17,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/Alignment.h"
 #include <string>
 #include <utility>
 
@@ -59,9 +59,13 @@ public:
   unsigned getAlignment() const {
     unsigned Data = getGlobalValueSubClassData();
     unsigned AlignmentData = Data & AlignmentMask;
-    return (1u << AlignmentData) >> 1;
+    MaybeAlign Align = decodeMaybeAlign(AlignmentData);
+    return Align ? Align->value() : 0;
   }
+
+  /// FIXME: Remove this setter once the migration to MaybeAlign is over.
   void setAlignment(unsigned Align);
+  void setAlignment(MaybeAlign Align);
 
   unsigned getGlobalObjectSubClassData() const {
     unsigned ValueData = getGlobalValueSubClassData();

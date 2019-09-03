@@ -5,10 +5,9 @@
 
 //===----------------------------------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.txt for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -93,8 +92,10 @@
 // Include alloca() declaration.
 #if KMP_OS_WINDOWS
 #include <malloc.h> // Windows* OS: _alloca() declared in "malloc.h".
+#if KMP_MSVC_COMPAT
 #define alloca _alloca // Allow to use alloca() with no underscore.
-#elif KMP_OS_FREEBSD || KMP_OS_NETBSD
+#endif
+#elif KMP_OS_DRAGONFLY || KMP_OS_FREEBSD || KMP_OS_NETBSD || KMP_OS_OPENBSD
 // Declared in "stdlib.h".
 #elif KMP_OS_UNIX
 #include <alloca.h> // Linux* OS and OS X*: alloc() declared in "alloca".

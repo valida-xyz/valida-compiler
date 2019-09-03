@@ -3,8 +3,6 @@
 from __future__ import print_function
 
 
-import os
-import time
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -22,6 +20,7 @@ class TestConflictingSymbols(TestBase):
         lldbutil.mkdir_p(self.getBuildArtifact("Two"))
 
     @expectedFailureAll(oslist=["windows"], bugnumber="llvm.org/pr24489")
+    @expectedFailureNetBSD
     def test_conflicting_symbols(self):
         self.build()
         exe = self.getBuildArtifact("a.out")
@@ -93,6 +92,7 @@ class TestConflictingSymbols(TestBase):
                 "Multiple internal symbols"])
 
     @expectedFailureAll(bugnumber="llvm.org/pr35043")
+    @skipIfWindows # This test is "passing" on Windows, but it is a false positive.
     def test_shadowed(self):
         self.build()
         exe = self.getBuildArtifact("a.out")

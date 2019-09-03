@@ -1,9 +1,8 @@
 //===- llvm/Analysis/TargetTransformInfo.cpp ------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +18,8 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/LoopIterator.h"
 #include <utility>
 
 using namespace llvm;
@@ -41,6 +42,101 @@ struct NoTTIImpl : TargetTransformInfoImplCRTPBase<NoTTIImpl> {
 };
 }
 
+bool HardwareLoopInfo::canAnalyze(LoopInfo &LI) {
+  // If the loop has irreducible control flow, it can not be converted to
+  // Hardware loop.
+  LoopBlocksRPO RPOT(L);  
+  RPOT.perform(&LI);
+  if (containsIrreducibleCFG<const BasicBlock *>(RPOT, LI))
+    return false;
+  return true;
+}
+
+bool HardwareLoopInfo::isHardwareLoopCandidate(ScalarEvolution &SE,
+                                               LoopInfo &LI, DominatorTree &DT,
+                                               bool ForceNestedLoop,
+                                               bool ForceHardwareLoopPHI) {
+  SmallVector<BasicBlock *, 4> ExitingBlocks;
+  L->getExitingBlocks(ExitingBlocks);
+
+  for (SmallVectorImpl<BasicBlock *>::iterator I = ExitingBlocks.begin(),
+                                               IE = ExitingBlocks.end();
+       I != IE; ++I) {
+    BasicBlock *BB = *I;
+
+    // If we pass the updated counter back through a phi, we need to know
+    // which latch the updated value will be coming from.
+    if (!L->isLoopLatch(BB)) {
+      if (ForceHardwareLoopPHI || CounterInReg)
+        continue;
+    }
+
+    const SCEV *EC = SE.getExitCount(L, BB);
+    if (isa<SCEVCouldNotCompute>(EC))
+      continue;
+    if (const SCEVConstant *ConstEC = dyn_cast<SCEVConstant>(EC)) {
+      if (ConstEC->getValue()->isZero())
+        continue;
+    } else if (!SE.isLoopInvariant(EC, L))
+      continue;
+
+    if (SE.getTypeSizeInBits(EC->getType()) > CountType->getBitWidth())
+      continue;
+
+    // If this exiting block is contained in a nested loop, it is not eligible
+    // for insertion of the branch-and-decrement since the inner loop would
+    // end up messing up the value in the CTR.
+    if (!IsNestingLegal && LI.getLoopFor(BB) != L && !ForceNestedLoop)
+      continue;
+
+    // We now have a loop-invariant count of loop iterations (which is not the
+    // constant zero) for which we know that this loop will not exit via this
+    // existing block.
+
+    // We need to make sure that this block will run on every loop iteration.
+    // For this to be true, we must dominate all blocks with backedges. Such
+    // blocks are in-loop predecessors to the header block.
+    bool NotAlways = false;
+    for (pred_iterator PI = pred_begin(L->getHeader()),
+                       PIE = pred_end(L->getHeader());
+         PI != PIE; ++PI) {
+      if (!L->contains(*PI))
+        continue;
+
+      if (!DT.dominates(*I, *PI)) {
+        NotAlways = true;
+        break;
+      }
+    }
+
+    if (NotAlways)
+      continue;
+
+    // Make sure this blocks ends with a conditional branch.
+    Instruction *TI = BB->getTerminator();
+    if (!TI)
+      continue;
+
+    if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
+      if (!BI->isConditional())
+        continue;
+
+      ExitBranch = BI;
+    } else
+      continue;
+
+    // Note that this block may not be the loop latch block, even if the loop
+    // has a latch block.
+    ExitBlock = *I;
+    ExitCount = EC;
+    break;
+  }
+
+  if (!ExitBlock)
+    return false;
+  return true;
+}
+
 TargetTransformInfo::TargetTransformInfo(const DataLayout &DL)
     : TTIImpl(new Model<NoTTIImpl>(NoTTIImpl(DL))) {}
 
@@ -61,21 +157,27 @@ int TargetTransformInfo::getOperationCost(unsigned Opcode, Type *Ty,
   return Cost;
 }
 
-int TargetTransformInfo::getCallCost(FunctionType *FTy, int NumArgs) const {
-  int Cost = TTIImpl->getCallCost(FTy, NumArgs);
+int TargetTransformInfo::getCallCost(FunctionType *FTy, int NumArgs,
+                                     const User *U) const {
+  int Cost = TTIImpl->getCallCost(FTy, NumArgs, U);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
 
 int TargetTransformInfo::getCallCost(const Function *F,
-                                     ArrayRef<const Value *> Arguments) const {
-  int Cost = TTIImpl->getCallCost(F, Arguments);
+                                     ArrayRef<const Value *> Arguments,
+                                     const User *U) const {
+  int Cost = TTIImpl->getCallCost(F, Arguments, U);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
 
 unsigned TargetTransformInfo::getInliningThresholdMultiplier() const {
   return TTIImpl->getInliningThresholdMultiplier();
+}
+
+int TargetTransformInfo::getInlinerVectorBonusPercent() const {
+  return TTIImpl->getInlinerVectorBonusPercent();
 }
 
 int TargetTransformInfo::getGEPCost(Type *PointeeType, const Value *Ptr,
@@ -89,8 +191,9 @@ int TargetTransformInfo::getExtCost(const Instruction *I,
 }
 
 int TargetTransformInfo::getIntrinsicCost(
-    Intrinsic::ID IID, Type *RetTy, ArrayRef<const Value *> Arguments) const {
-  int Cost = TTIImpl->getIntrinsicCost(IID, RetTy, Arguments);
+    Intrinsic::ID IID, Type *RetTy, ArrayRef<const Value *> Arguments,
+    const User *U) const {
+  int Cost = TTIImpl->getIntrinsicCost(IID, RetTy, Arguments, U);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
@@ -124,8 +227,24 @@ unsigned TargetTransformInfo::getFlatAddressSpace() const {
   return TTIImpl->getFlatAddressSpace();
 }
 
+bool TargetTransformInfo::collectFlatAddressOperands(
+  SmallVectorImpl<int> &OpIndexes, Intrinsic::ID IID) const  {
+  return TTIImpl->collectFlatAddressOperands(OpIndexes, IID);
+}
+
+bool TargetTransformInfo::rewriteIntrinsicWithAddressSpace(
+  IntrinsicInst *II, Value *OldV, Value *NewV) const {
+  return TTIImpl->rewriteIntrinsicWithAddressSpace(II, OldV, NewV);
+}
+
 bool TargetTransformInfo::isLoweredToCall(const Function *F) const {
   return TTIImpl->isLoweredToCall(F);
+}
+
+bool TargetTransformInfo::isHardwareLoopProfitable(
+  Loop *L, ScalarEvolution &SE, AssumptionCache &AC,
+  TargetLibraryInfo *LibInfo, HardwareLoopInfo &HWLoopInfo) const {
+  return TTIImpl->isHardwareLoopProfitable(L, SE, AC, LibInfo, HWLoopInfo);
 }
 
 void TargetTransformInfo::getUnrollingPreferences(
@@ -159,8 +278,19 @@ bool TargetTransformInfo::canMacroFuseCmp() const {
   return TTIImpl->canMacroFuseCmp();
 }
 
+bool TargetTransformInfo::canSaveCmp(Loop *L, BranchInst **BI,
+                                     ScalarEvolution *SE, LoopInfo *LI,
+                                     DominatorTree *DT, AssumptionCache *AC,
+                                     TargetLibraryInfo *LibInfo) const {
+  return TTIImpl->canSaveCmp(L, BI, SE, LI, DT, AC, LibInfo);
+}
+
 bool TargetTransformInfo::shouldFavorPostInc() const {
   return TTIImpl->shouldFavorPostInc();
+}
+
+bool TargetTransformInfo::shouldFavorBackedgeIndex(const Loop *L) const {
+  return TTIImpl->shouldFavorBackedgeIndex(L);
 }
 
 bool TargetTransformInfo::isLegalMaskedStore(Type *DataType) const {
@@ -171,12 +301,30 @@ bool TargetTransformInfo::isLegalMaskedLoad(Type *DataType) const {
   return TTIImpl->isLegalMaskedLoad(DataType);
 }
 
+bool TargetTransformInfo::isLegalNTStore(Type *DataType,
+                                         unsigned Alignment) const {
+  return TTIImpl->isLegalNTStore(DataType, Alignment);
+}
+
+bool TargetTransformInfo::isLegalNTLoad(Type *DataType,
+                                        unsigned Alignment) const {
+  return TTIImpl->isLegalNTLoad(DataType, Alignment);
+}
+
 bool TargetTransformInfo::isLegalMaskedGather(Type *DataType) const {
   return TTIImpl->isLegalMaskedGather(DataType);
 }
 
 bool TargetTransformInfo::isLegalMaskedScatter(Type *DataType) const {
   return TTIImpl->isLegalMaskedScatter(DataType);
+}
+
+bool TargetTransformInfo::isLegalMaskedCompressStore(Type *DataType) const {
+  return TTIImpl->isLegalMaskedCompressStore(DataType);
+}
+
+bool TargetTransformInfo::isLegalMaskedExpandLoad(Type *DataType) const {
+  return TTIImpl->isLegalMaskedExpandLoad(DataType);
 }
 
 bool TargetTransformInfo::hasDivRemOp(Type *DataType, bool IsSigned) const {
@@ -259,13 +407,17 @@ bool TargetTransformInfo::enableAggressiveInterleaving(bool LoopHasReductions) c
   return TTIImpl->enableAggressiveInterleaving(LoopHasReductions);
 }
 
-const TargetTransformInfo::MemCmpExpansionOptions *
-TargetTransformInfo::enableMemCmpExpansion(bool IsZeroCmp) const {
-  return TTIImpl->enableMemCmpExpansion(IsZeroCmp);
+TargetTransformInfo::MemCmpExpansionOptions
+TargetTransformInfo::enableMemCmpExpansion(bool OptSize, bool IsZeroCmp) const {
+  return TTIImpl->enableMemCmpExpansion(OptSize, IsZeroCmp);
 }
 
 bool TargetTransformInfo::enableInterleavedAccessVectorization() const {
   return TTIImpl->enableInterleavedAccessVectorization();
+}
+
+bool TargetTransformInfo::enableMaskedInterleavedAccessVectorization() const {
+  return TTIImpl->enableMaskedInterleavedAccessVectorization();
 }
 
 bool TargetTransformInfo::isFPVectorizationPotentiallyUnsafe() const {
@@ -384,6 +536,55 @@ unsigned TargetTransformInfo::getMaxInterleaveFactor(unsigned VF) const {
   return TTIImpl->getMaxInterleaveFactor(VF);
 }
 
+TargetTransformInfo::OperandValueKind
+TargetTransformInfo::getOperandInfo(Value *V, OperandValueProperties &OpProps) {
+  OperandValueKind OpInfo = OK_AnyValue;
+  OpProps = OP_None;
+
+  if (auto *CI = dyn_cast<ConstantInt>(V)) {
+    if (CI->getValue().isPowerOf2())
+      OpProps = OP_PowerOf2;
+    return OK_UniformConstantValue;
+  }
+
+  // A broadcast shuffle creates a uniform value.
+  // TODO: Add support for non-zero index broadcasts.
+  // TODO: Add support for different source vector width.
+  if (auto *ShuffleInst = dyn_cast<ShuffleVectorInst>(V))
+    if (ShuffleInst->isZeroEltSplat())
+      OpInfo = OK_UniformValue;
+
+  const Value *Splat = getSplatValue(V);
+
+  // Check for a splat of a constant or for a non uniform vector of constants
+  // and check if the constant(s) are all powers of two.
+  if (isa<ConstantVector>(V) || isa<ConstantDataVector>(V)) {
+    OpInfo = OK_NonUniformConstantValue;
+    if (Splat) {
+      OpInfo = OK_UniformConstantValue;
+      if (auto *CI = dyn_cast<ConstantInt>(Splat))
+        if (CI->getValue().isPowerOf2())
+          OpProps = OP_PowerOf2;
+    } else if (auto *CDS = dyn_cast<ConstantDataSequential>(V)) {
+      OpProps = OP_PowerOf2;
+      for (unsigned I = 0, E = CDS->getNumElements(); I != E; ++I) {
+        if (auto *CI = dyn_cast<ConstantInt>(CDS->getElementAsConstant(I)))
+          if (CI->getValue().isPowerOf2())
+            continue;
+        OpProps = OP_None;
+        break;
+      }
+    }
+  }
+
+  // Check for a splat of a uniform value. This is not loop aware, so return
+  // true only for the obviously uniform cases (argument, globalvalue)
+  if (Splat && (isa<Argument>(Splat) || isa<GlobalValue>(Splat)))
+    OpInfo = OK_UniformValue;
+
+  return OpInfo;
+}
+
 int TargetTransformInfo::getArithmeticInstrCost(
     unsigned Opcode, Type *Ty, OperandValueKind Opd1Info,
     OperandValueKind Opd2Info, OperandValueProperties Opd1PropInfo,
@@ -472,9 +673,12 @@ int TargetTransformInfo::getGatherScatterOpCost(unsigned Opcode, Type *DataTy,
 
 int TargetTransformInfo::getInterleavedMemoryOpCost(
     unsigned Opcode, Type *VecTy, unsigned Factor, ArrayRef<unsigned> Indices,
-    unsigned Alignment, unsigned AddressSpace) const {
+    unsigned Alignment, unsigned AddressSpace, bool UseMaskForCond,
+    bool UseMaskForGaps) const {
   int Cost = TTIImpl->getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
-                                                 Alignment, AddressSpace);
+                                                 Alignment, AddressSpace,
+                                                 UseMaskForCond,
+                                                 UseMaskForGaps);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
@@ -510,6 +714,12 @@ int TargetTransformInfo::getAddressComputationCost(Type *Tp,
                                                    ScalarEvolution *SE,
                                                    const SCEV *Ptr) const {
   int Cost = TTIImpl->getAddressComputationCost(Tp, SE, Ptr);
+  assert(Cost >= 0 && "TTI should not produce negative costs!");
+  return Cost;
+}
+
+int TargetTransformInfo::getMemcpyCost(const Instruction *I) const {
+  int Cost = TTIImpl->getMemcpyCost(I);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
@@ -569,6 +779,12 @@ bool TargetTransformInfo::areInlineCompatible(const Function *Caller,
   return TTIImpl->areInlineCompatible(Caller, Callee);
 }
 
+bool TargetTransformInfo::areFunctionArgsABICompatible(
+    const Function *Caller, const Function *Callee,
+    SmallPtrSetImpl<Argument *> &Args) const {
+  return TTIImpl->areFunctionArgsABICompatible(Caller, Callee, Args);
+}
+
 bool TargetTransformInfo::isIndexedLoadLegal(MemIndexedMode Mode,
                                              Type *Ty) const {
   return TTIImpl->isIndexedLoadLegal(Mode, Ty);
@@ -626,51 +842,12 @@ bool TargetTransformInfo::shouldExpandReduction(const IntrinsicInst *II) const {
   return TTIImpl->shouldExpandReduction(II);
 }
 
-int TargetTransformInfo::getInstructionLatency(const Instruction *I) const {
-  return TTIImpl->getInstructionLatency(I);
+unsigned TargetTransformInfo::getGISelRematGlobalCost() const {
+  return TTIImpl->getGISelRematGlobalCost();
 }
 
-static TargetTransformInfo::OperandValueKind
-getOperandInfo(Value *V, TargetTransformInfo::OperandValueProperties &OpProps) {
-  TargetTransformInfo::OperandValueKind OpInfo =
-      TargetTransformInfo::OK_AnyValue;
-  OpProps = TargetTransformInfo::OP_None;
-
-  if (auto *CI = dyn_cast<ConstantInt>(V)) {
-    if (CI->getValue().isPowerOf2())
-      OpProps = TargetTransformInfo::OP_PowerOf2;
-    return TargetTransformInfo::OK_UniformConstantValue;
-  }
-
-  const Value *Splat = getSplatValue(V);
-
-  // Check for a splat of a constant or for a non uniform vector of constants
-  // and check if the constant(s) are all powers of two.
-  if (isa<ConstantVector>(V) || isa<ConstantDataVector>(V)) {
-    OpInfo = TargetTransformInfo::OK_NonUniformConstantValue;
-    if (Splat) {
-      OpInfo = TargetTransformInfo::OK_UniformConstantValue;
-      if (auto *CI = dyn_cast<ConstantInt>(Splat))
-        if (CI->getValue().isPowerOf2())
-          OpProps = TargetTransformInfo::OP_PowerOf2;
-    } else if (auto *CDS = dyn_cast<ConstantDataSequential>(V)) {
-      OpProps = TargetTransformInfo::OP_PowerOf2;
-      for (unsigned I = 0, E = CDS->getNumElements(); I != E; ++I) {
-        if (auto *CI = dyn_cast<ConstantInt>(CDS->getElementAsConstant(I)))
-          if (CI->getValue().isPowerOf2())
-            continue;
-        OpProps = TargetTransformInfo::OP_None;
-        break;
-      }
-    }
-  }
-
-  // Check for a splat of a uniform value. This is not loop aware, so return
-  // true only for the obviously uniform cases (argument, globalvalue)
-  if (Splat && (isa<Argument>(Splat) || isa<GlobalValue>(Splat)))
-    OpInfo = TargetTransformInfo::OK_UniformValue;
-
-  return OpInfo;
+int TargetTransformInfo::getInstructionLatency(const Instruction *I) const {
+  return TTIImpl->getInstructionLatency(I);
 }
 
 static bool matchPairwiseShuffleMask(ShuffleVectorInst *SI, bool IsLeft,
@@ -1004,6 +1181,16 @@ int TargetTransformInfo::getInstructionThroughput(const Instruction *I) const {
     return getArithmeticInstrCost(I->getOpcode(), I->getType(), Op1VK, Op2VK,
                                   Op1VP, Op2VP, Operands);
   }
+  case Instruction::FNeg: {
+    TargetTransformInfo::OperandValueKind Op1VK, Op2VK;
+    TargetTransformInfo::OperandValueProperties Op1VP, Op2VP;
+    Op1VK = getOperandInfo(I->getOperand(0), Op1VP);
+    Op2VK = OK_AnyValue;
+    Op2VP = OP_None;
+    SmallVector<const Value *, 2> Operands(I->operand_values());
+    return getArithmeticInstrCost(I->getOpcode(), I->getType(), Op1VK, Op2VK,
+                                  Op1VP, Op2VP, Operands);
+  }
   case Instruction::Select: {
     const SelectInst *SI = cast<SelectInst>(I);
     Type *CondTy = SI->getCondition()->getType();
@@ -1099,16 +1286,24 @@ int TargetTransformInfo::getInstructionThroughput(const Instruction *I) const {
     return getVectorInstrCost(I->getOpcode(),
                                    IE->getType(), Idx);
   }
+  case Instruction::ExtractValue:
+    return 0; // Model all ExtractValue nodes as free.
   case Instruction::ShuffleVector: {
     const ShuffleVectorInst *Shuffle = cast<ShuffleVectorInst>(I);
-    // TODO: Identify and add costs for insert/extract subvector, etc.
+    Type *Ty = Shuffle->getType();
+    Type *SrcTy = Shuffle->getOperand(0)->getType();
+
+    // TODO: Identify and add costs for insert subvector, etc.
+    int SubIndex;
+    if (Shuffle->isExtractSubvectorMask(SubIndex))
+      return TTIImpl->getShuffleCost(SK_ExtractSubvector, SrcTy, SubIndex, Ty);
+
     if (Shuffle->changesLength())
       return -1;
 
     if (Shuffle->isIdentity())
       return 0;
 
-    Type *Ty = Shuffle->getType();
     if (Shuffle->isReverse())
       return TTIImpl->getShuffleCost(SK_Reverse, Ty, 0, nullptr);
 

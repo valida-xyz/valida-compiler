@@ -1,18 +1,13 @@
 //===-- CommandObjectScript.cpp ---------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "CommandObjectScript.h"
 
-// C Includes
-// C++ Includes
-// Other libraries and framework includes
-// Project includes
 
 #include "lldb/Core/Debugger.h"
 
@@ -26,9 +21,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//-------------------------------------------------------------------------
 // CommandObjectScript
-//-------------------------------------------------------------------------
 
 CommandObjectScript::CommandObjectScript(CommandInterpreter &interpreter,
                                          ScriptLanguage script_lang)
@@ -57,7 +50,7 @@ bool CommandObjectScript::DoExecute(llvm::StringRef command,
     return false;
   }
 
-  ScriptInterpreter *script_interpreter = m_interpreter.GetScriptInterpreter();
+  ScriptInterpreter *script_interpreter = GetDebugger().GetScriptInterpreter();
 
   if (script_interpreter == nullptr) {
     result.AppendError("no script interpreter");

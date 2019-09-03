@@ -1,9 +1,8 @@
 //===-- DependenceAnalysis.cpp - DA Implementation --------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -110,6 +109,14 @@ STATISTIC(BanerjeeSuccesses, "Banerjee successes");
 static cl::opt<bool>
     Delinearize("da-delinearize", cl::init(true), cl::Hidden, cl::ZeroOrMore,
                 cl::desc("Try to delinearize array references."));
+static cl::opt<bool> DisableDelinearizationChecks(
+    "da-disable-delinearization-checks", cl::init(false), cl::Hidden,
+    cl::ZeroOrMore,
+    cl::desc(
+        "Disable checks that try to statically verify validity of "
+        "delinearized subscripts. Enabling this option may result in incorrect "
+        "dependence vectors for languages that allow the subscript of one "
+        "dimension to underflow or overflow into another dimension."));
 
 //===----------------------------------------------------------------------===//
 // basics
@@ -194,6 +201,13 @@ void DependenceAnalysisWrapperPass::print(raw_ostream &OS,
   dumpExampleDependence(OS, info.get());
 }
 
+PreservedAnalyses
+DependenceAnalysisPrinterPass::run(Function &F, FunctionAnalysisManager &FAM) {
+  OS << "'Dependence Analysis' for function '" << F.getName() << "':\n";
+  dumpExampleDependence(OS, &FAM.getResult<DependenceAnalysis>(F));
+  return PreservedAnalyses::all();
+}
+
 //===----------------------------------------------------------------------===//
 // Dependence methods
 
@@ -240,7 +254,7 @@ FullDependence::FullDependence(Instruction *Source, Instruction *Destination,
       LoopIndependent(PossiblyLoopIndependent) {
   Consistent = true;
   if (CommonLevels)
-    DV = make_unique<DVEntry[]>(CommonLevels);
+    DV = std::make_unique<DVEntry[]>(CommonLevels);
 }
 
 // The rest are simple getters that hide the implementation.
@@ -633,8 +647,8 @@ static AliasResult underlyingObjectsAlias(AliasAnalysis *AA,
                                           const MemoryLocation &LocB) {
   // Check the original locations (minus size) for noalias, which can happen for
   // tbaa, incompatible underlying object locations, etc.
-  MemoryLocation LocAS(LocA.Ptr, MemoryLocation::UnknownSize, LocA.AATags);
-  MemoryLocation LocBS(LocB.Ptr, MemoryLocation::UnknownSize, LocB.AATags);
+  MemoryLocation LocAS(LocA.Ptr, LocationSize::unknown(), LocA.AATags);
+  MemoryLocation LocBS(LocB.Ptr, LocationSize::unknown(), LocB.AATags);
   if (AA->alias(LocAS, LocBS) == NoAlias)
     return NoAlias;
 
@@ -3310,19 +3324,20 @@ bool DependenceInfo::tryDelinearize(Instruction *Src, Instruction *Dst,
   // and dst.
   // FIXME: It may be better to record these sizes and add them as constraints
   // to the dependency checks.
-  for (int i = 1; i < size; ++i) {
-    if (!isKnownNonNegative(SrcSubscripts[i], SrcPtr))
-      return false;
+  if (!DisableDelinearizationChecks)
+    for (int i = 1; i < size; ++i) {
+      if (!isKnownNonNegative(SrcSubscripts[i], SrcPtr))
+        return false;
 
-    if (!isKnownLessThan(SrcSubscripts[i], Sizes[i - 1]))
-      return false;
+      if (!isKnownLessThan(SrcSubscripts[i], Sizes[i - 1]))
+        return false;
 
-    if (!isKnownNonNegative(DstSubscripts[i], DstPtr))
-      return false;
+      if (!isKnownNonNegative(DstSubscripts[i], DstPtr))
+        return false;
 
-    if (!isKnownLessThan(DstSubscripts[i], Sizes[i - 1]))
-      return false;
-  }
+      if (!isKnownLessThan(DstSubscripts[i], Sizes[i - 1]))
+        return false;
+    }
 
   LLVM_DEBUG({
     dbgs() << "\nSrcSubscripts: ";
@@ -3362,6 +3377,19 @@ static void dumpSmallBitVector(SmallBitVector &BV) {
 }
 #endif
 
+bool DependenceInfo::invalidate(Function &F, const PreservedAnalyses &PA,
+                                FunctionAnalysisManager::Invalidator &Inv) {
+  // Check if the analysis itself has been invalidated.
+  auto PAC = PA.getChecker<DependenceAnalysis>();
+  if (!PAC.preserved() && !PAC.preservedSet<AllAnalysesOn<Function>>())
+    return true;
+
+  // Check transitive dependencies.
+  return Inv.invalidate<AAManager>(F, PA) ||
+         Inv.invalidate<ScalarEvolutionAnalysis>(F, PA) ||
+         Inv.invalidate<LoopAnalysis>(F, PA);
+}
+
 // depends -
 // Returns NULL if there is no dependence.
 // Otherwise, return a Dependence with as many details as possible.
@@ -3387,7 +3415,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
   if (!isLoadOrStore(Src) || !isLoadOrStore(Dst)) {
     // can only analyze simple loads and stores, i.e., no calls, invokes, etc.
     LLVM_DEBUG(dbgs() << "can only handle simple loads and stores\n");
-    return make_unique<Dependence>(Src, Dst);
+    return std::make_unique<Dependence>(Src, Dst);
   }
 
   assert(isLoadOrStore(Src) && "instruction is not load or store");
@@ -3402,7 +3430,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
   case PartialAlias:
     // cannot analyse objects if we don't understand their aliasing.
     LLVM_DEBUG(dbgs() << "can't analyze may or partial alias\n");
-    return make_unique<Dependence>(Src, Dst);
+    return std::make_unique<Dependence>(Src, Dst);
   case NoAlias:
     // If the objects noalias, they are distinct, accesses are independent.
     LLVM_DEBUG(dbgs() << "no alias\n");
@@ -3503,7 +3531,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
   // to either Separable or Coupled).
   //
   // Next, we consider 1 and 2. The intersection of the GroupLoops is empty.
-  // Next, 1 and 3. The intersectionof their GroupLoops = {2}, not empty,
+  // Next, 1 and 3. The intersection of their GroupLoops = {2}, not empty,
   // so Pair[3].Group = {0, 1, 3} and Done = false.
   //
   // Next, we compare 2 against 3. The intersection of the GroupLoops is empty.
@@ -3749,7 +3777,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
       return nullptr;
   }
 
-  return make_unique<FullDependence>(std::move(Result));
+  return std::make_unique<FullDependence>(std::move(Result));
 }
 
 

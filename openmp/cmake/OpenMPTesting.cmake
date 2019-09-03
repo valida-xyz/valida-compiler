@@ -87,7 +87,9 @@ function(set_test_compiler_information dir)
 
     # Determine major version.
     string(REGEX MATCH "[0-9]+" major "${OPENMP_TEST_C_COMPILER_VERSION}")
+    string(REGEX MATCH "[0-9]+\\.[0-9]+" majorminor "${OPENMP_TEST_C_COMPILER_VERSION}")
     set(OPENMP_TEST_COMPILER_VERSION_MAJOR "${major}" PARENT_SCOPE)
+    set(OPENMP_TEST_COMPILER_VERSION_MAJOR_MINOR "${majorminor}" PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -97,7 +99,7 @@ if (${OPENMP_STANDALONE_BUILD})
   # project is built which is too late for detecting the compiler...
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/DetectTestCompiler)
   execute_process(
-    COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_LIST_DIR}/DetectTestCompiler
+    COMMAND ${CMAKE_COMMAND} -G${CMAKE_GENERATOR} ${CMAKE_CURRENT_LIST_DIR}/DetectTestCompiler
       -DCMAKE_C_COMPILER=${OPENMP_TEST_C_COMPILER}
       -DCMAKE_CXX_COMPILER=${OPENMP_TEST_CXX_COMPILER}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/DetectTestCompiler
@@ -117,8 +119,17 @@ else()
   # Cannot use CLANG_VERSION because we are not guaranteed that this is already set.
   set(OPENMP_TEST_COMPILER_VERSION "${LLVM_VERSION}")
   set(OPENMP_TEST_COMPILER_VERSION_MAJOR "${LLVM_MAJOR_VERSION}")
+  set(OPENMP_TEST_COMPILER_VERSION_MAJOR_MINOR "${LLVM_MAJOR_VERSION}.${LLVM_MINOR_VERSION}")
+  # Unfortunately the top-level cmake/config-ix.cmake file mangles CMake's
+  # CMAKE_THREAD_LIBS_INIT variable from the FindThreads package, so work
+  # around that, until it is fixed there.
+  if("${CMAKE_THREAD_LIBS_INIT}" STREQUAL "-lpthread")
+    set(OPENMP_TEST_COMPILER_THREAD_FLAGS "-pthread")
+  else()
+    set(OPENMP_TEST_COMPILER_THREAD_FLAGS "${CMAKE_THREAD_LIBS_INIT}")
+  endif()
   # TODO: Implement blockaddress in GlobalISel and remove this flag!
-  set(OPENMP_TEST_COMPILER_OPENMP_FLAGS "-fopenmp -fno-experimental-isel")
+  set(OPENMP_TEST_COMPILER_OPENMP_FLAGS "-fopenmp ${OPENMP_TEST_COMPILER_THREAD_FLAGS} -fno-experimental-isel")
 endif()
 
 # Function to set compiler features for use in lit.
@@ -131,7 +142,7 @@ function(set_test_compiler_features)
     # Just use the lowercase of the compiler ID as fallback.
     string(TOLOWER "${OPENMP_TEST_COMPILER_ID}" comp)
   endif()
-  set(OPENMP_TEST_COMPILER_FEATURES "['${comp}', '${comp}-${OPENMP_TEST_COMPILER_VERSION_MAJOR}', '${comp}-${OPENMP_TEST_COMPILER_VERSION}']" PARENT_SCOPE)
+  set(OPENMP_TEST_COMPILER_FEATURES "['${comp}', '${comp}-${OPENMP_TEST_COMPILER_VERSION_MAJOR}', '${comp}-${OPENMP_TEST_COMPILER_VERSION_MAJOR_MINOR}', '${comp}-${OPENMP_TEST_COMPILER_VERSION}']" PARENT_SCOPE)
 endfunction()
 set_test_compiler_features()
 
@@ -144,7 +155,7 @@ function(add_openmp_testsuite target comment)
     return()
   endif()
 
-  cmake_parse_arguments(ARG "" "" "DEPENDS" ${ARGN})
+  cmake_parse_arguments(ARG "" "" "DEPENDS;ARGS" ${ARGN})
   # EXCLUDE_FROM_ALL excludes the test ${target} out of check-openmp.
   if (NOT EXCLUDE_FROM_ALL)
     # Register the testsuites and depends for the check-openmp rule.
@@ -153,8 +164,9 @@ function(add_openmp_testsuite target comment)
   endif()
 
   if (${OPENMP_STANDALONE_BUILD})
+    set(LIT_ARGS ${OPENMP_LIT_ARGS} ${ARG_ARGS})
     add_custom_target(${target}
-      COMMAND ${PYTHON_EXECUTABLE} ${OPENMP_LLVM_LIT_EXECUTABLE} ${OPENMP_LIT_ARGS} ${ARG_UNPARSED_ARGUMENTS}
+      COMMAND ${PYTHON_EXECUTABLE} ${OPENMP_LLVM_LIT_EXECUTABLE} ${LIT_ARGS} ${ARG_UNPARSED_ARGUMENTS}
       COMMENT ${comment}
       DEPENDS ${ARG_DEPENDS}
       ${cmake_3_2_USES_TERMINAL}
@@ -163,7 +175,8 @@ function(add_openmp_testsuite target comment)
     add_lit_testsuite(${target}
       ${comment}
       ${ARG_UNPARSED_ARGUMENTS}
-      DEPENDS clang clang-headers FileCheck ${ARG_DEPENDS}
+      DEPENDS clang clang-resource-headers FileCheck ${ARG_DEPENDS}
+      ARGS ${ARG_ARGS}
     )
   endif()
 endfunction()

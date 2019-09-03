@@ -1,9 +1,8 @@
 //===- CoroElide.cpp - Coroutine Frame Allocation Elision Pass ------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 // This pass replaces dynamic allocation of coroutine frame with alloca and
@@ -157,7 +156,7 @@ bool Lowerer::shouldElide(Function *F, DominatorTree &DT) const {
   SmallPtrSet<Instruction *, 8> Terminators;
   for (BasicBlock &B : *F) {
     auto *TI = B.getTerminator();
-    if (TI->getNumSuccessors() == 0 && !TI->isExceptional() &&
+    if (TI->getNumSuccessors() == 0 && !TI->isExceptionalTerminator() &&
         !isa<UnreachableInst>(TI))
       Terminators.insert(TI);
   }
@@ -287,7 +286,7 @@ struct CoroElide : FunctionPass {
 
   bool doInitialization(Module &M) override {
     if (coro::declaresIntrinsics(M, {"llvm.coro.id"}))
-      L = llvm::make_unique<Lowerer>(M);
+      L = std::make_unique<Lowerer>(M);
     return false;
   }
 

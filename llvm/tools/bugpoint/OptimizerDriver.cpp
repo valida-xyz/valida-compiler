@@ -1,9 +1,8 @@
 //===- OptimizerDriver.cpp - Allow BugPoint to run passes safely ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BugDriver.h"
+#include "ToolRunner.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Module.h"
@@ -79,7 +79,7 @@ bool BugDriver::writeProgramToFile(int FD, const Module &M) const {
 bool BugDriver::writeProgramToFile(const std::string &Filename,
                                    const Module &M) const {
   std::error_code EC;
-  ToolOutputFile Out(Filename, EC, sys::fs::F_None);
+  ToolOutputFile Out(Filename, EC, sys::fs::OF_None);
   if (!EC)
     return writeProgramToFileAux(Out, M);
   return true;
@@ -166,7 +166,8 @@ bool BugDriver::runPasses(Module &Program,
 
   std::string tool = OptCmd;
   if (OptCmd.empty()) {
-    if (ErrorOr<std::string> Path = sys::findProgramByName("opt"))
+    if (ErrorOr<std::string> Path =
+            FindProgramByName("opt", getToolName(), &OutputPrefix))
       tool = *Path;
     else
       errs() << Path.getError().message() << "\n";

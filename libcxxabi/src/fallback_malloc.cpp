@@ -1,15 +1,22 @@
 //===------------------------ fallback_malloc.cpp -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
+// Define _LIBCPP_BUILDING_LIBRARY to ensure _LIBCPP_HAS_NO_LIBRARY_ALIGNED_ALLOCATION
+// is only defined when libc aligned allocation is not available.
+#define _LIBCPP_BUILDING_LIBRARY
 #include "fallback_malloc.h"
 
 #include <__threading_support>
+#ifndef _LIBCXXABI_HAS_NO_THREADS
+#if defined(__unix__) && !defined(__ANDROID__) && defined(__ELF__) && defined(_LIBCXXABI_HAS_COMMENT_LIB_PRAGMA)
+#pragma comment(lib, "pthread")
+#endif
+#endif
 
 #include <cstdlib> // for malloc, calloc, free
 #include <cstring> // for memset
@@ -206,14 +213,14 @@ void* __aligned_malloc_with_fallback(size_t size) {
 #if defined(_WIN32)
   if (void* dest = _aligned_malloc(size, alignof(__aligned_type)))
     return dest;
-#elif defined(_LIBCPP_HAS_NO_ALIGNED_ALLOCATION)
+#elif defined(_LIBCPP_HAS_NO_LIBRARY_ALIGNED_ALLOCATION)
   if (void* dest = std::malloc(size))
     return dest;
 #else
   if (size == 0)
     size = 1;
   void* dest;
-  if (::posix_memalign(&dest, alignof(__aligned_type), size) == 0)
+  if (::posix_memalign(&dest, __alignof(__aligned_type), size) == 0)
     return dest;
 #endif
   return fallback_malloc(size);

@@ -1,9 +1,8 @@
 //===- LegacyPassManagers.h - Legacy Pass Infrastructure --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -406,11 +405,23 @@ public:
   /// Set the initial size of the module if the user has specified that they
   /// want remarks for size.
   /// Returns 0 if the remark was not requested.
-  unsigned initSizeRemarkInfo(Module &M);
+  unsigned initSizeRemarkInfo(
+      Module &M,
+      StringMap<std::pair<unsigned, unsigned>> &FunctionToInstrCount);
 
   /// Emit a remark signifying that the number of IR instructions in the module
   /// changed.
-  void emitInstrCountChangedRemark(Pass *P, Module &M, unsigned CountBefore);
+  /// \p F is optionally passed by passes which run on Functions, and thus
+  /// always know whether or not a non-empty function is available.
+  ///
+  /// \p FunctionToInstrCount maps the name of a \p Function to a pair. The
+  /// first member of the pair is the IR count of the \p Function before running
+  /// \p P, and the second member is the IR count of the \p Function after
+  /// running \p P.
+  void emitInstrCountChangedRemark(
+      Pass *P, Module &M, int64_t Delta, unsigned CountBefore,
+      StringMap<std::pair<unsigned, unsigned>> &FunctionToInstrCount,
+      Function *F = nullptr);
 
 protected:
   // Top level manager.
@@ -508,7 +519,6 @@ public:
   }
 };
 
-Timer *getPassTimer(Pass *);
 }
 
 #endif

@@ -1,9 +1,8 @@
 //===----------------------------------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,7 +16,13 @@
 #include <cassert>
 
 #include "test_macros.h"
-#include "count_new.hpp"
+#include "count_new.h"
+
+#if TEST_STD_VER >= 11
+#define DELETE_FUNCTION = delete
+#else
+#define DELETE_FUNCTION
+#endif
 
 struct A
 {
@@ -31,6 +36,9 @@ struct A
 
     int get_int() const {return int_;}
     char get_char() const {return char_;}
+
+    A* operator& () DELETE_FUNCTION;
+
 private:
     int int_;
     char char_;
@@ -65,7 +73,7 @@ void test_pointer_to_function() {
 void test_pointer_to_function() {}
 #endif // _LIBCPP_VERSION
 
-int main()
+int main(int, char**)
 {
     int nc = globalMemCounter.outstanding_new;
     {
@@ -99,4 +107,6 @@ int main()
     }
 #endif
     assert(A::count == 0);
+
+  return 0;
 }

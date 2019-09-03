@@ -1,9 +1,8 @@
 //===--- unittests/DebugInfo/DWARF/DwarfGenerator.cpp -----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -71,15 +70,20 @@ void dwarfgen::DIE::addAttribute(uint16_t A, dwarf::Form Form,
     break;
 
   case DW_FORM_strp:
+    Die->addValue(
+        DG.getAllocator(), static_cast<dwarf::Attribute>(A), Form,
+        DIEString(DG.getStringPool().getEntry(*DG.getAsmPrinter(), String)));
+    break;
+
   case DW_FORM_GNU_str_index:
   case DW_FORM_strx:
   case DW_FORM_strx1:
   case DW_FORM_strx2:
   case DW_FORM_strx3:
   case DW_FORM_strx4:
-    Die->addValue(
-        DG.getAllocator(), static_cast<dwarf::Attribute>(A), Form,
-        DIEString(DG.getStringPool().getEntry(*DG.getAsmPrinter(), String)));
+    Die->addValue(DG.getAllocator(), static_cast<dwarf::Attribute>(A), Form,
+                  DIEString(DG.getStringPool().getIndexedEntry(
+                      *DG.getAsmPrinter(), String)));
     break;
 
   default:
@@ -179,11 +183,11 @@ DWARFDebugLine::Prologue dwarfgen::LineTable::createBasicPrologue() const {
   P.LineRange = 14;
   P.OpcodeBase = 13;
   P.StandardOpcodeLengths = {0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1};
-  P.IncludeDirectories.push_back(DWARFFormValue(DW_FORM_string));
-  P.IncludeDirectories.back().setPValue("a dir");
+  P.IncludeDirectories.push_back(
+      DWARFFormValue::createFromPValue(DW_FORM_string, "a dir"));
   P.FileNames.push_back(DWARFDebugLine::FileNameEntry());
-  P.FileNames.back().Name.setPValue("a file");
-  P.FileNames.back().Name.setForm(DW_FORM_string);
+  P.FileNames.back().Name =
+      DWARFFormValue::createFromPValue(DW_FORM_string, "a file");
   return P;
 }
 
@@ -258,7 +262,7 @@ MCSymbol *dwarfgen::LineTable::writeDefaultPrologue(AsmPrinter &Asm) const {
   MCSymbol *UnitStart = Asm.createTempSymbol("line_unit_start");
   MCSymbol *UnitEnd = Asm.createTempSymbol("line_unit_end");
   if (Format == DwarfFormat::DWARF64) {
-    Asm.emitInt32(0xffffffff);
+    Asm.emitInt32((int)dwarf::DW_LENGTH_DWARF64);
     Asm.EmitLabelDifference(UnitEnd, UnitStart, 8);
   } else {
     Asm.EmitLabelDifference(UnitEnd, UnitStart, 4);
@@ -284,7 +288,7 @@ MCSymbol *dwarfgen::LineTable::writeDefaultPrologue(AsmPrinter &Asm) const {
 
 void dwarfgen::LineTable::writePrologue(AsmPrinter &Asm) const {
   if (Format == DwarfFormat::DWARF64) {
-    Asm.emitInt32(0xffffffff);
+    Asm.emitInt32((int)dwarf::DW_LENGTH_DWARF64);
     Asm.emitInt64(Prologue->TotalLength);
   } else {
     Asm.emitInt32(Prologue->TotalLength);
@@ -442,7 +446,7 @@ llvm::Error dwarfgen::Generator::init(Triple TheTriple, uint16_t V) {
     return make_error<StringError>("no code emitter for target " + TripleName,
                                    inconvertibleErrorCode());
 
-  Stream = make_unique<raw_svector_ostream>(FileBytes);
+  Stream = std::make_unique<raw_svector_ostream>(FileBytes);
 
   MS = TheTarget->createMCObjectStreamer(
       TheTriple, *MC, std::unique_ptr<MCAsmBackend>(MAB),
@@ -465,7 +469,7 @@ llvm::Error dwarfgen::Generator::init(Triple TheTriple, uint16_t V) {
   MC->setDwarfVersion(Version);
   Asm->setDwarfVersion(Version);
 
-  StringPool = llvm::make_unique<DwarfStringPool>(Allocator, *Asm, StringRef());
+  StringPool = std::make_unique<DwarfStringPool>(Allocator, *Asm, StringRef());
   StringOffsetsStartSym = Asm->createTempSymbol("str_offsets_base");
 
   return Error::success();
@@ -527,7 +531,7 @@ bool dwarfgen::Generator::saveFile(StringRef Path) {
   if (FileBytes.empty())
     return false;
   std::error_code EC;
-  raw_fd_ostream Strm(Path, EC, sys::fs::F_None);
+  raw_fd_ostream Strm(Path, EC, sys::fs::OF_None);
   if (EC)
     return false;
   Strm.write(FileBytes.data(), FileBytes.size());
@@ -537,12 +541,12 @@ bool dwarfgen::Generator::saveFile(StringRef Path) {
 
 dwarfgen::CompileUnit &dwarfgen::Generator::addCompileUnit() {
   CompileUnits.push_back(
-      make_unique<CompileUnit>(*this, Version, Asm->getPointerSize()));
+      std::make_unique<CompileUnit>(*this, Version, Asm->getPointerSize()));
   return *CompileUnits.back();
 }
 
 dwarfgen::LineTable &dwarfgen::Generator::addLineTable(DwarfFormat Format) {
   LineTables.push_back(
-      make_unique<LineTable>(Version, Format, Asm->getPointerSize()));
+      std::make_unique<LineTable>(Version, Format, Asm->getPointerSize()));
   return *LineTables.back();
 }

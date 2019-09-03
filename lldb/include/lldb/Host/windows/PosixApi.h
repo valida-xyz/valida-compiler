@@ -1,15 +1,15 @@
 //===-- windows/PosixApi.h --------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef liblldb_Host_windows_PosixApi_h
 #define liblldb_Host_windows_PosixApi_h
 
+#include "lldb/Host/Config.h"
 #include "llvm/Support/Compiler.h"
 #if !defined(_WIN32)
 #error "windows/PosixApi.h being #included on non Windows system!"
@@ -46,6 +46,15 @@
 #define S_IRWXG 0
 #define S_IRWXO 0
 
+#if HAVE_SYS_TYPES_H
+// pyconfig.h typedefs this.  We require python headers to be included before
+// any LLDB headers, but there's no way to prevent python's pid_t definition
+// from leaking, so this is the best option.
+#ifndef NO_PID_T
+#include <sys/types.h>
+#endif
+#endif // HAVE_SYS_TYPES_H
+
 #ifdef _MSC_VER
 
 // PRIxxx format macros for printf()
@@ -81,12 +90,15 @@ int vasprintf(char **ret, const char *fmt, va_list ap);
 char *strcasestr(const char *s, const char *find);
 char *realpath(const char *name, char *resolved);
 
-int usleep(uint32_t useconds);
+#ifdef _MSC_VER
+
 char *basename(char *path);
 char *dirname(char *path);
 
 int strcasecmp(const char *s1, const char *s2);
 int strncasecmp(const char *s1, const char *s2, size_t n);
+
+#endif // _MSC_VER
 
 // empty functions
 inline int posix_openpt(int flag) { LLVM_BUILTIN_UNREACHABLE; }

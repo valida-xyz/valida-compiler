@@ -1,3 +1,11 @@
+lldb_tablegen(PlatformMacOSXProperties.inc -gen-lldb-property-defs
+  SOURCE PlatformMacOSXProperties.td
+  TARGET LLDBPluginPlatformMacOSXPropertiesGen)
+
+lldb_tablegen(PlatformMacOSXPropertiesEnum.inc -gen-lldb-property-enum-defs
+  SOURCE PlatformMacOSXProperties.td
+  TARGET LLDBPluginPlatformMacOSXPropertiesEnumGen)
+
 list(APPEND PLUGIN_PLATFORM_MACOSX_SOURCES
   PlatformDarwin.cpp
   PlatformDarwinKernel.cpp
@@ -6,6 +14,7 @@ list(APPEND PLUGIN_PLATFORM_MACOSX_SOURCES
   PlatformRemoteAppleTV.cpp
   PlatformRemoteAppleWatch.cpp
   PlatformRemoteDarwinDevice.cpp
+  PlatformRemoteAppleBridge.cpp
   )
 
 list(APPEND PLUGIN_PLATFORM_MACOSX_DARWIN_ONLY_SOURCES
@@ -28,7 +37,7 @@ endif()
 
 add_lldb_library(lldbPluginPlatformMacOSX PLUGIN
   ${PLUGIN_PLATFORM_MACOSX_SOURCES}
-  
+
   LINK_LIBS
     clangBasic
     lldbBreakpoint
@@ -43,3 +52,7 @@ add_lldb_library(lldbPluginPlatformMacOSX PLUGIN
   LINK_COMPONENTS
     Support
     )
+
+add_dependencies(lldbPluginPlatformMacOSX
+  LLDBPluginPlatformMacOSXPropertiesGen
+  LLDBPluginPlatformMacOSXPropertiesEnumGen)

@@ -1,9 +1,8 @@
 //===- ASTReader.h - AST File Reader ----------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -18,6 +17,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/OpenMPClause.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -56,7 +56,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
-#include "llvm/Bitcode/BitstreamReader.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -97,7 +97,7 @@ class HeaderSearchOptions;
 class LangOptions;
 class LazyASTUnresolvedSet;
 class MacroInfo;
-class MemoryBufferCache;
+class InMemoryModuleCache;
 class NamedDecl;
 class NamespaceDecl;
 class ObjCCategoryDecl;
@@ -232,7 +232,7 @@ public:
 
   /// If needsImportVisitation returns \c true, this is called for each
   /// AST file imported by this AST file.
-  virtual void visitImport(StringRef Filename) {}
+  virtual void visitImport(StringRef ModuleName, StringRef Filename) {}
 
   /// Indicates that a particular module file extension has been read.
   virtual void readModuleFileExtension(
@@ -440,9 +440,6 @@ private:
   /// The module manager which manages modules and their dependencies
   ModuleManager ModuleMgr;
 
-  /// The cache that manages memory buffers for PCM files.
-  MemoryBufferCache &PCMCache;
-
   /// A dummy identifier resolver used to merge TU-scope declarations in
   /// C, for the cases where we don't have a Sema object to provide a real
   /// identifier resolver.
@@ -538,6 +535,11 @@ private:
   /// canonical declaration (used only for deduplication) and the value is a
   /// declaration that has an exception specification.
   llvm::SmallMapVector<Decl *, FunctionDecl *, 4> PendingExceptionSpecUpdates;
+
+  /// Deduced return type updates that have been loaded but not yet propagated
+  /// across the relevant redeclaration chain. The map key is the canonical
+  /// declaration and the value is the deduced return type.
+  llvm::SmallMapVector<FunctionDecl *, QualType, 4> PendingDeducedTypeUpdates;
 
   /// Declarations that have been imported and have typedef names for
   /// linkage purposes.
@@ -1056,6 +1058,12 @@ private:
   /// Objective-C protocols.
   std::deque<InterestingDecl> PotentiallyInterestingDecls;
 
+  /// The list of deduced function types that we have not yet read, because
+  /// they might contain a deduced return type that refers to a local type
+  /// declared within the function.
+  SmallVector<std::pair<FunctionDecl *, serialization::TypeID>, 16>
+      PendingFunctionTypes;
+
   /// The list of redeclaration chains that still need to be
   /// reconstructed, and the local offset to the corresponding list
   /// of redeclarations.
@@ -1429,6 +1437,7 @@ private:
   void Error(StringRef Msg) const;
   void Error(unsigned DiagID, StringRef Arg1 = StringRef(),
              StringRef Arg2 = StringRef()) const;
+  void Error(llvm::Error &&Err) const;
 
 public:
   /// Load the AST file and validate its contents against the given
@@ -1470,8 +1479,8 @@ public:
   ///
   /// \param ReadTimer If non-null, a timer used to track the time spent
   /// deserializing.
-  ASTReader(Preprocessor &PP, ASTContext *Context,
-            const PCHContainerReader &PCHContainerRdr,
+  ASTReader(Preprocessor &PP, InMemoryModuleCache &ModuleCache,
+            ASTContext *Context, const PCHContainerReader &PCHContainerRdr,
             ArrayRef<std::shared_ptr<ModuleFileExtension>> Extensions,
             StringRef isysroot = "", bool DisableValidation = false,
             bool AllowASTWithCompilerErrors = false,
@@ -1569,7 +1578,7 @@ public:
   /// Takes ownership of \p L.
   void addListener(std::unique_ptr<ASTReaderListener> L) {
     if (Listener)
-      L = llvm::make_unique<ChainedASTReaderListener>(std::move(L),
+      L = std::make_unique<ChainedASTReaderListener>(std::move(L),
                                                       std::move(Listener));
     Listener = std::move(L);
   }
@@ -1585,7 +1594,7 @@ public:
       auto Old = Reader.takeListener();
       if (Old) {
         Chained = true;
-        L = llvm::make_unique<ChainedASTReaderListener>(std::move(L),
+        L = std::make_unique<ChainedASTReaderListener>(std::move(L),
                                                         std::move(Old));
       }
       Reader.setListener(std::move(L));
@@ -2212,6 +2221,9 @@ public:
   llvm::APFloat ReadAPFloat(const RecordData &Record,
                             const llvm::fltSemantics &Sem, unsigned &Idx);
 
+  /// Read an APValue
+  APValue ReadAPValue(const RecordData &Record, unsigned &Idx);
+
   // Read a string
   static std::string ReadString(const RecordData &Record, unsigned &Idx);
 
@@ -2223,6 +2235,10 @@ public:
   // Read a path
   std::string ReadPath(ModuleFile &F, const RecordData &Record, unsigned &Idx);
 
+  // Read a path
+  std::string ReadPath(StringRef BaseDirectory, const RecordData &Record,
+                       unsigned &Idx);
+
   // Skip a path
   static void SkipPath(const RecordData &Record, unsigned &Idx) {
     SkipString(Record, Idx);
@@ -2233,6 +2249,9 @@ public:
 
   CXXTemporary *ReadCXXTemporary(ModuleFile &F, const RecordData &Record,
                                  unsigned &Idx);
+
+  /// Reads one attribute from the current stream position.
+  Attr *ReadAttr(ModuleFile &M, const RecordData &Record, unsigned &Idx);
 
   /// Reads attributes from the current stream position.
   void ReadAttributes(ASTRecordReader &Record, AttrVec &Attrs);
@@ -2361,7 +2380,8 @@ public:
 
   /// Reads a record with id AbbrevID from Cursor, resetting the
   /// internal state.
-  unsigned readRecord(llvm::BitstreamCursor &Cursor, unsigned AbbrevID);
+  Expected<unsigned> readRecord(llvm::BitstreamCursor &Cursor,
+                                unsigned AbbrevID);
 
   /// Is this a module file for a module (rather than a PCH or similar).
   bool isModule() const { return F->isModule(); }
@@ -2413,6 +2433,14 @@ public:
                                      serialization::DeclID ID) {
     return Reader->ReadVisibleDeclContextStorage(*F, F->DeclsCursor, Offset,
                                                  ID);
+  }
+
+  ExplicitSpecifier readExplicitSpec() {
+    uint64_t Kind = readInt();
+    bool HasExpr = Kind & 0x1;
+    Kind = Kind >> 1;
+    return ExplicitSpecifier(HasExpr ? readExpr() : nullptr,
+                             static_cast<ExplicitSpecKind>(Kind));
   }
 
   void readExceptionSpec(SmallVectorImpl<QualType> &ExceptionStorage,
@@ -2589,6 +2617,8 @@ public:
     return Reader->ReadSourceRange(*F, Record, Idx);
   }
 
+  APValue readAPValue() { return Reader->ReadAPValue(Record, Idx); }
+
   /// Read an integral value, advancing Idx.
   llvm::APInt readAPInt() {
     return Reader->ReadAPInt(Record, Idx);
@@ -2619,6 +2649,11 @@ public:
     return ASTReader::ReadVersionTuple(Record, Idx);
   }
 
+  /// Reads one attribute from the current stream position, advancing Idx.
+  Attr *readAttr() {
+    return Reader->ReadAttr(*F, Record, Idx);
+  }
+
   /// Reads attributes from the current stream position, advancing Idx.
   void readAttributes(AttrVec &Attrs) {
     return Reader->ReadAttributes(*this, Attrs);
@@ -2646,7 +2681,10 @@ struct SavedStreamPosition {
       : Cursor(Cursor), Offset(Cursor.GetCurrentBitNo()) {}
 
   ~SavedStreamPosition() {
-    Cursor.JumpToBit(Offset);
+    if (llvm::Error Err = Cursor.JumpToBit(Offset))
+      llvm::report_fatal_error(
+          "Cursor should always be able to go back, failed: " +
+          toString(std::move(Err)));
   }
 
 private:
@@ -2657,6 +2695,21 @@ private:
 inline void PCHValidator::Error(const char *Msg) {
   Reader.Error(Msg);
 }
+
+class OMPClauseReader : public OMPClauseVisitor<OMPClauseReader> {
+  ASTRecordReader &Record;
+  ASTContext &Context;
+
+public:
+  OMPClauseReader(ASTRecordReader &Record)
+      : Record(Record), Context(Record.getContext()) {}
+
+#define OPENMP_CLAUSE(Name, Class) void Visit##Class(Class *C);
+#include "clang/Basic/OpenMPKinds.def"
+  OMPClause *readClause();
+  void VisitOMPClauseWithPreInit(OMPClauseWithPreInit *C);
+  void VisitOMPClauseWithPostUpdate(OMPClauseWithPostUpdate *C);
+};
 
 } // namespace clang
 

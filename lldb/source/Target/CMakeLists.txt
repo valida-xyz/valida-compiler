@@ -1,8 +1,14 @@
+lldb_tablegen(TargetProperties.inc -gen-lldb-property-defs
+  SOURCE TargetProperties.td
+  TARGET LLDBTargetPropertiesGen)
+
+lldb_tablegen(TargetPropertiesEnum.inc -gen-lldb-property-enum-defs
+  SOURCE TargetProperties.td
+  TARGET LLDBTargetPropertiesEnumGen)
+
 add_lldb_library(lldbTarget
   ABI.cpp
-  CPPLanguageRuntime.cpp
   ExecutionContext.cpp
-  FileAction.cpp
   JITLoader.cpp
   JITLoaderList.cpp
   InstrumentationRuntime.cpp
@@ -12,22 +18,21 @@ add_lldb_library(lldbTarget
   Memory.cpp
   MemoryHistory.cpp
   ModuleCache.cpp
-  ObjCLanguageRuntime.cpp
   OperatingSystem.cpp
   PathMappingList.cpp
   Platform.cpp
   Process.cpp
-  ProcessInfo.cpp
-  ProcessLaunchInfo.cpp
   Queue.cpp
   QueueItem.cpp
   QueueList.cpp
   RegisterContext.cpp
   RegisterNumber.cpp
+  RemoteAwarePlatform.cpp
   SectionLoadHistory.cpp
   SectionLoadList.cpp
   StackFrame.cpp
   StackFrameList.cpp
+  StackFrameRecognizer.cpp
   StackID.cpp
   StopInfo.cpp
   StructuredDataPlugin.cpp
@@ -68,9 +73,12 @@ add_lldb_library(lldbTarget
     lldbSymbol
     lldbUtility
     lldbPluginExpressionParserClang
-    lldbPluginObjCLanguage
     lldbPluginProcessUtility
 
   LINK_COMPONENTS
     Support
   )
+
+add_dependencies(lldbTarget
+  LLDBTargetPropertiesGen
+  LLDBTargetPropertiesEnumGen)

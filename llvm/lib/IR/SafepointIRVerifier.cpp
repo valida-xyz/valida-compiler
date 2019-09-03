@@ -1,9 +1,8 @@
 //===-- SafepointIRVerifier.cpp - Verify gc.statepoint invariants ---------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -92,6 +91,7 @@ public:
         Listed = true;
       }
     }
+    (void)Listed;
     assert(Listed && "basic block is not found among incoming blocks");
     return false;
   }
@@ -133,7 +133,7 @@ public:
     // Top-down walk of the dominator tree
     ReversePostOrderTraversal<const Function *> RPOT(&F);
     for (const BasicBlock *BB : RPOT) {
-      const TerminatorInst *TI = BB->getTerminator();
+      const Instruction *TI = BB->getTerminator();
       assert(TI && "blocks must be well formed");
 
       // For conditional branches, we can perform simple conditional propagation on
@@ -197,6 +197,17 @@ protected:
 static void Verify(const Function &F, const DominatorTree &DT,
                    const CFGDeadness &CD);
 
+namespace llvm {
+PreservedAnalyses SafepointIRVerifierPass::run(Function &F,
+                                               FunctionAnalysisManager &AM) {
+  const auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
+  CFGDeadness CD;
+  CD.processFunction(F, DT);
+  Verify(F, DT, CD);
+  return PreservedAnalyses::all();
+}
+}
+
 namespace {
 
 struct SafepointIRVerifier : public FunctionPass {
@@ -256,8 +267,7 @@ static bool containsGCPtrType(Type *Ty) {
   if (ArrayType *AT = dyn_cast<ArrayType>(Ty))
     return containsGCPtrType(AT->getElementType());
   if (StructType *ST = dyn_cast<StructType>(Ty))
-    return std::any_of(ST->subtypes().begin(), ST->subtypes().end(),
-                       containsGCPtrType);
+    return llvm::any_of(ST->elements(), containsGCPtrType);
   return false;
 }
 

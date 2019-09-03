@@ -1,9 +1,8 @@
 //===- HexagonLoopIdiomRecognition.cpp ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -94,9 +93,9 @@ static cl::opt<bool> OnlyNonNestedMemmove("only-nonnested-memmove-idiom",
   cl::Hidden, cl::init(true),
   cl::desc("Only enable generating memmove in non-nested loops"));
 
-cl::opt<bool> HexagonVolatileMemcpy("disable-hexagon-volatile-memcpy",
-  cl::Hidden, cl::init(false),
-  cl::desc("Enable Hexagon-specific memcpy for volatile destination."));
+static cl::opt<bool> HexagonVolatileMemcpy(
+    "disable-hexagon-volatile-memcpy", cl::Hidden, cl::init(false),
+    cl::desc("Enable Hexagon-specific memcpy for volatile destination."));
 
 static cl::opt<unsigned> SimplifyLimit("hlir-simplify-limit", cl::init(10000),
   cl::Hidden, cl::desc("Maximum number of simplification steps in HLIR"));
@@ -1001,6 +1000,7 @@ bool PolynomialMultiplyRecognize::isPromotableTo(Value *Val,
 void PolynomialMultiplyRecognize::promoteTo(Instruction *In,
       IntegerType *DestTy, BasicBlock *LoopB) {
   Type *OrigTy = In->getType();
+  assert(!OrigTy->isVoidTy() && "Invalid instruction to promote");
 
   // Leave boolean values alone.
   if (!In->getType()->isIntegerTy(1))
@@ -1081,7 +1081,8 @@ bool PolynomialMultiplyRecognize::promoteTypes(BasicBlock *LoopB,
   std::transform(LoopB->begin(), LoopB->end(), std::back_inserter(LoopIns),
                  [](Instruction &In) { return &In; });
   for (Instruction *In : LoopIns)
-    promoteTo(In, DestTy, LoopB);
+    if (!In->isTerminator())
+      promoteTo(In, DestTy, LoopB);
 
   // Fix up the PHI nodes in the exit block.
   Instruction *EndI = ExitB->getFirstNonPHI();
@@ -1522,7 +1523,7 @@ Value *PolynomialMultiplyRecognize::generate(BasicBlock::iterator At,
       ParsedValues &PV) {
   IRBuilder<> B(&*At);
   Module *M = At->getParent()->getParent()->getParent();
-  Value *PMF = Intrinsic::getDeclaration(M, Intrinsic::hexagon_M4_pmpyw);
+  Function *PMF = Intrinsic::getDeclaration(M, Intrinsic::hexagon_M4_pmpyw);
 
   Value *P = PV.P, *Q = PV.Q, *P0 = P;
   unsigned IC = PV.IterCount;
@@ -1970,12 +1971,13 @@ mayLoopAccessLocation(Value *Ptr, ModRefInfo Access, Loop *L,
   // Get the location that may be stored across the loop.  Since the access
   // is strided positively through memory, we say that the modified location
   // starts at the pointer and has infinite size.
-  LocationSize AccessSize = MemoryLocation::UnknownSize;
+  LocationSize AccessSize = LocationSize::unknown();
 
   // If the loop iterates a fixed number of times, we can refine the access
   // size to be exactly the size of the memset, which is (BECount+1)*StoreSize
   if (const SCEVConstant *BECst = dyn_cast<SCEVConstant>(BECount))
-    AccessSize = (BECst->getValue()->getZExtValue() + 1) * StoreSize;
+    AccessSize = LocationSize::precise((BECst->getValue()->getZExtValue() + 1) *
+                                       StoreSize);
 
   // TODO: For this to be really effective, we have to dive into the pointer
   // operand in the store.  Store to &A[i] of 100 will always return may alias
@@ -2251,10 +2253,8 @@ CleanupAndExit:
       Type *Int32PtrTy = Type::getInt32PtrTy(Ctx);
       Type *VoidTy = Type::getVoidTy(Ctx);
       Module *M = Func->getParent();
-      Constant *CF = M->getOrInsertFunction(HexagonVolatileMemcpyName, VoidTy,
-                                            Int32PtrTy, Int32PtrTy, Int32Ty);
-      Function *Fn = cast<Function>(CF);
-      Fn->setLinkage(Function::ExternalLinkage);
+      FunctionCallee Fn = M->getOrInsertFunction(
+          HexagonVolatileMemcpyName, VoidTy, Int32PtrTy, Int32PtrTy, Int32Ty);
 
       const SCEV *OneS = SE->getConstant(Int32Ty, 1);
       const SCEV *BECount32 = SE->getTruncateOrZeroExtend(BECount, Int32Ty);
@@ -2360,7 +2360,7 @@ bool HexagonLoopIdiomRecognize::runOnLoopBlock(Loop *CurLoop, BasicBlock *BB,
   auto DominatedByBB = [this,BB] (BasicBlock *EB) -> bool {
     return DT->dominates(BB, EB);
   };
-  if (!std::all_of(ExitBlocks.begin(), ExitBlocks.end(), DominatedByBB))
+  if (!all_of(ExitBlocks, DominatedByBB))
     return false;
 
   bool MadeChange = false;

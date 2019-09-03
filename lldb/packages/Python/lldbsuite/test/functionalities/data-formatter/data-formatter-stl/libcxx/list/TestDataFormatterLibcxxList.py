@@ -5,9 +5,6 @@ Test lldb data formatter subsystem.
 from __future__ import print_function
 
 
-import os
-import time
-import re
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -162,6 +159,10 @@ class LibcxxListDataFormatterTestCase(TestBase):
                              '[2] = ', '3',
                              '[3] = ', '4'])
 
+        ListPtr = self.frame().FindVariable("list_ptr")
+        self.assertTrue(ListPtr.GetChildAtIndex(
+            0).GetValueAsUnsigned(0) == 1, "[0] = 1")
+
         # check that MightHaveChildren() gets it right
         self.assertTrue(
             self.frame().FindVariable("numbers_list").MightHaveChildren(),
@@ -189,6 +190,7 @@ class LibcxxListDataFormatterTestCase(TestBase):
                              '\"smart\"'])
 
         self.runCmd("n") # This gets us past the printf
+        self.runCmd("n")
         self.runCmd("n")
 
         # check access-by-index

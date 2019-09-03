@@ -1,9 +1,8 @@
 //===- Type.cpp - Type representation and manipulation --------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -23,6 +22,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/NonTrivialTypeVisitor.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/TemplateName.h"
@@ -50,6 +50,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 using namespace clang;
 
@@ -290,6 +291,26 @@ QualType QualType::getSingleStepDesugaredTypeImpl(QualType type,
   QualType desugar = split.Ty->getLocallyUnqualifiedSingleStepDesugaredType();
   return Context.getQualifiedType(desugar, split.Quals);
 }
+
+// Check that no type class is polymorphic. LLVM style RTTI should be used
+// instead. If absolutely needed an exception can still be added here by
+// defining the appropriate macro (but please don't do this).
+#define TYPE(CLASS, BASE) \
+  static_assert(!std::is_polymorphic<CLASS##Type>::value, \
+                #CLASS "Type should not be polymorphic!");
+#include "clang/AST/TypeNodes.def"
+
+// Check that no type class has a non-trival destructor. Types are
+// allocated with the BumpPtrAllocator from ASTContext and therefore
+// their destructor is not executed.
+//
+// FIXME: ConstantArrayType is not trivially destructible because of its
+// APInt member. It should be replaced in favor of ASTContext allocation.
+#define TYPE(CLASS, BASE)                                                      \
+  static_assert(std::is_trivially_destructible<CLASS##Type>::value ||          \
+                    std::is_same<CLASS##Type, ConstantArrayType>::value,       \
+                #CLASS "Type should be trivially destructible!");
+#include "clang/AST/TypeNodes.def"
 
 QualType Type::getLocallyUnqualifiedSingleStepDesugaredType() const {
   switch (getTypeClass()) {
@@ -592,28 +613,6 @@ bool Type::isObjCClassOrClassKindOfType() const {
   return OPT->isObjCClassType() || OPT->isObjCQualifiedClassType();
 }
 
-/// Was this type written with the special inert-in-MRC __unsafe_unretained
-/// qualifier?
-///
-/// This approximates the answer to the following question: if this
-/// translation unit were compiled in ARC, would this type be qualified
-/// with __unsafe_unretained?
-bool Type::isObjCInertUnsafeUnretainedType() const {
-  const Type *cur = this;
-  while (true) {
-    if (const auto attributed = dyn_cast<AttributedType>(cur)) {
-      if (attributed->getAttrKind() ==
-            AttributedType::attr_objc_inert_unsafe_unretained)
-        return true;
-    }
-
-    // Single-step desugar until we run out of sugar.
-    QualType next = cur->getLocallyUnqualifiedSingleStepDesugaredType();
-    if (next.getTypePtr() == cur) return false;
-    cur = next.getTypePtr();
-  }
-}
-
 ObjCTypeParamType::ObjCTypeParamType(const ObjCTypeParamDecl *D,
                                      QualType can,
                                      ArrayRef<ObjCProtocolDecl *> protocols)
@@ -737,25 +736,30 @@ const ObjCObjectPointerType *ObjCObjectPointerType::stripObjCKindOfTypeAndQuals(
   return ctx.getObjCObjectPointerType(obj)->castAs<ObjCObjectPointerType>();
 }
 
-template<typename F>
-static QualType simpleTransform(ASTContext &ctx, QualType type, F &&f);
-
 namespace {
 
-/// Visitor used by simpleTransform() to perform the transformation.
-template<typename F>
-struct SimpleTransformVisitor
-         : public TypeVisitor<SimpleTransformVisitor<F>, QualType> {
+/// Visitor used to perform a simple type transformation that does not change
+/// the semantics of the type.
+template <typename Derived>
+struct SimpleTransformVisitor : public TypeVisitor<Derived, QualType> {
   ASTContext &Ctx;
-  F &&TheFunc;
 
   QualType recurse(QualType type) {
-    return simpleTransform(Ctx, type, std::move(TheFunc));
+    // Split out the qualifiers from the type.
+    SplitQualType splitType = type.split();
+
+    // Visit the type itself.
+    QualType result = static_cast<Derived *>(this)->Visit(splitType.Ty);
+    if (result.isNull())
+      return result;
+
+    // Reconstruct the transformed type by applying the local qualifiers
+    // from the split type.
+    return Ctx.getQualifiedType(result, splitType.Quals);
   }
 
 public:
-  SimpleTransformVisitor(ASTContext &ctx, F &&f)
-      : Ctx(ctx), TheFunc(std::move(f)) {}
+  explicit SimpleTransformVisitor(ASTContext &ctx) : Ctx(ctx) {}
 
   // None of the clients of this transformation can occur where
   // there are dependent types, so skip dependent types.
@@ -766,6 +770,17 @@ public:
 
 #define TRIVIAL_TYPE_CLASS(Class) \
   QualType Visit##Class##Type(const Class##Type *T) { return QualType(T, 0); }
+#define SUGARED_TYPE_CLASS(Class) \
+  QualType Visit##Class##Type(const Class##Type *T) { \
+    if (!T->isSugared()) \
+      return QualType(T, 0); \
+    QualType desugaredType = recurse(T->desugar()); \
+    if (desugaredType.isNull()) \
+      return {}; \
+    if (desugaredType.getAsOpaquePtr() == T->desugar().getAsOpaquePtr()) \
+      return QualType(T, 0); \
+    return desugaredType; \
+  }
 
   TRIVIAL_TYPE_CLASS(Builtin)
 
@@ -969,8 +984,9 @@ public:
     return Ctx.getParenType(innerType);
   }
 
-  TRIVIAL_TYPE_CLASS(Typedef)
-  TRIVIAL_TYPE_CLASS(ObjCTypeParam)
+  SUGARED_TYPE_CLASS(Typedef)
+  SUGARED_TYPE_CLASS(ObjCTypeParam)
+  SUGARED_TYPE_CLASS(MacroQualified)
 
   QualType VisitAdjustedType(const AdjustedType *T) {
     QualType originalType = recurse(T->getOriginalType());
@@ -1001,15 +1017,15 @@ public:
     return Ctx.getDecayedType(originalType);
   }
 
-  TRIVIAL_TYPE_CLASS(TypeOfExpr)
-  TRIVIAL_TYPE_CLASS(TypeOf)
-  TRIVIAL_TYPE_CLASS(Decltype)
-  TRIVIAL_TYPE_CLASS(UnaryTransform)
+  SUGARED_TYPE_CLASS(TypeOfExpr)
+  SUGARED_TYPE_CLASS(TypeOf)
+  SUGARED_TYPE_CLASS(Decltype)
+  SUGARED_TYPE_CLASS(UnaryTransform)
   TRIVIAL_TYPE_CLASS(Record)
   TRIVIAL_TYPE_CLASS(Enum)
 
   // FIXME: Non-trivial to implement, but important for C++
-  TRIVIAL_TYPE_CLASS(Elaborated)
+  SUGARED_TYPE_CLASS(Elaborated)
 
   QualType VisitAttributedType(const AttributedType *T) {
     QualType modifiedType = recurse(T->getModifiedType());
@@ -1044,7 +1060,7 @@ public:
   }
 
   // FIXME: Non-trivial to implement, but important for C++
-  TRIVIAL_TYPE_CLASS(TemplateSpecialization)
+  SUGARED_TYPE_CLASS(TemplateSpecialization)
 
   QualType VisitAutoType(const AutoType *T) {
     if (!T->isDeduced())
@@ -1063,7 +1079,7 @@ public:
   }
 
   // FIXME: Non-trivial to implement, but important for C++
-  TRIVIAL_TYPE_CLASS(PackExpansion)
+  SUGARED_TYPE_CLASS(PackExpansion)
 
   QualType VisitObjCObjectType(const ObjCObjectType *T) {
     QualType baseType = recurse(T->getBaseType());
@@ -1121,222 +1137,245 @@ public:
   }
 
 #undef TRIVIAL_TYPE_CLASS
+#undef SUGARED_TYPE_CLASS
+};
+
+struct SubstObjCTypeArgsVisitor
+    : public SimpleTransformVisitor<SubstObjCTypeArgsVisitor> {
+  using BaseType = SimpleTransformVisitor<SubstObjCTypeArgsVisitor>;
+
+  ArrayRef<QualType> TypeArgs;
+  ObjCSubstitutionContext SubstContext;
+
+  SubstObjCTypeArgsVisitor(ASTContext &ctx, ArrayRef<QualType> typeArgs,
+                           ObjCSubstitutionContext context)
+      : BaseType(ctx), TypeArgs(typeArgs), SubstContext(context) {}
+
+  QualType VisitObjCTypeParamType(const ObjCTypeParamType *OTPTy) {
+    // Replace an Objective-C type parameter reference with the corresponding
+    // type argument.
+    ObjCTypeParamDecl *typeParam = OTPTy->getDecl();
+    // If we have type arguments, use them.
+    if (!TypeArgs.empty()) {
+      QualType argType = TypeArgs[typeParam->getIndex()];
+      if (OTPTy->qual_empty())
+        return argType;
+
+      // Apply protocol lists if exists.
+      bool hasError;
+      SmallVector<ObjCProtocolDecl *, 8> protocolsVec;
+      protocolsVec.append(OTPTy->qual_begin(), OTPTy->qual_end());
+      ArrayRef<ObjCProtocolDecl *> protocolsToApply = protocolsVec;
+      return Ctx.applyObjCProtocolQualifiers(
+          argType, protocolsToApply, hasError, true/*allowOnPointerType*/);
+    }
+
+    switch (SubstContext) {
+    case ObjCSubstitutionContext::Ordinary:
+    case ObjCSubstitutionContext::Parameter:
+    case ObjCSubstitutionContext::Superclass:
+      // Substitute the bound.
+      return typeParam->getUnderlyingType();
+
+    case ObjCSubstitutionContext::Result:
+    case ObjCSubstitutionContext::Property: {
+      // Substitute the __kindof form of the underlying type.
+      const auto *objPtr =
+          typeParam->getUnderlyingType()->castAs<ObjCObjectPointerType>();
+
+      // __kindof types, id, and Class don't need an additional
+      // __kindof.
+      if (objPtr->isKindOfType() || objPtr->isObjCIdOrClassType())
+        return typeParam->getUnderlyingType();
+
+      // Add __kindof.
+      const auto *obj = objPtr->getObjectType();
+      QualType resultTy = Ctx.getObjCObjectType(
+          obj->getBaseType(), obj->getTypeArgsAsWritten(), obj->getProtocols(),
+          /*isKindOf=*/true);
+
+      // Rebuild object pointer type.
+      return Ctx.getObjCObjectPointerType(resultTy);
+    }
+    }
+    llvm_unreachable("Unexpected ObjCSubstitutionContext!");
+  }
+
+  QualType VisitFunctionType(const FunctionType *funcType) {
+    // If we have a function type, update the substitution context
+    // appropriately.
+
+    //Substitute result type.
+    QualType returnType = funcType->getReturnType().substObjCTypeArgs(
+        Ctx, TypeArgs, ObjCSubstitutionContext::Result);
+    if (returnType.isNull())
+      return {};
+
+    // Handle non-prototyped functions, which only substitute into the result
+    // type.
+    if (isa<FunctionNoProtoType>(funcType)) {
+      // If the return type was unchanged, do nothing.
+      if (returnType.getAsOpaquePtr() ==
+          funcType->getReturnType().getAsOpaquePtr())
+        return BaseType::VisitFunctionType(funcType);
+
+      // Otherwise, build a new type.
+      return Ctx.getFunctionNoProtoType(returnType, funcType->getExtInfo());
+    }
+
+    const auto *funcProtoType = cast<FunctionProtoType>(funcType);
+
+    // Transform parameter types.
+    SmallVector<QualType, 4> paramTypes;
+    bool paramChanged = false;
+    for (auto paramType : funcProtoType->getParamTypes()) {
+      QualType newParamType = paramType.substObjCTypeArgs(
+          Ctx, TypeArgs, ObjCSubstitutionContext::Parameter);
+      if (newParamType.isNull())
+        return {};
+
+      if (newParamType.getAsOpaquePtr() != paramType.getAsOpaquePtr())
+        paramChanged = true;
+
+      paramTypes.push_back(newParamType);
+    }
+
+    // Transform extended info.
+    FunctionProtoType::ExtProtoInfo info = funcProtoType->getExtProtoInfo();
+    bool exceptionChanged = false;
+    if (info.ExceptionSpec.Type == EST_Dynamic) {
+      SmallVector<QualType, 4> exceptionTypes;
+      for (auto exceptionType : info.ExceptionSpec.Exceptions) {
+        QualType newExceptionType = exceptionType.substObjCTypeArgs(
+            Ctx, TypeArgs, ObjCSubstitutionContext::Ordinary);
+        if (newExceptionType.isNull())
+          return {};
+
+        if (newExceptionType.getAsOpaquePtr() != exceptionType.getAsOpaquePtr())
+          exceptionChanged = true;
+
+        exceptionTypes.push_back(newExceptionType);
+      }
+
+      if (exceptionChanged) {
+        info.ExceptionSpec.Exceptions =
+            llvm::makeArrayRef(exceptionTypes).copy(Ctx);
+      }
+    }
+
+    if (returnType.getAsOpaquePtr() ==
+            funcProtoType->getReturnType().getAsOpaquePtr() &&
+        !paramChanged && !exceptionChanged)
+      return BaseType::VisitFunctionType(funcType);
+
+    return Ctx.getFunctionType(returnType, paramTypes, info);
+  }
+
+  QualType VisitObjCObjectType(const ObjCObjectType *objcObjectType) {
+    // Substitute into the type arguments of a specialized Objective-C object
+    // type.
+    if (objcObjectType->isSpecializedAsWritten()) {
+      SmallVector<QualType, 4> newTypeArgs;
+      bool anyChanged = false;
+      for (auto typeArg : objcObjectType->getTypeArgsAsWritten()) {
+        QualType newTypeArg = typeArg.substObjCTypeArgs(
+            Ctx, TypeArgs, ObjCSubstitutionContext::Ordinary);
+        if (newTypeArg.isNull())
+          return {};
+
+        if (newTypeArg.getAsOpaquePtr() != typeArg.getAsOpaquePtr()) {
+          // If we're substituting based on an unspecialized context type,
+          // produce an unspecialized type.
+          ArrayRef<ObjCProtocolDecl *> protocols(
+              objcObjectType->qual_begin(), objcObjectType->getNumProtocols());
+          if (TypeArgs.empty() &&
+              SubstContext != ObjCSubstitutionContext::Superclass) {
+            return Ctx.getObjCObjectType(
+                objcObjectType->getBaseType(), {}, protocols,
+                objcObjectType->isKindOfTypeAsWritten());
+          }
+
+          anyChanged = true;
+        }
+
+        newTypeArgs.push_back(newTypeArg);
+      }
+
+      if (anyChanged) {
+        ArrayRef<ObjCProtocolDecl *> protocols(
+            objcObjectType->qual_begin(), objcObjectType->getNumProtocols());
+        return Ctx.getObjCObjectType(objcObjectType->getBaseType(), newTypeArgs,
+                                     protocols,
+                                     objcObjectType->isKindOfTypeAsWritten());
+      }
+    }
+
+    return BaseType::VisitObjCObjectType(objcObjectType);
+  }
+
+  QualType VisitAttributedType(const AttributedType *attrType) {
+    QualType newType = BaseType::VisitAttributedType(attrType);
+    if (newType.isNull())
+      return {};
+
+    const auto *newAttrType = dyn_cast<AttributedType>(newType.getTypePtr());
+    if (!newAttrType || newAttrType->getAttrKind() != attr::ObjCKindOf)
+      return newType;
+
+    // Find out if it's an Objective-C object or object pointer type;
+    QualType newEquivType = newAttrType->getEquivalentType();
+    const ObjCObjectPointerType *ptrType =
+        newEquivType->getAs<ObjCObjectPointerType>();
+    const ObjCObjectType *objType = ptrType
+                                        ? ptrType->getObjectType()
+                                        : newEquivType->getAs<ObjCObjectType>();
+    if (!objType)
+      return newType;
+
+    // Rebuild the "equivalent" type, which pushes __kindof down into
+    // the object type.
+    newEquivType = Ctx.getObjCObjectType(
+        objType->getBaseType(), objType->getTypeArgsAsWritten(),
+        objType->getProtocols(),
+        // There is no need to apply kindof on an unqualified id type.
+        /*isKindOf=*/objType->isObjCUnqualifiedId() ? false : true);
+
+    // If we started with an object pointer type, rebuild it.
+    if (ptrType)
+      newEquivType = Ctx.getObjCObjectPointerType(newEquivType);
+
+    // Rebuild the attributed type.
+    return Ctx.getAttributedType(newAttrType->getAttrKind(),
+                                 newAttrType->getModifiedType(), newEquivType);
+  }
+};
+
+struct StripObjCKindOfTypeVisitor
+    : public SimpleTransformVisitor<StripObjCKindOfTypeVisitor> {
+  using BaseType = SimpleTransformVisitor<StripObjCKindOfTypeVisitor>;
+
+  explicit StripObjCKindOfTypeVisitor(ASTContext &ctx) : BaseType(ctx) {}
+
+  QualType VisitObjCObjectType(const ObjCObjectType *objType) {
+    if (!objType->isKindOfType())
+      return BaseType::VisitObjCObjectType(objType);
+
+    QualType baseType = objType->getBaseType().stripObjCKindOfType(Ctx);
+    return Ctx.getObjCObjectType(baseType, objType->getTypeArgsAsWritten(),
+                                 objType->getProtocols(),
+                                 /*isKindOf=*/false);
+  }
 };
 
 } // namespace
 
-/// Perform a simple type transformation that does not change the
-/// semantics of the type.
-template<typename F>
-static QualType simpleTransform(ASTContext &ctx, QualType type, F &&f) {
-  // Transform the type. If it changed, return the transformed result.
-  QualType transformed = f(type);
-  if (transformed.getAsOpaquePtr() != type.getAsOpaquePtr())
-    return transformed;
-
-  // Split out the qualifiers from the type.
-  SplitQualType splitType = type.split();
-
-  // Visit the type itself.
-  SimpleTransformVisitor<F> visitor(ctx, std::forward<F>(f));
-  QualType result = visitor.Visit(splitType.Ty);
-  if (result.isNull())
-    return result;
-
-  // Reconstruct the transformed type by applying the local qualifiers
-  // from the split type.
-  return ctx.getQualifiedType(result, splitType.Quals);
-}
-
 /// Substitute the given type arguments for Objective-C type
 /// parameters within the given type, recursively.
-QualType QualType::substObjCTypeArgs(
-           ASTContext &ctx,
-           ArrayRef<QualType> typeArgs,
-           ObjCSubstitutionContext context) const {
-  return simpleTransform(ctx, *this,
-                         [&](QualType type) -> QualType {
-    SplitQualType splitType = type.split();
-
-    // Replace an Objective-C type parameter reference with the corresponding
-    // type argument.
-    if (const auto *OTPTy = dyn_cast<ObjCTypeParamType>(splitType.Ty)) {
-      ObjCTypeParamDecl *typeParam = OTPTy->getDecl();
-      // If we have type arguments, use them.
-      if (!typeArgs.empty()) {
-        QualType argType = typeArgs[typeParam->getIndex()];
-        if (OTPTy->qual_empty())
-          return ctx.getQualifiedType(argType, splitType.Quals);
-
-        // Apply protocol lists if exists.
-        bool hasError;
-        SmallVector<ObjCProtocolDecl*, 8> protocolsVec;
-        protocolsVec.append(OTPTy->qual_begin(),
-                            OTPTy->qual_end());
-        ArrayRef<ObjCProtocolDecl *> protocolsToApply = protocolsVec;
-        QualType resultTy = ctx.applyObjCProtocolQualifiers(argType,
-            protocolsToApply, hasError, true/*allowOnPointerType*/);
-
-        return ctx.getQualifiedType(resultTy, splitType.Quals);
-      }
-
-      switch (context) {
-      case ObjCSubstitutionContext::Ordinary:
-      case ObjCSubstitutionContext::Parameter:
-      case ObjCSubstitutionContext::Superclass:
-        // Substitute the bound.
-        return ctx.getQualifiedType(typeParam->getUnderlyingType(),
-                                    splitType.Quals);
-
-      case ObjCSubstitutionContext::Result:
-      case ObjCSubstitutionContext::Property: {
-        // Substitute the __kindof form of the underlying type.
-        const auto *objPtr = typeParam->getUnderlyingType()
-          ->castAs<ObjCObjectPointerType>();
-
-        // __kindof types, id, and Class don't need an additional
-        // __kindof.
-        if (objPtr->isKindOfType() || objPtr->isObjCIdOrClassType())
-          return ctx.getQualifiedType(typeParam->getUnderlyingType(),
-                                      splitType.Quals);
-
-        // Add __kindof.
-        const auto *obj = objPtr->getObjectType();
-        QualType resultTy = ctx.getObjCObjectType(obj->getBaseType(),
-                                                  obj->getTypeArgsAsWritten(),
-                                                  obj->getProtocols(),
-                                                  /*isKindOf=*/true);
-
-        // Rebuild object pointer type.
-        resultTy = ctx.getObjCObjectPointerType(resultTy);
-        return ctx.getQualifiedType(resultTy, splitType.Quals);
-      }
-      }
-    }
-
-    // If we have a function type, update the context appropriately.
-    if (const auto *funcType = dyn_cast<FunctionType>(splitType.Ty)) {
-      // Substitute result type.
-      QualType returnType = funcType->getReturnType().substObjCTypeArgs(
-                              ctx,
-                              typeArgs,
-                              ObjCSubstitutionContext::Result);
-      if (returnType.isNull())
-        return {};
-
-      // Handle non-prototyped functions, which only substitute into the result
-      // type.
-      if (isa<FunctionNoProtoType>(funcType)) {
-        // If the return type was unchanged, do nothing.
-        if (returnType.getAsOpaquePtr()
-              == funcType->getReturnType().getAsOpaquePtr())
-          return type;
-
-        // Otherwise, build a new type.
-        return ctx.getFunctionNoProtoType(returnType, funcType->getExtInfo());
-      }
-
-      const auto *funcProtoType = cast<FunctionProtoType>(funcType);
-
-      // Transform parameter types.
-      SmallVector<QualType, 4> paramTypes;
-      bool paramChanged = false;
-      for (auto paramType : funcProtoType->getParamTypes()) {
-        QualType newParamType = paramType.substObjCTypeArgs(
-                                  ctx,
-                                  typeArgs,
-                                  ObjCSubstitutionContext::Parameter);
-        if (newParamType.isNull())
-          return {};
-
-        if (newParamType.getAsOpaquePtr() != paramType.getAsOpaquePtr())
-          paramChanged = true;
-
-        paramTypes.push_back(newParamType);
-      }
-
-      // Transform extended info.
-      FunctionProtoType::ExtProtoInfo info = funcProtoType->getExtProtoInfo();
-      bool exceptionChanged = false;
-      if (info.ExceptionSpec.Type == EST_Dynamic) {
-        SmallVector<QualType, 4> exceptionTypes;
-        for (auto exceptionType : info.ExceptionSpec.Exceptions) {
-          QualType newExceptionType = exceptionType.substObjCTypeArgs(
-                                        ctx,
-                                        typeArgs,
-                                        ObjCSubstitutionContext::Ordinary);
-          if (newExceptionType.isNull())
-            return {};
-
-          if (newExceptionType.getAsOpaquePtr()
-              != exceptionType.getAsOpaquePtr())
-            exceptionChanged = true;
-
-          exceptionTypes.push_back(newExceptionType);
-        }
-
-        if (exceptionChanged) {
-          info.ExceptionSpec.Exceptions =
-              llvm::makeArrayRef(exceptionTypes).copy(ctx);
-        }
-      }
-
-      if (returnType.getAsOpaquePtr()
-            == funcProtoType->getReturnType().getAsOpaquePtr() &&
-          !paramChanged && !exceptionChanged)
-        return type;
-
-      return ctx.getFunctionType(returnType, paramTypes, info);
-    }
-
-    // Substitute into the type arguments of a specialized Objective-C object
-    // type.
-    if (const auto *objcObjectType = dyn_cast<ObjCObjectType>(splitType.Ty)) {
-      if (objcObjectType->isSpecializedAsWritten()) {
-        SmallVector<QualType, 4> newTypeArgs;
-        bool anyChanged = false;
-        for (auto typeArg : objcObjectType->getTypeArgsAsWritten()) {
-          QualType newTypeArg = typeArg.substObjCTypeArgs(
-                                  ctx, typeArgs,
-                                  ObjCSubstitutionContext::Ordinary);
-          if (newTypeArg.isNull())
-            return {};
-
-          if (newTypeArg.getAsOpaquePtr() != typeArg.getAsOpaquePtr()) {
-            // If we're substituting based on an unspecialized context type,
-            // produce an unspecialized type.
-            ArrayRef<ObjCProtocolDecl *> protocols(
-                                           objcObjectType->qual_begin(),
-                                           objcObjectType->getNumProtocols());
-            if (typeArgs.empty() &&
-                context != ObjCSubstitutionContext::Superclass) {
-              return ctx.getObjCObjectType(
-                       objcObjectType->getBaseType(), {},
-                       protocols,
-                       objcObjectType->isKindOfTypeAsWritten());
-            }
-
-            anyChanged = true;
-          }
-
-          newTypeArgs.push_back(newTypeArg);
-        }
-
-        if (anyChanged) {
-          ArrayRef<ObjCProtocolDecl *> protocols(
-                                         objcObjectType->qual_begin(),
-                                         objcObjectType->getNumProtocols());
-          return ctx.getObjCObjectType(objcObjectType->getBaseType(),
-                                       newTypeArgs, protocols,
-                                       objcObjectType->isKindOfTypeAsWritten());
-        }
-      }
-
-      return type;
-    }
-
-    return type;
-  });
+QualType QualType::substObjCTypeArgs(ASTContext &ctx,
+                                     ArrayRef<QualType> typeArgs,
+                                     ObjCSubstitutionContext context) const {
+  SubstObjCTypeArgsVisitor visitor(ctx, typeArgs, context);
+  return visitor.recurse(*this);
 }
 
 QualType QualType::substObjCMemberType(QualType objectType,
@@ -1351,25 +1390,8 @@ QualType QualType::substObjCMemberType(QualType objectType,
 QualType QualType::stripObjCKindOfType(const ASTContext &constCtx) const {
   // FIXME: Because ASTContext::getAttributedType() is non-const.
   auto &ctx = const_cast<ASTContext &>(constCtx);
-  return simpleTransform(ctx, *this,
-           [&](QualType type) -> QualType {
-             SplitQualType splitType = type.split();
-             if (auto *objType = splitType.Ty->getAs<ObjCObjectType>()) {
-               if (!objType->isKindOfType())
-                 return type;
-
-               QualType baseType
-                 = objType->getBaseType().stripObjCKindOfType(ctx);
-               return ctx.getQualifiedType(
-                        ctx.getObjCObjectType(baseType,
-                                              objType->getTypeArgsAsWritten(),
-                                              objType->getProtocols(),
-                                              /*isKindOf=*/false),
-                        splitType.Quals);
-             }
-
-             return type;
-           });
+  StripObjCKindOfTypeVisitor visitor(ctx);
+  return visitor.recurse(*this);
 }
 
 QualType QualType::getAtomicUnqualifiedType() const {
@@ -1641,6 +1663,16 @@ TagDecl *Type::getAsTagDecl() const {
   return nullptr;
 }
 
+bool Type::hasAttr(attr::Kind AK) const {
+  const Type *Cur = this;
+  while (const auto *AT = Cur->getAs<AttributedType>()) {
+    if (AT->getAttrKind() == AK)
+      return true;
+    Cur = AT->getEquivalentType().getTypePtr();
+  }
+  return false;
+}
+
 namespace {
 
   class GetContainedDeducedTypeVisitor :
@@ -1717,8 +1749,16 @@ namespace {
       return Visit(T->getModifiedType());
     }
 
+    Type *VisitMacroQualifiedType(const MacroQualifiedType *T) {
+      return Visit(T->getUnderlyingType());
+    }
+
     Type *VisitAdjustedType(const AdjustedType *T) {
       return Visit(T->getOriginalType());
+    }
+
+    Type *VisitPackExpansionType(const PackExpansionType *T) {
+      return Visit(T->getPattern());
     }
   };
 
@@ -1977,6 +2017,7 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
     if (BT->getKind() == BuiltinType::NullPtr) return STK_CPointer;
     if (BT->isInteger()) return STK_Integral;
     if (BT->isFloatingPoint()) return STK_Floating;
+    if (BT->isFixedPointType()) return STK_FixedPoint;
     llvm_unreachable("unknown scalar builtin type");
   } else if (isa<PointerType>(T)) {
     return STK_CPointer;
@@ -2246,6 +2287,62 @@ bool QualType::isNonWeakInMRRWithObjCWeak(const ASTContext &Context) const {
   return !Context.getLangOpts().ObjCAutoRefCount &&
          Context.getLangOpts().ObjCWeak &&
          getObjCLifetime() != Qualifiers::OCL_Weak;
+}
+
+namespace {
+// Helper class that determines whether this is a type that is non-trivial to
+// primitive copy or move, or is a struct type that has a field of such type.
+template <bool IsMove>
+struct IsNonTrivialCopyMoveVisitor
+    : CopiedTypeVisitor<IsNonTrivialCopyMoveVisitor<IsMove>, IsMove, bool> {
+  using Super =
+      CopiedTypeVisitor<IsNonTrivialCopyMoveVisitor<IsMove>, IsMove, bool>;
+  IsNonTrivialCopyMoveVisitor(const ASTContext &C) : Ctx(C) {}
+  void preVisit(QualType::PrimitiveCopyKind PCK, QualType QT) {}
+
+  bool visitWithKind(QualType::PrimitiveCopyKind PCK, QualType QT) {
+    if (const auto *AT = this->Ctx.getAsArrayType(QT))
+      return this->asDerived().visit(Ctx.getBaseElementType(AT));
+    return Super::visitWithKind(PCK, QT);
+  }
+
+  bool visitARCStrong(QualType QT) { return true; }
+  bool visitARCWeak(QualType QT) { return true; }
+  bool visitTrivial(QualType QT) { return false; }
+  // Volatile fields are considered trivial.
+  bool visitVolatileTrivial(QualType QT) { return false; }
+
+  bool visitStruct(QualType QT) {
+    const RecordDecl *RD = QT->castAs<RecordType>()->getDecl();
+    // We don't want to apply the C restriction in C++ because C++
+    // (1) can apply the restriction at a finer grain by banning copying or
+    //     destroying the union, and
+    // (2) allows users to override these restrictions by declaring explicit
+    //     constructors/etc, which we're not proposing to add to C.
+    if (isa<CXXRecordDecl>(RD))
+      return false;
+    for (const FieldDecl *FD : RD->fields())
+      if (this->asDerived().visit(FD->getType()))
+        return true;
+    return false;
+  }
+
+  const ASTContext &Ctx;
+};
+
+} // namespace
+
+bool QualType::isNonTrivialPrimitiveCType(const ASTContext &Ctx) const {
+  if (isNonTrivialToPrimitiveDefaultInitialize())
+    return true;
+  DestructionKind DK = isDestructedType();
+  if (DK != DK_none && DK != DK_cxx_destructor)
+    return true;
+  if (IsNonTrivialCopyMoveVisitor<false>(Ctx).visit(*this))
+    return true;
+  if (IsNonTrivialCopyMoveVisitor<true>(Ctx).visit(*this))
+    return true;
+  return false;
 }
 
 QualType::PrimitiveDefaultInitializeKind
@@ -2604,7 +2701,8 @@ DependentTemplateSpecializationType::DependentTemplateSpecializationType(
   : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon, true, true,
                     /*VariablyModified=*/false,
                     NNS && NNS->containsUnexpandedParameterPack()),
-    NNS(NNS), Name(Name), NumArgs(Args.size()) {
+    NNS(NNS), Name(Name) {
+  DependentTemplateSpecializationTypeBits.NumArgs = Args.size();
   assert((!NNS || NNS->isDependent()) &&
          "DependentTemplateSpecializatonType requires dependent qualifier");
   TemplateArgument *ArgBuffer = getArgBuffer();
@@ -2796,6 +2894,14 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
     return "reserve_id_t";
   case OMPArraySection:
     return "<OpenMP array section type>";
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+  case Id: \
+    return #ExtType;
+#include "clang/Basic/OpenCLExtensionTypes.def"
+#define SVE_TYPE(Name, Id, SingletonId) \
+  case Id: \
+    return Name;
+#include "clang/Basic/AArch64SVEACLETypes.def"
   }
 
   llvm_unreachable("Invalid builtin type.");
@@ -2830,6 +2936,7 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   case CC_X86RegCall : return "regcall";
   case CC_AAPCS: return "aapcs";
   case CC_AAPCS_VFP: return "aapcs-vfp";
+  case CC_AArch64VectorCall: return "aarch64_vector_pcs";
   case CC_IntelOclBicc: return "intel_ocl_bicc";
   case CC_SpirFunction: return "spir_function";
   case CC_OpenCLKernel: return "opencl_kernel";
@@ -2844,24 +2951,28 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
                                      QualType canonical,
                                      const ExtProtoInfo &epi)
-    : FunctionType(FunctionProto, result, canonical,
-                   result->isDependentType(),
+    : FunctionType(FunctionProto, result, canonical, result->isDependentType(),
                    result->isInstantiationDependentType(),
                    result->isVariablyModifiedType(),
-                   result->containsUnexpandedParameterPack(), epi.ExtInfo),
-      NumParams(params.size()),
-      NumExceptions(epi.ExceptionSpec.Exceptions.size()),
-      ExceptionSpecType(epi.ExceptionSpec.Type),
-      HasExtParameterInfos(epi.ExtParameterInfos != nullptr),
-      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn) {
-  assert(NumParams == params.size() && "function has too many parameters");
-
-  FunctionTypeBits.TypeQuals = epi.TypeQuals;
+                   result->containsUnexpandedParameterPack(), epi.ExtInfo) {
+  FunctionTypeBits.FastTypeQuals = epi.TypeQuals.getFastQualifiers();
   FunctionTypeBits.RefQualifier = epi.RefQualifier;
+  FunctionTypeBits.NumParams = params.size();
+  assert(getNumParams() == params.size() && "NumParams overflow!");
+  FunctionTypeBits.ExceptionSpecType = epi.ExceptionSpec.Type;
+  FunctionTypeBits.HasExtParameterInfos = !!epi.ExtParameterInfos;
+  FunctionTypeBits.Variadic = epi.Variadic;
+  FunctionTypeBits.HasTrailingReturn = epi.HasTrailingReturn;
+
+  // Fill in the extra trailing bitfields if present.
+  if (hasExtraBitfields(epi.ExceptionSpec.Type)) {
+    auto &ExtraBits = *getTrailingObjects<FunctionTypeExtraBitfields>();
+    ExtraBits.NumExceptionType = epi.ExceptionSpec.Exceptions.size();
+  }
 
   // Fill in the trailing argument array.
-  auto *argSlot = reinterpret_cast<QualType *>(this+1);
-  for (unsigned i = 0; i != NumParams; ++i) {
+  auto *argSlot = getTrailingObjects<QualType>();
+  for (unsigned i = 0; i != getNumParams(); ++i) {
     if (params[i]->isDependentType())
       setDependent();
     else if (params[i]->isInstantiationDependentType())
@@ -2873,9 +2984,11 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
     argSlot[i] = params[i];
   }
 
+  // Fill in the exception type array if present.
   if (getExceptionSpecType() == EST_Dynamic) {
-    // Fill in the exception array.
-    QualType *exnSlot = argSlot + NumParams;
+    assert(hasExtraBitfields() && "missing trailing extra bitfields!");
+    auto *exnSlot =
+        reinterpret_cast<QualType *>(getTrailingObjects<ExceptionType>());
     unsigned I = 0;
     for (QualType ExceptionType : epi.ExceptionSpec.Exceptions) {
       // Note that, before C++17, a dependent exception specification does
@@ -2889,14 +3002,15 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
       exnSlot[I++] = ExceptionType;
     }
-  } else if (isComputedNoexcept(getExceptionSpecType())) {
+  }
+  // Fill in the Expr * in the exception specification if present.
+  else if (isComputedNoexcept(getExceptionSpecType())) {
     assert(epi.ExceptionSpec.NoexceptExpr && "computed noexcept with no expr");
     assert((getExceptionSpecType() == EST_DependentNoexcept) ==
            epi.ExceptionSpec.NoexceptExpr->isValueDependent());
 
     // Store the noexcept expression and context.
-    auto **noexSlot = reinterpret_cast<Expr **>(argSlot + NumParams);
-    *noexSlot = epi.ExceptionSpec.NoexceptExpr;
+    *getTrailingObjects<Expr *>() = epi.ExceptionSpec.NoexceptExpr;
 
     if (epi.ExceptionSpec.NoexceptExpr->isValueDependent() ||
         epi.ExceptionSpec.NoexceptExpr->isInstantiationDependent())
@@ -2904,10 +3018,12 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
     if (epi.ExceptionSpec.NoexceptExpr->containsUnexpandedParameterPack())
       setContainsUnexpandedParameterPack();
-  } else if (getExceptionSpecType() == EST_Uninstantiated) {
+  }
+  // Fill in the FunctionDecl * in the exception specification if present.
+  else if (getExceptionSpecType() == EST_Uninstantiated) {
     // Store the function decl from which we will resolve our
     // exception specification.
-    auto **slot = reinterpret_cast<FunctionDecl **>(argSlot + NumParams);
+    auto **slot = getTrailingObjects<FunctionDecl *>();
     slot[0] = epi.ExceptionSpec.SourceDecl;
     slot[1] = epi.ExceptionSpec.SourceTemplate;
     // This exception specification doesn't make the type dependent, because
@@ -2915,7 +3031,7 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
   } else if (getExceptionSpecType() == EST_Unevaluated) {
     // Store the function decl from which we will resolve our
     // exception specification.
-    auto **slot = reinterpret_cast<FunctionDecl **>(argSlot + NumParams);
+    auto **slot = getTrailingObjects<FunctionDecl *>();
     slot[0] = epi.ExceptionSpec.SourceDecl;
   }
 
@@ -2932,11 +3048,18 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
     setDependent();
   }
 
+  // Fill in the extra parameter info if present.
   if (epi.ExtParameterInfos) {
-    auto *extParamInfos =
-      const_cast<ExtParameterInfo *>(getExtParameterInfosBuffer());
-    for (unsigned i = 0; i != NumParams; ++i)
+    auto *extParamInfos = getTrailingObjects<ExtParameterInfo>();
+    for (unsigned i = 0; i != getNumParams(); ++i)
       extParamInfos[i] = epi.ExtParameterInfos[i];
+  }
+
+  if (epi.TypeQuals.hasNonFastQualifiers()) {
+    FunctionTypeBits.HasExtQuals = 1;
+    *getTrailingObjects<Qualifiers>() = epi.TypeQuals;
+  } else {
+    FunctionTypeBits.HasExtQuals = 0;
   }
 }
 
@@ -2971,6 +3094,7 @@ CanThrowResult FunctionProtoType::canThrow() const {
   case EST_DynamicNone:
   case EST_BasicNoexcept:
   case EST_NoexceptTrue:
+  case EST_NoThrow:
     return CT_Cannot;
 
   case EST_None:
@@ -2981,7 +3105,7 @@ CanThrowResult FunctionProtoType::canThrow() const {
   case EST_Dynamic:
     // A dynamic exception specification is throwing unless every exception
     // type is an (unexpanded) pack expansion type.
-    for (unsigned I = 0, N = NumExceptions; I != N; ++I)
+    for (unsigned I = 0; I != getNumExceptions(); ++I)
       if (!getExceptionType(I)->getAs<PackExpansionType>())
         return CT_Can;
     return CT_Dependent;
@@ -3029,14 +3153,13 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
   // shortcut, use one AddInteger call instead of four for the next four
   // fields.
   assert(!(unsigned(epi.Variadic) & ~1) &&
-         !(unsigned(epi.TypeQuals) & ~255) &&
          !(unsigned(epi.RefQualifier) & ~3) &&
          !(unsigned(epi.ExceptionSpec.Type) & ~15) &&
          "Values larger than expected.");
   ID.AddInteger(unsigned(epi.Variadic) +
-                (epi.TypeQuals << 1) +
-                (epi.RefQualifier << 9) +
-                (epi.ExceptionSpec.Type << 11));
+                (epi.RefQualifier << 1) +
+                (epi.ExceptionSpec.Type << 3));
+  ID.Add(epi.TypeQuals);
   if (epi.ExceptionSpec.Type == EST_Dynamic) {
     for (QualType Ex : epi.ExceptionSpec.Exceptions)
       ID.AddPointer(Ex.getAsOpaquePtr());
@@ -3056,12 +3179,26 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
 
 void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID,
                                 const ASTContext &Ctx) {
-  Profile(ID, getReturnType(), param_type_begin(), NumParams, getExtProtoInfo(),
-          Ctx, isCanonicalUnqualified());
+  Profile(ID, getReturnType(), param_type_begin(), getNumParams(),
+          getExtProtoInfo(), Ctx, isCanonicalUnqualified());
 }
 
 QualType TypedefType::desugar() const {
   return getDecl()->getUnderlyingType();
+}
+
+QualType MacroQualifiedType::desugar() const { return getUnderlyingType(); }
+
+QualType MacroQualifiedType::getModifiedType() const {
+  // Step over MacroQualifiedTypes from the same macro to find the type
+  // ultimately qualified by the macro qualifier.
+  QualType Inner = cast<AttributedType>(getUnderlyingType())->getModifiedType();
+  while (auto *InnerMQT = dyn_cast<MacroQualifiedType>(Inner)) {
+    if (InnerMQT->getMacroIdentifier() != getMacroIdentifier())
+      break;
+    Inner = InnerMQT->getModifiedType();
+  }
+  return Inner;
 }
 
 TypeOfExprType::TypeOfExprType(Expr *E, QualType can)
@@ -3154,118 +3291,82 @@ bool TagType::isBeingDefined() const {
 }
 
 bool RecordType::hasConstFields() const {
-  for (FieldDecl *FD : getDecl()->fields()) {
-    QualType FieldTy = FD->getType();
-    if (FieldTy.isConstQualified())
-      return true;
-    FieldTy = FieldTy.getCanonicalType();
-    if (const auto *FieldRecTy = FieldTy->getAs<RecordType>())
-      if (FieldRecTy->hasConstFields())
+  std::vector<const RecordType*> RecordTypeList;
+  RecordTypeList.push_back(this);
+  unsigned NextToCheckIndex = 0;
+
+  while (RecordTypeList.size() > NextToCheckIndex) {
+    for (FieldDecl *FD :
+         RecordTypeList[NextToCheckIndex]->getDecl()->fields()) {
+      QualType FieldTy = FD->getType();
+      if (FieldTy.isConstQualified())
         return true;
+      FieldTy = FieldTy.getCanonicalType();
+      if (const auto *FieldRecTy = FieldTy->getAs<RecordType>()) {
+        if (llvm::find(RecordTypeList, FieldRecTy) == RecordTypeList.end())
+          RecordTypeList.push_back(FieldRecTy);
+      }
+    }
+    ++NextToCheckIndex;
   }
   return false;
 }
 
 bool AttributedType::isQualifier() const {
+  // FIXME: Generate this with TableGen.
   switch (getAttrKind()) {
   // These are type qualifiers in the traditional C sense: they annotate
   // something about a specific value/variable of a type.  (They aren't
   // always part of the canonical type, though.)
-  case AttributedType::attr_address_space:
-  case AttributedType::attr_objc_gc:
-  case AttributedType::attr_objc_ownership:
-  case AttributedType::attr_objc_inert_unsafe_unretained:
-  case AttributedType::attr_nonnull:
-  case AttributedType::attr_nullable:
-  case AttributedType::attr_null_unspecified:
-  case AttributedType::attr_lifetimebound:
+  case attr::ObjCGC:
+  case attr::ObjCOwnership:
+  case attr::ObjCInertUnsafeUnretained:
+  case attr::TypeNonNull:
+  case attr::TypeNullable:
+  case attr::TypeNullUnspecified:
+  case attr::LifetimeBound:
+  case attr::AddressSpace:
     return true;
 
-  // These aren't qualifiers; they rewrite the modified type to be a
-  // semantically different type.
-  case AttributedType::attr_regparm:
-  case AttributedType::attr_vector_size:
-  case AttributedType::attr_neon_vector_type:
-  case AttributedType::attr_neon_polyvector_type:
-  case AttributedType::attr_pcs:
-  case AttributedType::attr_pcs_vfp:
-  case AttributedType::attr_noreturn:
-  case AttributedType::attr_cdecl:
-  case AttributedType::attr_fastcall:
-  case AttributedType::attr_stdcall:
-  case AttributedType::attr_thiscall:
-  case AttributedType::attr_regcall:
-  case AttributedType::attr_pascal:
-  case AttributedType::attr_swiftcall:
-  case AttributedType::attr_vectorcall:
-  case AttributedType::attr_inteloclbicc:
-  case AttributedType::attr_preserve_most:
-  case AttributedType::attr_preserve_all:
-  case AttributedType::attr_ms_abi:
-  case AttributedType::attr_sysv_abi:
-  case AttributedType::attr_ptr32:
-  case AttributedType::attr_ptr64:
-  case AttributedType::attr_sptr:
-  case AttributedType::attr_uptr:
-  case AttributedType::attr_objc_kindof:
-  case AttributedType::attr_ns_returns_retained:
-  case AttributedType::attr_nocf_check:
+  // All other type attributes aren't qualifiers; they rewrite the modified
+  // type to be a semantically different type.
+  default:
     return false;
   }
-  llvm_unreachable("bad attributed type kind");
 }
 
 bool AttributedType::isMSTypeSpec() const {
+  // FIXME: Generate this with TableGen?
   switch (getAttrKind()) {
-  default:  return false;
-  case attr_ptr32:
-  case attr_ptr64:
-  case attr_sptr:
-  case attr_uptr:
+  default: return false;
+  case attr::Ptr32:
+  case attr::Ptr64:
+  case attr::SPtr:
+  case attr::UPtr:
     return true;
   }
   llvm_unreachable("invalid attr kind");
 }
 
 bool AttributedType::isCallingConv() const {
+  // FIXME: Generate this with TableGen.
   switch (getAttrKind()) {
-  case attr_ptr32:
-  case attr_ptr64:
-  case attr_sptr:
-  case attr_uptr:
-  case attr_address_space:
-  case attr_regparm:
-  case attr_vector_size:
-  case attr_neon_vector_type:
-  case attr_neon_polyvector_type:
-  case attr_objc_gc:
-  case attr_objc_ownership:
-  case attr_objc_inert_unsafe_unretained:
-  case attr_noreturn:
-  case attr_nonnull:
-  case attr_ns_returns_retained:
-  case attr_nullable:
-  case attr_null_unspecified:
-  case attr_objc_kindof:
-  case attr_nocf_check:
-  case attr_lifetimebound:
-    return false;
-
-  case attr_pcs:
-  case attr_pcs_vfp:
-  case attr_cdecl:
-  case attr_fastcall:
-  case attr_stdcall:
-  case attr_thiscall:
-  case attr_regcall:
-  case attr_swiftcall:
-  case attr_vectorcall:
-  case attr_pascal:
-  case attr_ms_abi:
-  case attr_sysv_abi:
-  case attr_inteloclbicc:
-  case attr_preserve_most:
-  case attr_preserve_all:
+  default: return false;
+  case attr::Pcs:
+  case attr::CDecl:
+  case attr::FastCall:
+  case attr::StdCall:
+  case attr::ThisCall:
+  case attr::RegCall:
+  case attr::SwiftCall:
+  case attr::VectorCall:
+  case attr::AArch64VectorPcs:
+  case attr::Pascal:
+  case attr::MSABI:
+  case attr::SysVABI:
+  case attr::IntelOclBicc:
+  case attr::PreserveMost:
+  case attr::PreserveAll:
     return true;
   }
   llvm_unreachable("invalid attr kind");
@@ -3284,11 +3385,12 @@ SubstTemplateTypeParmPackType(const TemplateTypeParmType *Param,
                               QualType Canon,
                               const TemplateArgument &ArgPack)
     : Type(SubstTemplateTypeParmPack, Canon, true, true, false, true),
-      Replaced(Param),
-      Arguments(ArgPack.pack_begin()), NumArguments(ArgPack.pack_size()) {}
+      Replaced(Param), Arguments(ArgPack.pack_begin()) {
+  SubstTemplateTypeParmPackTypeBits.NumArgs = ArgPack.pack_size();
+}
 
 TemplateArgument SubstTemplateTypeParmPackType::getArgumentPack() const {
-  return TemplateArgument(llvm::makeArrayRef(Arguments, NumArguments));
+  return TemplateArgument(llvm::makeArrayRef(Arguments, getNumArgs()));
 }
 
 void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID) {
@@ -3335,8 +3437,10 @@ TemplateSpecializationType(TemplateName T,
          Canon.isNull()? true : Canon->isDependentType(),
          Canon.isNull()? true : Canon->isInstantiationDependentType(),
          false,
-         T.containsUnexpandedParameterPack()),
-    Template(T), NumArgs(Args.size()), TypeAlias(!AliasedType.isNull()) {
+         T.containsUnexpandedParameterPack()), Template(T) {
+  TemplateSpecializationTypeBits.NumArgs = Args.size();
+  TemplateSpecializationTypeBits.TypeAlias = !AliasedType.isNull();
+
   assert(!T.getAsDependentTemplateName() &&
          "Use DependentTemplateSpecializationType for dependent template-name");
   assert((T.getKind() == TemplateName::Template ||
@@ -3365,7 +3469,7 @@ TemplateSpecializationType(TemplateName T,
   }
 
   // Store the aliased type if this is a type alias template specialization.
-  if (TypeAlias) {
+  if (isTypeAlias()) {
     auto *Begin = reinterpret_cast<TemplateArgument *>(this + 1);
     *reinterpret_cast<QualType*>(Begin + getNumArgs()) = AliasedType;
   }
@@ -3708,23 +3812,18 @@ LinkageInfo Type::getLinkageAndVisibility() const {
   return LinkageComputer{}.getTypeLinkageAndVisibility(this);
 }
 
-Optional<NullabilityKind> Type::getNullability(const ASTContext &context) const {
-  QualType type(this, 0);
-  do {
+Optional<NullabilityKind>
+Type::getNullability(const ASTContext &Context) const {
+  QualType Type(this, 0);
+  while (const auto *AT = Type->getAs<AttributedType>()) {
     // Check whether this is an attributed type with nullability
     // information.
-    if (auto attributed = dyn_cast<AttributedType>(type.getTypePtr())) {
-      if (auto nullability = attributed->getImmediateNullability())
-        return nullability;
-    }
+    if (auto Nullability = AT->getImmediateNullability())
+      return Nullability;
 
-    // Desugar the type. If desugaring does nothing, we're done.
-    QualType desugared = type.getSingleStepDesugaredType(context);
-    if (desugared.getTypePtr() == type.getTypePtr())
-      return None;
-
-    type = desugared;
-  } while (true);
+    Type = AT->getEquivalentType();
+  }
+  return None;
 }
 
 bool Type::canHaveNullability(bool ResultIfUnknown) const {
@@ -3796,11 +3895,17 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
     case BuiltinType::Id:
 #include "clang/Basic/OpenCLImageTypes.def"
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+    case BuiltinType::Id:
+#include "clang/Basic/OpenCLExtensionTypes.def"
     case BuiltinType::OCLSampler:
     case BuiltinType::OCLEvent:
     case BuiltinType::OCLClkEvent:
     case BuiltinType::OCLQueue:
     case BuiltinType::OCLReserveID:
+#define SVE_TYPE(Name, Id, SingletonId) \
+    case BuiltinType::Id:
+#include "clang/Basic/AArch64SVEACLETypes.def"
     case BuiltinType::BuiltinFn:
     case BuiltinType::NullPtr:
     case BuiltinType::OMPArraySection:
@@ -3837,18 +3942,23 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   llvm_unreachable("bad type kind!");
 }
 
-llvm::Optional<NullabilityKind> AttributedType::getImmediateNullability() const {
-  if (getAttrKind() == AttributedType::attr_nonnull)
+llvm::Optional<NullabilityKind>
+AttributedType::getImmediateNullability() const {
+  if (getAttrKind() == attr::TypeNonNull)
     return NullabilityKind::NonNull;
-  if (getAttrKind() == AttributedType::attr_nullable)
+  if (getAttrKind() == attr::TypeNullable)
     return NullabilityKind::Nullable;
-  if (getAttrKind() == AttributedType::attr_null_unspecified)
+  if (getAttrKind() == attr::TypeNullUnspecified)
     return NullabilityKind::Unspecified;
   return None;
 }
 
 Optional<NullabilityKind> AttributedType::stripOuterNullability(QualType &T) {
-  if (auto attributed = dyn_cast<AttributedType>(T.getTypePtr())) {
+  QualType AttrTy = T;
+  if (auto MacroTy = dyn_cast<MacroQualifiedType>(T))
+    AttrTy = MacroTy->getUnderlyingType();
+
+  if (auto attributed = dyn_cast<AttributedType>(AttrTy)) {
     if (auto nullability = attributed->getImmediateNullability()) {
       T = attributed->getModifiedType();
       return nullability;
@@ -4032,17 +4142,9 @@ CXXRecordDecl *MemberPointerType::getMostRecentCXXRecordDecl() const {
 }
 
 void clang::FixedPointValueToString(SmallVectorImpl<char> &Str,
-                                    const llvm::APSInt &Val, unsigned Scale,
-                                    unsigned Radix) {
-  llvm::APSInt ScaleVal = llvm::APSInt::getUnsigned(1ULL << Scale);
-  llvm::APSInt IntPart = Val / ScaleVal;
-  llvm::APSInt FractPart = Val % ScaleVal;
-  llvm::APSInt RadixInt = llvm::APSInt::getUnsigned(Radix);
-
-  IntPart.toString(Str, Radix);
-  Str.push_back('.');
-  do {
-    (FractPart * RadixInt / ScaleVal).toString(Str, Radix);
-    FractPart = (FractPart * RadixInt) % ScaleVal;
-  } while (FractPart.getExtValue());
+                                    llvm::APSInt Val, unsigned Scale) {
+  FixedPointSemantics FXSema(Val.getBitWidth(), Scale, Val.isSigned(),
+                             /*IsSaturated=*/false,
+                             /*HasUnsignedPadding=*/false);
+  APFixedPoint(Val, FXSema).toString(Str);
 }

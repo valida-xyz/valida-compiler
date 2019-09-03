@@ -1,26 +1,28 @@
 //===-- TestObjectFileELF.cpp -----------------------------------*- C++ -*-===//
 //
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "Plugins/ObjectFile/ELF/ObjectFileELF.h"
-#include "Plugins/SymbolVendor/ELF/SymbolVendorELF.h"
+#include "Plugins/SymbolFile/Symtab/SymbolFileSymtab.h"
 #include "TestingSupport/TestUtilities.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Host/FileSystem.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Utility/DataBufferHeap.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Testing/Support/Error.h"
 #include "gtest/gtest.h"
 
 using namespace lldb_private;
@@ -29,50 +31,82 @@ using namespace lldb;
 class ObjectFileELFTest : public testing::Test {
 public:
   void SetUp() override {
+    FileSystem::Initialize();
     HostInfo::Initialize();
     ObjectFileELF::Initialize();
-    SymbolVendorELF::Initialize();
+    SymbolFileSymtab::Initialize();
   }
 
   void TearDown() override {
-    SymbolVendorELF::Terminate();
+    SymbolFileSymtab::Terminate();
     ObjectFileELF::Terminate();
     HostInfo::Terminate();
+    FileSystem::Terminate();
   }
 
 protected:
 };
 
-#define ASSERT_NO_ERROR(x)                                                     \
-  if (std::error_code ASSERT_NO_ERROR_ec = x) {                                \
-    llvm::SmallString<128> MessageStorage;                                     \
-    llvm::raw_svector_ostream Message(MessageStorage);                         \
-    Message << #x ": did not return errc::success.\n"                          \
-            << "error number: " << ASSERT_NO_ERROR_ec.value() << "\n"          \
-            << "error message: " << ASSERT_NO_ERROR_ec.message() << "\n";      \
-    GTEST_FATAL_FAILURE_(MessageStorage.c_str());                              \
-  } else {                                                                     \
-  }
-
 TEST_F(ObjectFileELFTest, SectionsResolveConsistently) {
-  std::string yaml = GetInputFilePath("sections-resolve-consistently.yaml");
-  llvm::SmallString<128> obj;
-  ASSERT_NO_ERROR(llvm::sys::fs::createTemporaryFile(
-      "sections-resolve-consistently-%%%%%%", "obj", obj));
+  auto ExpectedFile = TestFile::fromYaml(R"(
+--- !ELF
+FileHeader:
+  Class:           ELFCLASS64
+  Data:            ELFDATA2LSB
+  Type:            ET_EXEC
+  Machine:         EM_X86_64
+  Entry:           0x0000000000400180
+Sections:
+  - Name:            .note.gnu.build-id
+    Type:            SHT_NOTE
+    Flags:           [ SHF_ALLOC ]
+    Address:         0x0000000000400158
+    AddressAlign:    0x0000000000000004
+    Content:         040000001400000003000000474E55003F3EC29E3FD83E49D18C4D49CD8A730CC13117B6
+  - Name:            .text
+    Type:            SHT_PROGBITS
+    Flags:           [ SHF_ALLOC, SHF_EXECINSTR ]
+    Address:         0x0000000000400180
+    AddressAlign:    0x0000000000000010
+    Content:         554889E58B042500106000890425041060005DC3
+  - Name:            .data
+    Type:            SHT_PROGBITS
+    Flags:           [ SHF_WRITE, SHF_ALLOC ]
+    Address:         0x0000000000601000
+    AddressAlign:    0x0000000000000004
+    Content:         2F000000
+  - Name:            .bss
+    Type:            SHT_NOBITS
+    Flags:           [ SHF_WRITE, SHF_ALLOC ]
+    Address:         0x0000000000601004
+    AddressAlign:    0x0000000000000004
+    Size:            0x0000000000000004
+Symbols:
+  - Name:            Y
+    Type:            STT_OBJECT
+    Section:         .data
+    Value:           0x0000000000601000
+    Size:            0x0000000000000004
+    Binding:         STB_GLOBAL
+  - Name:            _start
+    Type:            STT_FUNC
+    Section:         .text
+    Value:           0x0000000000400180
+    Size:            0x0000000000000014
+    Binding:         STB_GLOBAL
+  - Name:            X
+    Type:            STT_OBJECT
+    Section:         .bss
+    Value:           0x0000000000601004
+    Size:            0x0000000000000004
+    Binding:         STB_GLOBAL
+...
+)");
+  ASSERT_THAT_EXPECTED(ExpectedFile, llvm::Succeeded());
 
-  llvm::FileRemover remover(obj);
-  llvm::StringRef args[] = {YAML2OBJ, yaml};
-  llvm::StringRef obj_ref = obj;
-  const llvm::Optional<llvm::StringRef> redirects[] = {llvm::None, obj_ref,
-                                                       llvm::None};
-  ASSERT_EQ(0,
-            llvm::sys::ExecuteAndWait(YAML2OBJ, args, llvm::None, redirects));
-  uint64_t size;
-  ASSERT_NO_ERROR(llvm::sys::fs::file_size(obj, size));
-  ASSERT_GT(size, 0u);
-
-  ModuleSpec spec{FileSpec(obj, false)};
-  spec.GetSymbolFileSpec().SetFile(obj, false, FileSpec::Style::native);
+  ModuleSpec spec{FileSpec(ExpectedFile->name())};
+  spec.GetSymbolFileSpec().SetFile(ExpectedFile->name(),
+                                   FileSpec::Style::native);
   auto module_sp = std::make_shared<Module>(spec);
   SectionList *list = module_sp->GetSectionList();
   ASSERT_NE(nullptr, list);
@@ -131,7 +165,7 @@ Sections:
 TEST_F(ObjectFileELFTest, GetModuleSpecifications_EarlySectionHeaders) {
   std::string SO = GetInputFilePath("early-section-headers.so");
   ModuleSpecList Specs;
-  ASSERT_EQ(1u, ObjectFile::GetModuleSpecifications(FileSpec(SO, false), 0, 0, Specs));
+  ASSERT_EQ(1u, ObjectFile::GetModuleSpecifications(FileSpec(SO), 0, 0, Specs));
   ModuleSpec Spec;
   ASSERT_TRUE(Specs.GetModuleSpecAtIndex(0, Spec)) ;
   UUID Uuid;

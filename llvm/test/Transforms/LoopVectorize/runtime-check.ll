@@ -31,9 +31,7 @@ define i32 @foo(float* nocapture %a, float* nocapture %b, i32 %n) nounwind uwtab
 ; CHECK-NEXT:    [[MEMCHECK_CONFLICT:%.*]] = and i1 [[BOUND0]], [[BOUND1]], !dbg !9
 ; CHECK-NEXT:    br i1 [[MEMCHECK_CONFLICT]], label [[SCALAR_PH]], label [[VECTOR_PH:%.*]], !dbg !9
 ; CHECK:       vector.ph:
-; CHECK-NEXT:    [[TMP6:%.*]] = and i32 [[N]], 3, !dbg !9
-; CHECK-NEXT:    [[N_MOD_VF:%.*]] = zext i32 [[TMP6]] to i64, !dbg !9
-; CHECK-NEXT:    [[N_VEC:%.*]] = sub nsw i64 [[TMP2]], [[N_MOD_VF]], !dbg !9
+; CHECK-NEXT:    [[N_VEC:%.*]] = and i64 [[TMP2]], 8589934588, !dbg !9
 ; CHECK-NEXT:    br label [[VECTOR_BODY:%.*]], !dbg !9
 ; CHECK:       vector.body:
 ; CHECK-NEXT:    [[INDEX:%.*]] = phi i64 [ 0, [[VECTOR_PH]] ], [ [[INDEX_NEXT:%.*]], [[VECTOR_BODY]] ], !dbg !9
@@ -48,7 +46,7 @@ define i32 @foo(float* nocapture %a, float* nocapture %b, i32 %n) nounwind uwtab
 ; CHECK-NEXT:    [[TMP12:%.*]] = icmp eq i64 [[INDEX_NEXT]], [[N_VEC]], !dbg !9
 ; CHECK-NEXT:    br i1 [[TMP12]], label [[MIDDLE_BLOCK:%.*]], label [[VECTOR_BODY]], !dbg !9, !llvm.loop !15
 ; CHECK:       middle.block:
-; CHECK-NEXT:    [[CMP_N:%.*]] = icmp eq i32 [[TMP6]], 0
+; CHECK-NEXT:    [[CMP_N:%.*]] = icmp eq i64 [[TMP2]], [[N_VEC]]
 ; CHECK-NEXT:    br i1 [[CMP_N]], label [[FOR_END_LOOPEXIT:%.*]], label [[SCALAR_PH]], !dbg !9
 ; CHECK:       scalar.ph:
 ; CHECK-NEXT:    [[BC_RESUME_VAL:%.*]] = phi i64 [ [[N_VEC]], [[MIDDLE_BLOCK]] ], [ 0, [[FOR_BODY_PREHEADER]] ], [ 0, [[VECTOR_MEMCHECK]] ]
@@ -109,6 +107,48 @@ for.body:
   %m = fmul fast float %b, %l2
   %ad = fadd fast float %l1, %m
   store float %ad, float* %arr.idx, align 4
+  %iv.next = add nuw nsw i64 %iv, 1
+  %exitcond = icmp eq i64 %iv.next, %n
+  br i1 %exitcond, label %loopexit, label %for.body
+
+loopexit:
+  ret void
+}
+
+; Check we do not generate runtime checks if we found a known dependence preventing
+; vectorization. In this case, it is a read of c[i-1] followed by a write of c[i].
+; The runtime checks would always fail.
+
+; void test_runtime_check2(float *a, float b, unsigned offset, unsigned offset2, unsigned n, float *c) {
+;   for (unsigned i = 1; i < n; i++) {
+;     a[i+o1] += a[i+o2] + b;
+;     c[i] = c[i-1] + b;
+;   }
+; }
+;
+; CHECK-LABEL: test_runtime_check2
+; CHECK-NOT:      <4 x float>
+define void @test_runtime_check2(float* %a, float %b, i64 %offset, i64 %offset2, i64 %n, float* %c) {
+entry:
+  br label %for.body
+
+for.body:
+  %iv = phi i64 [ 0, %entry ], [ %iv.next, %for.body ]
+  %ind.sum = add i64 %iv, %offset
+  %arr.idx = getelementptr inbounds float, float* %a, i64 %ind.sum
+  %l1 = load float, float* %arr.idx, align 4
+  %ind.sum2 = add i64 %iv, %offset2
+  %arr.idx2 = getelementptr inbounds float, float* %a, i64 %ind.sum2
+  %l2 = load float, float* %arr.idx2, align 4
+  %m = fmul fast float %b, %l2
+  %ad = fadd fast float %l1, %m
+  store float %ad, float* %arr.idx, align 4
+  %c.ind = add i64 %iv, -1
+  %c.idx = getelementptr inbounds float, float* %c, i64 %c.ind
+  %lc = load float, float* %c.idx, align 4
+  %vc = fadd float %lc, 1.0
+  %c.idx2 = getelementptr inbounds float, float* %c, i64 %iv
+  store float %vc, float* %c.idx2
   %iv.next = add nuw nsw i64 %iv, 1
   %exitcond = icmp eq i64 %iv.next, %n
   br i1 %exitcond, label %loopexit, label %for.body

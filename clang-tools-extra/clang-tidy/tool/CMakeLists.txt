@@ -9,7 +9,7 @@ add_clang_tool(clang-tidy
   ClangTidyMain.cpp
   )
 add_dependencies(clang-tidy
-  clang-headers
+  clang-resource-headers
   )
 target_link_libraries(clang-tidy
   PRIVATE
@@ -26,11 +26,12 @@ target_link_libraries(clang-tidy
   clangTidyFuchsiaModule
   clangTidyGoogleModule
   clangTidyHICPPModule
+  clangTidyLinuxKernelModule
   clangTidyLLVMModule
   clangTidyMiscModule
   clangTidyModernizeModule
-  clangTidyMPIModule
   clangTidyObjCModule
+  clangTidyOpenMPModule
   clangTidyPerformanceModule
   clangTidyPortabilityModule
   clangTidyReadabilityModule
@@ -38,6 +39,12 @@ target_link_libraries(clang-tidy
   clangTooling
   clangToolingCore
   )
+
+if(CLANG_ENABLE_STATIC_ANALYZER)
+  target_link_libraries(clang-tidy PRIVATE
+    clangTidyMPIModule
+  )
+endif()
 
 install(PROGRAMS clang-tidy-diff.py
   DESTINATION share/clang

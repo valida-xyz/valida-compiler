@@ -33,6 +33,8 @@ set(MIPS64 mips64 mips64el)
 set(PPC64 powerpc64 powerpc64le)
 set(RISCV32 riscv32)
 set(RISCV64 riscv64)
+set(SPARC sparc)
+set(SPARCV9 sparcv9)
 set(WASM32 wasm32)
 set(WASM64 wasm64)
 
@@ -43,7 +45,7 @@ if(APPLE)
 endif()
 
 set(ALL_BUILTIN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
-    ${HEXAGON} ${MIPS32} ${MIPS64} ${PPC64} ${RISCV32} ${RISCV64} ${WASM32} ${WASM64})
+    ${HEXAGON} ${MIPS32} ${MIPS64} ${PPC64} ${RISCV32} ${RISCV64} ${SPARC} ${SPARCV9} ${WASM32} ${WASM64})
 
 include(CompilerRTUtils)
 include(CompilerRTDarwinUtils)
@@ -102,20 +104,6 @@ if(APPLE)
     list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
     set(CAN_TARGET_${arch} 1)
   endforeach()
-
-  # Need to build a 10.4 compatible libclang_rt
-  set(DARWIN_10.4_SYSROOT ${DARWIN_osx_SYSROOT})
-  set(DARWIN_10.4_BUILTIN_MIN_VER 10.4)
-  set(DARWIN_10.4_BUILTIN_MIN_VER_FLAG
-      -mmacosx-version-min=${DARWIN_10.4_BUILTIN_MIN_VER})
-  set(DARWIN_10.4_SKIP_CC_KEXT On)
-  darwin_test_archs(10.4 DARWIN_10.4_ARCHS i386 x86_64)
-  message(STATUS "OSX 10.4 supported builtin arches: ${DARWIN_10.4_ARCHS}")
-  if(DARWIN_10.4_ARCHS)
-    # don't include the Haswell slice in the 10.4 compatibility library
-    list(REMOVE_ITEM DARWIN_10.4_ARCHS x86_64h)
-    list(APPEND BUILTIN_SUPPORTED_OS 10.4)
-  endif()
 
   foreach(platform ${DARWIN_EMBEDDED_PLATFORMS})
     if(DARWIN_${platform}sim_SYSROOT)

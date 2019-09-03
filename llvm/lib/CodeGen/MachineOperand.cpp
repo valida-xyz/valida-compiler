@@ -1,9 +1,8 @@
 //===- lib/CodeGen/MachineOperand.cpp -------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,6 +13,7 @@
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/Loads.h"
+#include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/CodeGen/MIRPrinter.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
@@ -24,6 +24,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/ModuleSlotTracker.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -48,7 +49,7 @@ static MachineFunction *getMFIfAvailable(MachineOperand &MO) {
       getMFIfAvailable(const_cast<const MachineOperand &>(MO)));
 }
 
-void MachineOperand::setReg(unsigned Reg) {
+void MachineOperand::setReg(Register Reg) {
   if (getReg() == Reg)
     return; // No change.
 
@@ -70,9 +71,9 @@ void MachineOperand::setReg(unsigned Reg) {
   SmallContents.RegNo = Reg;
 }
 
-void MachineOperand::substVirtReg(unsigned Reg, unsigned SubIdx,
+void MachineOperand::substVirtReg(Register Reg, unsigned SubIdx,
                                   const TargetRegisterInfo &TRI) {
-  assert(TargetRegisterInfo::isVirtualRegister(Reg));
+  assert(Reg.isVirtual());
   if (SubIdx && getSubReg())
     SubIdx = TRI.composeSubRegIndices(SubIdx, getSubReg());
   setReg(Reg);
@@ -80,8 +81,8 @@ void MachineOperand::substVirtReg(unsigned Reg, unsigned SubIdx,
     setSubReg(SubIdx);
 }
 
-void MachineOperand::substPhysReg(unsigned Reg, const TargetRegisterInfo &TRI) {
-  assert(TargetRegisterInfo::isPhysicalRegister(Reg));
+void MachineOperand::substPhysReg(MCRegister Reg, const TargetRegisterInfo &TRI) {
+  assert(Reg.isPhysical());
   if (getSubReg()) {
     Reg = TRI.getSubReg(Reg, getSubReg());
     // Note that getSubReg() may return 0 if the sub-register doesn't exist.
@@ -113,7 +114,7 @@ void MachineOperand::setIsDef(bool Val) {
 
 bool MachineOperand::isRenamable() const {
   assert(isReg() && "Wrong MachineOperand accessor");
-  assert(TargetRegisterInfo::isPhysicalRegister(getReg()) &&
+  assert(Register::isPhysicalRegister(getReg()) &&
          "isRenamable should only be checked on physical registers");
   if (!IsRenamable)
     return false;
@@ -131,7 +132,7 @@ bool MachineOperand::isRenamable() const {
 
 void MachineOperand::setIsRenamable(bool Val) {
   assert(isReg() && "Wrong MachineOperand accessor");
-  assert(TargetRegisterInfo::isPhysicalRegister(getReg()) &&
+  assert(Register::isPhysicalRegister(getReg()) &&
          "setIsRenamable should only be called on physical registers");
   IsRenamable = Val;
 }
@@ -168,7 +169,7 @@ void MachineOperand::ChangeToFPImmediate(const ConstantFP *FPImm) {
 }
 
 void MachineOperand::ChangeToES(const char *SymName,
-                                unsigned char TargetFlags) {
+                                unsigned TargetFlags) {
   assert((!isReg() || !isTied()) &&
          "Cannot change a tied operand into an external symbol");
 
@@ -177,6 +178,19 @@ void MachineOperand::ChangeToES(const char *SymName,
   OpKind = MO_ExternalSymbol;
   Contents.OffsetedInfo.Val.SymbolName = SymName;
   setOffset(0); // Offset is always 0.
+  setTargetFlags(TargetFlags);
+}
+
+void MachineOperand::ChangeToGA(const GlobalValue *GV, int64_t Offset,
+                                unsigned TargetFlags) {
+  assert((!isReg() || !isTied()) &&
+         "Cannot change a tied operand into a global address");
+
+  removeRegFromUses();
+
+  OpKind = MO_GlobalAddress;
+  Contents.OffsetedInfo.Val.GV = GV;
+  setOffset(Offset);
   setTargetFlags(TargetFlags);
 }
 
@@ -201,7 +215,7 @@ void MachineOperand::ChangeToFrameIndex(int Idx) {
 }
 
 void MachineOperand::ChangeToTargetIndex(unsigned Idx, int64_t Offset,
-                                         unsigned char TargetFlags) {
+                                         unsigned TargetFlags) {
   assert((!isReg() || !isTied()) &&
          "Cannot change a tied operand into a FrameIndex");
 
@@ -216,7 +230,7 @@ void MachineOperand::ChangeToTargetIndex(unsigned Idx, int64_t Offset,
 /// ChangeToRegister - Replace this operand with a new register operand of
 /// the specified value.  If an operand is known to be an register already,
 /// the setReg method should be used.
-void MachineOperand::ChangeToRegister(unsigned Reg, bool isDef, bool isImp,
+void MachineOperand::ChangeToRegister(Register Reg, bool isDef, bool isImp,
                                       bool isKill, bool isDead, bool isUndef,
                                       bool isDebug) {
   MachineRegisterInfo *RegInfo = nullptr;
@@ -319,6 +333,8 @@ bool MachineOperand::isIdenticalTo(const MachineOperand &Other) const {
     return getIntrinsicID() == Other.getIntrinsicID();
   case MachineOperand::MO_Predicate:
     return getPredicate() == Other.getPredicate();
+  case MachineOperand::MO_ShuffleMask:
+    return getShuffleMask() == Other.getShuffleMask();
   }
   llvm_unreachable("Invalid machine operand type");
 }
@@ -328,7 +344,7 @@ hash_code llvm::hash_value(const MachineOperand &MO) {
   switch (MO.getType()) {
   case MachineOperand::MO_Register:
     // Register operands don't have target flags.
-    return hash_combine(MO.getType(), MO.getReg(), MO.getSubReg(), MO.isDef());
+    return hash_combine(MO.getType(), (unsigned)MO.getReg(), MO.getSubReg(), MO.isDef());
   case MachineOperand::MO_Immediate:
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getImm());
   case MachineOperand::MO_CImmediate:
@@ -347,7 +363,7 @@ hash_code llvm::hash_value(const MachineOperand &MO) {
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getIndex());
   case MachineOperand::MO_ExternalSymbol:
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getOffset(),
-                        MO.getSymbolName());
+                        StringRef(MO.getSymbolName()));
   case MachineOperand::MO_GlobalAddress:
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getGlobal(),
                         MO.getOffset());
@@ -367,6 +383,8 @@ hash_code llvm::hash_value(const MachineOperand &MO) {
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getIntrinsicID());
   case MachineOperand::MO_Predicate:
     return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getPredicate());
+  case MachineOperand::MO_ShuffleMask:
+    return hash_combine(MO.getType(), MO.getTargetFlags(), MO.getShuffleMask());
   }
   llvm_unreachable("Invalid machine operand type");
 }
@@ -460,7 +478,8 @@ static void printIRValueReference(raw_ostream &OS, const Value &V,
     printLLVMNameWithoutPrefix(OS, V.getName());
     return;
   }
-  MachineOperand::printIRSlotNumber(OS, MST.getLocalSlot(&V));
+  int Slot = MST.getCurrentFunction() ? MST.getLocalSlot(&V) : -1;
+  MachineOperand::printIRSlotNumber(OS, Slot);
 }
 
 static void printSyncScope(raw_ostream &OS, const LLVMContext &Context,
@@ -695,6 +714,11 @@ static void printCFI(raw_ostream &OS, const MCCFIInstruction &CFI,
     if (MCSymbol *Label = CFI.getLabel())
       MachineOperand::printSymbol(OS, *Label);
     break;
+  case MCCFIInstruction::OpNegateRAState:
+    OS << "negate_ra_sign_state ";
+    if (MCSymbol *Label = CFI.getLabel())
+      MachineOperand::printSymbol(OS, *Label);
+    break;
   default:
     // TODO: Print the other CFI Operations.
     OS << "<unserializable cfi directive>";
@@ -726,7 +750,7 @@ void MachineOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
   printTargetFlags(OS, *this);
   switch (getType()) {
   case MachineOperand::MO_Register: {
-    unsigned Reg = getReg();
+    Register Reg = getReg();
     if (isImplicit())
       OS << (isDef() ? "implicit-def " : "implicit ");
     else if (PrintDef && isDef())
@@ -742,13 +766,13 @@ void MachineOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
       OS << "undef ";
     if (isEarlyClobber())
       OS << "early-clobber ";
-    if (isDebug())
-      OS << "debug-use ";
-    if (TargetRegisterInfo::isPhysicalRegister(getReg()) && isRenamable())
+    if (Register::isPhysicalRegister(getReg()) && isRenamable())
       OS << "renamable ";
+    // isDebug() is exactly true for register operands of a DBG_VALUE. So we
+    // simply infer it when parsing and do not need to print it.
 
     const MachineRegisterInfo *MRI = nullptr;
-    if (TargetRegisterInfo::isVirtualRegister(Reg)) {
+    if (Register::isVirtualRegister(Reg)) {
       if (const MachineFunction *MF = getMFIfAvailable(*this)) {
         MRI = &MF->getRegInfo();
       }
@@ -763,7 +787,7 @@ void MachineOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
         OS << ".subreg" << SubReg;
     }
     // Print the register class / bank.
-    if (TargetRegisterInfo::isVirtualRegister(Reg)) {
+    if (Register::isVirtualRegister(Reg)) {
       if (const MachineFunction *MF = getMFIfAvailable(*this)) {
         const MachineRegisterInfo &MRI = MF->getRegInfo();
         if (IsStandalone || !PrintDef || MRI.def_empty(Reg)) {
@@ -916,6 +940,20 @@ void MachineOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
        << CmpInst::getPredicateName(Pred) << ')';
     break;
   }
+  case MachineOperand::MO_ShuffleMask:
+    OS << "shufflemask(";
+    const Constant* C = getShuffleMask();
+    const int NumElts = C->getType()->getVectorNumElements();
+
+    StringRef Separator;
+    for (int I = 0; I != NumElts; ++I) {
+      OS << Separator;
+      C->getAggregateElement(I)->printAsOperand(OS, false, MST);
+      Separator = ", ";
+    }
+
+    OS << ')';
+    break;
   }
 }
 
@@ -987,7 +1025,7 @@ MachineMemOperand::MachineMemOperand(MachinePointerInfo ptrinfo, Flags f,
   assert((PtrInfo.V.isNull() || PtrInfo.V.is<const PseudoSourceValue *>() ||
           isa<PointerType>(PtrInfo.V.get<const Value *>()->getType())) &&
          "invalid pointer value");
-  assert(getBaseAlignment() == a && "Alignment is not a power of 2!");
+  assert(getBaseAlignment() == a && a != 0 && "Alignment is not a power of 2!");
   assert((isLoad() || isStore()) && "Not a load/store!");
 
   AtomicInfo.SSID = static_cast<unsigned>(SSID);
@@ -1078,7 +1116,11 @@ void MachineMemOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
   if (getFailureOrdering() != AtomicOrdering::NotAtomic)
     OS << toIRString(getFailureOrdering()) << ' ';
 
-  OS << getSize();
+  if (getSize() == MemoryLocation::UnknownSize)
+    OS << "unknown-size";
+  else
+    OS << getSize();
+
   if (const Value *Val = getValue()) {
     OS << ((isLoad() && isStore()) ? " on " : isLoad() ? " from " : " into ");
     printIRValueReference(OS, *Val, MST);
@@ -1114,7 +1156,7 @@ void MachineMemOperand::print(raw_ostream &OS, ModuleSlotTracker &MST,
       printLLVMNameWithoutPrefix(
           OS, cast<ExternalSymbolPseudoSourceValue>(PVal)->getSymbol());
       break;
-    case PseudoSourceValue::TargetCustom:
+    default:
       // FIXME: This is not necessarily the correct MIR serialization format for
       // a custom pseudo source value, but at least it allows
       // -print-machineinstrs to work on a target with custom pseudo source

@@ -1,9 +1,8 @@
 //===- llvm/Support/DebugCounter.h - Debug counter support ------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 /// \file
@@ -55,6 +54,8 @@ namespace llvm {
 
 class DebugCounter {
 public:
+  ~DebugCounter();
+
   /// Returns a reference to the singleton instance.
   static DebugCounter &instance();
 
@@ -70,10 +71,9 @@ public:
     return instance().addCounter(Name, Desc);
   }
   inline static bool shouldExecute(unsigned CounterName) {
-// Compile to nothing when debugging is off
-#ifdef NDEBUG
-    return true;
-#else
+    if (!isCountingEnabled())
+      return true;
+
     auto &Us = instance();
     auto Result = Us.Counters.find(CounterName);
     if (Result != Us.Counters.end()) {
@@ -93,7 +93,6 @@ public:
     }
     // Didn't find the counter, should we warn?
     return true;
-#endif // NDEBUG
   }
 
   // Return true if a given counter had values set (either programatically or on
@@ -142,7 +141,23 @@ public:
   }
   CounterVector::const_iterator end() const { return RegisteredCounters.end(); }
 
+  // Force-enables counting all DebugCounters.
+  //
+  // Since DebugCounters are incompatible with threading (not only do they not
+  // make sense, but we'll also see data races), this should only be used in
+  // contexts where we're certain we won't spawn threads.
+  static void enableAllCounters() { instance().Enabled = true; }
+
 private:
+  static bool isCountingEnabled() {
+// Compile to nothing when debugging is off
+#ifdef NDEBUG
+    return false;
+#else
+    return instance().Enabled;
+#endif
+  }
+
   unsigned addCounter(const std::string &Name, const std::string &Desc) {
     unsigned Result = RegisteredCounters.insert(Name);
     Counters[Result] = {};
@@ -159,6 +174,10 @@ private:
   };
   DenseMap<unsigned, CounterInfo> Counters;
   CounterVector RegisteredCounters;
+
+  // Whether we should do DebugCounting at all. DebugCounters aren't
+  // thread-safe, so this should always be false in multithreaded scenarios.
+  bool Enabled = false;
 };
 
 #define DEBUG_COUNTER(VARNAME, COUNTERNAME, DESC)                              \

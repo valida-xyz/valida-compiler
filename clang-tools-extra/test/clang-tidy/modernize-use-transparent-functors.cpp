@@ -1,4 +1,4 @@
-// RUN: %check_clang_tidy %s modernize-use-transparent-functors %t -- -- -std=c++14
+// RUN: %check_clang_tidy -std=c++14-or-later %s modernize-use-transparent-functors %t
 
 namespace std {
 template<class T>
@@ -104,4 +104,7 @@ int main() {
   std::set2<int> control;
 }
 
-
+struct ImplicitTypeLoc : std::set2<std::less<int>> {
+  // CHECK-MESSAGES: :[[@LINE-1]]:36: warning: prefer transparent functors
+  ImplicitTypeLoc() {}
+};

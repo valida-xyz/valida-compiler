@@ -1,9 +1,8 @@
 //==-- AArch64FrameLowering.h - TargetFrameLowering for AArch64 --*- C++ -*-==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,6 +13,7 @@
 #ifndef LLVM_LIB_TARGET_AARCH64_AARCH64FRAMELOWERING_H
 #define LLVM_LIB_TARGET_AARCH64_AARCH64FRAMELOWERING_H
 
+#include "AArch64StackOffset.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 
 namespace llvm {
@@ -40,9 +40,13 @@ public:
 
   int getFrameIndexReference(const MachineFunction &MF, int FI,
                              unsigned &FrameReg) const override;
-  int resolveFrameIndexReference(const MachineFunction &MF, int FI,
-                                 unsigned &FrameReg,
-                                 bool PreferFP = false) const;
+  StackOffset resolveFrameIndexReference(const MachineFunction &MF, int FI,
+                                         unsigned &FrameReg, bool PreferFP,
+                                         bool ForSimm) const;
+  StackOffset resolveFrameOffsetReference(const MachineFunction &MF,
+                                          int ObjectOffset, bool isFixed,
+                                          unsigned &FrameReg, bool PreferFP,
+                                          bool ForSimm) const;
   bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator MI,
                                  const std::vector<CalleeSavedInfo> &CSI,
@@ -68,6 +72,20 @@ public:
   }
 
   bool enableStackSlotScavenging(const MachineFunction &MF) const override;
+
+  void processFunctionBeforeFrameFinalized(MachineFunction &MF,
+                                             RegScavenger *RS) const override;
+
+  unsigned getWinEHParentFrameOffset(const MachineFunction &MF) const override;
+
+  unsigned getWinEHFuncletFrameSize(const MachineFunction &MF) const;
+
+  int getFrameIndexReferencePreferSP(const MachineFunction &MF, int FI,
+                                     unsigned &FrameReg,
+                                     bool IgnoreSPUpdates) const override;
+  int getNonLocalFrameIndexReference(const MachineFunction &MF,
+                               int FI) const override;
+  int getSEHFrameIndexOffset(const MachineFunction &MF, int FI) const;
 
 private:
   bool shouldCombineCSRLocalStackBump(MachineFunction &MF,

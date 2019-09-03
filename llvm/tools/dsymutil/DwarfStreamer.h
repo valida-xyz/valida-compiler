@@ -1,11 +1,13 @@
 //===- tools/dsymutil/DwarfStreamer.h - Dwarf Streamer ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+
+#ifndef LLVM_TOOLS_DSYMUTIL_DWARFSTREAMER_H
+#define LLVM_TOOLS_DSYMUTIL_DWARFSTREAMER_H
 
 #include "CompileUnit.h"
 #include "DebugMap.h"
@@ -32,9 +34,6 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
-#ifndef LLVM_TOOLS_DSYMUTIL_DWARFSTREAMER_H
-#define LLVM_TOOLS_DSYMUTIL_DWARFSTREAMER_H
-
 namespace llvm {
 namespace dsymutil {
 
@@ -50,7 +49,7 @@ public:
   bool init(Triple TheTriple);
 
   /// Dump the file to the disk.
-  bool finish(const DebugMap &);
+  bool finish(const DebugMap &, SymbolMapTranslator &T);
 
   AsmPrinter &getAsmPrinter() const { return *Asm; }
 
@@ -96,7 +95,9 @@ public:
   /// Emit the debug_loc contribution for \p Unit by copying the entries from
   /// \p Dwarf and offsetting them. Update the location attributes to point to
   /// the new entries.
-  void emitLocationsForUnit(const CompileUnit &Unit, DWARFContext &Dwarf);
+  void emitLocationsForUnit(
+      const CompileUnit &Unit, DWARFContext &Dwarf,
+      std::function<void(StringRef, SmallVectorImpl<uint8_t> &)> ProcessExpr);
 
   /// Emit the line table described in \p Rows into the debug_line section.
   void emitLineTableForUnit(MCDwarfLineTableParams Params,
@@ -104,10 +105,14 @@ public:
                             std::vector<DWARFDebugLine::Row> &Rows,
                             unsigned AdddressSize);
 
+  /// Copy the debug_line over to the updated binary while unobfuscating the
+  /// file names and directories.
+  void translateLineTable(DataExtractor LineData, uint64_t Offset);
+
   /// Copy over the debug sections that are not modified when updating.
   void copyInvariantDebugSection(const object::ObjectFile &Obj);
 
-  uint32_t getLineSectionSize() const { return LineSectionSize; }
+  uint64_t getLineSectionSize() const { return LineSectionSize; }
 
   /// Emit the .debug_pubnames contribution for \p Unit.
   void emitPubNamesForUnit(const CompileUnit &Unit);
@@ -163,7 +168,7 @@ private:
 
   uint32_t RangesSectionSize;
   uint32_t LocSectionSize;
-  uint32_t LineSectionSize;
+  uint64_t LineSectionSize;
   uint32_t FrameSectionSize;
 
   /// Keep track of emitted CUs and their Unique ID.

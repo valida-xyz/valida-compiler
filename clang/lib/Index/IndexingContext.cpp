@@ -1,9 +1,8 @@
 //===- IndexingContext.cpp - Indexing context data ------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -41,6 +40,14 @@ bool IndexingContext::shouldIndexImplicitInstantiation() const {
   return IndexOpts.IndexImplicitInstantiation;
 }
 
+bool IndexingContext::shouldIndexParametersInDeclarations() const {
+  return IndexOpts.IndexParametersInDeclarations;
+}
+
+bool IndexingContext::shouldIndexTemplateParameters() const {
+  return IndexOpts.IndexTemplateParameters;
+}
+
 bool IndexingContext::handleDecl(const Decl *D,
                                  SymbolRoleSet Roles,
                                  ArrayRef<SymbolRelation> Relations) {
@@ -73,18 +80,37 @@ bool IndexingContext::handleReference(const NamedDecl *D, SourceLocation Loc,
   if (!shouldIndexFunctionLocalSymbols() && isFunctionLocalSymbol(D))
     return true;
 
-  if (isa<NonTypeTemplateParmDecl>(D) || isa<TemplateTypeParmDecl>(D))
+  if (!shouldIndexTemplateParameters() &&
+      (isa<NonTypeTemplateParmDecl>(D) || isa<TemplateTypeParmDecl>(D) ||
+       isa<TemplateTemplateParmDecl>(D))) {
     return true;
+  }
 
   return handleDeclOccurrence(D, Loc, /*IsRef=*/true, Parent, Roles, Relations,
                               RefE, RefD, DC);
 }
 
+static void reportModuleReferences(const Module *Mod,
+                                   ArrayRef<SourceLocation> IdLocs,
+                                   const ImportDecl *ImportD,
+                                   IndexDataConsumer &DataConsumer) {
+  if (!Mod)
+    return;
+  reportModuleReferences(Mod->Parent, IdLocs.drop_back(), ImportD,
+                         DataConsumer);
+  DataConsumer.handleModuleOccurence(ImportD, Mod,
+                                     (SymbolRoleSet)SymbolRole::Reference,
+                                     IdLocs.back());
+}
+
 bool IndexingContext::importedModule(const ImportDecl *ImportD) {
+  if (ImportD->isInvalidDecl())
+    return true;
+
   SourceLocation Loc;
   auto IdLocs = ImportD->getIdentifierLocs();
   if (!IdLocs.empty())
-    Loc = IdLocs.front();
+    Loc = IdLocs.back();
   else
     Loc = ImportD->getLocation();
 
@@ -108,11 +134,17 @@ bool IndexingContext::importedModule(const ImportDecl *ImportD) {
     }
   }
 
+  const Module *Mod = ImportD->getImportedModule();
+  if (!ImportD->isImplicit() && Mod->Parent && !IdLocs.empty()) {
+    reportModuleReferences(Mod->Parent, IdLocs.drop_back(), ImportD,
+                           DataConsumer);
+  }
+
   SymbolRoleSet Roles = (unsigned)SymbolRole::Declaration;
   if (ImportD->isImplicit())
     Roles |= (unsigned)SymbolRole::Implicit;
 
-  return DataConsumer.handleModuleOccurence(ImportD, Roles, Loc);
+  return DataConsumer.handleModuleOccurence(ImportD, Mod, Roles, Loc);
 }
 
 bool IndexingContext::isTemplateImplicitInstantiation(const Decl *D) {
@@ -300,6 +332,7 @@ static bool shouldReportOccurrenceForSystemDeclOnlyMode(
       case SymbolRole::RelationCalledBy:
       case SymbolRole::RelationContainedBy:
       case SymbolRole::RelationSpecializationOf:
+      case SymbolRole::NameReference:
         return true;
       }
       llvm_unreachable("Unsupported SymbolRole value!");
@@ -378,10 +411,9 @@ bool IndexingContext::handleDeclOccurrence(const Decl *D, SourceLocation Loc,
   FinalRelations.reserve(Relations.size()+1);
 
   auto addRelation = [&](SymbolRelation Rel) {
-    auto It = std::find_if(FinalRelations.begin(), FinalRelations.end(),
-                [&](SymbolRelation Elem)->bool {
-                  return Elem.RelatedSymbol == Rel.RelatedSymbol;
-                });
+    auto It = llvm::find_if(FinalRelations, [&](SymbolRelation Elem) -> bool {
+      return Elem.RelatedSymbol == Rel.RelatedSymbol;
+    });
     if (It != FinalRelations.end()) {
       It->Roles |= Rel.Roles;
     } else {

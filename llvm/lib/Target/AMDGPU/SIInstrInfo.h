@@ -1,9 +1,8 @@
 //===- SIInstrInfo.h - SI Instruction Info Interface ------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -37,6 +36,7 @@
 namespace llvm {
 
 class APInt;
+class MachineDominatorTree;
 class MachineRegisterInfo;
 class RegScavenger;
 class GCNSubtarget;
@@ -79,8 +79,8 @@ public:
 private:
   void swapOperands(MachineInstr &Inst) const;
 
-  bool moveScalarAddSub(SetVectorType &Worklist,
-                        MachineInstr &Inst) const;
+  bool moveScalarAddSub(SetVectorType &Worklist, MachineInstr &Inst,
+                        MachineDominatorTree *MDT = nullptr) const;
 
   void lowerScalarAbs(SetVectorType &Worklist,
                       MachineInstr &Inst) const;
@@ -88,14 +88,26 @@ private:
   void lowerScalarXnor(SetVectorType &Worklist,
                        MachineInstr &Inst) const;
 
+  void splitScalarNotBinop(SetVectorType &Worklist,
+                           MachineInstr &Inst,
+                           unsigned Opcode) const;
+
+  void splitScalarBinOpN2(SetVectorType &Worklist,
+                          MachineInstr &Inst,
+                          unsigned Opcode) const;
+
   void splitScalar64BitUnaryOp(SetVectorType &Worklist,
                                MachineInstr &Inst, unsigned Opcode) const;
 
-  void splitScalar64BitAddSub(SetVectorType &Worklist,
-                              MachineInstr &Inst) const;
+  void splitScalar64BitAddSub(SetVectorType &Worklist, MachineInstr &Inst,
+                              MachineDominatorTree *MDT = nullptr) const;
 
-  void splitScalar64BitBinaryOp(SetVectorType &Worklist,
-                                MachineInstr &Inst, unsigned Opcode) const;
+  void splitScalar64BitBinaryOp(SetVectorType &Worklist, MachineInstr &Inst,
+                                unsigned Opcode,
+                                MachineDominatorTree *MDT = nullptr) const;
+
+  void splitScalar64BitXnor(SetVectorType &Worklist, MachineInstr &Inst,
+                                MachineDominatorTree *MDT = nullptr) const;
 
   void splitScalar64BitBCNT(SetVectorType &Worklist,
                             MachineInstr &Inst) const;
@@ -108,14 +120,15 @@ private:
   void addUsersToMoveToVALUWorklist(unsigned Reg, MachineRegisterInfo &MRI,
                                     SetVectorType &Worklist) const;
 
-  void
-  addSCCDefUsersToVALUWorklist(MachineInstr &SCCDefInst,
-                               SetVectorType &Worklist) const;
+  void addSCCDefUsersToVALUWorklist(MachineOperand &Op,
+                                    MachineInstr &SCCDefInst,
+                                    SetVectorType &Worklist) const;
 
   const TargetRegisterClass *
   getDestEquivalentVGPRClass(const MachineInstr &Inst) const;
 
-  bool checkInstOffsetsDoNotOverlap(MachineInstr &MIa, MachineInstr &MIb) const;
+  bool checkInstOffsetsDoNotOverlap(const MachineInstr &MIa,
+                                    const MachineInstr &MIb) const;
 
   unsigned findUsedSGPR(const MachineInstr &MI, int OpIndices[3]) const;
 
@@ -130,7 +143,7 @@ protected:
 
 public:
   enum TargetOperandFlags {
-    MO_MASK = 0x7,
+    MO_MASK = 0xf,
 
     MO_NONE = 0,
     // MO_GOTPCREL -> symbol@GOTPCREL -> R_AMDGPU_GOTPCREL.
@@ -144,7 +157,13 @@ public:
     MO_REL32 = 4,
     MO_REL32_LO = 4,
     // MO_REL32_HI -> symbol@rel32@hi -> R_AMDGPU_REL32_HI.
-    MO_REL32_HI = 5
+    MO_REL32_HI = 5,
+
+    MO_LONG_BRANCH_FORWARD = 6,
+    MO_LONG_BRANCH_BACKWARD = 7,
+
+    MO_ABS32_LO = 8,
+    MO_ABS32_HI = 9,
   };
 
   explicit SIInstrInfo(const GCNSubtarget &ST);
@@ -160,12 +179,13 @@ public:
                                int64_t &Offset1,
                                int64_t &Offset2) const override;
 
-  bool getMemOpBaseRegImmOfs(MachineInstr &LdSt, unsigned &BaseReg,
-                             int64_t &Offset,
-                             const TargetRegisterInfo *TRI) const final;
+  bool getMemOperandWithOffset(const MachineInstr &LdSt,
+                               const MachineOperand *&BaseOp,
+                               int64_t &Offset,
+                               const TargetRegisterInfo *TRI) const final;
 
-  bool shouldClusterMemOps(MachineInstr &FirstLdSt, unsigned BaseReg1,
-                           MachineInstr &SecondLdSt, unsigned BaseReg2,
+  bool shouldClusterMemOps(const MachineOperand &BaseOp1,
+                           const MachineOperand &BaseOp2,
                            unsigned NumLoads) const override;
 
   bool shouldScheduleLoadsNear(SDNode *Load0, SDNode *Load1, int64_t Offset0,
@@ -225,6 +245,9 @@ public:
   bool findCommutedOpIndices(MachineInstr &MI, unsigned &SrcOpIdx1,
                              unsigned &SrcOpIdx2) const override;
 
+  bool findCommutedOpIndices(MCInstrDesc Desc, unsigned & SrcOpIdx0,
+   unsigned & SrcOpIdx1) const;
+
   bool isBranchOffsetInRange(unsigned BranchOpc,
                              int64_t BrOffset) const override;
 
@@ -276,10 +299,11 @@ public:
                           unsigned TrueReg, unsigned FalseReg) const;
 
   unsigned getAddressSpaceForPseudoSourceKind(
-             PseudoSourceValue::PSVKind Kind) const override;
+             unsigned Kind) const override;
 
   bool
-  areMemAccessesTriviallyDisjoint(MachineInstr &MIa, MachineInstr &MIb,
+  areMemAccessesTriviallyDisjoint(const MachineInstr &MIa,
+                                  const MachineInstr &MIb,
                                   AliasAnalysis *AA = nullptr) const override;
 
   bool isFoldableCopy(const MachineInstr &MI) const;
@@ -361,6 +385,14 @@ public:
     return get(Opcode).TSFlags & SIInstrFlags::SOPP;
   }
 
+  static bool isPacked(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::IsPacked;
+  }
+
+  bool isPacked(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::IsPacked;
+  }
+
   static bool isVOP1(const MachineInstr &MI) {
     return MI.getDesc().TSFlags & SIInstrFlags::VOP1;
   }
@@ -435,6 +467,8 @@ public:
     return get(Opcode).TSFlags & SIInstrFlags::DS;
   }
 
+  bool isAlwaysGDS(uint16_t Opcode) const;
+
   static bool isMIMG(const MachineInstr &MI) {
     return MI.getDesc().TSFlags & SIInstrFlags::MIMG;
   }
@@ -460,6 +494,11 @@ public:
   static bool isSegmentSpecificFLAT(const MachineInstr &MI) {
     auto Flags = MI.getDesc().TSFlags;
     return (Flags & SIInstrFlags::FLAT) && !(Flags & SIInstrFlags::LGKM_CNT);
+  }
+
+  // FIXME: Make this more precise
+  static bool isFLATScratch(const MachineInstr &MI) {
+    return isSegmentSpecificFLAT(MI);
   }
 
   // Any FLAT encoded instruction, including global_* and scratch_*.
@@ -531,6 +570,14 @@ public:
     return get(Opcode).TSFlags & SIInstrFlags::VINTRP;
   }
 
+  static bool isMAI(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::IsMAI;
+  }
+
+  bool isMAI(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::IsMAI;
+  }
+
   static bool isScalarUnit(const MachineInstr &MI) {
     return MI.getDesc().TSFlags & (SIInstrFlags::SALU | SIInstrFlags::SMRD);
   }
@@ -589,6 +636,22 @@ public:
       return MI.getDesc().TSFlags & ClampFlags;
   }
 
+  static bool usesFPDPRounding(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::FPDPRounding;
+  }
+
+  bool usesFPDPRounding(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::FPDPRounding;
+  }
+
+  static bool isFPAtomic(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::FPAtomic;
+  }
+
+  bool isFPAtomic(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::FPAtomic;
+  }
+
   bool isVGPRCopy(const MachineInstr &MI) const {
     assert(MI.isCopy());
     unsigned Dest = MI.getOperand(0).getReg();
@@ -597,8 +660,20 @@ public:
     return !RI.isSGPRReg(MRI, Dest);
   }
 
+  bool hasVGPRUses(const MachineInstr &MI) const {
+    const MachineFunction &MF = *MI.getParent()->getParent();
+    const MachineRegisterInfo &MRI = MF.getRegInfo();
+    return llvm::any_of(MI.explicit_uses(),
+                        [&MRI, this](const MachineOperand &MO) {
+      return MO.isReg() && RI.isVGPR(MRI, MO.getReg());});
+  }
+
   /// Whether we must prevent this instruction from executing with EXEC = 0.
   bool hasUnwantedEffectsWhenEXECEmpty(const MachineInstr &MI) const;
+
+  /// Returns true if the instruction could potentially depend on the value of
+  /// exec. If false, exec dependencies may safely be ignored.
+  bool mayReadEXEC(const MachineRegisterInfo &MRI, const MachineInstr &MI) const;
 
   bool isInlineConstant(const APInt &Imm) const;
 
@@ -689,6 +764,12 @@ public:
                        unsigned OpName) const;
   bool hasAnyModifiersSet(const MachineInstr &MI) const;
 
+  bool canShrink(const MachineInstr &MI,
+                 const MachineRegisterInfo &MRI) const;
+
+  MachineInstr *buildShrunkInst(MachineInstr &MI,
+                                unsigned NewOpcode) const;
+
   bool verifyInstruction(const MachineInstr &MI,
                          StringRef &ErrInfo) const override;
 
@@ -719,12 +800,18 @@ public:
   /// This form should usually be preferred since it handles operands
   /// with unknown register classes.
   unsigned getOpSize(const MachineInstr &MI, unsigned OpNo) const {
+    const MachineOperand &MO = MI.getOperand(OpNo);
+    if (MO.isReg()) {
+      if (unsigned SubReg = MO.getSubReg()) {
+        assert(RI.getRegSizeInBits(*RI.getSubClassWithSubReg(
+                                   MI.getParent()->getParent()->getRegInfo().
+                                     getRegClass(MO.getReg()), SubReg)) >= 32 &&
+               "Sub-dword subregs are not supported");
+        return RI.getSubRegIndexLaneMask(SubReg).getNumLanes() * 4;
+      }
+    }
     return RI.getRegSizeInBits(*getOpRegClass(MI, OpNo)) / 8;
   }
-
-  /// \returns true if it is legal for the operand at index \p OpNo
-  /// to read a VGPR.
-  bool canReadVGPR(const MachineInstr &MI, unsigned OpNo) const;
 
   /// Legalize the \p OpIndex operand of this instruction by inserting
   /// a MOV.  For example:
@@ -777,14 +864,16 @@ public:
                               MachineOperand &Op, MachineRegisterInfo &MRI,
                               const DebugLoc &DL) const;
 
-  /// Legalize all operands in this instruction.  This function may
-  /// create new instruction and insert them before \p MI.
-  void legalizeOperands(MachineInstr &MI) const;
+  /// Legalize all operands in this instruction.  This function may create new
+  /// instructions and control-flow around \p MI.  If present, \p MDT is
+  /// updated.
+  void legalizeOperands(MachineInstr &MI,
+                        MachineDominatorTree *MDT = nullptr) const;
 
   /// Replace this instruction's opcode with the equivalent VALU
   /// opcode.  This function will also move the users of \p MI to the
-  /// VALU if necessary.
-  void moveToVALU(MachineInstr &MI) const;
+  /// VALU if necessary. If present, \p MDT is updated.
+  void moveToVALU(MachineInstr &MI, MachineDominatorTree *MDT = nullptr) const;
 
   void insertWaitStates(MachineBasicBlock &MBB,MachineBasicBlock::iterator MI,
                         int Count) const;
@@ -795,7 +884,7 @@ public:
   void insertReturn(MachineBasicBlock &MBB) const;
   /// Return the number of wait states that result from executing this
   /// instruction.
-  unsigned getNumWaitStates(const MachineInstr &MI) const;
+  static unsigned getNumWaitStates(const MachineInstr &MI);
 
   /// Returns the operand named \p Op.  If \p MI does not have an
   /// operand named \c Op, this function returns nullptr.
@@ -874,6 +963,12 @@ public:
                                     const DebugLoc &DL,
                                     unsigned DestReg) const;
 
+  MachineInstrBuilder getAddNoCarry(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator I,
+                                    const DebugLoc &DL,
+                                    Register DestReg,
+                                    RegScavenger &RS) const;
+
   static bool isKillTerminator(unsigned Opcode);
   const MCInstrDesc &getKillTerminatorFromPseudo(unsigned Opcode) const;
 
@@ -881,12 +976,71 @@ public:
     return isUInt<12>(Imm);
   }
 
+  /// Returns if \p Offset is legal for the subtarget as the offset to a FLAT
+  /// encoded instruction. If \p Signed, this is for an instruction that
+  /// interprets the offset as signed.
+  bool isLegalFLATOffset(int64_t Offset, unsigned AddrSpace,
+                         bool Signed) const;
+
   /// \brief Return a target-specific opcode if Opcode is a pseudo instruction.
   /// Return -1 if the target-specific opcode for the pseudo instruction does
   /// not exist. If Opcode is not a pseudo instruction, this is identity.
   int pseudoToMCOpcode(int Opcode) const;
 
+  const TargetRegisterClass *getRegClass(const MCInstrDesc &TID, unsigned OpNum,
+                                         const TargetRegisterInfo *TRI,
+                                         const MachineFunction &MF)
+    const override {
+    if (OpNum >= TID.getNumOperands())
+      return nullptr;
+    return RI.getRegClass(TID.OpInfo[OpNum].RegClass);
+  }
+
+  void fixImplicitOperands(MachineInstr &MI) const;
 };
+
+/// \brief Returns true if a reg:subreg pair P has a TRC class
+inline bool isOfRegClass(const TargetInstrInfo::RegSubRegPair &P,
+                         const TargetRegisterClass &TRC,
+                         MachineRegisterInfo &MRI) {
+  auto *RC = MRI.getRegClass(P.Reg);
+  if (!P.SubReg)
+    return RC == &TRC;
+  auto *TRI = MRI.getTargetRegisterInfo();
+  return RC == TRI->getMatchingSuperRegClass(RC, &TRC, P.SubReg);
+}
+
+/// \brief Create RegSubRegPair from a register MachineOperand
+inline
+TargetInstrInfo::RegSubRegPair getRegSubRegPair(const MachineOperand &O) {
+  assert(O.isReg());
+  return TargetInstrInfo::RegSubRegPair(O.getReg(), O.getSubReg());
+}
+
+/// \brief Return the SubReg component from REG_SEQUENCE
+TargetInstrInfo::RegSubRegPair getRegSequenceSubReg(MachineInstr &MI,
+                                                    unsigned SubReg);
+
+/// \brief Return the defining instruction for a given reg:subreg pair
+/// skipping copy like instructions and subreg-manipulation pseudos.
+/// Following another subreg of a reg:subreg isn't supported.
+MachineInstr *getVRegSubRegDef(const TargetInstrInfo::RegSubRegPair &P,
+                               MachineRegisterInfo &MRI);
+
+/// \brief Return false if EXEC is not changed between the def of \p VReg at \p
+/// DefMI and the use at \p UseMI. Should be run on SSA. Currently does not
+/// attempt to track between blocks.
+bool execMayBeModifiedBeforeUse(const MachineRegisterInfo &MRI,
+                                Register VReg,
+                                const MachineInstr &DefMI,
+                                const MachineInstr &UseMI);
+
+/// \brief Return false if EXEC is not changed between the def of \p VReg at \p
+/// DefMI and all its uses. Should be run on SSA. Currently does not attempt to
+/// track between blocks.
+bool execMayBeModifiedBeforeAnyUse(const MachineRegisterInfo &MRI,
+                                   Register VReg,
+                                   const MachineInstr &DefMI);
 
 namespace AMDGPU {
 
@@ -900,6 +1054,9 @@ namespace AMDGPU {
   int getSDWAOp(uint16_t Opcode);
 
   LLVM_READONLY
+  int getDPPOp32(uint16_t Opcode);
+
+  LLVM_READONLY
   int getBasicFromSDWAOp(uint16_t Opcode);
 
   LLVM_READONLY
@@ -910,6 +1067,12 @@ namespace AMDGPU {
 
   LLVM_READONLY
   int getAddr64Inst(uint16_t Opcode);
+
+  /// Check if \p Opcode is an Addr64 opcode.
+  ///
+  /// \returns \p Opcode if it is an Addr64 opcode, otherwise -1.
+  LLVM_READONLY
+  int getIfAddr64Inst(uint16_t Opcode);
 
   LLVM_READONLY
   int getMUBUFNoLdsInst(uint16_t Opcode);
@@ -923,16 +1086,16 @@ namespace AMDGPU {
   LLVM_READONLY
   int getSOPKOp(uint16_t Opcode);
 
+  LLVM_READONLY
+  int getGlobalSaddrOp(uint16_t Opcode);
+
+  LLVM_READONLY
+  int getVCMPXNoSDstOp(uint16_t Opcode);
+
   const uint64_t RSRC_DATA_FORMAT = 0xf00000000000LL;
   const uint64_t RSRC_ELEMENT_SIZE_SHIFT = (32 + 19);
   const uint64_t RSRC_INDEX_STRIDE_SHIFT = (32 + 21);
   const uint64_t RSRC_TID_ENABLE = UINT64_C(1) << (32 + 23);
-
-  // For MachineOperands.
-  enum TargetFlags {
-    TF_LONG_BRANCH_FORWARD = 1 << 0,
-    TF_LONG_BRANCH_BACKWARD = 1 << 1
-  };
 
 } // end namespace AMDGPU
 

@@ -5,8 +5,6 @@ Test the AddressSanitizer runtime support for report breakpoint and data extract
 from __future__ import print_function
 
 
-import os
-import time
 import json
 import lldb
 from lldbsuite.test.decorators import *
@@ -18,9 +16,6 @@ class AsanTestReportDataCase(TestBase):
 
     mydir = TestBase.compute_mydir(__file__)
 
-    @expectedFailureAll(
-        oslist=["linux"],
-        bugnumber="non-core functionality, need to reenable and fix later (DES 2014.11.07)")
     @skipIfFreeBSD  # llvm.org/pr21136 runtimes not yet available by default
     @skipIfRemote
     @skipUnlessAddressSanitizer
@@ -37,6 +32,7 @@ class AsanTestReportDataCase(TestBase):
         self.line_free = line_number('main.c', '// free line')
         self.line_breakpoint = line_number('main.c', '// break line')
         self.line_crash = line_number('main.c', '// BOOM line')
+        self.col_crash = 16
 
     def asan_tests(self):
         exe = self.getBuildArtifact("a.out")
@@ -63,7 +59,7 @@ class AsanTestReportDataCase(TestBase):
             lldb.eStopReasonInstrumentation)
 
         self.expect("bt", "The backtrace should show the crashing line",
-                    substrs=['main.c:%d' % self.line_crash])
+                    substrs=['main.c:%d:%d' % (self.line_crash, self.col_crash)])
 
         self.expect(
             "thread info -s",

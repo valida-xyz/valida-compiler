@@ -1,9 +1,8 @@
 //===-- llvm/BinaryFormat/Dwarf.h ---Dwarf Constants-------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -26,6 +25,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormatVariadicDetails.h"
+#include "llvm/ADT/Triple.h"
 
 namespace llvm {
 class StringRef;
@@ -45,6 +45,11 @@ enum LLVMConstants : uint32_t {
   DW_TAG_invalid = ~0U,        // Tag for invalid results.
   DW_VIRTUALITY_invalid = ~0U, // Virtuality for invalid results.
   DW_MACINFO_invalid = ~0U,    // Macinfo type for invalid results.
+
+  // Special values for an initial length field.
+  DW_LENGTH_lo_reserved = 0xfffffff0, // Lower bound of the reserved range.
+  DW_LENGTH_DWARF64 = 0xffffffff,     // Indicator of 64-bit DWARF format.
+  DW_LENGTH_hi_reserved = 0xffffffff, // Upper bound of the reserved range.
 
   // Other constants.
   DWARF_VERSION = 4,       // Default dwarf version we output.
@@ -75,7 +80,7 @@ const uint64_t DW64_CIE_ID = UINT64_MAX;
 const uint32_t DW_INVALID_OFFSET = UINT32_MAX;
 
 enum Tag : uint16_t {
-#define HANDLE_DW_TAG(ID, NAME, VERSION, VENDOR) DW_TAG_##NAME = ID,
+#define HANDLE_DW_TAG(ID, NAME, VERSION, VENDOR, KIND) DW_TAG_##NAME = ID,
 #include "llvm/BinaryFormat/Dwarf.def"
   DW_TAG_lo_user = 0x4080,
   DW_TAG_hi_user = 0xffff,
@@ -84,29 +89,12 @@ enum Tag : uint16_t {
 
 inline bool isType(Tag T) {
   switch (T) {
-  case DW_TAG_array_type:
-  case DW_TAG_class_type:
-  case DW_TAG_interface_type:
-  case DW_TAG_enumeration_type:
-  case DW_TAG_pointer_type:
-  case DW_TAG_reference_type:
-  case DW_TAG_rvalue_reference_type:
-  case DW_TAG_string_type:
-  case DW_TAG_structure_type:
-  case DW_TAG_subroutine_type:
-  case DW_TAG_union_type:
-  case DW_TAG_ptr_to_member_type:
-  case DW_TAG_set_type:
-  case DW_TAG_subrange_type:
-  case DW_TAG_base_type:
-  case DW_TAG_const_type:
-  case DW_TAG_file_type:
-  case DW_TAG_packed_type:
-  case DW_TAG_volatile_type:
-  case DW_TAG_typedef:
-    return true;
   default:
     return false;
+#define HANDLE_DW_TAG(ID, NAME, VERSION, VENDOR, KIND)                         \
+  case DW_TAG_##NAME:                                                          \
+    return (KIND == DW_KIND_TYPE);
+#include "llvm/BinaryFormat/Dwarf.def"
   }
 }
 
@@ -129,7 +117,9 @@ enum LocationAtom {
 #include "llvm/BinaryFormat/Dwarf.def"
   DW_OP_lo_user = 0xe0,
   DW_OP_hi_user = 0xff,
-  DW_OP_LLVM_fragment = 0x1000 ///< Only used in LLVM metadata.
+  DW_OP_LLVM_fragment = 0x1000,   ///< Only used in LLVM metadata.
+  DW_OP_LLVM_convert = 0x1001,    ///< Only used in LLVM metadata.
+  DW_OP_LLVM_tag_offset = 0x1002, ///< Only used in LLVM metadata.
 };
 
 enum TypeKind : uint8_t {
@@ -150,9 +140,8 @@ enum DecimalSignEncoding {
 
 enum EndianityEncoding {
   // Endianity attribute values
-  DW_END_default = 0x00,
-  DW_END_big = 0x01,
-  DW_END_little = 0x02,
+#define HANDLE_DW_END(ID, NAME) DW_END_##NAME = ID,
+#include "llvm/BinaryFormat/Dwarf.def"
   DW_END_lo_user = 0x40,
   DW_END_hi_user = 0xff
 };
@@ -184,7 +173,8 @@ enum DefaultedMemberAttribute {
 };
 
 enum SourceLanguage {
-#define HANDLE_DW_LANG(ID, NAME, VERSION, VENDOR) DW_LANG_##NAME = ID,
+#define HANDLE_DW_LANG(ID, NAME, LOWER_BOUND, VERSION, VENDOR)                 \
+  DW_LANG_##NAME = ID,
 #include "llvm/BinaryFormat/Dwarf.def"
   DW_LANG_lo_user = 0x8000,
   DW_LANG_hi_user = 0xffff
@@ -273,6 +263,7 @@ enum RangeListEntries {
 /// Call frame instruction encodings.
 enum CallFrameInfo {
 #define HANDLE_DW_CFA(ID, NAME) DW_CFA_##NAME = ID,
+#define HANDLE_DW_CFA_PRED(ID, NAME, ARCH) DW_CFA_##NAME = ID,
 #include "llvm/BinaryFormat/Dwarf.def"
   DW_CFA_extended = 0x00,
 
@@ -431,7 +422,7 @@ StringRef LNStandardString(unsigned Standard);
 StringRef LNExtendedString(unsigned Encoding);
 StringRef MacinfoString(unsigned Encoding);
 StringRef RangeListEncodingString(unsigned Encoding);
-StringRef CallFrameString(unsigned Encoding);
+StringRef CallFrameString(unsigned Encoding, Triple::ArchType Arch);
 StringRef ApplePropertyString(unsigned);
 StringRef UnitTypeString(unsigned);
 StringRef AtomTypeString(unsigned Atom);
@@ -489,6 +480,8 @@ unsigned AttributeEncodingVendor(TypeKind E);
 unsigned LanguageVendor(SourceLanguage L);
 /// @}
 
+Optional<unsigned> LanguageLowerBound(SourceLanguage L);
+
 /// A helper struct providing information about the byte size of DW_FORM
 /// values that vary in size depending on the DWARF version, address byte
 /// size, or DWARF32/DWARF64.
@@ -519,6 +512,17 @@ struct FormParams {
 
   explicit operator bool() const { return Version && AddrSize; }
 };
+
+/// Get the byte size of the unit length field depending on the DWARF format.
+inline uint8_t getUnitLengthFieldByteSize(DwarfFormat Format) {
+  switch (Format) {
+  case DwarfFormat::DWARF32:
+    return 4;
+  case DwarfFormat::DWARF64:
+    return 12;
+  }
+  llvm_unreachable("Invalid Format value");
+}
 
 /// Get the fixed byte size for a given form.
 ///

@@ -1,9 +1,8 @@
 //===- MergeFunctions.cpp - Merge identical functions ---------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -136,6 +135,7 @@ using namespace llvm;
 
 STATISTIC(NumFunctionsMerged, "Number of functions merged");
 STATISTIC(NumThunksWritten, "Number of thunks generated");
+STATISTIC(NumAliasesWritten, "Number of aliases generated");
 STATISTIC(NumDoubleWeak, "Number of new functions created");
 
 static cl::opt<unsigned> NumFunctionsForSanityCheck(
@@ -165,6 +165,11 @@ static cl::opt<bool>
                       cl::desc("Preserve debug info in thunk when mergefunc "
                                "transformations are made."));
 
+static cl::opt<bool>
+    MergeFunctionsAliases("mergefunc-use-aliases", cl::Hidden,
+                          cl::init(false),
+                          cl::desc("Allow mergefunc to create aliases"));
+
 namespace {
 
 class FunctionNode {
@@ -184,8 +189,6 @@ public:
   void replaceBy(Function *G) const {
     F = G;
   }
-
-  void release() { F = nullptr; }
 };
 
 /// MergeFunctions finds functions which will generate identical machine code,
@@ -272,6 +275,13 @@ private:
   /// delete G.
   void writeThunk(Function *F, Function *G);
 
+  // Replace G with an alias to F (deleting function G)
+  void writeAlias(Function *F, Function *G);
+
+  // Replace G with an alias to F if possible, or a thunk to F if possible.
+  // Returns false if neither is the case.
+  bool writeThunkOrAlias(Function *F, Function *G);
+
   /// Replace function F with function G in the function tree.
   void replaceFunctionInTree(const FunctionNode &FN, Function *G);
 
@@ -284,7 +294,7 @@ private:
   // modified, i.e. in insert(), remove(), and replaceFunctionInTree(), to avoid
   // dangling iterators into FnTree. The invariant that preserves this is that
   // there is exactly one mapping F -> FN for each FunctionNode FN in FnTree.
-  ValueMap<Function*, FnTreeType::iterator> FNodesInTree;
+  DenseMap<AssertingVH<Function>, FnTreeType::iterator> FNodesInTree;
 };
 
 } // end anonymous namespace
@@ -370,6 +380,11 @@ bool MergeFunctions::doSanityCheck(std::vector<WeakTrackingVH> &Worklist) {
 }
 #endif
 
+/// Check whether \p F is eligible for function merging.
+static bool isEligibleForMerging(Function &F) {
+  return !F.isDeclaration() && !F.hasAvailableExternallyLinkage();
+}
+
 bool MergeFunctions::runOnModule(Module &M) {
   if (skipModule(M))
     return false;
@@ -381,17 +396,12 @@ bool MergeFunctions::runOnModule(Module &M) {
   std::vector<std::pair<FunctionComparator::FunctionHash, Function *>>
     HashedFuncs;
   for (Function &Func : M) {
-    if (!Func.isDeclaration() && !Func.hasAvailableExternallyLinkage()) {
+    if (isEligibleForMerging(Func)) {
       HashedFuncs.push_back({FunctionComparator::functionHash(Func), &Func});
     }
   }
 
-  std::stable_sort(
-      HashedFuncs.begin(), HashedFuncs.end(),
-      [](const std::pair<FunctionComparator::FunctionHash, Function *> &a,
-         const std::pair<FunctionComparator::FunctionHash, Function *> &b) {
-        return a.first < b.first;
-      });
+  llvm::stable_sort(HashedFuncs, less_first());
 
   auto S = HashedFuncs.begin();
   for (auto I = HashedFuncs.begin(), IE = HashedFuncs.end(); I != IE; ++I) {
@@ -425,6 +435,7 @@ bool MergeFunctions::runOnModule(Module &M) {
   } while (!Deferred.empty());
 
   FnTree.clear();
+  FNodesInTree.clear();
   GlobalNumbers.clear();
 
   return Changed;
@@ -460,7 +471,7 @@ void MergeFunctions::replaceDirectCallers(Function *Old, Function *New) {
                                           NewPAL.getRetAttributes(),
                                           NewArgAttrs));
 
-      remove(CS.getInstruction()->getParent()->getParent());
+      remove(CS.getInstruction()->getFunction());
       U->set(BitcastNew);
     }
   }
@@ -608,7 +619,7 @@ void MergeFunctions::filterInstsUnrelatedToPDI(
         LLVM_DEBUG(BI->print(dbgs()));
         LLVM_DEBUG(dbgs() << "\n");
       }
-    } else if (dyn_cast<TerminatorInst>(BI) == GEntryBlock->getTerminator()) {
+    } else if (BI->isTerminator() && &*BI == GEntryBlock->getTerminator()) {
       LLVM_DEBUG(dbgs() << " Will Include Terminator: ");
       LLVM_DEBUG(BI->print(dbgs()));
       LLVM_DEBUG(dbgs() << "\n");
@@ -640,12 +651,16 @@ void MergeFunctions::filterInstsUnrelatedToPDI(
   LLVM_DEBUG(dbgs() << " }\n");
 }
 
-// Don't merge tiny functions using a thunk, since it can just end up
-// making the function larger.
-static bool isThunkProfitable(Function * F) {
+/// Whether this function may be replaced by a forwarding thunk.
+static bool canCreateThunkFor(Function *F) {
+  if (F->isVarArg())
+    return false;
+
+  // Don't merge tiny functions using a thunk, since it can just end up
+  // making the function larger.
   if (F->size() == 1) {
     if (F->front().size() <= 2) {
-      LLVM_DEBUG(dbgs() << "isThunkProfitable: " << F->getName()
+      LLVM_DEBUG(dbgs() << "canCreateThunkFor: " << F->getName()
                         << " is too small to bother creating a thunk for\n");
       return false;
     }
@@ -679,8 +694,9 @@ void MergeFunctions::writeThunk(Function *F, Function *G) {
     GEntryBlock->getTerminator()->eraseFromParent();
     BB = GEntryBlock;
   } else {
-    NewG = Function::Create(G->getFunctionType(), G->getLinkage(), "",
-                            G->getParent());
+    NewG = Function::Create(G->getFunctionType(), G->getLinkage(),
+                            G->getAddressSpace(), "", G->getParent());
+    NewG->setComdat(G->getComdat());
     BB = BasicBlock::Create(F->getContext(), "", NewG);
   }
 
@@ -734,27 +750,76 @@ void MergeFunctions::writeThunk(Function *F, Function *G) {
   ++NumThunksWritten;
 }
 
+// Whether this function may be replaced by an alias
+static bool canCreateAliasFor(Function *F) {
+  if (!MergeFunctionsAliases || !F->hasGlobalUnnamedAddr())
+    return false;
+
+  // We should only see linkages supported by aliases here
+  assert(F->hasLocalLinkage() || F->hasExternalLinkage()
+      || F->hasWeakLinkage() || F->hasLinkOnceLinkage());
+  return true;
+}
+
+// Replace G with an alias to F (deleting function G)
+void MergeFunctions::writeAlias(Function *F, Function *G) {
+  Constant *BitcastF = ConstantExpr::getBitCast(F, G->getType());
+  PointerType *PtrType = G->getType();
+  auto *GA = GlobalAlias::create(
+      PtrType->getElementType(), PtrType->getAddressSpace(),
+      G->getLinkage(), "", BitcastF, G->getParent());
+
+  F->setAlignment(std::max(F->getAlignment(), G->getAlignment()));
+  GA->takeName(G);
+  GA->setVisibility(G->getVisibility());
+  GA->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+
+  removeUsers(G);
+  G->replaceAllUsesWith(GA);
+  G->eraseFromParent();
+
+  LLVM_DEBUG(dbgs() << "writeAlias: " << GA->getName() << '\n');
+  ++NumAliasesWritten;
+}
+
+// Replace G with an alias to F if possible, or a thunk to F if
+// profitable. Returns false if neither is the case.
+bool MergeFunctions::writeThunkOrAlias(Function *F, Function *G) {
+  if (canCreateAliasFor(G)) {
+    writeAlias(F, G);
+    return true;
+  }
+  if (canCreateThunkFor(F)) {
+    writeThunk(F, G);
+    return true;
+  }
+  return false;
+}
+
 // Merge two equivalent functions. Upon completion, Function G is deleted.
 void MergeFunctions::mergeTwoFunctions(Function *F, Function *G) {
   if (F->isInterposable()) {
     assert(G->isInterposable());
 
-    if (!isThunkProfitable(F)) {
+    // Both writeThunkOrAlias() calls below must succeed, either because we can
+    // create aliases for G and NewF, or because a thunk for F is profitable.
+    // F here has the same signature as NewF below, so that's what we check.
+    if (!canCreateThunkFor(F) &&
+        (!canCreateAliasFor(F) || !canCreateAliasFor(G)))
       return;
-    }
 
     // Make them both thunks to the same internal function.
-    Function *H = Function::Create(F->getFunctionType(), F->getLinkage(), "",
-                                   F->getParent());
-    H->copyAttributesFrom(F);
-    H->takeName(F);
+    Function *NewF = Function::Create(F->getFunctionType(), F->getLinkage(),
+                                      F->getAddressSpace(), "", F->getParent());
+    NewF->copyAttributesFrom(F);
+    NewF->takeName(F);
     removeUsers(F);
-    F->replaceAllUsesWith(H);
+    F->replaceAllUsesWith(NewF);
 
-    unsigned MaxAlignment = std::max(G->getAlignment(), H->getAlignment());
+    unsigned MaxAlignment = std::max(G->getAlignment(), NewF->getAlignment());
 
-    writeThunk(F, G);
-    writeThunk(F, H);
+    writeThunkOrAlias(F, G);
+    writeThunkOrAlias(F, NewF);
 
     F->setAlignment(MaxAlignment);
     F->setLinkage(GlobalValue::PrivateLinkage);
@@ -770,6 +835,7 @@ void MergeFunctions::mergeTwoFunctions(Function *F, Function *G) {
         GlobalNumbers.erase(G);
         // If G's address is not significant, replace it entirely.
         Constant *BitcastF = ConstantExpr::getBitCast(F, G->getType());
+        removeUsers(G);
         G->replaceAllUsesWith(BitcastF);
       } else {
         // Redirect direct callers of G to F. (See note on MergeFunctionsPDI
@@ -781,18 +847,15 @@ void MergeFunctions::mergeTwoFunctions(Function *F, Function *G) {
     // If G was internal then we may have replaced all uses of G with F. If so,
     // stop here and delete G. There's no need for a thunk. (See note on
     // MergeFunctionsPDI above).
-    if (G->hasLocalLinkage() && G->use_empty() && !MergeFunctionsPDI) {
+    if (G->isDiscardableIfUnused() && G->use_empty() && !MergeFunctionsPDI) {
       G->eraseFromParent();
       ++NumFunctionsMerged;
       return;
     }
 
-    if (!isThunkProfitable(F)) {
-      return;
+    if (writeThunkOrAlias(F, G)) {
+      ++NumFunctionsMerged;
     }
-
-    writeThunk(F, G);
-    ++NumFunctionsMerged;
   }
 }
 
@@ -816,6 +879,24 @@ void MergeFunctions::replaceFunctionInTree(const FunctionNode &FN,
   FN.replaceBy(G);
 }
 
+// Ordering for functions that are equal under FunctionComparator
+static bool isFuncOrderCorrect(const Function *F, const Function *G) {
+  if (F->isInterposable() != G->isInterposable()) {
+    // Strong before weak, because the weak function may call the strong
+    // one, but not the other way around.
+    return !F->isInterposable();
+  }
+  if (F->hasLocalLinkage() != G->hasLocalLinkage()) {
+    // External before local, because we definitely have to keep the external
+    // function, but may be able to drop the local one.
+    return !F->hasLocalLinkage();
+  }
+  // Impose a total order (by name) on the replacement of functions. This is
+  // important when operating on more than one module independently to prevent
+  // cycles of thunks calling each other when the modules are linked together.
+  return F->getName() <= G->getName();
+}
+
 // Insert a ComparableFunction into the FnTree, or merge it away if equal to one
 // that was already inserted.
 bool MergeFunctions::insert(Function *NewFunction) {
@@ -832,14 +913,7 @@ bool MergeFunctions::insert(Function *NewFunction) {
 
   const FunctionNode &OldF = *Result.first;
 
-  // Impose a total order (by name) on the replacement of functions. This is
-  // important when operating on more than one module independently to prevent
-  // cycles of thunks calling each other when the modules are linked together.
-  //
-  // First of all, we process strong functions before weak functions.
-  if ((OldF.getFunc()->isInterposable() && !NewFunction->isInterposable()) ||
-     (OldF.getFunc()->isInterposable() == NewFunction->isInterposable() &&
-       OldF.getFunc()->getName() > NewFunction->getName())) {
+  if (!isFuncOrderCorrect(OldF.getFunc(), NewFunction)) {
     // Swap the two functions.
     Function *F = OldF.getFunc();
     replaceFunctionInTree(*Result.first, NewFunction);
@@ -872,25 +946,7 @@ void MergeFunctions::remove(Function *F) {
 // For each instruction used by the value, remove() the function that contains
 // the instruction. This should happen right before a call to RAUW.
 void MergeFunctions::removeUsers(Value *V) {
-  std::vector<Value *> Worklist;
-  Worklist.push_back(V);
-  SmallPtrSet<Value*, 8> Visited;
-  Visited.insert(V);
-  while (!Worklist.empty()) {
-    Value *V = Worklist.back();
-    Worklist.pop_back();
-
-    for (User *U : V->users()) {
-      if (Instruction *I = dyn_cast<Instruction>(U)) {
-        remove(I->getParent()->getParent());
-      } else if (isa<GlobalValue>(U)) {
-        // do nothing
-      } else if (Constant *C = dyn_cast<Constant>(U)) {
-        for (User *UU : C->users()) {
-          if (!Visited.insert(UU).second)
-            Worklist.push_back(UU);
-        }
-      }
-    }
-  }
+  for (User *U : V->users())
+    if (auto *I = dyn_cast<Instruction>(U))
+      remove(I->getFunction());
 }

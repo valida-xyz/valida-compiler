@@ -1,9 +1,8 @@
 //===--- UseUsingCheck.cpp - clang-tidy------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,7 +23,8 @@ UseUsingCheck::UseUsingCheck(StringRef Name, ClangTidyContext *Context)
 void UseUsingCheck::registerMatchers(MatchFinder *Finder) {
   if (!getLangOpts().CPlusPlus11)
     return;
-  Finder->addMatcher(typedefDecl().bind("typedef"), this);
+  Finder->addMatcher(typedefDecl(unless(isInstantiated())).bind("typedef"),
+                     this);
 }
 
 // Checks if 'typedef' keyword can be removed - we do it only if
@@ -83,7 +83,7 @@ void UseUsingCheck::check(const MatchFinder::MatchResult &Result) {
   auto &Context = *Result.Context;
   auto &SM = *Result.SourceManager;
 
-  SourceLocation StartLoc = MatchedDecl->getLocStart();
+  SourceLocation StartLoc = MatchedDecl->getBeginLoc();
 
   if (StartLoc.isMacroID() && IgnoreMacros)
     return;

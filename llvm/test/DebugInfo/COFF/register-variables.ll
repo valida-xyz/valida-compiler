@@ -1,5 +1,5 @@
 ; RUN: llc < %s | FileCheck %s --check-prefix=ASM
-; RUN: llc < %s -filetype=obj | llvm-readobj -codeview - | FileCheck %s --check-prefix=OBJ
+; RUN: llc < %s -filetype=obj | llvm-readobj --codeview - | FileCheck %s --check-prefix=OBJ
 
 ; Generated from:
 ; volatile int x;
@@ -24,9 +24,9 @@
 ; ASM: f:                                      # @f
 ; ASM: .Lfunc_begin0:
 ; ASM: # %bb.0:                                 # %entry
+; ASM:         #DEBUG_VALUE: f:p <- $ecx
 ; ASM:         pushq   %rsi
 ; ASM:         subq    $32, %rsp
-; ASM:         #DEBUG_VALUE: f:p <- $ecx
 ; ASM:         movl    %ecx, %esi
 ; ASM: [[p_ecx_esi:\.Ltmp.*]]:
 ; ASM:         #DEBUG_VALUE: f:p <- $esi
@@ -58,25 +58,25 @@
 
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "p"
-; ASM:         .cv_def_range    .Lfunc_begin0 [[p_ecx_esi]], "A\021\022\000\000\000"
-; ASM:         .cv_def_range    [[p_ecx_esi]] [[func_end]], "A\021\027\000\000\000"
+; ASM:         .cv_def_range    .Lfunc_begin0 [[p_ecx_esi]], reg, 18
+; ASM:         .cv_def_range    [[p_ecx_esi]] [[func_end]], reg, 23
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "c"
-; ASM:         .cv_def_range    [[after_getint]] [[after_je]], "A\021\021\000\000\000"
+; ASM:         .cv_def_range    [[after_getint]] [[after_je]], reg, 17
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "a"
-; ASM:         .cv_def_range    [[after_getint]] [[after_inc_eax]], "A\021\021\000\000\000"
+; ASM:         .cv_def_range    [[after_getint]] [[after_inc_eax]], reg, 17
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "b"
-; ASM:         .cv_def_range    [[after_inc_eax]] [[after_if]], "A\021\021\000\000\000"
+; ASM:         .cv_def_range    [[after_inc_eax]] [[after_if]], reg, 17
 
 ; ASM:         .short  4429                    # Record kind: S_INLINESITE
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "a"
-; ASM:         .cv_def_range    [[after_getint]] [[after_inc_eax]], "A\021\021\000\000\000"
+; ASM:         .cv_def_range    [[after_getint]] [[after_inc_eax]], reg, 17
 ; ASM:         .short  4414                    # Record kind: S_LOCAL
 ; ASM:         .asciz  "b"
-; ASM:         .cv_def_range    [[after_inc_eax]] [[after_if]], "A\021\021\000\000\000"
+; ASM:         .cv_def_range    [[after_inc_eax]] [[after_if]], reg, 17
 ; ASM:         .short  4430                    # Record kind: S_INLINESITE_END
 
 ; OBJ: Subsection [
@@ -92,7 +92,7 @@
 ; OBJ:     VarName: p
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegECX (0x12)
+; OBJ:     Register: ECX (0x12)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0x0
 ; OBJ:       ISectStart: 0x0
@@ -100,7 +100,7 @@
 ; OBJ:     }
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegESI (0x17)
+; OBJ:     Register: ESI (0x17)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0x7
 ; OBJ:       ISectStart: 0x0
@@ -114,7 +114,7 @@
 ; OBJ:     VarName: c
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegEAX (0x11)
+; OBJ:     Register: EAX (0x11)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0xC
 ; OBJ:       ISectStart: 0x0
@@ -128,7 +128,7 @@
 ; OBJ:     VarName: a
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegEAX (0x11)
+; OBJ:     Register: EAX (0x11)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0xC
 ; OBJ:       ISectStart: 0x0
@@ -142,7 +142,7 @@
 ; OBJ:     VarName: b
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegEAX (0x11)
+; OBJ:     Register: EAX (0x11)
 ; OBJ:     MayHaveNoName: 0
 ; OBJ:       OffsetStart: .text+0x13
 ; OBJ:       ISectStart: 0x0
@@ -162,7 +162,7 @@
 ; OBJ:     VarName: a
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegEAX (0x11)
+; OBJ:     Register: EAX (0x11)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0xC
 ; OBJ:       ISectStart: 0x0
@@ -176,7 +176,7 @@
 ; OBJ:     VarName: b
 ; OBJ:   }
 ; OBJ:   DefRangeRegisterSym {
-; OBJ:     Register: CVRegEAX (0x11)
+; OBJ:     Register: EAX (0x11)
 ; OBJ:     LocalVariableAddrRange {
 ; OBJ:       OffsetStart: .text+0x13
 ; OBJ:       ISectStart: 0x0

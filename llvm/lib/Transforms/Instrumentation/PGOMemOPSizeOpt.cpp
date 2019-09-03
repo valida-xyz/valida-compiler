@@ -1,9 +1,8 @@
 //===-- PGOMemOPSizeOpt.cpp - Optimizations based on value profiling ===//
 //
-//                      The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -20,12 +19,12 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
+#include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/DomTreeUpdater.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -139,7 +138,7 @@ public:
                OptimizationRemarkEmitter &ORE, DominatorTree *DT)
       : Func(Func), BFI(BFI), ORE(ORE), DT(DT), Changed(false) {
     ValueDataArray =
-        llvm::make_unique<InstrProfValueData[]>(MemOPMaxVersion + 2);
+        std::make_unique<InstrProfValueData[]>(MemOPMaxVersion + 2);
     // Get the MemOPSize range information from option MemOPSizeRange,
     getMemOPSizeRangeFromOption(MemOPSizeRange, PreciseRangeStart,
                                 PreciseRangeLast);

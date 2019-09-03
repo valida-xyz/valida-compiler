@@ -17,14 +17,14 @@ void f0_test(char16 c16, longlong16 ll16, char16_e c16e, longlong16_e ll16e) {
   f0(ll16e);
 }
 
-int &f1(char16); // expected-note 2{{candidate function}}
-float &f1(longlong16); // expected-note 2{{candidate function}}
+int &f1(char16);
+float &f1(longlong16);
 
 void f1_test(char16 c16, longlong16 ll16, char16_e c16e, longlong16_e ll16e) {
   int &ir1 = f1(c16);
   float &fr1 = f1(ll16);
-  f1(c16e); // expected-error{{call to 'f1' is ambiguous}}
-  f1(ll16e); // expected-error{{call to 'f1' is ambiguous}}
+  int &ir2 = f1(c16e);
+  float &fr2 = f1(ll16e);
 }
 
 void f2(char16_e); // expected-note{{no known conversion from 'longlong16_e' (vector of 2 'long long' values) to 'char16_e' (vector of 16 'char' values) for 1st argument}} \
@@ -334,3 +334,27 @@ void Init() {
 }
 
 } // namespace Templates
+
+typedef int inte2 __attribute__((__ext_vector_type__(2)));
+
+void test_vector_literal(inte4 res) {
+  inte2 a = (inte2)(1, 2); //expected-warning{{expression result unused}}
+  inte4 b = (inte4)(a, a); //expected-error{{C-style cast from vector 'inte2' (vector of 2 'int' values) to vector 'inte4' (vector of 4 'int' values) of different size}} //expected-warning{{expression result unused}}
+}
+
+typedef __attribute__((__ext_vector_type__(4))) float vector_float4;
+typedef __attribute__((__ext_vector_type__(4))) int vector_int4;
+
+namespace swizzle_template_confusion {
+  template<typename T> struct xyzw {};
+  vector_int4 foo123(vector_float4 &A, vector_float4 &B) {
+    return A.xyzw < B.x && B.y > A.y; // OK, not a template-id
+  }
+}
+
+namespace swizzle_typo_correction {
+  template<typename T> struct xyzv {};
+  vector_int4 foo123(vector_float4 &A, vector_float4 &B) {
+    return A.xyzw < B.x && B.y > A.y; // OK, not a typo for 'xyzv'
+  }
+}

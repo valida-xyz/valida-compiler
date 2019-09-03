@@ -39,13 +39,14 @@ add_clang_tool(clang
   ${tablegen_deps}
   )
 
-target_link_libraries(clang
+clang_target_link_libraries(clang
   PRIVATE
   clangBasic
   clangCodeGen
   clangDriver
   clangFrontend
   clangFrontendTool
+  clangSerialization
   )
 
 if(WIN32 AND NOT CYGWIN)
@@ -59,7 +60,7 @@ if(CLANG_PLUGIN_SUPPORT)
   export_executable_symbols(clang)
 endif()
 
-add_dependencies(clang clang-headers)
+add_dependencies(clang clang-resource-headers)
 
 if(NOT CLANG_LINKS_TO_CREATE)
   set(CLANG_LINKS_TO_CREATE clang++ clang-cl clang-cpp)

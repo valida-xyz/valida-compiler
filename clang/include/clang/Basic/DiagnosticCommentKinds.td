@@ -1,9 +1,8 @@
 //==--- DiagnosticCommentKinds.td - diagnostics related to comments -------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -153,6 +152,12 @@ def warn_doc_deprecated_not_sync : Warning<
 
 def note_add_deprecation_attr : Note<
   "add a deprecation attribute to the declaration to silence this warning">;
+
+// inline contents commands
+
+def warn_doc_inline_contents_no_argument : Warning<
+  "'%select{\\|@}0%1' command does not have a valid word argument">,
+  InGroup<Documentation>, DefaultIgnore;
 
 // verbatim block commands
 

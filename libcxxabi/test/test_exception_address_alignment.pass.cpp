@@ -1,9 +1,8 @@
 //===----------------------------------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is dual licensed under the MIT and the University of Illinois Open
-// Source Licenses. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,6 +19,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include <__cxxabi_config.h>
 
 #include <unwind.h>
 
@@ -27,7 +27,7 @@ struct __attribute__((aligned)) AlignedType {};
 
 // EHABI  : 8-byte aligned
 // Itanium: Largest supported alignment for the system
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(_LIBCXXABI_ARM_EHABI)
 #  define EXPECTED_ALIGNMENT 8
 #else
 #  define EXPECTED_ALIGNMENT alignof(AlignedType)

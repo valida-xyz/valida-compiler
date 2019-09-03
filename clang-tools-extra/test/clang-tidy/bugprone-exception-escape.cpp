@@ -1,4 +1,9 @@
-// RUN: %check_clang_tidy %s bugprone-exception-escape %t -- -extra-arg=-std=c++11 -extra-arg=-fexceptions -config="{CheckOptions: [{key: bugprone-exception-escape.IgnoredExceptions, value: 'ignored1,ignored2'}, {key: bugprone-exception-escape.FunctionsThatShouldNotThrow, value: 'enabled1,enabled2,enabled3'}]}" --
+// RUN: %check_clang_tidy -std=c++11,c++14 %s bugprone-exception-escape %t -- \
+// RUN:     -config="{CheckOptions: [ \
+// RUN:         {key: bugprone-exception-escape.IgnoredExceptions, value: 'ignored1,ignored2'}, \
+// RUN:         {key: bugprone-exception-escape.FunctionsThatShouldNotThrow, value: 'enabled1,enabled2,enabled3'} \
+// RUN:     ]}" \
+// RUN:     -- -fexceptions
 
 struct throwing_destructor {
   ~throwing_destructor() {
@@ -256,6 +261,31 @@ void this_counts(int n) noexcept {
   // CHECK-MESSAGES: :[[@LINE-1]]:6: warning: an exception may be thrown in function 'this_counts' which should not throw exceptions
   if (n) throw 1;
   throw ignored1();
+}
+
+void thrower(int n) {
+  throw n;
+}
+
+int directly_recursive(int n) noexcept {
+  // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: an exception may be thrown in function 'directly_recursive' which should not throw exceptions
+  if (n == 0)
+    thrower(n);
+  return directly_recursive(n);
+}
+
+int indirectly_recursive(int n) noexcept;
+  // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: an exception may be thrown in function 'indirectly_recursive' which should not throw exceptions
+
+int recursion_helper(int n) {
+  indirectly_recursive(n);
+}
+
+int indirectly_recursive(int n) noexcept {
+  // CHECK-MESSAGES: :[[@LINE-1]]:5: warning: an exception may be thrown in function 'indirectly_recursive' which should not throw exceptions
+  if (n == 0)
+    thrower(n);
+  return recursion_helper(n);
 }
 
 int main() {

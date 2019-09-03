@@ -1,9 +1,8 @@
 //===- IslAst.cpp - isl code generator interface --------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -38,8 +37,6 @@
 #include "polly/Support/GICHelper.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "isl/aff.h"
@@ -47,7 +44,6 @@
 #include "isl/ast_build.h"
 #include "isl/id.h"
 #include "isl/isl-noexceptions.h"
-#include "isl/map.h"
 #include "isl/printer.h"
 #include "isl/schedule.h"
 #include "isl/set.h"
@@ -55,10 +51,6 @@
 #include "isl/val.h"
 #include <cassert>
 #include <cstdlib>
-#include <cstring>
-#include <map>
-#include <string>
-#include <utility>
 
 #define DEBUG_TYPE "polly-ast"
 
@@ -119,6 +111,9 @@ struct AstBuildUserInfo {
   /// Flag to indicate that we are inside a parallel for node.
   bool InParallelFor = false;
 
+  /// Flag to indicate that we are inside an SIMD node.
+  bool InSIMD = false;
+
   /// The last iterator id created for the current SCoP.
   isl_id *LastForNodeId = nullptr;
 };
@@ -131,7 +126,6 @@ static void freeIslAstUserPayload(void *Ptr) {
 
 IslAstInfo::IslAstUserPayload::~IslAstUserPayload() {
   isl_ast_build_free(Build);
-  isl_pw_aff_free(MinimalDependenceDistance);
 }
 
 /// Print a string @p str in a single line using @p Printer.
@@ -226,7 +220,10 @@ static bool astScheduleDimIsParallel(__isl_keep isl_ast_build *Build,
         D->getDependences(Dependences::TYPE_RAW | Dependences::TYPE_WAW |
                           Dependences::TYPE_WAR | Dependences::TYPE_TC_RED)
             .release();
-    D->isParallel(Schedule, DepsAll, &NodeInfo->MinimalDependenceDistance);
+    isl_pw_aff *MinimalDependenceDistance = nullptr;
+    D->isParallel(Schedule, DepsAll, &MinimalDependenceDistance);
+    NodeInfo->MinimalDependenceDistance =
+        isl::manage(MinimalDependenceDistance);
     isl_union_map_free(Schedule);
     return false;
   }
@@ -268,10 +265,13 @@ static __isl_give isl_id *astBuildBeforeFor(__isl_keep isl_ast_build *Build,
   Id = isl_id_set_free_user(Id, freeIslAstUserPayload);
   BuildInfo->LastForNodeId = Id;
 
+  Payload->IsParallel =
+      astScheduleDimIsParallel(Build, BuildInfo->Deps, Payload);
+
   // Test for parallelism only if we are not already inside a parallel loop
-  if (!BuildInfo->InParallelFor)
+  if (!BuildInfo->InParallelFor && !BuildInfo->InSIMD)
     BuildInfo->InParallelFor = Payload->IsOutermostParallel =
-        astScheduleDimIsParallel(Build, BuildInfo->Deps, Payload);
+        Payload->IsParallel;
 
   return Id;
 }
@@ -296,18 +296,8 @@ astBuildAfterFor(__isl_take isl_ast_node *Node, __isl_keep isl_ast_build *Build,
   Payload->Build = isl_ast_build_copy(Build);
   Payload->IsInnermost = (Id == BuildInfo->LastForNodeId);
 
-  // Innermost loops that are surrounded by parallel loops have not yet been
-  // tested for parallelism. Test them here to ensure we check all innermost
-  // loops for parallelism.
-  if (Payload->IsInnermost && BuildInfo->InParallelFor) {
-    if (Payload->IsOutermostParallel) {
-      Payload->IsInnermostParallel = true;
-    } else {
-      if (PollyVectorizerChoice == VECTORIZER_NONE)
-        Payload->IsInnermostParallel =
-            astScheduleDimIsParallel(Build, BuildInfo->Deps, Payload);
-    }
-  }
+  Payload->IsInnermostParallel =
+      Payload->IsInnermost && (BuildInfo->InSIMD || Payload->IsParallel);
   if (Payload->IsOutermostParallel)
     BuildInfo->InParallelFor = false;
 
@@ -323,7 +313,7 @@ static isl_stat astBuildBeforeMark(__isl_keep isl_id *MarkId,
 
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
   if (strcmp(isl_id_get_name(MarkId), "SIMD") == 0)
-    BuildInfo->InParallelFor = true;
+    BuildInfo->InSIMD = true;
 
   return isl_stat_ok;
 }
@@ -335,7 +325,7 @@ astBuildAfterMark(__isl_take isl_ast_node *Node,
   AstBuildUserInfo *BuildInfo = (AstBuildUserInfo *)User;
   auto *Id = isl_ast_node_mark_get_id(Node);
   if (strcmp(isl_id_get_name(Id), "SIMD") == 0)
-    BuildInfo->InParallelFor = false;
+    BuildInfo->InSIMD = false;
   isl_id_free(Id);
   return Node;
 }
@@ -531,13 +521,7 @@ IslAst::~IslAst() {
 void IslAst::init(const Dependences &D) {
   bool PerformParallelTest = PollyParallel || DetectParallel ||
                              PollyVectorizerChoice != VECTORIZER_NONE;
-
-  // We can not perform the dependence analysis and, consequently,
-  // the parallel code generation in case the schedule tree contains
-  // extension nodes.
   auto ScheduleTree = S.getScheduleTree();
-  PerformParallelTest =
-      PerformParallelTest && !S.containsExtensionNode(ScheduleTree);
 
   // Skip AST and code generation if there was no benefit achieved.
   if (!benefitsFromPolly(S, PerformParallelTest))
@@ -565,6 +549,7 @@ void IslAst::init(const Dependences &D) {
   if (PerformParallelTest) {
     BuildInfo.Deps = &D;
     BuildInfo.InParallelFor = false;
+    BuildInfo.InSIMD = false;
 
     Build = isl_ast_build_set_before_each_for(Build, &astBuildBeforeFor,
                                               &BuildInfo);
@@ -664,8 +649,7 @@ IslAstInfo::getSchedule(__isl_keep isl_ast_node *Node) {
 __isl_give isl_pw_aff *
 IslAstInfo::getMinimalDependenceDistance(__isl_keep isl_ast_node *Node) {
   IslAstUserPayload *Payload = getNodePayload(Node);
-  return Payload ? isl_pw_aff_copy(Payload->MinimalDependenceDistance)
-                 : nullptr;
+  return Payload ? Payload->MinimalDependenceDistance.copy() : nullptr;
 }
 
 IslAstInfo::MemoryAccessSet *
