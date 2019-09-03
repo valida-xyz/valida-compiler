@@ -228,11 +228,6 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       LLVM_FALLTHROUGH;
     default:
       // FIXME: temporary hack: hard-coded paths.
-
-      if (triple.getEnvironment() == llvm::Triple::EABI ||
-          triple.getEnvironment() == llvm::Triple::EABIHF)
-        break;
-
       AddPath("/usr/local/include", System, false);
       break;
     }
@@ -358,11 +353,6 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     LLVM_FALLTHROUGH;
   }
   default:
-
-    if (triple.getEnvironment() == llvm::Triple::EABI ||
-        triple.getEnvironment() == llvm::Triple::EABIHF)
-      break;
-
     AddPath("/usr/include", ExternCSystem, false);
     break;
   }

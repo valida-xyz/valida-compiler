@@ -45,7 +45,7 @@ void compilerrt_abort_impl(const char *file, int line, const char *function) {
   __assert_rtn(function, file, line, "libcompiler_rt abort");
 }
 
-#elif 1
+#elif __Fuchsia__
 
 #ifndef _WIN32
 __attribute__((weak))

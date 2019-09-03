@@ -752,8 +752,6 @@ void ARMTargetInfo::getTargetDefines(const LangOptions &Opts,
     getTargetDefinesARMV82A(Opts, Builder);
     break;
   }
-
-  addHighTecDefines(Builder);
 }
 
 const Builtin::Info ARMTargetInfo::BuiltinInfo[] = {
