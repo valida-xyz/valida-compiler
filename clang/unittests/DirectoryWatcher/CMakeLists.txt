@@ -1,4 +1,4 @@
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
+if(APPLE)
 
   set(LLVM_LINK_COMPONENTS
     Support
