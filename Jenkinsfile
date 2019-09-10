@@ -26,6 +26,7 @@ pipeline {
                 -DCMAKE_CXX_COMPILER=/usr/bin/clang++-5.0\
                 -DLLVM_ENABLE_LLD=ON\
                 -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64"\
+                -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="TriCore"\
                 -DLLVM_INCLUDE_TESTS=ON\
                 -DLLVM_LIT_ARGS="-j48 --xunit-xml-output=testresults.xunit.xml -v"\
             ../llvm;
