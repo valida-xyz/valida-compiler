@@ -950,7 +950,7 @@ static const EnumEntry<unsigned> ElfMachineType[] = {
   ENUM_ENT(EM_ALPHA,         "EM_ALPHA"),
   ENUM_ENT(EM_SH,            "Hitachi SH"),
   ENUM_ENT(EM_SPARCV9,       "Sparc v9"),
-  ENUM_ENT(EM_TRICORE,       "Siemens Tricore"),
+  ENUM_ENT(EM_TRICORE,       "Infineon Tricore"),
   ENUM_ENT(EM_ARC,           "ARC"),
   ENUM_ENT(EM_H8_300,        "Hitachi H8/300"),
   ENUM_ENT(EM_H8_300H,       "Hitachi H8/300H"),
@@ -1366,6 +1366,18 @@ static const EnumEntry<unsigned> ElfHeaderRISCVFlags[] = {
   ENUM_ENT(EF_RISCV_FLOAT_ABI_QUAD, "quad-float ABI"),
   ENUM_ENT(EF_RISCV_RVE, "RVE")
 };
+
+static const EnumEntry<unsigned> ElfHeaderTriCoreFlags[] = {
+  ENUM_ENT(EF_TRICORE_V1_2, "TriCore V1.2"),
+  ENUM_ENT(EF_TRICORE_V1_3, "TriCore V1.3"),
+  ENUM_ENT(EF_TRICORE_V1_3_1, "TriCore V1.3.1"),
+  ENUM_ENT(EF_TRICORE_V1_6, "TriCore V1.6"),
+  ENUM_ENT(EF_TRICORE_V1_6_1, "TriCore V1.6.1"),
+  ENUM_ENT(EF_TRICORE_V1_6_2, "TriCore V1.6.2"),
+  ENUM_ENT(EF_TRICORE_PCP, "PCP"),
+  ENUM_ENT(EF_TRICORE_PCP2, "PCP2")
+};
+
 
 static const EnumEntry<unsigned> ElfSymOtherFlags[] = {
   LLVM_READOBJ_ENUM_ENT(ELF, STV_INTERNAL),
@@ -5055,6 +5067,8 @@ template <class ELFT> void LLVMStyle<ELFT>::printFileHeaders(const ELFO *Obj) {
                    unsigned(ELF::EF_AMDGPU_MACH));
     else if (E->e_machine == EM_RISCV)
       W.printFlags("Flags", E->e_flags, makeArrayRef(ElfHeaderRISCVFlags));
+    else if (E->e_machine == EM_TRICORE)
+      W.printFlags("Flags", E->e_flags, makeArrayRef(ElfHeaderTriCoreFlags));
     else
       W.printFlags("Flags", E->e_flags);
     W.printNumber("HeaderSize", E->e_ehsize);

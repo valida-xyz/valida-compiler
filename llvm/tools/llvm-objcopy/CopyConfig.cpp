@@ -270,6 +270,7 @@ static const StringMap<MachineInfo> ArchMap{
     {"riscv:rv64", {ELF::EM_RISCV, true, true}},
     {"sparc", {ELF::EM_SPARC, false, false}},
     {"sparcel", {ELF::EM_SPARC, false, true}},
+    {"tricore", {ELF::EM_TRICORE, false, true}},
     {"x86-64", {ELF::EM_X86_64, true, true}},
 };
 
@@ -319,6 +320,8 @@ static const StringMap<MachineInfo> TargetMap{
     // SPARC
     {"elf32-sparc", {ELF::EM_SPARC, false, false}},
     {"elf32-sparcel", {ELF::EM_SPARC, false, true}},
+    // TriCore
+    {"elf32-tricore", {ELF::EM_TRICORE, false, true}},
 };
 
 static Expected<TargetInfo>

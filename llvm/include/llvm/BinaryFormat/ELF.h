@@ -152,7 +152,7 @@ enum {
   EM_ALPHA = 41,         // DEC Alpha
   EM_SH = 42,            // Hitachi SH
   EM_SPARCV9 = 43,       // SPARC V9
-  EM_TRICORE = 44,       // Siemens TriCore
+  EM_TRICORE = 44,       // Infineon TriCore
   EM_ARC = 45,           // Argonaut RISC Core
   EM_H8_300 = 46,        // Hitachi H8/300
   EM_H8_300H = 47,       // Hitachi H8/300H
@@ -640,6 +640,23 @@ enum {
 // ELF Relocation type for Sparc.
 enum {
 #include "ELFRelocs/Sparc.def"
+};
+
+// TriCore Specific e_flags
+enum : unsigned {
+  EF_TRICORE_V1_2   = 0x40000000,
+  EF_TRICORE_V1_3   = 0x20000000,
+  EF_TRICORE_V1_3_1 = 0x00800000,
+  EF_TRICORE_V1_6   = 0x00400000,
+  EF_TRICORE_V1_6_1 = 0x00200000,
+  EF_TRICORE_V1_6_2 = 0x00100000,
+  EF_TRICORE_PCP    = 0x01000000,
+  EF_TRICORE_PCP2   = 0x02000000
+};
+
+// ELF Relocation type for TriCore.
+enum {
+#include "ELFRelocs/TriCore.def"
 };
 
 // AMDGPU specific e_flags.

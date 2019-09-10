@@ -379,6 +379,16 @@ void ScalarBitSetTraits<ELFYAML::ELF_EF>::bitset(IO &IO,
     BCaseMask(EF_RISCV_FLOAT_ABI_QUAD, EF_RISCV_FLOAT_ABI);
     BCase(EF_RISCV_RVE);
     break;
+  case ELF::EM_TRICORE:
+    BCase(EF_TRICORE_V1_2);
+    BCase(EF_TRICORE_V1_3);
+    BCase(EF_TRICORE_V1_3_1);
+    BCase(EF_TRICORE_V1_6);
+    BCase(EF_TRICORE_V1_6_1);
+    BCase(EF_TRICORE_V1_6_2);
+    BCase(EF_TRICORE_PCP);
+    BCase(EF_TRICORE_PCP2);
+    break;
   case ELF::EM_AMDGPU:
     BCaseMask(EF_AMDGPU_MACH_NONE, EF_AMDGPU_MACH);
     BCaseMask(EF_AMDGPU_MACH_R600_R600, EF_AMDGPU_MACH);
@@ -635,6 +645,9 @@ void ScalarEnumerationTraits<ELFYAML::ELF_REL>::enumeration(
     break;
   case ELF::EM_RISCV:
 #include "llvm/BinaryFormat/ELFRelocs/RISCV.def"
+    break;
+  case ELF::EM_TRICORE:
+#include "llvm/BinaryFormat/ELFRelocs/TriCore.def"
     break;
   case ELF::EM_LANAI:
 #include "llvm/BinaryFormat/ELFRelocs/Lanai.def"

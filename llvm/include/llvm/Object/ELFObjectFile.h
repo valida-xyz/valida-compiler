@@ -1076,6 +1076,8 @@ StringRef ELFObjectFile<ELFT>::getFileFormatName() const {
     case ELF::EM_SPARC:
     case ELF::EM_SPARC32PLUS:
       return "ELF32-sparc";
+    case ELF::EM_TRICORE:
+      return "ELF32-tricore";
     case ELF::EM_AMDGPU:
       return "ELF32-amdgpu";
     default:
@@ -1162,6 +1164,8 @@ template <class ELFT> Triple::ArchType ELFObjectFile<ELFT>::getArch() const {
     return IsLittleEndian ? Triple::sparcel : Triple::sparc;
   case ELF::EM_SPARCV9:
     return Triple::sparcv9;
+  case ELF::EM_TRICORE:
+    return Triple::tricore;
 
   case ELF::EM_AMDGPU: {
     if (!IsLittleEndian)
