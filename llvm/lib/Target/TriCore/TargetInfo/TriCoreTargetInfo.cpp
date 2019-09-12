@@ -21,5 +21,3 @@ extern "C" void LLVMInitializeTriCoreTargetInfo() {
   RegisterTarget<Triple::tricore> X(getTheTriCoreTarget(), "tricore",
                                     "Infineon TriCore", "TriCore");
 }
-
-extern "C" void LLVMInitializeTriCoreTargetMC() {}

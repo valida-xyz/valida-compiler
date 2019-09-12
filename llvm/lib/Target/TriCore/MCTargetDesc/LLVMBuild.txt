@@ -1,4 +1,4 @@
-;===- ./lib/Target/TriCore/LLVMBuild.txt -----------------------*- Conf -*--===;
+;===- ./lib/Target/TriCore/MCTargetDesc/LLVMBuild.txt ----------*- Conf -*--===;
 ;
 ; Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 ; See https://llvm.org/LICENSE.txt for license information.
@@ -14,17 +14,9 @@
 ;
 ;===------------------------------------------------------------------------===;
 
-[common]
-subdirectories = TargetInfo MCTargetDesc
-
 [component_0]
-type = TargetGroup
-name = TriCore
-parent = Target
-
-[component_1]
 type = Library
-name = TriCoreCodeGen
+name = TriCoreDesc
 parent = TriCore
-required_libraries = Core CodeGen TriCoreInfo Support Target
+required_libraries = MC TriCoreInfo Support
 add_to_library_groups = TriCore

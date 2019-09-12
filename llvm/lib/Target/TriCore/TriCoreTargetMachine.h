@@ -13,6 +13,7 @@
 #ifndef LLVM_LIB_TARGET_TRICORE_TRICORETARGETMACHINE_H
 #define LLVM_LIB_TARGET_TRICORE_TRICORETARGETMACHINE_H
 
+#include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
@@ -33,7 +34,6 @@ public:
     return TLOF.get();
   }
 };
-Target &getTheTriCoreTarget();
 } // namespace llvm
 
 #endif
