@@ -55,4 +55,8 @@ createTriCoreELFObjectWriter(uint8_t OSABI);
 #define GET_INSTRINFO_ENUM
 #include "TriCoreGenInstrInfo.inc"
 
+// Defines the subtargets for TriCore
+#define GET_SUBTARGETINFO_ENUM
+#include "TriCoreGenSubtargetInfo.inc"
+
 #endif

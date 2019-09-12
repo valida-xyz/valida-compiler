@@ -18,5 +18,5 @@
 type = Library
 name = TriCoreDesc
 parent = TriCore
-required_libraries = MC TriCoreInfo Support
+required_libraries = MC TriCoreAsmPrinter TriCoreInfo Support
 add_to_library_groups = TriCore

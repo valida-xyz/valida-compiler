@@ -6,7 +6,6 @@
 
 // RUN: %clang -target tricore %s -emit-llvm -S -o - | FileCheck %s
 
-// XFAIL: *
 
 typedef __builtin_va_list va_list;
 typedef __SIZE_TYPE__ size_t;

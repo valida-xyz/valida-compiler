@@ -10,6 +10,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "InstPrinter/TriCoreInstPrinter.h"
 #include "TriCoreMCTargetDesc.h"
 #include "TriCoreMCAsmInfo.h"
 #include "llvm/ADT/STLExtras.h"
@@ -26,6 +27,9 @@
 
 #define GET_REGINFO_MC_DESC
 #include "TriCoreGenRegisterInfo.inc"
+
+#define GET_SUBTARGETINFO_MC_DESC
+#include "TriCoreGenSubtargetInfo.inc"
 
 using namespace llvm;
 
@@ -48,6 +52,24 @@ static MCAsmInfo *createTriCoreMCAsmInfo(const MCRegisterInfo &MRI,
   return new TriCoreMCAsmInfo(TT);
 }
 
+static MCInstPrinter *createTriCoreMCInstPrinter(const Triple &T,
+                                                 unsigned SyntaxVariant,
+                                                 const MCAsmInfo &MAI,
+                                                 const MCInstrInfo &MII,
+                                                 const MCRegisterInfo &MRI) {
+  return new TriCoreInstPrinter(MAI, MII, MRI);
+}
+
+static MCSubtargetInfo *createTriCoreMCSubtargetInfo(const Triple &TT,
+                                                   StringRef CPU, StringRef FS) {
+  std::string CPUName = CPU;
+  // FIXME: If processors are defined in TriCore.td, then remove comments and
+  // set the string to that processor name, which is decided to be the default
+  /// if (CPUName.empty())
+  ///  CPUName = "tc162";
+  return createTriCoreMCSubtargetInfoImpl(TT, CPUName, FS);
+}
+
 extern "C" void LLVMInitializeTriCoreTargetMC() {
   Target *T = &getTheTriCoreTarget();
   TargetRegistry::RegisterMCAsmInfo(*T, createTriCoreMCAsmInfo);
@@ -55,4 +77,6 @@ extern "C" void LLVMInitializeTriCoreTargetMC() {
   TargetRegistry::RegisterMCRegInfo(*T, createTriCoreMCRegisterInfo);
   TargetRegistry::RegisterMCAsmBackend(*T, createTriCoreAsmBackend);
   TargetRegistry::RegisterMCCodeEmitter(*T, createTriCoreMCCodeEmitter);
+  TargetRegistry::RegisterMCInstPrinter(*T, createTriCoreMCInstPrinter);
+  TargetRegistry::RegisterMCSubtargetInfo(*T, createTriCoreMCSubtargetInfo);
 }
