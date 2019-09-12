@@ -23,9 +23,18 @@ include "TriCoreInstrInfo.td"
 def TriCoreInstrInfo : InstrInfo;
 
 //===----------------------------------------------------------------------===//
+// Assembly parser.
+//===----------------------------------------------------------------------===//
+
+def TriCoreAsmParser : AsmParser {
+  let ShouldEmitMatchRegisterAltName = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // Target Declaration
 //===----------------------------------------------------------------------===//
 
 def TriCore : Target {
   let InstructionSet = TriCoreInstrInfo;
+  let AssemblyParsers = [TriCoreAsmParser];
 }
