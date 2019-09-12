@@ -10776,3 +10776,193 @@
 // RISCV64-LINUX: #define __unix__ 1
 // RISCV64-LINUX: #define linux 1
 // RISCV64-LINUX: #define unix 1
+
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=tricore < /dev/null \
+// RUN:   | FileCheck -match-full-lines -check-prefix=TRICORE %s
+//
+// TRICORE: #define _ILP32 1
+// TRICORE: #define __ATOMIC_ACQUIRE 2
+// TRICORE: #define __ATOMIC_ACQ_REL 4
+// TRICORE: #define __ATOMIC_CONSUME 1
+// TRICORE: #define __ATOMIC_RELAXED 0
+// TRICORE: #define __ATOMIC_RELEASE 3
+// TRICORE: #define __ATOMIC_SEQ_CST 5
+// TRICORE: #define __BIGGEST_ALIGNMENT__ 4
+// TRICORE: #define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
+// TRICORE: #define __CHAR16_TYPE__ unsigned short
+// TRICORE: #define __CHAR32_TYPE__ unsigned int
+// TRICORE: #define __CHAR_BIT__ 8
+// TRICORE: #define __DBL_DECIMAL_DIG__ 17
+// TRICORE: #define __DBL_DENORM_MIN__ 4.9406564584124654e-324
+// TRICORE: #define __DBL_DIG__ 15
+// TRICORE: #define __DBL_EPSILON__ 2.2204460492503131e-16
+// TRICORE: #define __DBL_HAS_DENORM__ 1
+// TRICORE: #define __DBL_HAS_INFINITY__ 1
+// TRICORE: #define __DBL_HAS_QUIET_NAN__ 1
+// TRICORE: #define __DBL_MANT_DIG__ 53
+// TRICORE: #define __DBL_MAX_10_EXP__ 308
+// TRICORE: #define __DBL_MAX_EXP__ 1024
+// TRICORE: #define __DBL_MAX__ 1.7976931348623157e+308
+// TRICORE: #define __DBL_MIN_10_EXP__ (-307)
+// TRICORE: #define __DBL_MIN_EXP__ (-1021)
+// TRICORE: #define __DBL_MIN__ 2.2250738585072014e-308
+// TRICORE: #define __DECIMAL_DIG__ __LDBL_DECIMAL_DIG__
+// TRICORE: #define __FINITE_MATH_ONLY__ 0
+// TRICORE: #define __FLT_DECIMAL_DIG__ 9
+// TRICORE: #define __FLT_DENORM_MIN__ 1.40129846e-45F
+// TRICORE: #define __FLT_DIG__ 6
+// TRICORE: #define __FLT_EPSILON__ 1.19209290e-7F
+// TRICORE: #define __FLT_EVAL_METHOD__ 0
+// TRICORE: #define __FLT_HAS_DENORM__ 1
+// TRICORE: #define __FLT_HAS_INFINITY__ 1
+// TRICORE: #define __FLT_HAS_QUIET_NAN__ 1
+// TRICORE: #define __FLT_MANT_DIG__ 24
+// TRICORE: #define __FLT_MAX_10_EXP__ 38
+// TRICORE: #define __FLT_MAX_EXP__ 128
+// TRICORE: #define __FLT_MAX__ 3.40282347e+38F
+// TRICORE: #define __FLT_MIN_10_EXP__ (-37)
+// TRICORE: #define __FLT_MIN_EXP__ (-125)
+// TRICORE: #define __FLT_MIN__ 1.17549435e-38F
+// TRICORE: #define __FLT_RADIX__ 2
+// TRICORE: #define __GCC_ATOMIC_BOOL_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_CHAR16_T_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_CHAR32_T_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_CHAR_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_INT_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_LLONG_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_LONG_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_POINTER_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_SHORT_LOCK_FREE 1
+// TRICORE: #define __GCC_ATOMIC_TEST_AND_SET_TRUEVAL 1
+// TRICORE: #define __GCC_ATOMIC_WCHAR_T_LOCK_FREE 1
+// TRICORE: #define __GNUC_MINOR__ {{.*}}
+// TRICORE: #define __GNUC_PATCHLEVEL__ {{.*}}
+// TRICORE: #define __GNUC_STDC_INLINE__ 1
+// TRICORE: #define __GNUC__ {{.*}}
+// TRICORE: #define __GXX_ABI_VERSION {{.*}}
+// TRICORE: #define __ILP32__ 1
+// TRICORE: #define __INT16_C_SUFFIX__
+// TRICORE: #define __INT16_MAX__ 32767
+// TRICORE: #define __INT16_TYPE__ short
+// TRICORE: #define __INT32_C_SUFFIX__
+// TRICORE: #define __INT32_MAX__ 2147483647
+// TRICORE: #define __INT32_TYPE__ int
+// TRICORE: #define __INT64_C_SUFFIX__ LL
+// TRICORE: #define __INT64_MAX__ 9223372036854775807LL
+// TRICORE: #define __INT64_TYPE__ long long int
+// TRICORE: #define __INT8_C_SUFFIX__
+// TRICORE: #define __INT8_MAX__ 127
+// TRICORE: #define __INT8_TYPE__ signed char
+// TRICORE: #define __INTMAX_C_SUFFIX__ LL
+// TRICORE: #define __INTMAX_MAX__ 9223372036854775807LL
+// TRICORE: #define __INTMAX_TYPE__ long long int
+// TRICORE: #define __INTMAX_WIDTH__ 64
+// TRICORE: #define __INTPTR_MAX__ 2147483647L
+// TRICORE: #define __INTPTR_TYPE__ long int
+// TRICORE: #define __INTPTR_WIDTH__ 32
+// TRICORE: #define __INT_FAST16_MAX__ 32767
+// TRICORE: #define __INT_FAST16_TYPE__ short
+// TRICORE: #define __INT_FAST32_MAX__ 2147483647
+// TRICORE: #define __INT_FAST32_TYPE__ int
+// TRICORE: #define __INT_FAST64_MAX__ 9223372036854775807LL
+// TRICORE: #define __INT_FAST64_TYPE__ long long int
+// TRICORE: #define __INT_FAST8_MAX__ 127
+// TRICORE: #define __INT_FAST8_TYPE__ signed char
+// TRICORE: #define __INT_LEAST16_MAX__ 32767
+// TRICORE: #define __INT_LEAST16_TYPE__ short
+// TRICORE: #define __INT_LEAST32_MAX__ 2147483647
+// TRICORE: #define __INT_LEAST32_TYPE__ int
+// TRICORE: #define __INT_LEAST64_MAX__ 9223372036854775807LL
+// TRICORE: #define __INT_LEAST64_TYPE__ long long int
+// TRICORE: #define __INT_LEAST8_MAX__ 127
+// TRICORE: #define __INT_LEAST8_TYPE__ signed char
+// TRICORE: #define __INT_MAX__ 2147483647
+// TRICORE: #define __LDBL_DECIMAL_DIG__ 17
+// TRICORE: #define __LDBL_DENORM_MIN__ 4.9406564584124654e-324L
+// TRICORE: #define __LDBL_DIG__ 15
+// TRICORE: #define __LDBL_EPSILON__ 2.2204460492503131e-16L
+// TRICORE: #define __LDBL_HAS_DENORM__ 1
+// TRICORE: #define __LDBL_HAS_INFINITY__ 1
+// TRICORE: #define __LDBL_HAS_QUIET_NAN__ 1
+// TRICORE: #define __LDBL_MANT_DIG__ 53
+// TRICORE: #define __LDBL_MAX_10_EXP__ 308
+// TRICORE: #define __LDBL_MAX_EXP__ 1024
+// TRICORE: #define __LDBL_MAX__ 1.7976931348623157e+308L
+// TRICORE: #define __LDBL_MIN_10_EXP__ (-307)
+// TRICORE: #define __LDBL_MIN_EXP__ (-1021)
+// TRICORE: #define __LDBL_MIN__ 2.2250738585072014e-308L
+// TRICORE: #define __LITTLE_ENDIAN__ 1
+// TRICORE: #define __LONG_LONG_MAX__ 9223372036854775807LL
+// TRICORE: #define __LONG_MAX__ 2147483647L
+// TRICORE: #define __NO_INLINE__ 1
+// TRICORE: #define __POINTER_WIDTH__ 32
+// TRICORE: #define __PRAGMA_REDEFINE_EXTNAME 1
+// TRICORE: #define __PTRDIFF_MAX__ 2147483647L
+// TRICORE: #define __PTRDIFF_TYPE__ long int
+// TRICORE: #define __PTRDIFF_WIDTH__ 32
+// TRICORE: #define __SCHAR_MAX__ 127
+// TRICORE: #define __SHRT_MAX__ 32767
+// TRICORE: #define __SIG_ATOMIC_MAX__ 2147483647
+// TRICORE: #define __SIG_ATOMIC_WIDTH__ 32
+// TRICORE: #define __SIZEOF_DOUBLE__ 8
+// TRICORE: #define __SIZEOF_FLOAT__ 4
+// TRICORE: #define __SIZEOF_INT__ 4
+// TRICORE: #define __SIZEOF_LONG_DOUBLE__ 8
+// TRICORE: #define __SIZEOF_LONG_LONG__ 8
+// TRICORE: #define __SIZEOF_LONG__ 4
+// TRICORE: #define __SIZEOF_POINTER__ 4
+// TRICORE: #define __SIZEOF_PTRDIFF_T__ 4
+// TRICORE: #define __SIZEOF_SHORT__ 2
+// TRICORE: #define __SIZEOF_SIZE_T__ 4
+// TRICORE: #define __SIZEOF_WCHAR_T__ 4
+// TRICORE: #define __SIZEOF_WINT_T__ 4
+// TRICORE: #define __SIZE_MAX__ 4294967295UL
+// TRICORE: #define __SIZE_TYPE__ long unsigned int
+// TRICORE: #define __SIZE_WIDTH__ 32
+// TRICORE: #define __STDC_HOSTED__ 0
+// TRICORE: #define __STDC_UTF_16__ 1
+// TRICORE: #define __STDC_UTF_32__ 1
+// TRICORE: #define __STDC_VERSION__ 201112L
+// TRICORE: #define __STDC__ 1
+// TRICORE: #define __UINT16_C_SUFFIX__
+// TRICORE: #define __UINT16_MAX__ 65535
+// TRICORE: #define __UINT16_TYPE__ unsigned short
+// TRICORE: #define __UINT32_C_SUFFIX__ U
+// TRICORE: #define __UINT32_MAX__ 4294967295U
+// TRICORE: #define __UINT32_TYPE__ unsigned int
+// TRICORE: #define __UINT64_C_SUFFIX__ ULL
+// TRICORE: #define __UINT64_MAX__ 18446744073709551615ULL
+// TRICORE: #define __UINT64_TYPE__ long long unsigned int
+// TRICORE: #define __UINT8_C_SUFFIX__
+// TRICORE: #define __UINT8_MAX__ 255
+// TRICORE: #define __UINT8_TYPE__ unsigned char
+// TRICORE: #define __UINTMAX_C_SUFFIX__ ULL
+// TRICORE: #define __UINTMAX_MAX__ 18446744073709551615ULL
+// TRICORE: #define __UINTMAX_TYPE__ long long unsigned int
+// TRICORE: #define __UINTMAX_WIDTH__ 64
+// TRICORE: #define __UINTPTR_MAX__ 4294967295UL
+// TRICORE: #define __UINTPTR_TYPE__ long unsigned int
+// TRICORE: #define __UINTPTR_WIDTH__ 32
+// TRICORE: #define __UINT_FAST16_MAX__ 65535
+// TRICORE: #define __UINT_FAST16_TYPE__ unsigned short
+// TRICORE: #define __UINT_FAST32_MAX__ 4294967295U
+// TRICORE: #define __UINT_FAST32_TYPE__ unsigned int
+// TRICORE: #define __UINT_FAST64_MAX__ 18446744073709551615ULL
+// TRICORE: #define __UINT_FAST64_TYPE__ long long unsigned int
+// TRICORE: #define __UINT_FAST8_MAX__ 255
+// TRICORE: #define __UINT_FAST8_TYPE__ unsigned char
+// TRICORE: #define __UINT_LEAST16_MAX__ 65535
+// TRICORE: #define __UINT_LEAST16_TYPE__ unsigned short
+// TRICORE: #define __UINT_LEAST32_MAX__ 4294967295U
+// TRICORE: #define __UINT_LEAST32_TYPE__ unsigned int
+// TRICORE: #define __UINT_LEAST64_MAX__ 18446744073709551615ULL
+// TRICORE: #define __UINT_LEAST64_TYPE__ long long unsigned int
+// TRICORE: #define __UINT_LEAST8_MAX__ 255
+// TRICORE: #define __UINT_LEAST8_TYPE__ unsigned char
+// TRICORE: #define __USER_LABEL_PREFIX__
+// TRICORE: #define __WCHAR_MAX__ 2147483647
+// TRICORE: #define __WCHAR_TYPE__ int
+// TRICORE: #define __WCHAR_WIDTH__ 32
+// TRICORE: #define __WINT_TYPE__ unsigned int
+// TRICORE: #define __WINT_UNSIGNED__ 1
+// TRICORE: #define __WINT_WIDTH__ 32

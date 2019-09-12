@@ -47,6 +47,7 @@ add_clang_library(clangDriver
   ToolChains/Gnu.cpp
   ToolChains/Haiku.cpp
   ToolChains/HIP.cpp
+  ToolChains/HighTec.cpp
   ToolChains/Hexagon.cpp
   ToolChains/Hurd.cpp
   ToolChains/Linux.cpp

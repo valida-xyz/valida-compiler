@@ -532,6 +532,7 @@ static bool useFramePointerForTargetByDefault(const ArgList &Args,
   case llvm::Triple::ppc64le:
   case llvm::Triple::riscv32:
   case llvm::Triple::riscv64:
+  case llvm::Triple::tricore:
     return !areOptimizationsEnabled(Args);
   default:
     break;
