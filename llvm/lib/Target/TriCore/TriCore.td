@@ -31,6 +31,26 @@ def TriCoreAsmParser : AsmParser {
 }
 
 //===----------------------------------------------------------------------===//
+// Target features.
+//===----------------------------------------------------------------------===//
+
+def Allow16BitInstructions : SubtargetFeature<"allow-16bit", "allow16BitInst",
+                            "true", "Allow usage of 16 bit instructions">;
+
+def Allow32BitInstructions : SubtargetFeature<"allow-32bit", "allow32BitInst",
+                            "true", "Allow usage of 32 bit instructions">;
+
+def Only32BitInstructions : SubtargetFeature<"insn32-only", "allow16BitInst",
+                            "false", "Force usage of 32 bit instructions">;
+
+//===----------------------------------------------------------------------===//
+// Target processors
+//===----------------------------------------------------------------------===//
+
+def : Processor<"tc162", NoItineraries,
+                [Allow16BitInstructions, Allow32BitInstructions]>;
+
+//===----------------------------------------------------------------------===//
 // Target Declaration
 //===----------------------------------------------------------------------===//
 

@@ -11,6 +11,7 @@ add_public_tablegen_target(TriCoreCommonTableGen)
 
 add_llvm_target(TriCoreCodeGen
   TriCoreTargetMachine.cpp
+  TriCoreSubtarget.cpp
   )
 
 add_subdirectory(AsmParser)

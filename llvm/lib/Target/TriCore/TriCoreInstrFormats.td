@@ -23,7 +23,17 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Generic 32-bit Instruction Format
+// Instruction Format Predicates
+//===----------------------------------------------------------------------===//
+
+def Is16BitAllowed : Predicate<"Subtarget->isAllow16BitInst()">,
+                     AssemblerPredicate<"Allow16BitInstructions", "16bit">;
+
+def Is32BitAllowed : Predicate<"Subtarget->isAllow32BitInst()">,
+                     AssemblerPredicate<"Allow32BitInstructions", "32bit">;
+
+//===----------------------------------------------------------------------===//
+// Generic Instruction Formats
 //===----------------------------------------------------------------------===//
 class InstTriCore<dag outs, dag ins, string mnemonic, string operands,
                   list<dag> pattern>
@@ -50,6 +60,7 @@ class T16<dag outs, dag ins, string mnemonic, string operands,
 {
     field bits<16> Inst;
     let Size = 2;
+    list<Predicate> Predicates = [Is16BitAllowed];
 }
 
 
@@ -62,6 +73,7 @@ class T32<dag outs, dag ins, string mnemonic, string operands,
 {
     field bits<32> Inst;
     let Size = 4;
+    list<Predicate> Predicates = [Is32BitAllowed];
 }
 
 

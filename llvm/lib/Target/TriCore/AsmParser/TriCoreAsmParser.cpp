@@ -54,6 +54,22 @@ class TriCoreAsmParser : public MCTargetAsmParser {
 
   bool parseOperand(OperandVector &Operands);
 
+  void setFeatureBits(uint64_t Feature, StringRef FeatureString) {
+    if (!(getSTI().getFeatureBits()[Feature])) {
+      MCSubtargetInfo &STI = copySTI();
+      setAvailableFeatures(
+          ComputeAvailableFeatures(STI.ToggleFeature(FeatureString)));
+    }
+  }
+
+  void clearFeatureBits(uint64_t Feature, StringRef FeatureString) {
+    if (getSTI().getFeatureBits()[Feature]) {
+      MCSubtargetInfo &STI = copySTI();
+      setAvailableFeatures(
+          ComputeAvailableFeatures(STI.ToggleFeature(FeatureString)));
+    }
+  }
+
 public:
   enum TriCoreMatchResultTy {
     Match_Dummy = FIRST_TARGET_MATCH_RESULT_TY,
@@ -243,6 +259,10 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_Success:
     Inst.setLoc(IDLoc);
     Out.EmitInstruction(Inst, getSTI());
+    if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
+      setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
+      setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
+    }
     return false;
   case Match_MissingFeature:
     return Error(IDLoc, "instruction use requires an option to be enabled");
@@ -385,7 +405,22 @@ bool TriCoreAsmParser::ParseInstruction(ParseInstructionInfo &Info,
   return false;
 }
 
-bool TriCoreAsmParser::ParseDirective(AsmToken DirectiveID) { return true; }
+// Returns false on succes
+bool TriCoreAsmParser::ParseDirective(AsmToken DirectiveID) {
+  StringRef IDVal = DirectiveID.getIdentifier();
+  if (IDVal == ".code16") {
+    if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions]))
+      clearFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
+    getParser().getStreamer().EmitAssemblerFlag(MCAF_Code16);
+    return false;
+  }
+  if (IDVal == ".code32") {
+    clearFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
+    getParser().getStreamer().EmitAssemblerFlag(MCAF_Code32);
+    return false;
+  }
+  return true;
+}
 
 extern "C" void LLVMInitializeTriCoreAsmParser() {
   RegisterMCAsmParser<TriCoreAsmParser> X(getTheTriCoreTarget());

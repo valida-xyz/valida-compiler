@@ -63,10 +63,8 @@ static MCInstPrinter *createTriCoreMCInstPrinter(const Triple &T,
 static MCSubtargetInfo *createTriCoreMCSubtargetInfo(const Triple &TT,
                                                    StringRef CPU, StringRef FS) {
   std::string CPUName = CPU;
-  // FIXME: If processors are defined in TriCore.td, then remove comments and
-  // set the string to that processor name, which is decided to be the default
-  /// if (CPUName.empty())
-  ///  CPUName = "tc162";
+  if (CPUName.empty())
+    CPUName = "tc162";
   return createTriCoreMCSubtargetInfoImpl(TT, CPUName, FS);
 }
 
