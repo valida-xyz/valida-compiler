@@ -9645,6 +9645,109 @@ public:
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// TriCore ABI Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+class TriCoreABIInfo : public DefaultABIInfo {
+
+public:
+  TriCoreABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
+
+private:
+  void computeInfo(CGFunctionInfo &FI) const override;
+
+  ABIArgInfo classifyArgumentType(QualType Ty) const;
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override;
+};
+} // end anonymous namespace
+
+void TriCoreABIInfo::computeInfo(CGFunctionInfo &FI) const {
+  QualType RetTy = FI.getReturnType();
+  if (!getCXXABI().classifyReturnType(FI))
+    FI.getReturnInfo() = classifyReturnType(RetTy);
+
+  for (auto &I : FI.arguments())
+    I.info = classifyArgumentType(I.type);
+}
+
+ABIArgInfo TriCoreABIInfo::classifyArgumentType(QualType Ty) const {
+
+  Ty = useFirstFieldIfTransparentUnion(Ty);
+
+  if (!isAggregateTypeForABI(Ty) && !Ty->isVectorType()) {
+    // Treat an enum type as its underlying type.
+    if (const EnumType *EnumTy = Ty->getAs<EnumType>()) {
+      Ty = EnumTy->getDecl()->getIntegerType();
+    }
+
+    return (Ty->isPromotableIntegerType() ? ABIArgInfo::getExtend(Ty)
+                                          : ABIArgInfo::getDirect());
+  }
+
+  // Ignore empty records.
+  if (isEmptyRecord(getContext(), Ty, true))
+    return ABIArgInfo::getIgnore();
+
+  if (isAggregateTypeForABI(Ty)) {
+    uint64_t TySize = getContext().getTypeSize(Ty);
+
+    // Structs of size <= 64-bits are passed in Data registers regardless of
+    // the type of their fields, so we can pass it as an array of integers
+    if (TySize <= 64) {
+      llvm::Type *ElemTy = llvm::Type::getInt32Ty(getVMContext());
+      unsigned SizeRegs = (getContext().getTypeSize(Ty) + 31) / 32;
+
+      return ABIArgInfo::getDirect(llvm::ArrayType::get(ElemTy, SizeRegs));
+    }
+  }
+
+  return getNaturalAlignIndirect(Ty, /*ByVal=*/false);
+}
+
+ABIArgInfo TriCoreABIInfo::classifyReturnType(QualType RetTy) const {
+
+  if (RetTy->isVoidType())
+    return ABIArgInfo::getIgnore();
+
+  // The rules for return and argument types are the same, so defer to
+  // classifyArgumentType.
+  return classifyArgumentType(RetTy);
+}
+
+Address TriCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                                  QualType Ty) const {
+  CharUnits SlotSize = CharUnits::fromQuantity(4);
+
+  // Empty records are ignored for parameter passing purposes.
+  if (isEmptyRecord(getContext(), Ty, true)) {
+    Address Addr(CGF.Builder.CreateLoad(VAListAddr), SlotSize);
+    Addr = CGF.Builder.CreateElementBitCast(Addr, CGF.ConvertTypeForMem(Ty));
+    return Addr;
+  }
+
+  std::pair<CharUnits, CharUnits> SizeAndAlign =
+      getContext().getTypeInfoInChars(Ty);
+
+  // Arguments bigger than 64-bits are passed indirectly.
+  bool IsIndirect = SizeAndAlign.first > 2 * SlotSize;
+
+  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, IsIndirect, SizeAndAlign,
+                          SlotSize, /*AllowHigherAlign=*/true);
+}
+
+namespace {
+class TriCoreTargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  TriCoreTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
+      : TargetCodeGenInfo(new TriCoreABIInfo(CGT)) {}
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // Driver code
 //===----------------------------------------------------------------------===//
 
@@ -9777,6 +9880,9 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::tce:
   case llvm::Triple::tcele:
     return SetCGInfo(new TCETargetCodeGenInfo(Types));
+
+  case llvm::Triple::tricore:
+    return SetCGInfo(new TriCoreTargetCodeGenInfo(Types));
 
   case llvm::Triple::x86: {
     bool IsDarwinVectorABI = Triple.isOSDarwin();
