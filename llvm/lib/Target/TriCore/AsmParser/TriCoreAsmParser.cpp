@@ -8,6 +8,7 @@
 
 #include "InstPrinter/TriCoreInstPrinter.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
+#include "TargetInfo/TriCoreTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCContext.h"

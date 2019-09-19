@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreTargetMachine.h"
+#include "TargetInfo/TriCoreTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"

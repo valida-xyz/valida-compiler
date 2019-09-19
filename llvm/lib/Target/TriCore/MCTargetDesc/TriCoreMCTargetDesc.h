@@ -32,8 +32,6 @@ class Triple;
 class raw_ostream;
 class raw_pwrite_stream;
 
-Target &getTheTriCoreTarget();
-
 MCCodeEmitter *createTriCoreMCCodeEmitter(const MCInstrInfo &MCII,
                                           const MCRegisterInfo &MRI,
                                           MCContext &Ctx);

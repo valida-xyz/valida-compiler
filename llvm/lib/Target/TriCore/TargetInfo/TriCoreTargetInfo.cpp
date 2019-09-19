@@ -6,16 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TriCoreTargetInfo.h"
 #include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
-namespace llvm {
-Target &getTheTriCoreTarget() {
+Target &llvm::getTheTriCoreTarget() {
   static Target TheTriCoreTarget;
   return TheTriCoreTarget;
 }
-} // namespace llvm
 
 extern "C" void LLVMInitializeTriCoreTargetInfo() {
   RegisterTarget<Triple::tricore> X(getTheTriCoreTarget(), "tricore",

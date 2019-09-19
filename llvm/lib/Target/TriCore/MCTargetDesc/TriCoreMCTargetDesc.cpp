@@ -13,6 +13,7 @@
 #include "InstPrinter/TriCoreInstPrinter.h"
 #include "TriCoreMCTargetDesc.h"
 #include "TriCoreMCAsmInfo.h"
+#include "TargetInfo/TriCoreTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
