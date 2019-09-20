@@ -13,6 +13,8 @@ include "llvm/Target/Target.td"
 //===----------------------------------------------------------------------===//
 
 include "TriCoreRegisterInfo.td"
+include "TriCoreRegisterBanks.td"
+include "TriCoreCallingConv.td"
 
 //===----------------------------------------------------------------------===//
 // Instruction Descriptions.

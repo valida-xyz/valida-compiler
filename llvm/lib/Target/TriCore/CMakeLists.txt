@@ -6,10 +6,23 @@ tablegen(LLVM TriCoreGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM TriCoreGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM TriCoreGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM TriCoreGenSubtargetInfo.inc -gen-subtarget)
+tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
+tablegen(LLVM TriCoreGenRegisterBank.inc -gen-register-bank)
+tablegen(LLVM TriCoreGenCallingConv.inc -gen-callingconv)
 
 add_public_tablegen_target(TriCoreCommonTableGen)
 
 add_llvm_target(TriCoreCodeGen
+  TriCoreAsmPrinter.cpp
+  TriCoreCallLowering.cpp
+  TriCoreFrameLowering.cpp
+  TriCoreInstrInfo.cpp
+  TriCoreInstructionSelector.cpp
+  TriCoreISelLowering.cpp
+  TriCoreLegalizerInfo.cpp
+  TriCoreMCInstLower.cpp
+  TriCoreRegisterBankInfo.cpp
+  TriCoreRegisterInfo.cpp
   TriCoreTargetMachine.cpp
   TriCoreSubtarget.cpp
   )

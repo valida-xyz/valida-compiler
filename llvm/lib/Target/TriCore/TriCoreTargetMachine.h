@@ -14,6 +14,11 @@
 #define LLVM_LIB_TARGET_TRICORE_TRICORETARGETMACHINE_H
 
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
+#include "TriCoreSubtarget.h"
+#include "llvm/CodeGen/GlobalISel/IRTranslator.h"
+#include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
+#include "llvm/CodeGen/GlobalISel/Legalizer.h"
+#include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
@@ -21,12 +26,19 @@
 namespace llvm {
 class TriCoreTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  mutable StringMap<std::unique_ptr<TriCoreSubtarget>> SubtargetMap;
 
 public:
   TriCoreTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
                        Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
                        CodeGenOpt::Level OL, bool JIT);
+
+  const TriCoreSubtarget *getSubtargetImpl(const Function &F) const override;
+  // DO NOT IMPLEMENT: There is no such thing as a valid default subtarget,
+  // subtargets are per-function entities based on the target-specific
+  // attributes of each function.
+  const TriCoreSubtarget *getSubtargetImpl() const = delete;
 
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 

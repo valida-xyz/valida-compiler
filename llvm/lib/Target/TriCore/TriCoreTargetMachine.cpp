@@ -25,6 +25,8 @@ using namespace llvm;
 
 extern "C" void LLVMInitializeTriCoreTarget() {
   RegisterTargetMachine<TriCoreTargetMachine> X(getTheTriCoreTarget());
+  auto PR = PassRegistry::getPassRegistry();
+  initializeGlobalISel(*PR);
 }
 
 static std::string computeDataLayout(const Triple &TT) {
@@ -48,8 +50,72 @@ TriCoreTargetMachine::TriCoreTargetMachine(const Target &T, const Triple &TT,
                         getEffectiveCodeModel(CM, CodeModel::Small), OL),
       TLOF(std::make_unique<TargetLoweringObjectFileELF>()) {
   initAsmInfo();
+
+  // Enable GlobalISel unconditionally. We do no support any other instruction
+  // selector
+  setGlobalISel(true);
+  setGlobalISelAbort(GlobalISelAbortMode::Enable);
 }
 
+const TriCoreSubtarget *
+TriCoreTargetMachine::getSubtargetImpl(const Function &F) const {
+  Attribute CPUAttr = F.getFnAttribute("target-cpu");
+  Attribute FSAttr = F.getFnAttribute("target-features");
+
+  std::string CPU = !CPUAttr.hasAttribute(Attribute::None)
+                        ? CPUAttr.getValueAsString().str()
+                        : TargetCPU;
+  std::string FS = !FSAttr.hasAttribute(Attribute::None)
+                       ? FSAttr.getValueAsString().str()
+                       : TargetFS;
+
+  auto &I = SubtargetMap[CPU + FS];
+  if (!I) {
+    // This needs to be done before we create a new subtarget since any
+    // creation will depend on the TM and the code generation flags on the
+    // function that reside in TargetOptions.
+    resetTargetOptions(F);
+    I = std::make_unique<TriCoreSubtarget>(TargetTriple, CPU, FS, *this);
+  }
+  return I.get();
+}
+
+namespace {
+
+/// TriCore Code Generator Pass Configuration Options.
+class TriCorePassConfig : public TargetPassConfig {
+public:
+  TriCorePassConfig(TriCoreTargetMachine &TM, PassManagerBase &PM)
+      : TargetPassConfig(TM, PM) {}
+
+  bool addIRTranslator() override;
+  bool addLegalizeMachineIR() override;
+  bool addRegBankSelect() override;
+  bool addGlobalInstructionSelect() override;
+};
+
+} // end anonymous namespace
+
 TargetPassConfig *TriCoreTargetMachine::createPassConfig(PassManagerBase &PM) {
-  return new TargetPassConfig(*this, PM);
+  return new TriCorePassConfig(*this, PM);
+}
+
+bool TriCorePassConfig::addIRTranslator() {
+  addPass(new IRTranslator());
+  return false;
+}
+
+bool TriCorePassConfig::addLegalizeMachineIR() {
+  addPass(new Legalizer());
+  return false;
+}
+
+bool TriCorePassConfig::addRegBankSelect() {
+  addPass(new RegBankSelect());
+  return false;
+}
+
+bool TriCorePassConfig::addGlobalInstructionSelect() {
+  addPass(new InstructionSelect());
+  return false;
 }

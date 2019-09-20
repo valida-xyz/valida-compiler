@@ -28,5 +28,5 @@ has_asmprinter = 1
 type = Library
 name = TriCoreCodeGen
 parent = TriCore
-required_libraries = AsmPrinter Core CodeGen MC TriCoreAsmPrinter TriCoreDesc TriCoreInfo Support Target
+required_libraries = AsmPrinter Core CodeGen MC TriCoreAsmPrinter TriCoreDesc TriCoreInfo Support Target SelectionDAG GlobalISel
 add_to_library_groups = TriCore
