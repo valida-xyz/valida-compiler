@@ -17,6 +17,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/EndianStream.h"
@@ -33,9 +34,11 @@ class TriCoreMCCodeEmitter : public MCCodeEmitter {
   TriCoreMCCodeEmitter(const TriCoreMCCodeEmitter &) = delete;
   void operator=(const TriCoreMCCodeEmitter &) = delete;
   MCContext &Ctx;
+  MCInstrInfo const &MCII;
 
 public:
-  TriCoreMCCodeEmitter(MCContext &ctx) : Ctx(ctx) {}
+  TriCoreMCCodeEmitter(MCContext &ctx, const MCInstrInfo &MCII)
+      : Ctx(ctx), MCII(MCII) {}
 
   ~TriCoreMCCodeEmitter() override {}
 
@@ -54,23 +57,46 @@ public:
   unsigned getMachineOpValue(const MCInst &MI, const MCOperand &MO,
                              SmallVectorImpl<MCFixup> &Fixups,
                              const MCSubtargetInfo &STI) const;
+
+  // Right shift the value by N
+  template <int N>
+  unsigned getScaledSImmOpValue(const MCInst &MI, unsigned OpNo,
+                                SmallVectorImpl<MCFixup> &Fixups,
+                                const MCSubtargetInfo &STI) const;
+
+  unsigned getDisp24Abs(const MCInst &MI, unsigned OpNo,
+                        SmallVectorImpl<MCFixup> &Fixups,
+                        const MCSubtargetInfo &STI) const;
 };
 } // end anonymous namespace
 
 MCCodeEmitter *llvm::createTriCoreMCCodeEmitter(const MCInstrInfo &MCII,
                                                 const MCRegisterInfo &MRI,
                                                 MCContext &Ctx) {
-  return new TriCoreMCCodeEmitter(Ctx);
+  return new TriCoreMCCodeEmitter(Ctx, MCII);
 }
 
 void TriCoreMCCodeEmitter::encodeInstruction(const MCInst &MI, raw_ostream &OS,
                                              SmallVectorImpl<MCFixup> &Fixups,
                                              const MCSubtargetInfo &STI) const {
-  // FIXME: 16 bit Instruction emission is also need to be supported
-  // but that might need code which will be added in later patches.
-  // Look at the assembler prototype code for intuition.
-  uint32_t Bits = getBinaryCodeForInstr(MI, Fixups, STI);
-  support::endian::write(OS, Bits, support::little);
+  const MCInstrDesc &Desc = MCII.get(MI.getOpcode());
+  // Get byte count of instruction.
+  unsigned Size = Desc.getSize();
+
+  switch (Size) {
+  default:
+    llvm_unreachable("Unhandled encodeInstruction length!");
+  case 2: {
+    uint16_t Bits = getBinaryCodeForInstr(MI, Fixups, STI);
+    support::endian::write<uint16_t>(OS, Bits, support::little);
+    break;
+  }
+  case 4: {
+    uint32_t Bits = getBinaryCodeForInstr(MI, Fixups, STI);
+    support::endian::write<uint32_t>(OS, Bits, support::little);
+    break;
+  }
+  }
   ++MCNumEmitted; // Keep track of the # of mi's emitted.
 }
 
@@ -87,6 +113,32 @@ TriCoreMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
 
   llvm_unreachable("Unhandled expression!");
   return 0;
+}
+
+template <int N>
+unsigned
+TriCoreMCCodeEmitter::getScaledSImmOpValue(const MCInst &MI, unsigned OpNo,
+                                           SmallVectorImpl<MCFixup> &Fixups,
+                                           const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  assert(MO.isImm() && "Operand must be an immediate.");
+  if (MO.isImm()) {
+    unsigned Value = MO.getImm();
+    return (Value >> N);
+  }
+  return 0; // to silence warnigns, later relocation will be generated here
+}
+
+unsigned TriCoreMCCodeEmitter::getDisp24Abs(const MCInst &MI, unsigned OpNo,
+                                            SmallVectorImpl<MCFixup> &Fixups,
+                                            const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  assert(MO.isImm() && "Operand must be an immediate.");
+  if (MO.isImm()) {
+    unsigned Value = MO.getImm();
+    return ((Value & 0xf0000000) >> 8) | ((Value & 0x1fffff) >> 1);
+  }
+  return 0; // to silence warnigns, later relocation will be generated here
 }
 
 #include "TriCoreGenMCCodeEmitter.inc"

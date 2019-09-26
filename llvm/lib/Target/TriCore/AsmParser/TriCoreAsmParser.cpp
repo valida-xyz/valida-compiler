@@ -152,6 +152,18 @@ public:
     return (isConstantImm() && isUInt<N>(getConstantImm()));
   }
 
+  template <int WIDTH, int SHIFT> bool isScaledSImm() const {
+    return (isConstantImm() && isShiftedInt<WIDTH, SHIFT>(getConstantImm()));
+  }
+
+  // checking against {disp24[23:20], 7'b0, disp24[19:0], 1'b0} form
+  bool isDisp24Abs() const {
+    if (!isConstantImm())
+      return false;
+
+    return (getConstantImm() & ~0xf01ffffe) == 0;
+  }
+
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
   /// getEndLoc - Gets location of the last token of this operand
@@ -282,6 +294,18 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 15),
                                       (1 << 15) - 1);
+  case Match_InvalidSImm8_Lsb1:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 8),
+                                      (1 << 8) - 2),
+           "value must be even integer and in the range";
+  case Match_InvalidSImm24_Lsb1:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 24),
+                                      (1 << 24) - 2),
+           "value must be even integer and in the range";
+  case Match_InvalidDisp24Abs:
+    ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
+    return Error(ErrorLoc,
+                 "value must be a 32 bit address & bit 27-21, 0 must be 0");
   }
 
   llvm_unreachable("Unknown match type detected!");
