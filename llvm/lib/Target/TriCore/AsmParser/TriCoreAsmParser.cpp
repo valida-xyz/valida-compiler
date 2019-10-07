@@ -296,6 +296,9 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                       (1 << 3) - 1);
   case Match_InvalidUImm8:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 8) - 1);
+  case Match_InvalidSImm9:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 8),
+                                      (1 << 8) - 1);
   case Match_InvalidSImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 15),
                                       (1 << 15) - 1);

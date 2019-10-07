@@ -68,6 +68,9 @@ def uimm8 : GenericUnsignedImmediate<8>;
 // A 8-bit signed immediate, shifted left by 1
 def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
 
+// A 9-bit signed immediate.
+def simm9 : GenericSignedImmediate<9>;
+
 // A 16-bit signed immediate.
 def simm16 : GenericSignedImmediate<16>;
 
@@ -99,12 +102,30 @@ class MOVE_RLC<bits<8> opc1, string mnemonic, Operand op_type = uimm16,
               :  RLC<opc1, (outs RC:$d), (ins op_type:$const16),
                      mnemonic, "\t$d, $const16">;
 
+// 2.1.2 Addition and Subtraction.
+
+class ADDSUB_RC<bits<8> opc1, bits<7> opc2, string mnemonic>
+              :  RC<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, simm9:$const9),
+                  mnemonic, "\t$d, $s1, $const9">;
+
+let n = 0 in
+class ADDSUB_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+              :  RR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s1, $s2">;
+
+let Constraints = "$s1_d = $src" in
+class ADDSUB_SRR<bits<8> opc1, string mnemonic>
+              :  SRR<opc1, (outs DataRegs:$s1_d),
+                  (ins DataRegs:$src, DataRegs:$s2),
+                  mnemonic, "\t$s1_d, $s2">;
+
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
 
 // 2.9.1 Unconditional Branch Instructions.
-
 
 class UBI_B<bits<8> opc1, string mnemonic, Operand op_type>
                 :   B<opc1, (outs), (ins op_type:$disp24),
@@ -146,20 +167,6 @@ class UBI_RR<bits<8> opc2, string mnemonic>
 // already implemented then name the second one MOV_dsc (small constant)
 // If the second one implemented first (const4 one), then name the const16
 // one to MOV_dlc (long constant).
-
-let Defs = [PSW] in {
-    def ADDrr  : RR<0x0B, 0x00,
-                (outs DataRegs:$d),
-                (ins DataRegs:$s1, DataRegs:$s2),
-                "add", "\t$d, $s1, $s2",
-                []>;
-
-    def ADDrc  : RLC<0x1B,
-                 (outs DataRegs:$d),
-                 (ins DataRegs:$s1, simm16:$const16),
-                 "addi", "\t$d, $s1, $const16",
-                 []>;
-} // Defs = [PSW]
 
 //===----------------------------------------------------------------------===//
 //  2.1 Integer Arithmetic.
@@ -210,6 +217,107 @@ let isMoveImm = 1 in {
   // MOVH
   def MOVH_dc     : MOVE_RLC<0x7B, "movh">;
 } // isMoveImm = 1
+
+// 2.1.2 Addition and Subtraction.
+
+let Defs = [PSW] in {
+  let isCommutable = 1, isAdd = 1 in {
+    // ADD
+    def ADD_ddc        :  ADDSUB_RC<0x8B, 0x00, "add">;
+    def ADD_ddd        :  ADDSUB_RR<0x0B, 0x00, "add">;
+
+    let Constraints = "$s1_d = $src" in
+    def ADD_16_dc      : SRC<0xC2, (outs DataRegs:$s1_d), 
+                            (ins DataRegs:$src, simm4:$const4),
+                            "add", "\t$s1_d, $const4">;
+
+    def ADD_16_dd15c   : SRC<0x92, (outs DataRegs:$s1_d), 
+                            (ins ImplDataReg:$d15, simm4:$const4),
+                            "add", "\t$s1_d, $d15, $const4">;
+
+    def ADD_16_d15dc   : SRC<0x9A, (outs ImplDataReg:$d15), 
+                            (ins DataRegs:$s1_d, simm4:$const4),
+                            "add", "\t$d15, $s1_d, $const4">;
+
+    def ADD_16_dd      :  ADDSUB_SRR<0x42, "add">;
+
+    def ADD_16_dd15d   : SRR<0x12, (outs DataRegs:$s1_d),
+                            (ins ImplDataReg:$d15, DataRegs:$s2),
+                            "add", "\t$s1_d, $d15, $s2">;
+                            
+    def ADD_16_d15dd   : SRR<0x1A, (outs ImplDataReg:$d15),
+                            (ins DataRegs:$s1_d, DataRegs:$s2),
+                            "add", "\t$d15, $s1_d, $s2">;
+
+    // ADDC
+    let Uses = [PSW] in {
+      def ADDC_ddc     :  ADDSUB_RC<0x8B, 0x05, "addc">;
+      def ADDC_ddd     :  ADDSUB_RR<0x0B, 0x05, "addc">;
+    } // Uses = [PSW]
+
+    // ADDI
+    def ADDI_ddc       : RLC<0x1B, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, simm16:$const16),
+                            "addi", "\t$d, $s1, $const16">;
+
+    // ADDIH
+    def ADDIH_ddc      : RLC<0x9B, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, uimm16:$const16),
+                            "addih", "\t$d, $s1, $const16">;
+
+    // ADDS
+    def ADDS_ddc       :  ADDSUB_RC<0x8B, 0x02, "adds">;
+    def ADDS_ddd       :  ADDSUB_RR<0x0B, 0x02, "adds">;
+    def ADDS_16_dd     :  ADDSUB_SRR<0x22, "adds">;
+
+    // ADDS.U
+    def ADDSU_ddc      :  ADDSUB_RC<0x8B, 0x03, "adds.u">;
+    def ADDSU_ddd      :  ADDSUB_RR<0x0B, 0x03, "adds.u">;
+
+    // ADDX
+    def ADDX_ddc       :  ADDSUB_RC<0x8B, 0x04, "addx">;
+    def ADDX_ddd       :  ADDSUB_RR<0x0B, 0x04, "addx">;
+  } // isCommutable = 1, isAdd = 1
+
+  // SUB
+  def SUB_ddd          :  ADDSUB_RR<0x0B, 0x08, "sub">;
+  def SUB_16_dd        :  ADDSUB_SRR<0xA2, "sub">;
+
+  def SUB_16_dd15d     : SRR<0x52, (outs DataRegs:$s1_d),
+                            (ins ImplDataReg:$d15, DataRegs:$s2),
+                            "sub", "\t$s1_d, $d15, $s2">;
+
+  def SUB_16_d15dd     : SRR<0x5A, (outs ImplDataReg:$d15),
+                              (ins DataRegs:$s1_d, DataRegs:$s2),
+                              "sub", "\t$d15, $s1_d, $s2">;
+
+  // SUBC
+  let Uses = [PSW] in
+  def SUBC_ddd         :  ADDSUB_RR<0x0B, 0x0D, "subc">;
+
+  // SUBS
+  def SUBS_ddd         :  ADDSUB_RR<0x0B, 0x0A, "subs">;
+  def SUBS_16_dd       :  ADDSUB_SRR<0x62, "subs">;
+
+  // SUBS.U
+  def SUBSU_ddd        :  ADDSUB_RR<0x0B, 0x0B, "subs.u">;
+
+  // SUBX
+  def SUBX_ddd         :  ADDSUB_RR<0x0B, 0x0C, "subx">;
+
+  // RSUB
+  def RSUB_ddc         :  ADDSUB_RC<0x8B, 0x08, "rsub">;
+
+  let Constraints = "$s1_d = $src" in
+  def RSUB_16_d        :  SR<0x32, 0x05, (outs DataRegs:$s1_d),
+                            (ins DataRegs:$src), "rsub", "\t$s1_d">;
+
+  // RSUBS
+  def RSUBS_ddc        :  ADDSUB_RC<0x8B, 0x0A, "rsubs">;
+
+  // RSUBS.U
+  def RSUBSU_ddc       :  ADDSUB_RC<0x8B, 0x0B, "rsubs.u">;
+} // Defs = [PSW]
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
