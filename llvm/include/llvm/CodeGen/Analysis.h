@@ -62,6 +62,13 @@ inline unsigned ComputeLinearIndex(Type *Ty,
   return ComputeLinearIndex(Ty, Indices.begin(), Indices.end(), CurIndex);
 }
 
+/// TraverseIRType - Given an LLVM IR type, traverse the underlying
+/// non-aggregate types and call the given callback function with
+/// the type as an argument.
+void TraverseIRType(const DataLayout &DL, Type *Ty,
+                    SmallVectorImpl<uint64_t> *Offsets, uint64_t StartingOffset,
+                    std::function<void(Type *)> Callback);
+
 /// ComputeValueVTs - Given an LLVM IR type, compute a sequence of
 /// EVTs that represent all the individual underlying
 /// non-aggregate types that comprise it.

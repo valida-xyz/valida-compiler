@@ -33,7 +33,7 @@ public:
 
     WIntType = UnsignedInt;
 
-    resetDataLayout("e-m:e-i64:32-p:32:32-f64:32-n32-a:0:32");
+    resetDataLayout("e-m:e-i64:32-p:32:32-f64:32-n32-a:0:32-S64");
 
     TLSSupported = false;
   }

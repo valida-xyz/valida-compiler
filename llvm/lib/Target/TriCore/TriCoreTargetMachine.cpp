@@ -30,7 +30,7 @@ extern "C" void LLVMInitializeTriCoreTarget() {
 }
 
 static std::string computeDataLayout(const Triple &TT) {
-  return "e-m:e-i64:32-p:32:32-f64:32-n32-a:0:32";
+  return "e-m:e-i64:32-p:32:32-f64:32-n32-a:0:32-S64";
 }
 
 static Reloc::Model getEffectiveRelocModel(Optional<Reloc::Model> RM) {

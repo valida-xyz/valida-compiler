@@ -14,6 +14,7 @@ add_public_tablegen_target(TriCoreCommonTableGen)
 
 add_llvm_target(TriCoreCodeGen
   TriCoreAsmPrinter.cpp
+  TriCoreCallingConvention.cpp
   TriCoreCallLowering.cpp
   TriCoreFrameLowering.cpp
   TriCoreInstrInfo.cpp

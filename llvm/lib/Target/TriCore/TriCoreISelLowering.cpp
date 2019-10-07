@@ -36,5 +36,19 @@ using namespace llvm;
 
 #define DEBUG_TYPE "TriCore-lower"
 
-TriCoreTargetLowering::TriCoreTargetLowering(const TargetMachine &TM)
-    : TargetLowering(TM) {}
+TriCoreTargetLowering::TriCoreTargetLowering(const TargetMachine &TM,
+                                             const TriCoreSubtarget &STI)
+    : TargetLowering(TM) {
+
+  // Set up the register classes.
+  addRegisterClass(MVT::i32, &TriCore::DataRegsRegClass);
+  addRegisterClass(MVT::i64, &TriCore::ExtDataRegsRegClass);
+
+  // Compute derived properties from the register classes
+  computeRegisterProperties(STI.getRegisterInfo());
+}
+
+bool TriCoreTargetLowering::functionArgumentNeedsConsecutiveRegisters(
+    Type *Ty, CallingConv::ID CallConv, bool isVarArg) const {
+  return Ty->isArrayTy();
+}

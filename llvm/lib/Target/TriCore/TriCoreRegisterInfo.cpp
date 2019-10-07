@@ -36,6 +36,12 @@ TriCoreRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   return CSR_NoRegs_SaveList;
 }
 
+const uint32_t *
+TriCoreRegisterInfo::getCallPreservedMask(const MachineFunction &MF,
+                                          CallingConv::ID) const {
+  return CSR_TriCore_UpperContext_RegMask;
+}
+
 BitVector
 TriCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());

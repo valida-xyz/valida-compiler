@@ -23,7 +23,12 @@ namespace llvm {
 class TriCoreTargetLowering : public TargetLowering {
 
 public:
-  explicit TriCoreTargetLowering(const TargetMachine &TM);
+  explicit TriCoreTargetLowering(const TargetMachine &TM,
+                                 const TriCoreSubtarget &STI);
+
+  bool functionArgumentNeedsConsecutiveRegisters(Type *Ty,
+                                                 CallingConv::ID CallConv,
+                                                 bool isVarArg) const override;
 };
 } // namespace llvm
 

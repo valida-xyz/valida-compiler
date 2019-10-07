@@ -43,7 +43,7 @@ TriCoreSubtarget::TriCoreSubtarget(const Triple &TT, const std::string &CPU,
                                    const TargetMachine &TM)
     : TriCoreGenSubtargetInfo(TT, CPU, FS),
       FrameLowering(initializeSubtargetDependencies(FS, CPU)), InstrInfo(),
-      RegInfo(), TLInfo(TM) {
+      RegInfo(), TLInfo(TM, *this) {
   CallLoweringInfo.reset(new TriCoreCallLowering(*getTargetLowering()));
   Legalizer.reset(new TriCoreLegalizerInfo(*this));
 

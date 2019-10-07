@@ -73,6 +73,39 @@ unsigned llvm::ComputeLinearIndex(Type *Ty,
   return CurIndex + 1;
 }
 
+void llvm::TraverseIRType(const DataLayout &DL, Type *Ty,
+                          SmallVectorImpl<uint64_t> *Offsets,
+                          uint64_t StartingOffset,
+                          std::function<void(Type *)> Callback) {
+  // Given a struct type, recursively traverse the elements.
+  if (StructType *STy = dyn_cast<StructType>(Ty)) {
+    const StructLayout *SL = DL.getStructLayout(STy);
+    for (StructType::element_iterator EB = STy->element_begin(), EI = EB,
+                                      EE = STy->element_end();
+         EI != EE; ++EI)
+      TraverseIRType(DL, *EI, Offsets,
+                     StartingOffset + SL->getElementOffset(EI - EB), Callback);
+    return;
+  }
+  // Given an array type, recursively traverse the elements.
+  if (ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
+    Type *EltTy = ATy->getElementType();
+    uint64_t EltSize = DL.getTypeAllocSize(EltTy);
+    for (unsigned i = 0, e = ATy->getNumElements(); i != e; ++i)
+      TraverseIRType(DL, EltTy, Offsets, StartingOffset + i * EltSize,
+                     Callback);
+    return;
+  }
+  // Interpret void as zero return values.
+  if (Ty->isVoidTy())
+    return;
+
+  Callback(Ty);
+
+  if (Offsets)
+    Offsets->push_back(StartingOffset);
+}
+
 /// ComputeValueVTs - Given an LLVM IR type, compute a sequence of
 /// EVTs that represent all the individual underlying
 /// non-aggregate types that comprise it.
