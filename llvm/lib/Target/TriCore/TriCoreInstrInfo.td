@@ -31,6 +31,8 @@ class ImmAsmOperand<string prefix, int width>
 
 class SImmAsmOperand<int width> : ImmAsmOperand<"S", width>;
 
+class UImmAsmOperand<int width> : ImmAsmOperand<"U", width>;
+
 // for M + N bit long operands having their least significant N bits 0
 class SImmLsbNIsZero<int M, int N> : AsmOperandClass {
   let Name = "SImm" # M # "_Lsb" # N;
@@ -39,24 +41,41 @@ class SImmLsbNIsZero<int M, int N> : AsmOperandClass {
   let DiagnosticType = !strconcat("Invalid", Name);
 }
 
-// A 8-bit signed immediate, shifted left by 1
-def simm8_lsb0 : Operand<OtherVT> {
-  let ParserMatchClass = SImmLsbNIsZero<8, 1>;
-  let EncoderMethod = "getScaledSImmOpValue<1>";
-}
-
-// A 16-bit signed immediate.
-def simm16 : Operand<OtherVT> {
-  let ParserMatchClass = SImmAsmOperand<16>;
+//// Operand Classes
+class GenericSignedImmediate<int width> : Operand<OtherVT> {
+  let ParserMatchClass = SImmAsmOperand<width>;
   // FIXME: Add when it becames relevant (ex.: relocations)
   /// let EncoderMethod = "getImmOpValue";
 }
 
-// A 24-bit signed immediate, shifted left by 1
-def simm24_lsb0 : Operand<OtherVT> {
-  let ParserMatchClass = SImmLsbNIsZero<24, 1>;
-  let EncoderMethod = "getScaledSImmOpValue<1>";
+class GenericUnsignedImmediate<int width> : Operand<OtherVT> {
+  let ParserMatchClass = UImmAsmOperand<width>;
 }
+
+class GenericSImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
+  let ParserMatchClass = SImmLsbNIsZero<width, shift>;
+  let EncoderMethod = "getScaledSImmOpValue<" # shift # ">";
+}
+
+//// Operand Definitions
+
+// A 4-bit signed immediate.
+def simm4 : GenericSignedImmediate<4>;
+
+// A 8-bit unsigned immediate.
+def uimm8 : GenericUnsignedImmediate<8>;
+
+// A 8-bit signed immediate, shifted left by 1
+def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
+
+// A 16-bit signed immediate.
+def simm16 : GenericSignedImmediate<16>;
+
+// A 16-bit unsigned immediate.
+def uimm16 : GenericUnsignedImmediate<16>;
+
+// A 24-bit signed immediate, shifted left by 1
+def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1>;
 
 // A 24-bit signed immediate as 32 bit absolute address
 def disp24_abs : Operand<OtherVT> {
@@ -67,6 +86,18 @@ def disp24_abs : Operand<OtherVT> {
 //===----------------------------------------------------------------------===//
 // Instruction Class Templates
 //===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+//  2.1 Integer Arithmetic.
+//
+
+// 2.1.1 Move.
+
+let s1 = 0 in
+class MOVE_RLC<bits<8> opc1, string mnemonic, Operand op_type = uimm16,
+               RegisterClass RC = DataRegs>
+              :  RLC<opc1, (outs RC:$d), (ins op_type:$const16),
+                     mnemonic, "\t$d, $const16">;
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
@@ -92,6 +123,30 @@ class UBI_RR<bits<8> opc2, string mnemonic>
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
 
+// Naming convention for the instruction definition:
+
+// d - data register operand
+// a - address register operand
+// c - constant operand
+// sc - small constant operand
+// lc - long constant operand
+// d15 - d15 register operand
+// a15 - a15 register operand
+// a10 - a10 register operand
+// e - extended data register operand
+// p - extended address register operand
+// _16 - 16 bit instruction (always append it first)
+// _poi - post increment
+
+// Ex.: MOV_16_d15c is a 16 bit length MOV instruction with d15 and a 
+// constant operands in this order.
+// Use sc or lc when there would be two instruction with the same name.
+// Ex.: MOV D[a], const16, MOV D[a], const4
+// Both would have the name MOV_dc so in this case if the first one is
+// already implemented then name the second one MOV_dsc (small constant)
+// If the second one implemented first (const4 one), then name the const16
+// one to MOV_dlc (long constant).
+
 let Defs = [PSW] in {
     def ADDrr  : RR<0x0B, 0x00,
                 (outs DataRegs:$d),
@@ -105,6 +160,56 @@ let Defs = [PSW] in {
                  "addi", "\t$d, $s1, $const16",
                  []>;
 } // Defs = [PSW]
+
+//===----------------------------------------------------------------------===//
+//  2.1 Integer Arithmetic.
+//
+
+// 2.1.1 Move.
+
+// MOV
+let isMoveImm = 1 in {
+  def MOV_dc      : MOVE_RLC<0x3B, "mov", simm16>;
+  def MOV_ec      : MOVE_RLC<0xFB, "mov", simm16, ExtDataRegs>;
+} // isMoveImm = 1
+
+let isMoveReg = 1 in {
+  let n = 0, s1 = 0 in {
+    def MOV_dd    :  RR<0x0B, 0x1F, (outs DataRegs:$d), (ins DataRegs:$s2),
+                        "mov", "\t$d, $s2">;
+
+    def MOV_ed    :  RR<0x0B, 0x80, (outs ExtDataRegs:$d), (ins DataRegs:$s2),
+                        "mov", "\t$d, $s2">;
+  } // n = 0, s1 = 0
+
+  let n = 0 in
+  def MOV_edd     :  RR<0x0B, 0x81, (outs ExtDataRegs:$d),
+                        (ins DataRegs:$s1, DataRegs:$s2),
+                        "mov", "\t$d, $s1, $s2">;
+} // isMoveReg = 1
+
+let isMoveImm = 1 in {
+  def MOV_16_d15c :  SC<0xDA, (outs ImplDataReg:$d15), (ins uimm8:$const8),
+                        "mov", "\t$d15, $const8">;
+
+  def MOV_16_dc   : SRC<0x82, (outs DataRegs:$s1_d), (ins simm4:$const4),
+                        "mov", "\t$s1_d, $const4">;
+
+  def MOV_16_ec   : SRC<0xD2, (outs ExtDataRegs:$s1_d), (ins simm4:$const4),
+                        "mov", "\t$s1_d, $const4">;
+} // isMoveImm = 1
+
+let isMoveReg = 1 in
+def MOV_16_dd     : SRR<0x02, (outs DataRegs:$s1_d), (ins DataRegs:$s2),
+                        "mov", "\t$s1_d, $s2">;
+
+let isMoveImm = 1 in {
+  // MOV.U
+  def MOVU_dc     : MOVE_RLC<0xBB, "mov.u">;
+
+  // MOVH
+  def MOVH_dc     : MOVE_RLC<0x7B, "movh">;
+} // isMoveImm = 1
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
