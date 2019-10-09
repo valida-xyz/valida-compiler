@@ -245,21 +245,23 @@ let isMoveImm = 1 in {
 // 2.1.2 Addition and Subtraction.
 
 let Defs = [PSW] in {
-  let isCommutable = 1, isAdd = 1 in {
+  let isAdd = 1 in {
     // ADD
     def ADD_ddc        :  ADDSUB_RC<0x8B, 0x00, "add">;
+
+    let isCommutable = 1 in
     def ADD_ddd        :  ADDSUB_RR<0x0B, 0x00, "add">;
 
     let Constraints = "$s1_d = $src" in
-    def ADD_16_dc      : SRC<0xC2, (outs DataRegs:$s1_d), 
+    def ADD_16_dc      : SRC<0xC2, (outs DataRegs:$s1_d),
                             (ins DataRegs:$src, simm4:$const4),
                             "add", "\t$s1_d, $const4">;
 
-    def ADD_16_dd15c   : SRC<0x92, (outs DataRegs:$s1_d), 
+    def ADD_16_dd15c   : SRC<0x92, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, simm4:$const4),
                             "add", "\t$s1_d, $d15, $const4">;
 
-    def ADD_16_d15dc   : SRC<0x9A, (outs ImplDataReg:$d15), 
+    def ADD_16_d15dc   : SRC<0x9A, (outs ImplDataReg:$d15),
                             (ins DataRegs:$s1_d, simm4:$const4),
                             "add", "\t$d15, $s1_d, $const4">;
 
@@ -268,7 +270,7 @@ let Defs = [PSW] in {
     def ADD_16_dd15d   : SRR<0x12, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, DataRegs:$s2),
                             "add", "\t$s1_d, $d15, $s2">;
-                            
+
     def ADD_16_d15dd   : SRR<0x1A, (outs ImplDataReg:$d15),
                             (ins DataRegs:$s1_d, DataRegs:$s2),
                             "add", "\t$d15, $s1_d, $s2">;
@@ -276,6 +278,8 @@ let Defs = [PSW] in {
     // ADDC
     let Uses = [PSW] in {
       def ADDC_ddc     :  ADDSUB_RC<0x8B, 0x05, "addc">;
+
+      let isCommutable = 1 in
       def ADDC_ddd     :  ADDSUB_RR<0x0B, 0x05, "addc">;
     } // Uses = [PSW]
 
@@ -291,17 +295,24 @@ let Defs = [PSW] in {
 
     // ADDS
     def ADDS_ddc       :  ADDSUB_RC<0x8B, 0x02, "adds">;
+
+    let isCommutable = 1 in
     def ADDS_ddd       :  ADDSUB_RR<0x0B, 0x02, "adds">;
+
     def ADDS_16_dd     :  ADDSUB_SRR<0x22, "adds">;
 
     // ADDS.U
     def ADDSU_ddc      :  ADDSUB_RC<0x8B, 0x03, "adds.u">;
+
+    let isCommutable = 1 in
     def ADDSU_ddd      :  ADDSUB_RR<0x0B, 0x03, "adds.u">;
 
     // ADDX
     def ADDX_ddc       :  ADDSUB_RC<0x8B, 0x04, "addx">;
+
+    let isCommutable = 1 in
     def ADDX_ddd       :  ADDSUB_RR<0x0B, 0x04, "addx">;
-  } // isCommutable = 1, isAdd = 1
+  } // isAdd = 1
 
   // SUB
   def SUB_ddd          :  ADDSUB_RR<0x0B, 0x08, "sub">;
