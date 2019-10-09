@@ -71,6 +71,9 @@ def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
 // A 9-bit signed immediate.
 def simm9 : GenericSignedImmediate<9>;
 
+// A 9-bit unsigned immediate.
+def uimm9 : GenericUnsignedImmediate<9>;
+
 // A 16-bit signed immediate.
 def simm16 : GenericSignedImmediate<16>;
 
@@ -120,6 +123,27 @@ class ADDSUB_SRR<bits<8> opc1, string mnemonic>
               :  SRR<opc1, (outs DataRegs:$s1_d),
                   (ins DataRegs:$src, DataRegs:$s2),
                   mnemonic, "\t$s1_d, $s2">;
+
+// 2.1.8 Logical.
+
+let isReMaterializable = 1 in {
+  class LOGIC_RC<bits<8> opc1, bits<7> opc2, string mnemonic>
+                :  RC<opc1, opc2, (outs DataRegs:$d),
+                      (ins DataRegs:$s1, uimm9:$const9),
+                      mnemonic, "\t$d, $s1, $const9">;
+
+  let n = 0, isCommutable = 1 in
+  class LOGIC_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+                :  RR<opc1, opc2, (outs DataRegs:$d),
+                      (ins DataRegs:$s1, DataRegs:$s2),
+                      mnemonic, "\t$d, $s1, $s2">;
+
+  let Constraints = "$s1_d = $src" in
+  class LOGIC_SRR<bits<8> opc1, string mnemonic>
+                :  SRR<opc1, (outs DataRegs:$s1_d),
+                      (ins DataRegs:$src, DataRegs:$s2),
+                      mnemonic, "\t$s1_d, $s2">;
+}  // isReMaterializable = 1
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
@@ -318,6 +342,66 @@ let Defs = [PSW] in {
   // RSUBS.U
   def RSUBSU_ddc       :  ADDSUB_RC<0x8B, 0x0B, "rsubs.u">;
 } // Defs = [PSW]
+
+
+// 2.1.8 Logical.
+
+// AND
+def AND_ddc          :  LOGIC_RC<0x8F, 0x08, "and">;
+def AND_ddd          :  LOGIC_RR<0x0F, 0x08, "and">;
+
+let Constraints = "$d15 = $src" in
+def AND_16_d15c      :  SC<0x16, (outs ImplDataReg:$d15),
+                           (ins ImplDataReg:$src, uimm8:$const8),
+                           "and", "\t$d15, $const8">;
+
+def AND_16_dd        :  LOGIC_SRR<0x26,      "and">;
+
+let isCommutable = 0 in {
+  // ANDN
+  def ANDN_ddc       :  LOGIC_RC<0x8F, 0x0E, "andn">;
+  def ANDN_ddd       :  LOGIC_RR<0x0F, 0x0E, "andn">;
+} // isCommutable = 0
+
+// NAND
+def NAND_ddc         :  LOGIC_RC<0x8F, 0x09, "nand">;
+def NAND_ddd         :  LOGIC_RR<0x0F, 0x09, "nand">;
+
+// NOR
+def NOR_ddc          :  LOGIC_RC<0x8F, 0x0B, "nor">;
+def NOR_ddd          :  LOGIC_RR<0x0F, 0x0B, "nor">;
+
+// NOT
+let Constraints = "$s1_d = $src" in
+def NOT_16_d         :  SR<0x46, 0x00, (outs DataRegs:$s1_d),
+                           (ins DataRegs:$src),
+                           "not", "\t$s1_d">;
+
+// OR
+def OR_ddc           :  LOGIC_RC<0x8F, 0x0A, "or">;
+def OR_ddd           :  LOGIC_RR<0x0F, 0x0A, "or">;
+
+let Constraints = "$d15 = $src" in
+def OR_16_d15c       :  SC<0x96, (outs ImplDataReg:$d15),
+                           (ins ImplDataReg:$src, uimm8:$const8),
+                           "or", "\t$d15, $const8">;
+
+def OR_16_dd         :  LOGIC_SRR<0xA6,      "or">;
+
+let isCommutable = 0 in {
+  // ORN
+  def ORN_ddc        :  LOGIC_RC<0x8F, 0x0F, "orn">;
+  def ORN_ddd        :  LOGIC_RR<0x0F, 0x0F, "orn">;
+} // isCommutable = 0
+
+// XNOR
+def XNOR_ddc         :  LOGIC_RC<0x8F, 0x0D, "xnor">;
+def XNOR_ddd         :  LOGIC_RR<0x0F, 0x0D, "xnor">;
+
+// XOR
+def XOR_ddc          :  LOGIC_RC<0x8F, 0x0C, "xor">;
+def XOR_ddd          :  LOGIC_RR<0x0F, 0x0C, "xor">;
+def XOR_16_dd        :  LOGIC_SRR<0xC6,      "xor">;
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
