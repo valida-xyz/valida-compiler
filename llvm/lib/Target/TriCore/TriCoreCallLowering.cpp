@@ -160,7 +160,13 @@ struct OutgoingValueHandler : public CallLowering::ValueHandler {
                  CCValAssign::LocInfo LocInfo,
                  const CallLowering::ArgInfo &Info, ISD::ArgFlagsTy Flags,
                  CCState &State) override {
-    return AssignFn(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+    bool Res;
+    if (Info.IsFixed)
+      Res = AssignFn(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+    else
+      Res = AssignFnVarArg(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+
+    return Res;
   }
 };
 } // namespace
@@ -353,7 +359,7 @@ bool TriCoreCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   }
 
   CCAssignFn *AssignFnFixed = CC_TriCore;
-  CCAssignFn *AssignFnVarArg = nullptr;
+  CCAssignFn *AssignFnVarArg = CC_TriCore_VarArg;
 
   // Create a temporarily-floating call instruction so we can add the implicit
   // uses of arg registers.

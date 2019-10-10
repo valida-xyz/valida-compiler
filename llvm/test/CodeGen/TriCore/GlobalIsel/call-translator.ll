@@ -229,3 +229,36 @@ entry:
   %res.extract = extractvalue [2 x i32] %res, 0
   ret i32 %res.extract
 }
+
+  ; CHECK-LABEL: name: test_varargs
+  ; CHECK: [[ANSWER:%[0-9]+]]:_(s64) = G_CONSTANT i64 42
+  ; CHECK: [[TWELVE:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
+  ; CHECK: [[ONE:%[0-9]+]]:_(s8) = G_CONSTANT i8 1
+  ; CHECK: [[TWO:%[0-9]+]]:_(s16) = G_CONSTANT i16 2
+  ; CHECK: [[THREE:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+  ; CHECK: [[FOUR:%[0-9]+]]:_(s64) = G_CONSTANT i64 4
+
+  ; CHECK: $e4 = COPY [[ANSWER]]
+  ; CHECK: $d6 = COPY [[TWELVE]]
+  ; CHECK-NEXT: [[SP:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK-NEXT: [[ONE_OFFS:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; CHECK-NEXT: [[ONE_LOC:%[0-9]+]]:_(p0) = G_GEP [[SP]], [[ONE_OFFS]](s32)
+  ; CHECK-NEXT: G_STORE [[ONE]](s8), [[ONE_LOC]](p0) :: (store 1 into stack)
+  ; CHECK-NEXT: [[SP:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK-NEXT: [[TWO_OFFS:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+  ; CHECK-NEXT: [[TWO_LOC:%[0-9]+]]:_(p0) = G_GEP [[SP]], [[TWO_OFFS]](s32)
+  ; CHECK-NEXT: G_STORE [[TWO]](s16), [[TWO_LOC]](p0) :: (store 2 into stack + 4, align 1)
+  ; CHECK: [[SP:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK: [[THREE_OFFS:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+  ; CHECK: [[THREE_LOC:%[0-9]+]]:_(p0) = G_GEP [[SP]], [[THREE_OFFS]](s32)
+  ; CHECK: G_STORE [[THREE]](s32), [[THREE_LOC]](p0) :: (store 4 into stack + 8, align 1)
+  ; CHECK: [[SP:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK: [[FOUR_OFFS:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
+  ; CHECK: [[FOUR_LOC:%[0-9]+]]:_(p0) = G_GEP [[SP]], [[FOUR_OFFS]](s32)
+  ; CHECK: G_STORE [[FOUR]](s64), [[FOUR_LOC]](p0) :: (store 8 into stack + 12, align 1)
+  ; CHECK-NEXT CALL
+declare void @varargs(i64, i32, ...)
+define void @test_varargs() {
+  call void(i64, i32, ...) @varargs(i64 42, i32 12, i8 1, i16 2, i32 3, i64 4)
+  ret void
+}

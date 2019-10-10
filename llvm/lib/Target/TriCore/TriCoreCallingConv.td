@@ -38,6 +38,16 @@ def CC_TriCore : CallingConv<[
   CCIfType<[i64], CCAssignToStack<8, 4>>,
  ]>;
 
+let Entry = 1 in
+def CC_TriCore_VarArg : CallingConv<[
+
+  // Everything is on the stack.
+  CCIfPtr<CCBitConvertToType<i32>>,
+  CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
+  CCIfType<[i32], CCAssignToStack<4, 4>>,
+  CCIfType<[i64], CCAssignToStack<8, 4>>,
+]>;
+
  let Entry = 1 in
  def RetCC_TriCore : CallingConv<[
 
