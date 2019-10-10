@@ -32,6 +32,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/StackProtector.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
@@ -588,8 +589,8 @@ void IRTranslator::emitSwitchCase(SwitchCG::CaseBlock &CB,
     Register CondRHS = getOrCreateVReg(*CB.CmpRHS);
     Cond = MIB.buildICmp(CB.PredInfo.Pred, i1Ty, CondLHS, CondRHS).getReg(0);
   } else {
-    assert(CB.PredInfo.Pred == CmpInst::ICMP_ULE &&
-           "Can only handle ULE ranges");
+    assert(CB.PredInfo.Pred == CmpInst::ICMP_SLE &&
+           "Can only handle SLE ranges");
 
     const APInt& Low = cast<ConstantInt>(CB.CmpLHS)->getValue();
     const APInt& High = cast<ConstantInt>(CB.CmpRHS)->getValue();
@@ -598,7 +599,7 @@ void IRTranslator::emitSwitchCase(SwitchCG::CaseBlock &CB,
     if (cast<ConstantInt>(CB.CmpLHS)->isMinValue(true)) {
       Register CondRHS = getOrCreateVReg(*CB.CmpRHS);
       Cond =
-          MIB.buildICmp(CmpInst::ICMP_ULE, i1Ty, CmpOpReg, CondRHS).getReg(0);
+          MIB.buildICmp(CmpInst::ICMP_SLE, i1Ty, CmpOpReg, CondRHS).getReg(0);
     } else {
       const LLT &CmpTy = MRI->getType(CmpOpReg);
       auto Sub = MIB.buildSub({CmpTy}, CmpOpReg, CondLHS);
@@ -728,7 +729,7 @@ bool IRTranslator::lowerSwitchRangeWorkItem(SwitchCG::CaseClusterIt I,
     MHS = nullptr;
   } else {
     // Check I->Low <= Cond <= I->High.
-    Pred = CmpInst::ICMP_ULE;
+    Pred = CmpInst::ICMP_SLE;
     LHS = I->Low;
     MHS = Cond;
     RHS = I->High;
@@ -1142,6 +1143,11 @@ bool IRTranslator::translateMemFunc(const CallInst &CI,
     DstAlign = std::max<unsigned>(MSI->getDestAlignment(), 1);
   }
 
+  // We need to propagate the tail call flag from the IR inst as an argument.
+  // Otherwise, we have to pessimize and assume later that we cannot tail call
+  // any memory intrinsics.
+  ICall.addImm(CI.isTailCall() ? 1 : 0);
+
   // Create mem operands to store the alignment and volatile info.
   auto VolFlag = IsVol ? MachineMemOperand::MOVolatile : MachineMemOperand::MONone;
   ICall.addMemOperand(MF->getMachineMemOperand(
@@ -1172,7 +1178,7 @@ void IRTranslator::getStackGuard(Register DstReg,
                MachineMemOperand::MODereferenceable;
   MachineMemOperand *MemRef =
       MF->getMachineMemOperand(MPInfo, Flags, DL->getPointerSizeInBits() / 8,
-                               DL->getPointerABIAlignment(0));
+                               DL->getPointerABIAlignment(0).value());
   MIB.setMemRefs({MemRef});
 }
 
@@ -1194,6 +1200,8 @@ unsigned IRTranslator::getSimpleIntrinsicOpcode(Intrinsic::ID ID) {
       break;
     case Intrinsic::bswap:
       return TargetOpcode::G_BSWAP;
+  case Intrinsic::bitreverse:
+      return TargetOpcode::G_BITREVERSE;
     case Intrinsic::ceil:
       return TargetOpcode::G_FCEIL;
     case Intrinsic::cos:
@@ -1561,10 +1569,19 @@ bool IRTranslator::translateCallSite(const ImmutableCallSite &CS,
     Args.push_back(getOrCreateVRegs(*Arg));
   }
 
-  MF->getFrameInfo().setHasCalls(true);
+  // We don't set HasCalls on MFI here yet because call lowering may decide to
+  // optimize into tail calls. Instead, we defer that to selection where a final
+  // scan is done to check if any instructions are calls.
   bool Success =
       CLI->lowerCall(MIRBuilder, CS, Res, Args, SwiftErrorVReg,
                      [&]() { return getOrCreateVReg(*CS.getCalledValue()); });
+
+  // Check if we just inserted a tail call.
+  if (Success) {
+    assert(!HasTailCall && "Can't tail call return twice from block?");
+    const TargetInstrInfo *TII = MF->getSubtarget().getInstrInfo();
+    HasTailCall = TII->isTailCall(*std::prev(MIRBuilder.getInsertPt()));
+  }
 
   return Success;
 }
@@ -1607,14 +1624,29 @@ bool IRTranslator::translateCall(const User &U, MachineIRBuilder &MIRBuilder) {
   if (isa<FPMathOperator>(CI))
     MIB->copyIRFlags(CI);
 
-  for (auto &Arg : CI.arg_operands()) {
+  for (auto &Arg : enumerate(CI.arg_operands())) {
     // Some intrinsics take metadata parameters. Reject them.
-    if (isa<MetadataAsValue>(Arg))
+    if (isa<MetadataAsValue>(Arg.value()))
       return false;
-    ArrayRef<Register> VRegs = getOrCreateVRegs(*Arg);
-    if (VRegs.size() > 1)
-      return false;
-    MIB.addUse(VRegs[0]);
+
+    // If this is required to be an immediate, don't materialize it in a
+    // register.
+    if (CI.paramHasAttr(Arg.index(), Attribute::ImmArg)) {
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(Arg.value())) {
+        // imm arguments are more convenient than cimm (and realistically
+        // probably sufficient), so use them.
+        assert(CI->getBitWidth() <= 64 &&
+               "large intrinsic immediates not handled");
+        MIB.addImm(CI->getSExtValue());
+      } else {
+        MIB.addFPImm(cast<ConstantFP>(Arg.value()));
+      }
+    } else {
+      ArrayRef<Register> VRegs = getOrCreateVRegs(*Arg.value());
+      if (VRegs.size() > 1)
+        return false;
+      MIB.addUse(VRegs[0]);
+    }
   }
 
   // Add a MachineMemOperand if it is a target mem intrinsic.
@@ -2161,6 +2193,20 @@ void IRTranslator::finalizeFunction() {
   FuncInfo.clear();
 }
 
+/// Returns true if a BasicBlock \p BB within a variadic function contains a
+/// variadic musttail call.
+static bool checkForMustTailInVarArgFn(bool IsVarArg, const BasicBlock &BB) {
+  if (!IsVarArg)
+    return false;
+
+  // Walk the block backwards, because tail calls usually only appear at the end
+  // of a block.
+  return std::any_of(BB.rbegin(), BB.rend(), [](const Instruction &I) {
+    const auto *CI = dyn_cast<CallInst>(&I);
+    return CI && CI->isMustTailCall();
+  });
+}
+
 bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
   MF = &CurMF;
   const Function &F = MF->getFunction();
@@ -2222,6 +2268,9 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
   SwiftError.setFunction(CurMF);
   SwiftError.createEntriesInEntryBlock(DbgLoc);
 
+  bool IsVarArg = F.isVarArg();
+  bool HasMustTailInVarArgFn = false;
+
   // Create all blocks, in IR order, to preserve the layout.
   for (const BasicBlock &BB: F) {
     auto *&MBB = BBToMBB[&BB];
@@ -2231,7 +2280,12 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
 
     if (BB.hasAddressTaken())
       MBB->setHasAddressTaken();
+
+    if (!HasMustTailInVarArgFn)
+      HasMustTailInVarArgFn = checkForMustTailInVarArgFn(IsVarArg, BB);
   }
+
+  MF->getFrameInfo().setHasMustTailInVarArgFunc(HasMustTailInVarArgFn);
 
   // Make our arguments/constants entry block fallthrough to the IR entry block.
   EntryBB->addSuccessor(&getMBB(F.front()));
@@ -2274,8 +2328,15 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
       // Set the insertion point of all the following translations to
       // the end of this basic block.
       CurBuilder->setMBB(MBB);
-
+      HasTailCall = false;
       for (const Instruction &Inst : *BB) {
+        // If we translated a tail call in the last step, then we know
+        // everything after the call is either a return, or something that is
+        // handled by the call itself. (E.g. a lifetime marker or assume
+        // intrinsic.) In this case, we should stop translating the block and
+        // move on.
+        if (HasTailCall)
+          break;
 #ifndef NDEBUG
         Verifier.setCurrentInst(&Inst);
 #endif // ifndef NDEBUG

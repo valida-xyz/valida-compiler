@@ -561,6 +561,10 @@ void CGDebugInfo::CreateCompileUnit() {
   if (LO.CPlusPlus) {
     if (LO.ObjC)
       LangTag = llvm::dwarf::DW_LANG_ObjC_plus_plus;
+    else if (LO.CPlusPlus14)
+      LangTag = llvm::dwarf::DW_LANG_C_plus_plus_14;
+    else if (LO.CPlusPlus11)
+      LangTag = llvm::dwarf::DW_LANG_C_plus_plus_11;
     else
       LangTag = llvm::dwarf::DW_LANG_C_plus_plus;
   } else if (LO.ObjC) {
@@ -878,6 +882,8 @@ llvm::DIType *CGDebugInfo::CreateType(const PointerType *Ty,
 static bool hasCXXMangling(const TagDecl *TD, llvm::DICompileUnit *TheCU) {
   switch (TheCU->getSourceLanguage()) {
   case llvm::dwarf::DW_LANG_C_plus_plus:
+  case llvm::dwarf::DW_LANG_C_plus_plus_11:
+  case llvm::dwarf::DW_LANG_C_plus_plus_14:
     return true;
   case llvm::dwarf::DW_LANG_ObjC_plus_plus:
     return isa<CXXRecordDecl>(TD) || isa<EnumDecl>(TD);
@@ -1653,7 +1659,7 @@ void CGDebugInfo::CollectCXXMemberFunctions(
     if (!Method || Method->isImplicit() || Method->hasAttr<NoDebugAttr>())
       continue;
 
-    if (Method->getType()->getAs<FunctionProtoType>()->getContainedAutoType())
+    if (Method->getType()->castAs<FunctionProtoType>()->getContainedAutoType())
       continue;
 
     // Reuse the existing member function declaration if it exists.
@@ -1693,7 +1699,7 @@ void CGDebugInfo::CollectCXXBasesAux(
   const ASTRecordLayout &RL = CGM.getContext().getASTRecordLayout(RD);
   for (const auto &BI : Bases) {
     const auto *Base =
-        cast<CXXRecordDecl>(BI.getType()->getAs<RecordType>()->getDecl());
+        cast<CXXRecordDecl>(BI.getType()->castAs<RecordType>()->getDecl());
     if (!SeenTypes.insert(Base).second)
       continue;
     auto *BaseTy = getOrCreateType(BI.getType(), Unit);
@@ -2711,6 +2717,8 @@ llvm::DIType *CGDebugInfo::CreateType(const MemberPointerType *Ty,
         break;
       case MSInheritanceAttr::Keyword_unspecified_inheritance:
         break;
+      case MSInheritanceAttr::SpellingNotCalculated:
+        llvm_unreachable("Spelling not yet calculated");
       }
     }
   }
@@ -2994,7 +3002,7 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
 #define ABSTRACT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
     llvm_unreachable("Dependent types cannot show up in debug information");
 
   case Type::ExtVector:
@@ -3268,8 +3276,8 @@ void CGDebugInfo::collectVarDeclProps(const VarDecl *VD, llvm::DIFile *&Unit,
     llvm::APInt ConstVal(32, 1);
     QualType ET = CGM.getContext().getAsArrayType(T)->getElementType();
 
-    T = CGM.getContext().getConstantArrayType(ET, ConstVal, ArrayType::Normal,
-                                              0);
+    T = CGM.getContext().getConstantArrayType(ET, ConstVal, nullptr,
+                                              ArrayType::Normal, 0);
   }
 
   Name = VD->getName();
@@ -3698,8 +3706,7 @@ void CGDebugInfo::EmitFuncDeclForCallSite(llvm::CallBase *CallOrInvoke,
                                           const FunctionDecl *CalleeDecl) {
   auto &CGOpts = CGM.getCodeGenOpts();
   if (!CGOpts.EnableDebugEntryValues || !CGM.getLangOpts().Optimize ||
-      !CallOrInvoke ||
-      CGM.getCodeGenOpts().getDebugInfo() < codegenoptions::LimitedDebugInfo)
+      !CallOrInvoke)
     return;
 
   auto *Func = CallOrInvoke->getCalledFunction();
@@ -3865,8 +3872,8 @@ CGDebugInfo::EmitTypeForVarWithBlocksAttr(const VarDecl *VD,
 
     if (NumPaddingBytes.isPositive()) {
       llvm::APInt pad(32, NumPaddingBytes.getQuantity());
-      FType = CGM.getContext().getConstantArrayType(CGM.getContext().CharTy,
-                                                    pad, ArrayType::Normal, 0);
+      FType = CGM.getContext().getConstantArrayType(
+          CGM.getContext().CharTy, pad, nullptr, ArrayType::Normal, 0);
       EltTys.push_back(CreateMemberType(Unit, FType, "", &FieldOffset));
     }
   }
@@ -4438,19 +4445,27 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
   StringRef Name = VD->getName();
   llvm::DIType *Ty = getOrCreateType(VD->getType(), Unit);
 
-  // Do not use global variables for enums, unless in CodeView.
   if (const auto *ECD = dyn_cast<EnumConstantDecl>(VD)) {
     const auto *ED = cast<EnumDecl>(ECD->getDeclContext());
     assert(isa<EnumType>(ED->getTypeForDecl()) && "Enum without EnumType?");
-    (void)ED;
 
-    // If CodeView, emit enums as global variables, unless they are defined
-    // inside a class. We do this because MSVC doesn't emit S_CONSTANTs for
-    // enums in classes, and because it is difficult to attach this scope
-    // information to the global variable.
-    if (!CGM.getCodeGenOpts().EmitCodeView ||
-        isa<RecordDecl>(ED->getDeclContext()))
+    if (CGM.getCodeGenOpts().EmitCodeView) {
+      // If CodeView, emit enums as global variables, unless they are defined
+      // inside a class. We do this because MSVC doesn't emit S_CONSTANTs for
+      // enums in classes, and because it is difficult to attach this scope
+      // information to the global variable.
+      if (isa<RecordDecl>(ED->getDeclContext()))
+        return;
+    } else {
+      // If not CodeView, emit DW_TAG_enumeration_type if necessary. For
+      // example: for "enum { ZERO };", a DW_TAG_enumeration_type is created the
+      // first time `ZERO` is referenced in a function.
+      llvm::DIType *EDTy =
+          getOrCreateType(QualType(ED->getTypeForDecl(), 0), Unit);
+      assert (EDTy->getTag() == llvm::dwarf::DW_TAG_enumeration_type);
+      (void)EDTy;
       return;
+    }
   }
 
   llvm::DIScope *DContext = nullptr;
@@ -4545,7 +4560,7 @@ void CGDebugInfo::EmitUsingDecl(const UsingDecl &UD) {
   // return type in the definition)
   if (const auto *FD = dyn_cast<FunctionDecl>(USD.getUnderlyingDecl()))
     if (const auto *AT =
-            FD->getType()->getAs<FunctionProtoType>()->getContainedAutoType())
+            FD->getType()->castAs<FunctionProtoType>()->getContainedAutoType())
       if (AT->getDeducedType().isNull())
         return;
   if (llvm::DINode *Target =

@@ -279,7 +279,7 @@ public:
   /// Print the profile for \p FName on stream \p OS.
   void dumpFunctionProfile(StringRef FName, raw_ostream &OS = dbgs());
 
-  virtual void collectFuncsToUse(const Module &M) {}
+  virtual void collectFuncsFrom(const Module &M) {}
 
   /// Print all the profiles on stream \p OS.
   void dump(raw_ostream &OS = dbgs());
@@ -329,6 +329,11 @@ public:
   virtual std::unique_ptr<ProfileSymbolList> getProfileSymbolList() {
     return nullptr;
   };
+
+  /// It includes all the names that have samples either in outline instance
+  /// or inline instance.
+  virtual std::vector<StringRef> *getNameTable() { return nullptr; }
+  virtual bool dumpSectionInfo(raw_ostream &OS = dbgs()) { return false; };
 
 protected:
   /// Map every function to its associated profile.
@@ -387,6 +392,10 @@ public:
   /// Read sample profiles from the associated file.
   std::error_code read() override;
 
+  /// It includes all the names that have samples either in outline instance
+  /// or inline instance.
+  virtual std::vector<StringRef> *getNameTable() override { return &NameTable; }
+
 protected:
   /// Read a numeric value of type T from the profile.
   ///
@@ -415,7 +424,7 @@ protected:
   bool at_eof() const { return Data >= End; }
 
   /// Read the next function profile instance.
-  std::error_code readFuncProfile();
+  std::error_code readFuncProfile(const uint8_t *Start);
 
   /// Read the contents of the given profile instance.
   std::error_code readProfile(FunctionSamples &FProfile);
@@ -479,6 +488,14 @@ public:
 /// possible to define other types of profile inherited from
 /// SampleProfileReaderExtBinaryBase/SampleProfileWriterExtBinaryBase.
 class SampleProfileReaderExtBinaryBase : public SampleProfileReaderBinary {
+private:
+  std::error_code decompressSection(const uint8_t *SecStart,
+                                    const uint64_t SecSize,
+                                    const uint8_t *&DecompressBuf,
+                                    uint64_t &DecompressBufSize);
+
+  BumpPtrAllocator Allocator;
+
 protected:
   std::vector<SecHdrTableEntry> SecHdrTable;
   std::unique_ptr<ProfileSymbolList> ProfSymList;
@@ -496,6 +513,12 @@ public:
 
   /// Read sample profiles in extensible format from the associated file.
   std::error_code read() override;
+
+  /// Get the total size of all \p Type sections.
+  uint64_t getSectionSize(SecType Type);
+  /// Get the total size of header and all sections.
+  uint64_t getFileSize();
+  virtual bool dumpSectionInfo(raw_ostream &OS = dbgs()) override;
 };
 
 class SampleProfileReaderExtBinary : public SampleProfileReaderExtBinaryBase {
@@ -504,6 +527,16 @@ private:
   virtual std::error_code readOneSection(const uint8_t *Start, uint64_t Size,
                                          SecType Type) override;
   std::error_code readProfileSymbolList();
+  std::error_code readFuncOffsetTable();
+  std::error_code readFuncProfiles();
+
+  /// The table mapping from function name to the offset of its FunctionSample
+  /// towards file start.
+  DenseMap<StringRef, uint64_t> FuncOffsetTable;
+  /// The set containing the functions to use when compiling a module.
+  DenseSet<StringRef> FuncsToUse;
+  /// Use all functions from the input profile.
+  bool UseAllFuncs = true;
 
 public:
   SampleProfileReaderExtBinary(std::unique_ptr<MemoryBuffer> B, LLVMContext &C,
@@ -516,6 +549,9 @@ public:
   virtual std::unique_ptr<ProfileSymbolList> getProfileSymbolList() override {
     return std::move(ProfSymList);
   };
+
+  /// Collect functions with definitions in Module \p M.
+  void collectFuncsFrom(const Module &M) override;
 };
 
 class SampleProfileReaderCompactBinary : public SampleProfileReaderBinary {
@@ -548,7 +584,7 @@ public:
   std::error_code read() override;
 
   /// Collect functions to be used when compiling Module \p M.
-  void collectFuncsToUse(const Module &M) override;
+  void collectFuncsFrom(const Module &M) override;
 };
 
 using InlineCallStack = SmallVector<FunctionSamples *, 10>;

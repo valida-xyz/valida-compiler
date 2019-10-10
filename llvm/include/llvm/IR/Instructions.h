@@ -110,9 +110,11 @@ public:
   /// Return the alignment of the memory that is being allocated by the
   /// instruction.
   unsigned getAlignment() const {
-    return (1u << (getSubclassDataFromInstruction() & 31)) >> 1;
+    if (const auto MA = decodeMaybeAlign(getSubclassDataFromInstruction() & 31))
+      return MA->value();
+    return 0;
   }
-  void setAlignment(unsigned Align);
+  void setAlignment(MaybeAlign Align);
 
   /// Return true if this alloca is in the entry block of the function and is a
   /// constant size. If so, the code generator will fold it into the
@@ -238,10 +240,13 @@ public:
 
   /// Return the alignment of the access that is being performed.
   unsigned getAlignment() const {
-    return (1 << ((getSubclassDataFromInstruction() >> 1) & 31)) >> 1;
+    if (const auto MA =
+            decodeMaybeAlign((getSubclassDataFromInstruction() >> 1) & 31))
+      return MA->value();
+    return 0;
   }
 
-  void setAlignment(unsigned Align);
+  void setAlignment(MaybeAlign Align);
 
   /// Returns the ordering constraint of this load instruction.
   AtomicOrdering getOrdering() const {
@@ -363,10 +368,13 @@ public:
 
   /// Return the alignment of the access that is being performed
   unsigned getAlignment() const {
-    return (1 << ((getSubclassDataFromInstruction() >> 1) & 31)) >> 1;
+    if (const auto MA =
+            decodeMaybeAlign((getSubclassDataFromInstruction() >> 1) & 31))
+      return MA->value();
+    return 0;
   }
 
-  void setAlignment(unsigned Align);
+  void setAlignment(MaybeAlign Align);
 
   /// Returns the ordering constraint of this store instruction.
   AtomicOrdering getOrdering() const {
@@ -3459,16 +3467,7 @@ public:
 class SwitchInstProfUpdateWrapper {
   SwitchInst &SI;
   Optional<SmallVector<uint32_t, 8> > Weights = None;
-
-  // Sticky invalid state is needed to safely ignore operations with prof data
-  // in cases where SwitchInstProfUpdateWrapper is created from SwitchInst
-  // with inconsistent prof data. TODO: once we fix all prof data
-  // inconsistencies we can turn invalid state to assertions.
-  enum {
-    Invalid,
-    Initialized,
-    Changed
-  } State = Invalid;
+  bool Changed = false;
 
 protected:
   static MDNode *getProfBranchWeightsMD(const SwitchInst &SI);
@@ -3486,7 +3485,7 @@ public:
   SwitchInstProfUpdateWrapper(SwitchInst &SI) : SI(SI) { init(); }
 
   ~SwitchInstProfUpdateWrapper() {
-    if (State == Changed)
+    if (Changed)
       SI.setMetadata(LLVMContext::MD_prof, buildProfBranchWeightsMD());
   }
 
@@ -3942,6 +3941,9 @@ class CallBrInst : public CallBase {
             ArrayRef<BasicBlock *> IndirectDests, ArrayRef<Value *> Args,
             ArrayRef<OperandBundleDef> Bundles, const Twine &NameStr);
 
+  /// Should the Indirect Destinations change, scan + update the Arg list.
+  void updateArgBlockAddresses(unsigned i, BasicBlock *B);
+
   /// Compute the number of operands to allocate.
   static int ComputeNumOperands(int NumArgs, int NumIndirectDests,
                                 int NumBundleInputs = 0) {
@@ -4079,7 +4081,7 @@ public:
     return cast<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() - 1));
   }
   BasicBlock *getIndirectDest(unsigned i) const {
-    return cast<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() + i));
+    return cast_or_null<BasicBlock>(*(&Op<-1>() - getNumIndirectDests() + i));
   }
   SmallVector<BasicBlock *, 16> getIndirectDests() const {
     SmallVector<BasicBlock *, 16> IndirectDests;
@@ -4091,6 +4093,7 @@ public:
     *(&Op<-1>() - getNumIndirectDests() - 1) = reinterpret_cast<Value *>(B);
   }
   void setIndirectDest(unsigned i, BasicBlock *B) {
+    updateArgBlockAddresses(i, B);
     *(&Op<-1>() - getNumIndirectDests() + i) = reinterpret_cast<Value *>(B);
   }
 
@@ -4100,11 +4103,10 @@ public:
     return i == 0 ? getDefaultDest() : getIndirectDest(i - 1);
   }
 
-  void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
-    assert(idx < getNumIndirectDests() + 1 &&
+  void setSuccessor(unsigned i, BasicBlock *NewSucc) {
+    assert(i < getNumIndirectDests() + 1 &&
            "Successor # out of range for callbr!");
-    *(&Op<-1>() - getNumIndirectDests() -1 + idx) =
-        reinterpret_cast<Value *>(NewSucc);
+    return i == 0 ? setDefaultDest(NewSucc) : setIndirectDest(i - 1, NewSucc);
   }
 
   unsigned getNumSuccessors() const { return getNumIndirectDests() + 1; }

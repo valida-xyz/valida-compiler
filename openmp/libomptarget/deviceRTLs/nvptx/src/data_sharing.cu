@@ -20,7 +20,7 @@ INLINE static unsigned getLaneId() { return threadIdx.x % WARPSIZE; }
 
 // Return true if this is the first active thread in the warp.
 INLINE static bool IsWarpMasterActiveThread() {
-  unsigned long long Mask = __ACTIVEMASK();
+  unsigned long long Mask = __kmpc_impl_activemask();
   unsigned long long ShNum = WARPSIZE - (GetThreadIdInBlock() % WARPSIZE);
   unsigned long long Sh = Mask << ShNum;
   // Truncate Sh to the 32 lower bits
@@ -96,7 +96,7 @@ __kmpc_initialize_data_sharing_environment(__kmpc_data_sharing_slot *rootS,
 
 EXTERN void *__kmpc_data_sharing_environment_begin(
     __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack,
-    void **SavedSharedFrame, int32_t *SavedActiveThreads,
+    void **SavedSharedFrame, __kmpc_impl_lanemask_t *SavedActiveThreads,
     size_t SharingDataSize, size_t SharingDefaultDataSize,
     int16_t IsOMPRuntimeInitialized) {
 
@@ -112,12 +112,12 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
           (unsigned long long)SharingDefaultDataSize);
 
   unsigned WID = getWarpId();
-  unsigned CurActiveThreads = __ACTIVEMASK();
+  __kmpc_impl_lanemask_t CurActiveThreads = __kmpc_impl_activemask();
 
   __kmpc_data_sharing_slot *&SlotP = DataSharingState.SlotPtr[WID];
   void *&StackP = DataSharingState.StackPtr[WID];
   void * volatile &FrameP = DataSharingState.FramePtr[WID];
-  int32_t &ActiveT = DataSharingState.ActiveThreads[WID];
+  __kmpc_impl_lanemask_t &ActiveT = DataSharingState.ActiveThreads[WID];
 
   DSPRINT0(DSFLAG, "Save current slot/stack values.\n");
   // Save the current values.
@@ -225,7 +225,7 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
 
 EXTERN void __kmpc_data_sharing_environment_end(
     __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack,
-    void **SavedSharedFrame, int32_t *SavedActiveThreads,
+    void **SavedSharedFrame, __kmpc_impl_lanemask_t *SavedActiveThreads,
     int32_t IsEntryPoint) {
 
   DSPRINT0(DSFLAG, "Entering __kmpc_data_sharing_environment_end\n");
@@ -252,7 +252,7 @@ EXTERN void __kmpc_data_sharing_environment_end(
     return;
   }
 
-  int32_t CurActive = __ACTIVEMASK();
+  __kmpc_impl_lanemask_t CurActive = __kmpc_impl_activemask();
 
   // Only the warp master can restore the stack and frame information, and only
   // if there are no other threads left behind in this environment (i.e. the
@@ -260,7 +260,7 @@ EXTERN void __kmpc_data_sharing_environment_end(
   // assume that threads will converge right after the call site that started
   // the environment.
   if (IsWarpMasterActiveThread()) {
-    int32_t &ActiveT = DataSharingState.ActiveThreads[WID];
+    __kmpc_impl_lanemask_t &ActiveT = DataSharingState.ActiveThreads[WID];
 
     DSPRINT0(DSFLAG, "Before restoring the stack\n");
     // Zero the bits in the mask. If it is still different from zero, then we
@@ -378,7 +378,7 @@ INLINE static void* data_sharing_push_stack_common(size_t PushSize) {
   // Frame pointer must be visible to all workers in the same warp.
   const unsigned WID = getWarpId();
   void *FrameP = 0;
-  int32_t CurActive = __ACTIVEMASK();
+  __kmpc_impl_lanemask_t CurActive = __kmpc_impl_activemask();
 
   if (IsWarpMaster) {
     // SlotP will point to either the shared memory slot or an existing

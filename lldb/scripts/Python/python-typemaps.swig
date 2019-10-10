@@ -224,7 +224,7 @@
 namespace {
 template <class T>
 T PyLongAsT(PyObject *obj) {
-  static_assert(true, "unsupported type"); 
+  static_assert(true, "unsupported type");
 }
 
 template <> uint64_t PyLongAsT<uint64_t>(PyObject *obj) {
@@ -372,40 +372,105 @@ bool SetNumberFromPyObject<double>(double &number, PyObject *obj) {
   $1 = $1 || PyCallable_Check(reinterpret_cast<PyObject*>($input));
 }
 
+
+%typemap(in) lldb::FileSP {
+  using namespace lldb_private;
+  PythonFile py_file(PyRefType::Borrowed, $input);
+  if (!py_file) {
+    PyErr_SetString(PyExc_TypeError, "not a file");
+    return nullptr;
+  }
+  auto sp = unwrapOrSetPythonException(py_file.ConvertToFile());
+  if (!sp)
+    return nullptr;
+  $1 = sp;
+}
+
+%typemap(in) lldb::FileSP FORCE_IO_METHODS {
+  using namespace lldb_private;
+  PythonFile py_file(PyRefType::Borrowed, $input);
+  if (!py_file) {
+    PyErr_SetString(PyExc_TypeError, "not a file");
+    return nullptr;
+  }
+  auto sp = unwrapOrSetPythonException(py_file.ConvertToFileForcingUseOfScriptingIOMethods());
+  if (!sp)
+    return nullptr;
+  $1 = sp;
+}
+
+%typemap(in) lldb::FileSP BORROWED {
+ using namespace lldb_private;
+  PythonFile py_file(PyRefType::Borrowed, $input);
+  if (!py_file) {
+    PyErr_SetString(PyExc_TypeError, "not a file");
+    return nullptr;
+  }
+  auto sp = unwrapOrSetPythonException(py_file.ConvertToFile(/*borrowed=*/true));
+  if (!sp)
+    return nullptr;
+  $1 = sp;
+}
+
+%typemap(in) lldb::FileSP BORROWED_FORCE_IO_METHODS {
+  using namespace lldb_private;
+  PythonFile py_file(PyRefType::Borrowed, $input);
+  if (!py_file) {
+    PyErr_SetString(PyExc_TypeError, "not a file");
+    return nullptr;
+  }
+  auto sp = unwrapOrSetPythonException(py_file.ConvertToFileForcingUseOfScriptingIOMethods(/*borrowed=*/true));
+  if (!sp)
+    return nullptr;
+  $1 = sp;
+}
+
+%typecheck(SWIG_TYPECHECK_POINTER) lldb::FileSP {
+  if (lldb_private::PythonFile::Check($input)) {
+    $1 = 1;
+  } else {
+    PyErr_Clear();
+    $1 = 0;
+  }
+}
+
+
+// FIXME both of these paths wind up calling fdopen() with no provision for ever calling
+// fclose() on the result.  SB interfaces that use FILE* should be deprecated for scripting
+// use and this typemap should eventually be removed.
 %typemap(in) FILE * {
    using namespace lldb_private;
    if ($input == Py_None)
       $1 = nullptr;
    else if (!lldb_private::PythonFile::Check($input)) {
       int fd = PyObject_AsFileDescriptor($input);
+      if (fd < 0 || PyErr_Occurred())
+        return nullptr;
       PythonObject py_input(PyRefType::Borrowed, $input);
       PythonString py_mode = py_input.GetAttributeValue("mode").AsType<PythonString>();
-
-      if (-1 != fd && py_mode.IsValid()) {
-         FILE *f;
-         if ((f = fdopen(fd, py_mode.GetString().str().c_str())))
-            $1 = f;
-         else
-            PyErr_SetString(PyExc_TypeError, strerror(errno));
-      } else {
-         PyErr_SetString(PyExc_TypeError,"not a file-like object");
-         return nullptr;
-      }
+      if (!py_mode.IsValid() || PyErr_Occurred())
+        return nullptr;
+        FILE *f;
+        if ((f = fdopen(fd, py_mode.GetString().str().c_str())))
+          $1 = f;
+        else {
+          PyErr_SetString(PyExc_TypeError, strerror(errno));
+          return nullptr;
+        }
    }
    else
    {
       PythonFile py_file(PyRefType::Borrowed, $input);
-      File file;
-      if (!py_file.GetUnderlyingFile(file))
+      lldb::FileUP file = py_file.GetUnderlyingFile();
+      if (!file)
          return nullptr;
-
-      $1 = file.GetStream();
-      if ($1)
-         file.Clear();
+      $1 = file->TakeStreamAndClear();
     }
 }
 
 %typemap(out) FILE * {
+   // TODO: This is gross. We should find a way to fetch the mode flags from the
+   // lldb_private::File object.
    char mode[4] = {0};
 %#ifdef __APPLE__
    int i = 0;
@@ -420,9 +485,15 @@ bool SetNumberFromPyObject<double>(double &number, PyObject *obj) {
        else // if (flags & __SRW)
           mode[i++] = 'a';
     }
+%#else
+   // There's no portable way to get the mode here. We just return a mode which
+   // permits both reads and writes and count on the operating system to return
+   // an error when an invalid operation is attempted.
+   mode[0] = 'r';
+   mode[1] = '+';
 %#endif
    using namespace lldb_private;
-   File file($1, false);
+   NativeFile file($1, false);
    PythonFile py_file(file, mode);
    $result = py_file.release();
    if (!$result)
@@ -461,3 +532,44 @@ bool SetNumberFromPyObject<double>(double &number, PyObject *obj) {
         return NULL;
     }
 }
+
+// These two pybuffer macros are copied out of swig/Lib/python/pybuffer.i,
+// and fixed so they will not crash if PyObject_GetBuffer fails.
+// https://github.com/swig/swig/issues/1640
+
+%define %pybuffer_mutable_binary(TYPEMAP, SIZE)
+%typemap(in) (TYPEMAP, SIZE) {
+  int res; Py_ssize_t size = 0; void *buf = 0;
+  Py_buffer view;
+  res = PyObject_GetBuffer($input, &view, PyBUF_WRITABLE);
+  if (res < 0) {
+    PyErr_Clear();
+    %argument_fail(res, "(TYPEMAP, SIZE)", $symname, $argnum);
+  }
+  size = view.len;
+  buf = view.buf;
+  PyBuffer_Release(&view);
+  $1 = ($1_ltype) buf;
+  $2 = ($2_ltype) (size/sizeof($*1_type));
+}
+%enddef
+
+%define %pybuffer_binary(TYPEMAP, SIZE)
+%typemap(in) (TYPEMAP, SIZE) {
+  int res; Py_ssize_t size = 0; const void *buf = 0;
+  Py_buffer view;
+  res = PyObject_GetBuffer($input, &view, PyBUF_CONTIG_RO);
+  if (res < 0) {
+    PyErr_Clear();
+    %argument_fail(res, "(TYPEMAP, SIZE)", $symname, $argnum);
+  }
+  size = view.len;
+  buf = view.buf;
+  PyBuffer_Release(&view);
+  $1 = ($1_ltype) buf;
+  $2 = ($2_ltype) (size / sizeof($*1_type));
+}
+%enddef
+
+%pybuffer_binary(const uint8_t *buf, size_t num_bytes);
+%pybuffer_mutable_binary(uint8_t *buf, size_t num_bytes);

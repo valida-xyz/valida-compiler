@@ -12,10 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define AMDGPU_LOG2E_F     1.44269504088896340735992468100189214f
-#define AMDGPU_LN2_F       0.693147180559945309417232121458176568f
-#define AMDGPU_LN10_F      2.30258509299404568401799145468436421f
-
 #include "AMDGPUISelLowering.h"
 #include "AMDGPU.h"
 #include "AMDGPUCallLowering.h"
@@ -37,6 +33,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/Support/KnownBits.h"
+#include "llvm/Support/MathExtras.h"
 using namespace llvm;
 
 #include "AMDGPUGenCallingConv.inc"
@@ -134,7 +131,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
     setLoadExtAction(ISD::EXTLOAD, VT, MVT::i32, Expand);
   }
 
-  for (MVT VT : MVT::integer_vector_valuetypes()) {
+  for (MVT VT : MVT::integer_fixedlen_vector_valuetypes()) {
     setLoadExtAction(ISD::EXTLOAD, VT, MVT::v2i8, Expand);
     setLoadExtAction(ISD::SEXTLOAD, VT, MVT::v2i8, Expand);
     setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::v2i8, Expand);
@@ -681,8 +678,9 @@ bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy, EVT CastTy,
     return false;
 
   bool Fast = false;
-  return allowsMemoryAccess(*DAG.getContext(), DAG.getDataLayout(), CastTy,
-                            MMO, &Fast) && Fast;
+  return allowsMemoryAccessForAlignment(*DAG.getContext(), DAG.getDataLayout(),
+                                        CastTy, MMO, &Fast) &&
+         Fast;
 }
 
 // SI+ has instructions for cttz / ctlz for 32-bit values. This is probably also
@@ -718,9 +716,8 @@ bool AMDGPUTargetLowering::isSDNodeAlwaysUniform(const SDNode * N) const {
     break;
     case ISD::LOAD:
     {
-      const LoadSDNode * L = dyn_cast<LoadSDNode>(N);
-      if (L->getMemOperand()->getAddrSpace()
-      == AMDGPUAS::CONSTANT_ADDRESS_32BIT)
+      if (cast<LoadSDNode>(N)->getMemOperand()->getAddrSpace() ==
+          AMDGPUAS::CONSTANT_ADDRESS_32BIT)
         return true;
       return false;
     }
@@ -1135,9 +1132,9 @@ SDValue AMDGPUTargetLowering::LowerOperation(SDValue Op,
   case ISD::FROUND: return LowerFROUND(Op, DAG);
   case ISD::FFLOOR: return LowerFFLOOR(Op, DAG);
   case ISD::FLOG:
-    return LowerFLOG(Op, DAG, 1 / AMDGPU_LOG2E_F);
+    return LowerFLOG(Op, DAG, 1.0F / numbers::log2ef);
   case ISD::FLOG10:
-    return LowerFLOG(Op, DAG, AMDGPU_LN2_F / AMDGPU_LN10_F);
+    return LowerFLOG(Op, DAG, numbers::ln2f / numbers::ln10f);
   case ISD::FEXP:
     return lowerFEXP(Op, DAG);
   case ISD::SINT_TO_FP: return LowerSINT_TO_FP(Op, DAG);
@@ -1172,7 +1169,7 @@ void AMDGPUTargetLowering::ReplaceNodeResults(SDNode *N,
   }
 }
 
-static bool hasDefinedInitializer(const GlobalValue *GV) {
+bool AMDGPUTargetLowering::hasDefinedInitializer(const GlobalValue *GV) {
   const GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV);
   if (!GVar || !GVar->hasInitializer())
     return false;
@@ -2285,30 +2282,13 @@ SDValue AMDGPUTargetLowering::LowerFLOG(SDValue Op, SelectionDAG &DAG,
   return DAG.getNode(ISD::FMUL, SL, VT, Log2Operand, Log2BaseInvertedOperand);
 }
 
-// Return M_LOG2E of appropriate type
-static SDValue getLog2EVal(SelectionDAG &DAG, const SDLoc &SL, EVT VT) {
-  switch (VT.getScalarType().getSimpleVT().SimpleTy) {
-  case MVT::f32:
-    return DAG.getConstantFP(1.44269504088896340735992468100189214f, SL, VT);
-  case MVT::f16:
-    return DAG.getConstantFP(
-      APFloat(APFloat::IEEEhalf(), "1.44269504088896340735992468100189214"),
-      SL, VT);
-  case MVT::f64:
-    return DAG.getConstantFP(
-      APFloat(APFloat::IEEEdouble(), "0x1.71547652b82fep+0"), SL, VT);
-  default:
-    llvm_unreachable("unsupported fp type");
-  }
-}
-
 // exp2(M_LOG2E_F * f);
 SDValue AMDGPUTargetLowering::lowerFEXP(SDValue Op, SelectionDAG &DAG) const {
   EVT VT = Op.getValueType();
   SDLoc SL(Op);
   SDValue Src = Op.getOperand(0);
 
-  const SDValue K = getLog2EVal(DAG, SL, VT);
+  const SDValue K = DAG.getConstantFP(numbers::log2e, SL, VT);
   SDValue Mul = DAG.getNode(ISD::FMUL, SL, VT, Src, K, Op->getFlags());
   return DAG.getNode(ISD::FEXP2, SL, VT, Mul, Op->getFlags());
 }
@@ -4162,14 +4142,28 @@ SDValue AMDGPUTargetLowering::CreateLiveInRegister(SelectionDAG &DAG,
   return DAG.getCopyFromReg(DAG.getEntryNode(), SL, VReg, VT);
 }
 
+// This may be called multiple times, and nothing prevents creating multiple
+// objects at the same offset. See if we already defined this object.
+static int getOrCreateFixedStackObject(MachineFrameInfo &MFI, unsigned Size,
+                                       int64_t Offset) {
+  for (int I = MFI.getObjectIndexBegin(); I < 0; ++I) {
+    if (MFI.getObjectOffset(I) == Offset) {
+      assert(MFI.getObjectSize(I) == Size);
+      return I;
+    }
+  }
+
+  return MFI.CreateFixedObject(Size, Offset, true);
+}
+
 SDValue AMDGPUTargetLowering::loadStackInputValue(SelectionDAG &DAG,
                                                   EVT VT,
                                                   const SDLoc &SL,
                                                   int64_t Offset) const {
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
+  int FI = getOrCreateFixedStackObject(MFI, VT.getStoreSize(), Offset);
 
-  int FI = MFI.CreateFixedObject(VT.getStoreSize(), Offset, true);
   auto SrcPtrInfo = MachinePointerInfo::getStack(MF, Offset);
   SDValue Ptr = DAG.getFrameIndex(FI, MVT::i32);
 
@@ -4337,8 +4331,6 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(KILL)
   NODE_NAME_CASE(DUMMY_CHAIN)
   case AMDGPUISD::FIRST_MEM_OPCODE_NUMBER: break;
-  NODE_NAME_CASE(INIT_EXEC)
-  NODE_NAME_CASE(INIT_EXEC_FROM_INPUT)
   NODE_NAME_CASE(INTERP_MOV)
   NODE_NAME_CASE(INTERP_P1)
   NODE_NAME_CASE(INTERP_P2)

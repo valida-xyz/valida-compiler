@@ -24,6 +24,7 @@
 #include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/Loads.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
@@ -69,7 +70,9 @@ STATISTIC(NumAttributesManifested,
 #define BUILD_STAT_MSG_IR_ATTR(TYPE, NAME)                                     \
   ("Number of " #TYPE " marked '" #NAME "'")
 #define BUILD_STAT_NAME(NAME, TYPE) NumIR##TYPE##_##NAME
-#define STATS_DECL(NAME, TYPE, MSG) STATISTIC(BUILD_STAT_NAME(NAME, TYPE), MSG);
+#define STATS_DECL_(NAME, MSG) STATISTIC(NAME, MSG);
+#define STATS_DECL(NAME, TYPE, MSG)                                            \
+  STATS_DECL_(BUILD_STAT_NAME(NAME, TYPE), MSG);
 #define STATS_TRACK(NAME, TYPE) ++(BUILD_STAT_NAME(NAME, TYPE));
 #define STATS_DECLTRACK(NAME, TYPE, MSG)                                       \
   {                                                                            \
@@ -117,6 +120,11 @@ static cl::opt<bool> DisableAttributor(
     cl::desc("Disable the attributor inter-procedural deduction pass."),
     cl::init(true));
 
+static cl::opt<bool> ManifestInternal(
+    "attributor-manifest-internal", cl::Hidden,
+    cl::desc("Manifest Attributor internal string attributes."),
+    cl::init(false));
+
 static cl::opt<bool> VerifyAttributor(
     "attributor-verify", cl::Hidden,
     cl::desc("Verify the Attributor deduction and "
@@ -127,6 +135,12 @@ static cl::opt<unsigned> DepRecInterval(
     "attributor-dependence-recompute-interval", cl::Hidden,
     cl::desc("Number of iterations until dependences are recomputed."),
     cl::init(4));
+
+static cl::opt<bool> EnableHeapToStack("enable-heap-to-stack-conversion",
+                                       cl::init(true), cl::Hidden);
+
+static cl::opt<int> MaxHeapToStackSize("max-heap-to-stack-size", cl::init(128),
+                                       cl::Hidden);
 
 /// Logic operators for the change status enum class.
 ///
@@ -147,7 +161,7 @@ ChangeStatus llvm::operator&(ChangeStatus l, ChangeStatus r) {
 /// limit how much effort is invested, we will never visit more values than
 /// specified by \p MaxValues.
 template <typename AAType, typename StateTy>
-bool genericValueTraversal(
+static bool genericValueTraversal(
     Attributor &A, IRPosition IRP, const AAType &QueryingAA, StateTy &State,
     const function_ref<bool(Value &, StateTy &, bool)> &VisitValueCB,
     int MaxValues = 8) {
@@ -211,7 +225,7 @@ bool genericValueTraversal(
       for (unsigned u = 0, e = PHI->getNumIncomingValues(); u < e; u++) {
         const BasicBlock *IncomingBB = PHI->getIncomingBlock(u);
         if (LivenessAA->isAssumedDead(IncomingBB->getTerminator())) {
-          AnyDead =true;
+          AnyDead = true;
           continue;
         }
         Worklist.push_back(PHI->getIncomingValue(u));
@@ -273,6 +287,35 @@ static bool addIfNotExistent(LLVMContext &Ctx, const Attribute &Attr,
   }
 
   llvm_unreachable("Expected enum or string attribute!");
+}
+static const Value *getPointerOperand(const Instruction *I) {
+  if (auto *LI = dyn_cast<LoadInst>(I))
+    if (!LI->isVolatile())
+      return LI->getPointerOperand();
+
+  if (auto *SI = dyn_cast<StoreInst>(I))
+    if (!SI->isVolatile())
+      return SI->getPointerOperand();
+
+  if (auto *CXI = dyn_cast<AtomicCmpXchgInst>(I))
+    if (!CXI->isVolatile())
+      return CXI->getPointerOperand();
+
+  if (auto *RMWI = dyn_cast<AtomicRMWInst>(I))
+    if (!RMWI->isVolatile())
+      return RMWI->getPointerOperand();
+
+  return nullptr;
+}
+static const Value *getBasePointerOfAccessPointerOperand(const Instruction *I,
+                                                         int64_t &BytesOffset,
+                                                         const DataLayout &DL) {
+  const Value *Ptr = getPointerOperand(I);
+  if (!Ptr)
+    return nullptr;
+
+  return GetPointerBaseWithConstantOffset(Ptr, BytesOffset, DL,
+                                          /*AllowNonInbounds*/ false);
 }
 
 ChangeStatus AbstractAttribute::update(Attributor &A) {
@@ -404,11 +447,18 @@ SubsumingPositionIterator::SubsumingPositionIterator(const IRPosition &IRP) {
   }
 }
 
-bool IRPosition::hasAttr(ArrayRef<Attribute::AttrKind> AKs) const {
-  for (const IRPosition &EquivIRP : SubsumingPositionIterator(*this))
+bool IRPosition::hasAttr(ArrayRef<Attribute::AttrKind> AKs,
+                         bool IgnoreSubsumingPositions) const {
+  for (const IRPosition &EquivIRP : SubsumingPositionIterator(*this)) {
     for (Attribute::AttrKind AK : AKs)
       if (EquivIRP.getAttr(AK).getKindAsEnum() == AK)
         return true;
+    // The first position returned by the SubsumingPositionIterator is
+    // always the position itself. If we ignore subsuming positions we
+    // are done after the first iteration.
+    if (IgnoreSubsumingPositions)
+      break;
+  }
   return false;
 }
 
@@ -472,6 +522,7 @@ void IRPosition::verify() {
   }
 }
 
+namespace {
 /// Helper functions to clamp a state \p S of type \p StateType with the
 /// information in \p R and indicate/return if \p S did change (as-in update is
 /// required to be run again).
@@ -538,6 +589,21 @@ static void clampReturnedValueStates(Attributor &A, const AAType &QueryingAA,
     S ^= *T;
 }
 
+/// Helper class to compose two generic deduction
+template <typename AAType, typename Base, typename StateType,
+          template <typename...> class F, template <typename...> class G>
+struct AAComposeTwoGenericDeduction
+    : public F<AAType, G<AAType, Base, StateType>, StateType> {
+  AAComposeTwoGenericDeduction(const IRPosition &IRP)
+      : F<AAType, G<AAType, Base, StateType>, StateType>(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    return F<AAType, G<AAType, Base, StateType>, StateType>::updateImpl(A) |
+           G<AAType, Base, StateType>::updateImpl(A);
+  }
+};
+
 /// Helper class for generic deduction: return value -> returned position.
 template <typename AAType, typename Base,
           typename StateType = typename AAType::StateType>
@@ -574,11 +640,16 @@ static void clampCallSiteArgumentStates(Attributor &A, const AAType &QueryingAA,
   // The argument number which is also the call site argument number.
   unsigned ArgNo = QueryingAA.getIRPosition().getArgNo();
 
-  auto CallSiteCheck = [&](CallSite CS) {
-    const IRPosition &CSArgPos = IRPosition::callsite_argument(CS, ArgNo);
-    const AAType &AA = A.getAAFor<AAType>(QueryingAA, CSArgPos);
-    LLVM_DEBUG(dbgs() << "[Attributor] CS: " << *CS.getInstruction()
-                      << " AA: " << AA.getAsStr() << " @" << CSArgPos << "\n");
+  auto CallSiteCheck = [&](AbstractCallSite ACS) {
+    const IRPosition &ACSArgPos = IRPosition::callsite_argument(ACS, ArgNo);
+    // Check if a coresponding argument was found or if it is on not associated
+    // (which can happen for callback calls).
+    if (ACSArgPos.getPositionKind() == IRPosition::IRP_INVALID)
+      return false;
+
+    const AAType &AA = A.getAAFor<AAType>(QueryingAA, ACSArgPos);
+    LLVM_DEBUG(dbgs() << "[Attributor] ACS: " << *ACS.getInstruction()
+                      << " AA: " << AA.getAsStr() << " @" << ACSArgPos << "\n");
     const StateType &AAS = static_cast<const StateType &>(AA.getState());
     if (T.hasValue())
       *T &= AAS;
@@ -612,7 +683,8 @@ struct AAArgumentFromCallSiteArguments : public Base {
 };
 
 /// Helper class for generic replication: function returned -> cs returned.
-template <typename AAType, typename Base>
+template <typename AAType, typename Base,
+          typename StateType = typename AAType::StateType>
 struct AACallSiteReturnedFromReturned : public Base {
   AACallSiteReturnedFromReturned(const IRPosition &IRP) : Base(IRP) {}
 
@@ -636,16 +708,84 @@ struct AACallSiteReturnedFromReturned : public Base {
   }
 };
 
+/// Helper class for generic deduction using must-be-executed-context
+/// Base class is required to have `followUse` method.
+
+/// bool followUse(Attributor &A, const Use *U, const Instruction *I)
+/// \param U Underlying use.
+/// \param I The user of the \p U.
+/// `followUse` returns true if the value should be tracked transitively.
+
+template <typename AAType, typename Base,
+          typename StateType = typename AAType::StateType>
+struct AAFromMustBeExecutedContext : public Base {
+  AAFromMustBeExecutedContext(const IRPosition &IRP) : Base(IRP) {}
+
+  void initialize(Attributor &A) override {
+    Base::initialize(A);
+    IRPosition &IRP = this->getIRPosition();
+    Instruction *CtxI = IRP.getCtxI();
+
+    if (!CtxI)
+      return;
+
+    for (const Use &U : IRP.getAssociatedValue().uses())
+      Uses.insert(&U);
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    auto BeforeState = this->getState();
+    auto &S = this->getState();
+    Instruction *CtxI = this->getIRPosition().getCtxI();
+    if (!CtxI)
+      return ChangeStatus::UNCHANGED;
+
+    MustBeExecutedContextExplorer &Explorer =
+        A.getInfoCache().getMustBeExecutedContextExplorer();
+
+    SetVector<const Use *> NextUses;
+
+    for (const Use *U : Uses) {
+      if (const Instruction *UserI = dyn_cast<Instruction>(U->getUser())) {
+        auto EIt = Explorer.begin(CtxI), EEnd = Explorer.end(CtxI);
+        bool Found = EIt.count(UserI);
+        while (!Found && ++EIt != EEnd)
+          Found = EIt.getCurrentInst() == UserI;
+        if (Found && Base::followUse(A, U, UserI))
+          for (const Use &Us : UserI->uses())
+            NextUses.insert(&Us);
+      }
+    }
+    for (const Use *U : NextUses)
+      Uses.insert(U);
+
+    return BeforeState == S ? ChangeStatus::UNCHANGED : ChangeStatus::CHANGED;
+  }
+
+private:
+  /// Container for (transitive) uses of the associated value.
+  SetVector<const Use *> Uses;
+};
+
+template <typename AAType, typename Base,
+          typename StateType = typename AAType::StateType>
+using AAArgumentFromCallSiteArgumentsAndMustBeExecutedContext =
+    AAComposeTwoGenericDeduction<AAType, Base, StateType,
+                                 AAFromMustBeExecutedContext,
+                                 AAArgumentFromCallSiteArguments>;
+
+template <typename AAType, typename Base,
+          typename StateType = typename AAType::StateType>
+using AACallSiteReturnedFromReturnedAndMustBeExecutedContext =
+    AAComposeTwoGenericDeduction<AAType, Base, StateType,
+                                 AAFromMustBeExecutedContext,
+                                 AACallSiteReturnedFromReturned>;
+
 /// -----------------------NoUnwind Function Attribute--------------------------
 
 struct AANoUnwindImpl : AANoUnwind {
   AANoUnwindImpl(const IRPosition &IRP) : AANoUnwind(IRP) {}
-
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({Attribute::NoUnwind}))
-      indicateOptimisticFixpoint();
-  }
 
   const std::string getAsStr() const override {
     return getAssumed() ? "nounwind" : "may-unwind";
@@ -692,7 +832,7 @@ struct AANoUnwindCallSite final : AANoUnwindImpl {
   void initialize(Attributor &A) override {
     AANoUnwindImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -752,7 +892,7 @@ public:
     ReturnedValues.clear();
 
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition()) {
+    if (!F) {
       indicatePessimisticFixpoint();
       return;
     }
@@ -771,6 +911,9 @@ public:
         return;
       }
     }
+
+    if (!F->hasExactDefinition())
+      indicatePessimisticFixpoint();
   }
 
   /// See AbstractAttribute::manifest(...).
@@ -870,12 +1013,17 @@ ChangeStatus AAReturnedValuesImpl::manifest(Attributor &A) {
     if (Function *F = dyn_cast<Function>(&AnchorValue)) {
       for (const Use &U : F->uses())
         if (CallBase *CB = dyn_cast<CallBase>(U.getUser()))
-          if (CB->isCallee(&U))
-            Changed = ReplaceCallSiteUsersWith(*CB, *RVC) | Changed;
+          if (CB->isCallee(&U)) {
+            Constant *RVCCast =
+                ConstantExpr::getTruncOrBitCast(RVC, CB->getType());
+            Changed = ReplaceCallSiteUsersWith(*CB, *RVCCast) | Changed;
+          }
     } else {
       assert(isa<CallBase>(AnchorValue) &&
              "Expcected a function or call base anchor!");
-      Changed = ReplaceCallSiteUsersWith(cast<CallBase>(AnchorValue), *RVC);
+      Constant *RVCCast =
+          ConstantExpr::getTruncOrBitCast(RVC, AnchorValue.getType());
+      Changed = ReplaceCallSiteUsersWith(cast<CallBase>(AnchorValue), *RVCCast);
     }
     if (Changed == ChangeStatus::CHANGED)
       STATS_DECLTRACK(UniqueConstantReturnValue, FunctionReturn,
@@ -1137,12 +1285,6 @@ struct AAReturnedValuesCallSite final : AAReturnedValuesImpl {
 struct AANoSyncImpl : AANoSync {
   AANoSyncImpl(const IRPosition &IRP) : AANoSync(IRP) {}
 
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({Attribute::NoSync}))
-      indicateOptimisticFixpoint();
-  }
-
   const std::string getAsStr() const override {
     return getAssumed() ? "nosync" : "may-sync";
   }
@@ -1310,7 +1452,7 @@ struct AANoSyncCallSite final : AANoSyncImpl {
   void initialize(Attributor &A) override {
     AANoSyncImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -1335,12 +1477,6 @@ struct AANoSyncCallSite final : AANoSyncImpl {
 
 struct AANoFreeImpl : public AANoFree {
   AANoFreeImpl(const IRPosition &IRP) : AANoFree(IRP) {}
-
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({Attribute::NoFree}))
-      indicateOptimisticFixpoint();
-  }
 
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
@@ -1380,7 +1516,7 @@ struct AANoFreeCallSite final : AANoFreeImpl {
   void initialize(Attributor &A) override {
     AANoFreeImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -1402,6 +1538,46 @@ struct AANoFreeCallSite final : AANoFreeImpl {
 };
 
 /// ------------------------ NonNull Argument Attribute ------------------------
+static int64_t getKnownNonNullAndDerefBytesForUse(
+    Attributor &A, AbstractAttribute &QueryingAA, Value &AssociatedValue,
+    const Use *U, const Instruction *I, bool &IsNonNull, bool &TrackUse) {
+  // TODO: Add GEP support
+  TrackUse = false;
+
+  const Function *F = I->getFunction();
+  bool NullPointerIsDefined = F ? F->nullPointerIsDefined() : true;
+  const DataLayout &DL = A.getInfoCache().getDL();
+  if (ImmutableCallSite ICS = ImmutableCallSite(I)) {
+    if (ICS.isBundleOperand(U))
+      return 0;
+
+    if (ICS.isCallee(U)) {
+      IsNonNull |= !NullPointerIsDefined;
+      return 0;
+    }
+
+    unsigned ArgNo = ICS.getArgumentNo(U);
+    IRPosition IRP = IRPosition::callsite_argument(ICS, ArgNo);
+    auto &DerefAA = A.getAAFor<AADereferenceable>(QueryingAA, IRP);
+    IsNonNull |= DerefAA.isKnownNonNull();
+    return DerefAA.getKnownDereferenceableBytes();
+  }
+
+  int64_t Offset;
+  if (const Value *Base = getBasePointerOfAccessPointerOperand(I, Offset, DL)) {
+    if (Base == &AssociatedValue) {
+      int64_t DerefBytes =
+          Offset +
+          (int64_t)DL.getTypeStoreSize(
+              getPointerOperand(I)->getType()->getPointerElementType());
+
+      IsNonNull |= !NullPointerIsDefined;
+      return DerefBytes;
+    }
+  }
+
+  return 0;
+}
 struct AANonNullImpl : AANonNull {
   AANonNullImpl(const IRPosition &IRP) : AANonNull(IRP) {}
 
@@ -1409,6 +1585,18 @@ struct AANonNullImpl : AANonNull {
   void initialize(Attributor &A) override {
     if (hasAttr({Attribute::NonNull, Attribute::Dereferenceable}))
       indicateOptimisticFixpoint();
+    else
+      AANonNull::initialize(A);
+  }
+
+  /// See AAFromMustBeExecutedContext
+  bool followUse(Attributor &A, const Use *U, const Instruction *I) {
+    bool IsNonNull = false;
+    bool TrackUse = false;
+    getKnownNonNullAndDerefBytesForUse(A, *this, getAssociatedValue(), U, I,
+                                       IsNonNull, TrackUse);
+    takeKnownMaximum(IsNonNull);
+    return TrackUse;
   }
 
   /// See AbstractAttribute::getAsStr().
@@ -1418,12 +1606,14 @@ struct AANonNullImpl : AANonNull {
 };
 
 /// NonNull attribute for a floating value.
-struct AANonNullFloating : AANonNullImpl {
-  AANonNullFloating(const IRPosition &IRP) : AANonNullImpl(IRP) {}
+struct AANonNullFloating
+    : AAFromMustBeExecutedContext<AANonNull, AANonNullImpl> {
+  using Base = AAFromMustBeExecutedContext<AANonNull, AANonNullImpl>;
+  AANonNullFloating(const IRPosition &IRP) : Base(IRP) {}
 
   /// See AbstractAttribute::initialize(...).
   void initialize(Attributor &A) override {
-    AANonNullImpl::initialize(A);
+    Base::initialize(A);
 
     if (isAtFixpoint())
       return;
@@ -1441,6 +1631,10 @@ struct AANonNullFloating : AANonNullImpl {
 
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
+    ChangeStatus Change = Base::updateImpl(A);
+    if (isKnownNonNull())
+      return Change;
+
     const DataLayout &DL = A.getDataLayout();
 
     auto VisitValueCB = [&](Value &V, AAAlign::StateType &T,
@@ -1484,9 +1678,12 @@ struct AANonNullReturned final
 
 /// NonNull attribute for function argument.
 struct AANonNullArgument final
-    : AAArgumentFromCallSiteArguments<AANonNull, AANonNullImpl> {
+    : AAArgumentFromCallSiteArgumentsAndMustBeExecutedContext<AANonNull,
+                                                              AANonNullImpl> {
   AANonNullArgument(const IRPosition &IRP)
-      : AAArgumentFromCallSiteArguments<AANonNull, AANonNullImpl>(IRP) {}
+      : AAArgumentFromCallSiteArgumentsAndMustBeExecutedContext<AANonNull,
+                                                                AANonNullImpl>(
+            IRP) {}
 
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override { STATS_DECLTRACK_ARG_ATTR(nonnull) }
@@ -1501,9 +1698,12 @@ struct AANonNullCallSiteArgument final : AANonNullFloating {
 
 /// NonNull attribute for a call site return position.
 struct AANonNullCallSiteReturned final
-    : AACallSiteReturnedFromReturned<AANonNull, AANonNullImpl> {
+    : AACallSiteReturnedFromReturnedAndMustBeExecutedContext<AANonNull,
+                                                             AANonNullImpl> {
   AANonNullCallSiteReturned(const IRPosition &IRP)
-      : AACallSiteReturnedFromReturned<AANonNull, AANonNullImpl>(IRP) {}
+      : AACallSiteReturnedFromReturnedAndMustBeExecutedContext<AANonNull,
+                                                               AANonNullImpl>(
+            IRP) {}
 
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override { STATS_DECLTRACK_CSRET_ATTR(nonnull) }
@@ -1514,14 +1714,6 @@ struct AANonNullCallSiteReturned final
 struct AANoRecurseImpl : public AANoRecurse {
   AANoRecurseImpl(const IRPosition &IRP) : AANoRecurse(IRP) {}
 
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({getAttrKind()})) {
-      indicateOptimisticFixpoint();
-      return;
-    }
-  }
-
   /// See AbstractAttribute::getAsStr()
   const std::string getAsStr() const override {
     return getAssumed() ? "norecurse" : "may-recurse";
@@ -1531,10 +1723,38 @@ struct AANoRecurseImpl : public AANoRecurse {
 struct AANoRecurseFunction final : AANoRecurseImpl {
   AANoRecurseFunction(const IRPosition &IRP) : AANoRecurseImpl(IRP) {}
 
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    AANoRecurseImpl::initialize(A);
+    if (const Function *F = getAnchorScope())
+      if (A.getInfoCache().getSccSize(*F) == 1)
+        return;
+    indicatePessimisticFixpoint();
+  }
+
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
-    // TODO: Implement this.
-    return indicatePessimisticFixpoint();
+
+    auto CheckForNoRecurse = [&](Instruction &I) {
+      ImmutableCallSite ICS(&I);
+      if (ICS.hasFnAttr(Attribute::NoRecurse))
+        return true;
+
+      const auto &NoRecurseAA =
+          A.getAAFor<AANoRecurse>(*this, IRPosition::callsite_function(ICS));
+      if (!NoRecurseAA.isAssumedNoRecurse())
+        return false;
+
+      // Recursion to the same function
+      if (ICS.getCalledFunction() == getAnchorScope())
+        return false;
+
+      return true;
+    };
+
+    if (!A.checkForAllCallLikeInstructions(CheckForNoRecurse, *this))
+      return indicatePessimisticFixpoint();
+    return ChangeStatus::UNCHANGED;
   }
 
   void trackStatistics() const override { STATS_DECLTRACK_FN_ATTR(norecurse) }
@@ -1548,7 +1768,7 @@ struct AANoRecurseCallSite final : AANoRecurseImpl {
   void initialize(Attributor &A) override {
     AANoRecurseImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -1601,10 +1821,7 @@ struct AAWillReturnImpl : public AAWillReturn {
 
   /// See AbstractAttribute::initialize(...).
   void initialize(Attributor &A) override {
-    if (hasAttr({Attribute::WillReturn})) {
-      indicateOptimisticFixpoint();
-      return;
-    }
+    AAWillReturn::initialize(A);
 
     Function *F = getAssociatedFunction();
     if (containsPossiblyEndlessLoop(F))
@@ -1651,7 +1868,7 @@ struct AAWillReturnCallSite final : AAWillReturnImpl {
   void initialize(Attributor &A) override {
     AAWillReturnImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -1678,12 +1895,6 @@ struct AAWillReturnCallSite final : AAWillReturnImpl {
 struct AANoAliasImpl : AANoAlias {
   AANoAliasImpl(const IRPosition &IRP) : AANoAlias(IRP) {}
 
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({Attribute::NoAlias}))
-      indicateOptimisticFixpoint();
-  }
-
   const std::string getAsStr() const override {
     return getAssumed() ? "noalias" : "may-alias";
   }
@@ -1695,8 +1906,13 @@ struct AANoAliasFloating final : AANoAliasImpl {
 
   /// See AbstractAttribute::initialize(...).
   void initialize(Attributor &A) override {
-    // TODO: It isn't sound to initialize as the same with `AANoAliasImpl`
-    // because `noalias` may not be valid in the current position.
+    AANoAliasImpl::initialize(A);
+    Value &Val = getAssociatedValue();
+    if (isa<AllocaInst>(Val))
+      indicateOptimisticFixpoint();
+    if (isa<ConstantPointerNull>(Val) &&
+        Val.getType()->getPointerAddressSpace() == 0)
+      indicateOptimisticFixpoint();
   }
 
   /// See AbstractAttribute::updateImpl(...).
@@ -1734,12 +1950,70 @@ struct AANoAliasCallSiteArgument final : AANoAliasImpl {
 
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
-    // TODO: Implement this.
-    return indicatePessimisticFixpoint();
+    // We can deduce "noalias" if the following conditions hold.
+    // (i)   Associated value is assumed to be noalias in the definition.
+    // (ii)  Associated value is assumed to be no-capture in all the uses
+    //       possibly executed before this callsite.
+    // (iii) There is no other pointer argument which could alias with the
+    //       value.
+
+    const Value &V = getAssociatedValue();
+    const IRPosition IRP = IRPosition::value(V);
+
+    // (i) Check whether noalias holds in the definition.
+
+    auto &NoAliasAA = A.getAAFor<AANoAlias>(*this, IRP);
+
+    if (!NoAliasAA.isAssumedNoAlias())
+      return indicatePessimisticFixpoint();
+
+    LLVM_DEBUG(dbgs() << "[Attributor][AANoAliasCSArg] " << V
+                      << " is assumed NoAlias in the definition\n");
+
+    // (ii) Check whether the value is captured in the scope using AANoCapture.
+    //      FIXME: This is conservative though, it is better to look at CFG and
+    //             check only uses possibly executed before this callsite.
+
+    auto &NoCaptureAA = A.getAAFor<AANoCapture>(*this, IRP);
+    if (!NoCaptureAA.isAssumedNoCaptureMaybeReturned()) {
+      LLVM_DEBUG(
+          dbgs() << "[Attributor][AANoAliasCSArg] " << V
+                 << " cannot be noalias as it is potentially captured\n");
+      return indicatePessimisticFixpoint();
+    }
+
+    // (iii) Check there is no other pointer argument which could alias with the
+    // value.
+    ImmutableCallSite ICS(&getAnchorValue());
+    for (unsigned i = 0; i < ICS.getNumArgOperands(); i++) {
+      if (getArgNo() == (int)i)
+        continue;
+      const Value *ArgOp = ICS.getArgOperand(i);
+      if (!ArgOp->getType()->isPointerTy())
+        continue;
+
+      if (const Function *F = getAnchorScope()) {
+        if (AAResults *AAR = A.getInfoCache().getAAResultsForFunction(*F)) {
+          bool IsAliasing = AAR->isNoAlias(&getAssociatedValue(), ArgOp);
+          LLVM_DEBUG(dbgs()
+                     << "[Attributor][NoAliasCSArg] Check alias between "
+                        "callsite arguments "
+                     << AAR->isNoAlias(&getAssociatedValue(), ArgOp) << " "
+                     << getAssociatedValue() << " " << *ArgOp << " => "
+                     << (IsAliasing ? "" : "no-") << "alias \n");
+
+          if (IsAliasing)
+            continue;
+        }
+      }
+      return indicatePessimisticFixpoint();
+    }
+
+    return ChangeStatus::UNCHANGED;
   }
 
   /// See AbstractAttribute::trackStatistics()
-  void trackStatistics() const override { STATS_DECLTRACK_ARG_ATTR(noalias) }
+  void trackStatistics() const override { STATS_DECLTRACK_CSARG_ATTR(noalias) }
 };
 
 /// NoAlias attribute for function return value.
@@ -1760,19 +2034,13 @@ struct AANoAliasReturned final : AANoAliasImpl {
       if (!ICS)
         return false;
 
-      const auto &NoAliasAA =
-          A.getAAFor<AANoAlias>(*this, IRPosition::callsite_returned(ICS));
+      const IRPosition &RVPos = IRPosition::value(RV);
+      const auto &NoAliasAA = A.getAAFor<AANoAlias>(*this, RVPos);
       if (!NoAliasAA.isAssumedNoAlias())
         return false;
 
-      /// FIXME: We can improve capture check in two ways:
-      /// 1. Use the AANoCapture facilities.
-      /// 2. Use the location of return insts for escape queries.
-      if (PointerMayBeCaptured(&RV, /* ReturnCaptures */ false,
-                               /* StoreCaptures */ true))
-        return false;
-
-      return true;
+      const auto &NoCaptureAA = A.getAAFor<AANoCapture>(*this, RVPos);
+      return NoCaptureAA.isAssumedNoCaptureMaybeReturned();
     };
 
     if (!A.checkForAllReturnedValues(CheckReturnValue, *this))
@@ -1793,7 +2061,7 @@ struct AANoAliasCallSiteReturned final : AANoAliasImpl {
   void initialize(Attributor &A) override {
     AANoAliasImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -1811,7 +2079,7 @@ struct AANoAliasCallSiteReturned final : AANoAliasImpl {
   }
 
   /// See AbstractAttribute::trackStatistics()
-  void trackStatistics() const override { STATS_DECLTRACK_CS_ATTR(noalias); }
+  void trackStatistics() const override { STATS_DECLTRACK_CSRET_ATTR(noalias); }
 };
 
 /// -------------------AAIsDead Function Attribute-----------------------
@@ -1821,26 +2089,20 @@ struct AAIsDeadImpl : public AAIsDead {
 
   void initialize(Attributor &A) override {
     const Function *F = getAssociatedFunction();
-
-    if (F->hasInternalLinkage())
-      return;
-
-    if (!F || !F->hasExactDefinition()) {
-      indicatePessimisticFixpoint();
-      return;
-    }
-
-    exploreFromEntry(A, F);
+    if (F && !F->isDeclaration())
+      exploreFromEntry(A, F);
   }
 
   void exploreFromEntry(Attributor &A, const Function *F) {
     ToBeExploredPaths.insert(&(F->getEntryBlock().front()));
-    AssumedLiveBlocks.insert(&(F->getEntryBlock()));
 
     for (size_t i = 0; i < ToBeExploredPaths.size(); ++i)
       if (const Instruction *NextNoReturnI =
               findNextNoReturn(A, ToBeExploredPaths[i]))
         NoReturnCalls.insert(NextNoReturnI);
+
+    // Mark the block live after we looked for no-return instructions.
+    assumeLive(A, F->getEntryBlock());
   }
 
   /// Find the next assumed noreturn instruction in the block of \p I starting
@@ -1869,7 +2131,7 @@ struct AAIsDeadImpl : public AAIsDead {
     Function &F = *getAssociatedFunction();
 
     if (AssumedLiveBlocks.empty()) {
-      F.replaceAllUsesWith(UndefValue::get(F.getType()));
+      A.deleteAfterManifest(F);
       return ChangeStatus::CHANGED;
     }
 
@@ -1919,6 +2181,21 @@ struct AAIsDeadImpl : public AAIsDead {
             }
           }
         }
+
+        if (SplitPos == &NormalDestBB->front()) {
+          // If this is an invoke of a noreturn function the edge to the normal
+          // destination block is dead but not necessarily the block itself.
+          // TODO: We need to move to an edge based system during deduction and
+          //       also manifest.
+          assert(!NormalDestBB->isLandingPad() &&
+                 "Expected the normal destination not to be a landingpad!");
+          BasicBlock *SplitBB =
+              SplitBlockPredecessors(NormalDestBB, {BB}, ".dead");
+          // The split block is live even if it contains only an unreachable
+          // instruction at the end.
+          assumeLive(A, *SplitBB);
+          SplitPos = SplitBB->getTerminator();
+        }
       }
 
       BB = SplitPos->getParent();
@@ -1926,6 +2203,10 @@ struct AAIsDeadImpl : public AAIsDead {
       changeToUnreachable(BB->getTerminator(), /* UseLLVMTrap */ false);
       HasChanged = ChangeStatus::CHANGED;
     }
+
+    for (BasicBlock &BB : F)
+      if (!AssumedLiveBlocks.count(&BB))
+        A.deleteAfterManifest(BB);
 
     return HasChanged;
   }
@@ -1978,6 +2259,23 @@ struct AAIsDeadImpl : public AAIsDead {
     return F.hasPersonalityFn() && !canSimplifyInvokeNoUnwind(&F);
   }
 
+  /// Assume \p BB is (partially) live now and indicate to the Attributor \p A
+  /// that internal function called from \p BB should now be looked at.
+  void assumeLive(Attributor &A, const BasicBlock &BB) {
+    if (!AssumedLiveBlocks.insert(&BB).second)
+      return;
+
+    // We assume that all of BB is (probably) live now and if there are calls to
+    // internal functions we will assume that those are now live as well. This
+    // is a performance optimization for blocks with calls to a lot of internal
+    // functions. It can however cause dead functions to be treated as live.
+    for (const Instruction &I : BB)
+      if (ImmutableCallSite ICS = ImmutableCallSite(&I))
+        if (const Function *F = ICS.getCalledFunction())
+          if (F->hasLocalLinkage())
+            A.markLiveInternalFunction(*F);
+  }
+
   /// Collection of to be explored paths.
   SmallSetVector<const Instruction *, 8> ToBeExploredPaths;
 
@@ -1993,18 +2291,6 @@ struct AAIsDeadFunction final : public AAIsDeadImpl {
 
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override {
-    STATS_DECL(
-        DeadInternalFunction, Function,
-        "Number of internal functions classified as dead (no live callsite)");
-    BUILD_STAT_NAME(DeadInternalFunction, Function) +=
-        (getAssociatedFunction()->hasInternalLinkage() &&
-         AssumedLiveBlocks.empty())
-            ? 1
-            : 0;
-    STATS_DECL(DeadBlocks, Function,
-               "Number of basic blocks classified as dead");
-    BUILD_STAT_NAME(DeadBlocks, Function) +=
-        getAssociatedFunction()->size() - AssumedLiveBlocks.size();
     STATS_DECL(PartiallyDeadBlocks, Function,
                "Number of basic blocks classified as partially dead");
     BUILD_STAT_NAME(PartiallyDeadBlocks, Function) += NoReturnCalls.size();
@@ -2048,7 +2334,7 @@ const Instruction *AAIsDeadImpl::findNextNoReturn(Attributor &A,
         // Use nounwind to justify the unwind block is dead as well.
         const auto &AANoUnw = A.getAAFor<AANoUnwind>(*this, IPos);
         if (!Invoke2CallAllowed || !AANoUnw.isAssumedNoUnwind()) {
-          AssumedLiveBlocks.insert(Invoke->getUnwindDest());
+          assumeLive(A, *Invoke->getUnwindDest());
           ToBeExploredPaths.insert(&Invoke->getUnwindDest()->front());
         }
       }
@@ -2063,7 +2349,7 @@ const Instruction *AAIsDeadImpl::findNextNoReturn(Attributor &A,
 
   // get new paths (reachable blocks).
   for (const BasicBlock *SuccBB : successors(BB)) {
-    AssumedLiveBlocks.insert(SuccBB);
+    assumeLive(A, *SuccBB);
     ToBeExploredPaths.insert(&SuccBB->front());
   }
 
@@ -2072,21 +2358,7 @@ const Instruction *AAIsDeadImpl::findNextNoReturn(Attributor &A,
 }
 
 ChangeStatus AAIsDeadImpl::updateImpl(Attributor &A) {
-  const Function *F = getAssociatedFunction();
   ChangeStatus Status = ChangeStatus::UNCHANGED;
-
-  if (F->hasInternalLinkage() && AssumedLiveBlocks.empty()) {
-    auto CallSiteCheck = [&](CallSite) { return false; };
-
-    // All callsites of F are dead.
-    if (A.checkForAllCallSites(CallSiteCheck, *this, true))
-      return ChangeStatus::UNCHANGED;
-
-    // There exists at least one live call site, so we explore the function.
-    Status = ChangeStatus::CHANGED;
-
-    exploreFromEntry(A, F);
-  }
 
   // Temporary collection to iterate over existing noreturn instructions. This
   // will alow easier modification of NoReturnCalls collection
@@ -2180,6 +2452,12 @@ struct AADereferenceableImpl : AADereferenceable {
       takeKnownDerefBytesMaximum(Attr.getValueAsInt());
 
     NonNullAA = &A.getAAFor<AANonNull>(*this, getIRPosition());
+
+    const IRPosition &IRP = this->getIRPosition();
+    bool IsFnInterface = IRP.isFnInterfaceKind();
+    const Function *FnScope = IRP.getAnchorScope();
+    if (IsFnInterface && (!FnScope || !FnScope->hasExactDefinition()))
+      indicatePessimisticFixpoint();
   }
 
   /// See AbstractAttribute::getState()
@@ -2187,6 +2465,16 @@ struct AADereferenceableImpl : AADereferenceable {
   StateType &getState() override { return *this; }
   const StateType &getState() const override { return *this; }
   /// }
+
+  /// See AAFromMustBeExecutedContext
+  bool followUse(Attributor &A, const Use *U, const Instruction *I) {
+    bool IsNonNull = false;
+    bool TrackUse = false;
+    int64_t DerefBytes = getKnownNonNullAndDerefBytesForUse(
+        A, *this, getAssociatedValue(), U, I, IsNonNull, TrackUse);
+    takeKnownDerefBytesMaximum(DerefBytes);
+    return TrackUse;
+  }
 
   void getDeducedAttributes(LLVMContext &Ctx,
                             SmallVectorImpl<Attribute> &Attrs) const override {
@@ -2212,12 +2500,16 @@ struct AADereferenceableImpl : AADereferenceable {
 };
 
 /// Dereferenceable attribute for a floating value.
-struct AADereferenceableFloating : AADereferenceableImpl {
-  AADereferenceableFloating(const IRPosition &IRP)
-      : AADereferenceableImpl(IRP) {}
+struct AADereferenceableFloating
+    : AAFromMustBeExecutedContext<AADereferenceable, AADereferenceableImpl> {
+  using Base =
+      AAFromMustBeExecutedContext<AADereferenceable, AADereferenceableImpl>;
+  AADereferenceableFloating(const IRPosition &IRP) : Base(IRP) {}
 
   /// See AbstractAttribute::updateImpl(...).
   ChangeStatus updateImpl(Attributor &A) override {
+    ChangeStatus Change = Base::updateImpl(A);
+
     const DataLayout &DL = A.getDataLayout();
 
     auto VisitValueCB = [&](Value &V, DerefState &T, bool Stripped) -> bool {
@@ -2276,7 +2568,7 @@ struct AADereferenceableFloating : AADereferenceableImpl {
             A, getIRPosition(), *this, T, VisitValueCB))
       return indicatePessimisticFixpoint();
 
-    return clampStateAndIndicateChange(getState(), T);
+    return Change | clampStateAndIndicateChange(getState(), T);
   }
 
   /// See AbstractAttribute::trackStatistics()
@@ -2301,12 +2593,11 @@ struct AADereferenceableReturned final
 
 /// Dereferenceable attribute for an argument
 struct AADereferenceableArgument final
-    : AAArgumentFromCallSiteArguments<AADereferenceable, AADereferenceableImpl,
-                                      DerefState> {
-  AADereferenceableArgument(const IRPosition &IRP)
-      : AAArgumentFromCallSiteArguments<AADereferenceable,
-                                        AADereferenceableImpl, DerefState>(
-            IRP) {}
+    : AAArgumentFromCallSiteArgumentsAndMustBeExecutedContext<
+          AADereferenceable, AADereferenceableImpl, DerefState> {
+  using Base = AAArgumentFromCallSiteArgumentsAndMustBeExecutedContext<
+      AADereferenceable, AADereferenceableImpl, DerefState>;
+  AADereferenceableArgument(const IRPosition &IRP) : Base(IRP) {}
 
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override {
@@ -2326,15 +2617,18 @@ struct AADereferenceableCallSiteArgument final : AADereferenceableFloating {
 };
 
 /// Dereferenceable attribute deduction for a call site return value.
-struct AADereferenceableCallSiteReturned final : AADereferenceableImpl {
-  AADereferenceableCallSiteReturned(const IRPosition &IRP)
-      : AADereferenceableImpl(IRP) {}
+struct AADereferenceableCallSiteReturned final
+    : AACallSiteReturnedFromReturnedAndMustBeExecutedContext<
+          AADereferenceable, AADereferenceableImpl> {
+  using Base = AACallSiteReturnedFromReturnedAndMustBeExecutedContext<
+      AADereferenceable, AADereferenceableImpl>;
+  AADereferenceableCallSiteReturned(const IRPosition &IRP) : Base(IRP) {}
 
   /// See AbstractAttribute::initialize(...).
   void initialize(Attributor &A) override {
-    AADereferenceableImpl::initialize(A);
+    Base::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -2344,11 +2638,14 @@ struct AADereferenceableCallSiteReturned final : AADereferenceableImpl {
     //       call site specific liveness information and then it makes
     //       sense to specialize attributes for call sites arguments instead of
     //       redirecting requests to the callee argument.
+
+    ChangeStatus Change = Base::updateImpl(A);
     Function *F = getAssociatedFunction();
     const IRPosition &FnPos = IRPosition::returned(*F);
     auto &FnAA = A.getAAFor<AADereferenceable>(*this, FnPos);
-    return clampStateAndIndicateChange(
-        getState(), static_cast<const DerefState &>(FnAA.getState()));
+    return Change |
+           clampStateAndIndicateChange(
+               getState(), static_cast<const DerefState &>(FnAA.getState()));
   }
 
   /// See AbstractAttribute::trackStatistics()
@@ -2373,6 +2670,11 @@ struct AAAlignImpl : AAAlign {
     getAttrs({Attribute::Alignment}, Attrs);
     for (const Attribute &Attr : Attrs)
       takeKnownMaximum(Attr.getValueAsInt());
+
+    if (getIRPosition().isFnInterfaceKind() &&
+        (!getAssociatedFunction() ||
+         !getAssociatedFunction()->hasExactDefinition()))
+      indicatePessimisticFixpoint();
   }
 
   /// See AbstractAttribute::manifest(...).
@@ -2387,13 +2689,13 @@ struct AAAlignImpl : AAAlign {
           if (SI->getAlignment() < getAssumedAlign()) {
             STATS_DECLTRACK(AAAlign, Store,
                             "Number of times alignemnt added to a store");
-            SI->setAlignment(getAssumedAlign());
+            SI->setAlignment(Align(getAssumedAlign()));
             Changed = ChangeStatus::CHANGED;
           }
       } else if (auto *LI = dyn_cast<LoadInst>(U.getUser())) {
         if (LI->getPointerOperand() == &AnchorVal)
           if (LI->getAlignment() < getAssumedAlign()) {
-            LI->setAlignment(getAssumedAlign());
+            LI->setAlignment(Align(getAssumedAlign()));
             STATS_DECLTRACK(AAAlign, Load,
                             "Number of times alignemnt added to a load");
             Changed = ChangeStatus::CHANGED;
@@ -2502,7 +2804,7 @@ struct AAAlignCallSiteReturned final : AAAlignImpl {
   void initialize(Attributor &A) override {
     AAAlignImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -2532,12 +2834,6 @@ struct AANoReturnImpl : public AANoReturn {
     return getAssumed() ? "noreturn" : "may-return";
   }
 
-  /// See AbstractAttribute::initialize(...).
-  void initialize(Attributor &A) override {
-    if (hasAttr({getAttrKind()}))
-      indicateOptimisticFixpoint();
-  }
-
   /// See AbstractAttribute::updateImpl(Attributor &A).
   virtual ChangeStatus updateImpl(Attributor &A) override {
     auto CheckForNoReturn = [](Instruction &) { return false; };
@@ -2563,7 +2859,7 @@ struct AANoReturnCallSite final : AANoReturnImpl {
   void initialize(Attributor &A) override {
     AANoReturnImpl::initialize(A);
     Function *F = getAssociatedFunction();
-    if (!F || !F->hasExactDefinition())
+    if (!F)
       indicatePessimisticFixpoint();
   }
 
@@ -2584,6 +2880,1236 @@ struct AANoReturnCallSite final : AANoReturnImpl {
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override { STATS_DECLTRACK_CS_ATTR(noreturn); }
 };
+
+/// ----------------------- Variable Capturing ---------------------------------
+
+/// A class to hold the state of for no-capture attributes.
+struct AANoCaptureImpl : public AANoCapture {
+  AANoCaptureImpl(const IRPosition &IRP) : AANoCapture(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    AANoCapture::initialize(A);
+
+    // You cannot "capture" null in the default address space.
+    if (isa<ConstantPointerNull>(getAssociatedValue()) &&
+        getAssociatedValue().getType()->getPointerAddressSpace() == 0) {
+      indicateOptimisticFixpoint();
+      return;
+    }
+
+    const IRPosition &IRP = getIRPosition();
+    const Function *F =
+        getArgNo() >= 0 ? IRP.getAssociatedFunction() : IRP.getAnchorScope();
+
+    // Check what state the associated function can actually capture.
+    if (F)
+      determineFunctionCaptureCapabilities(*F, *this);
+    else
+      indicatePessimisticFixpoint();
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override;
+
+  /// see AbstractAttribute::isAssumedNoCaptureMaybeReturned(...).
+  virtual void
+  getDeducedAttributes(LLVMContext &Ctx,
+                       SmallVectorImpl<Attribute> &Attrs) const override {
+    if (!isAssumedNoCaptureMaybeReturned())
+      return;
+
+    if (getArgNo() >= 0) {
+      if (isAssumedNoCapture())
+        Attrs.emplace_back(Attribute::get(Ctx, Attribute::NoCapture));
+      else if (ManifestInternal)
+        Attrs.emplace_back(Attribute::get(Ctx, "no-capture-maybe-returned"));
+    }
+  }
+
+  /// Set the NOT_CAPTURED_IN_MEM and NOT_CAPTURED_IN_RET bits in \p Known
+  /// depending on the ability of the function associated with \p IRP to capture
+  /// state in memory and through "returning/throwing", respectively.
+  static void determineFunctionCaptureCapabilities(const Function &F,
+                                                   IntegerState &State) {
+    // TODO: Once we have memory behavior attributes we should use them here.
+
+    // If we know we cannot communicate or write to memory, we do not care about
+    // ptr2int anymore.
+    if (F.onlyReadsMemory() && F.doesNotThrow() &&
+        F.getReturnType()->isVoidTy()) {
+      State.addKnownBits(NO_CAPTURE);
+      return;
+    }
+
+    // A function cannot capture state in memory if it only reads memory, it can
+    // however return/throw state and the state might be influenced by the
+    // pointer value, e.g., loading from a returned pointer might reveal a bit.
+    if (F.onlyReadsMemory())
+      State.addKnownBits(NOT_CAPTURED_IN_MEM);
+
+    // A function cannot communicate state back if it does not through
+    // exceptions and doesn not return values.
+    if (F.doesNotThrow() && F.getReturnType()->isVoidTy())
+      State.addKnownBits(NOT_CAPTURED_IN_RET);
+  }
+
+  /// See AbstractState::getAsStr().
+  const std::string getAsStr() const override {
+    if (isKnownNoCapture())
+      return "known not-captured";
+    if (isAssumedNoCapture())
+      return "assumed not-captured";
+    if (isKnownNoCaptureMaybeReturned())
+      return "known not-captured-maybe-returned";
+    if (isAssumedNoCaptureMaybeReturned())
+      return "assumed not-captured-maybe-returned";
+    return "assumed-captured";
+  }
+};
+
+/// Attributor-aware capture tracker.
+struct AACaptureUseTracker final : public CaptureTracker {
+
+  /// Create a capture tracker that can lookup in-flight abstract attributes
+  /// through the Attributor \p A.
+  ///
+  /// If a use leads to a potential capture, \p CapturedInMemory is set and the
+  /// search is stopped. If a use leads to a return instruction,
+  /// \p CommunicatedBack is set to true and \p CapturedInMemory is not changed.
+  /// If a use leads to a ptr2int which may capture the value,
+  /// \p CapturedInInteger is set. If a use is found that is currently assumed
+  /// "no-capture-maybe-returned", the user is added to the \p PotentialCopies
+  /// set. All values in \p PotentialCopies are later tracked as well. For every
+  /// explored use we decrement \p RemainingUsesToExplore. Once it reaches 0,
+  /// the search is stopped with \p CapturedInMemory and \p CapturedInInteger
+  /// conservatively set to true.
+  AACaptureUseTracker(Attributor &A, AANoCapture &NoCaptureAA,
+                      const AAIsDead &IsDeadAA, IntegerState &State,
+                      SmallVectorImpl<const Value *> &PotentialCopies,
+                      unsigned &RemainingUsesToExplore)
+      : A(A), NoCaptureAA(NoCaptureAA), IsDeadAA(IsDeadAA), State(State),
+        PotentialCopies(PotentialCopies),
+        RemainingUsesToExplore(RemainingUsesToExplore) {}
+
+  /// Determine if \p V maybe captured. *Also updates the state!*
+  bool valueMayBeCaptured(const Value *V) {
+    if (V->getType()->isPointerTy()) {
+      PointerMayBeCaptured(V, this);
+    } else {
+      State.indicatePessimisticFixpoint();
+    }
+    return State.isAssumed(AANoCapture::NO_CAPTURE_MAYBE_RETURNED);
+  }
+
+  /// See CaptureTracker::tooManyUses().
+  void tooManyUses() override {
+    State.removeAssumedBits(AANoCapture::NO_CAPTURE);
+  }
+
+  bool isDereferenceableOrNull(Value *O, const DataLayout &DL) override {
+    if (CaptureTracker::isDereferenceableOrNull(O, DL))
+      return true;
+    const auto &DerefAA =
+        A.getAAFor<AADereferenceable>(NoCaptureAA, IRPosition::value(*O));
+    return DerefAA.getAssumedDereferenceableBytes();
+  }
+
+  /// See CaptureTracker::captured(...).
+  bool captured(const Use *U) override {
+    Instruction *UInst = cast<Instruction>(U->getUser());
+    LLVM_DEBUG(dbgs() << "Check use: " << *U->get() << " in " << *UInst
+                      << "\n");
+
+    // Because we may reuse the tracker multiple times we keep track of the
+    // number of explored uses ourselves as well.
+    if (RemainingUsesToExplore-- == 0) {
+      LLVM_DEBUG(dbgs() << " - too many uses to explore!\n");
+      return isCapturedIn(/* Memory */ true, /* Integer */ true,
+                          /* Return */ true);
+    }
+
+    // Deal with ptr2int by following uses.
+    if (isa<PtrToIntInst>(UInst)) {
+      LLVM_DEBUG(dbgs() << " - ptr2int assume the worst!\n");
+      return valueMayBeCaptured(UInst);
+    }
+
+    // Explicitly catch return instructions.
+    if (isa<ReturnInst>(UInst))
+      return isCapturedIn(/* Memory */ false, /* Integer */ false,
+                          /* Return */ true);
+
+    // For now we only use special logic for call sites. However, the tracker
+    // itself knows about a lot of other non-capturing cases already.
+    CallSite CS(UInst);
+    if (!CS || !CS.isArgOperand(U))
+      return isCapturedIn(/* Memory */ true, /* Integer */ true,
+                          /* Return */ true);
+
+    unsigned ArgNo = CS.getArgumentNo(U);
+    const IRPosition &CSArgPos = IRPosition::callsite_argument(CS, ArgNo);
+    // If we have a abstract no-capture attribute for the argument we can use
+    // it to justify a non-capture attribute here. This allows recursion!
+    auto &ArgNoCaptureAA = A.getAAFor<AANoCapture>(NoCaptureAA, CSArgPos);
+    if (ArgNoCaptureAA.isAssumedNoCapture())
+      return isCapturedIn(/* Memory */ false, /* Integer */ false,
+                          /* Return */ false);
+    if (ArgNoCaptureAA.isAssumedNoCaptureMaybeReturned()) {
+      addPotentialCopy(CS);
+      return isCapturedIn(/* Memory */ false, /* Integer */ false,
+                          /* Return */ false);
+    }
+
+    // Lastly, we could not find a reason no-capture can be assumed so we don't.
+    return isCapturedIn(/* Memory */ true, /* Integer */ true,
+                        /* Return */ true);
+  }
+
+  /// Register \p CS as potential copy of the value we are checking.
+  void addPotentialCopy(CallSite CS) {
+    PotentialCopies.push_back(CS.getInstruction());
+  }
+
+  /// See CaptureTracker::shouldExplore(...).
+  bool shouldExplore(const Use *U) override {
+    // Check liveness.
+    return !IsDeadAA.isAssumedDead(cast<Instruction>(U->getUser()));
+  }
+
+  /// Update the state according to \p CapturedInMem, \p CapturedInInt, and
+  /// \p CapturedInRet, then return the appropriate value for use in the
+  /// CaptureTracker::captured() interface.
+  bool isCapturedIn(bool CapturedInMem, bool CapturedInInt,
+                    bool CapturedInRet) {
+    LLVM_DEBUG(dbgs() << " - captures [Mem " << CapturedInMem << "|Int "
+                      << CapturedInInt << "|Ret " << CapturedInRet << "]\n");
+    if (CapturedInMem)
+      State.removeAssumedBits(AANoCapture::NOT_CAPTURED_IN_MEM);
+    if (CapturedInInt)
+      State.removeAssumedBits(AANoCapture::NOT_CAPTURED_IN_INT);
+    if (CapturedInRet)
+      State.removeAssumedBits(AANoCapture::NOT_CAPTURED_IN_RET);
+    return !State.isAssumed(AANoCapture::NO_CAPTURE_MAYBE_RETURNED);
+  }
+
+private:
+  /// The attributor providing in-flight abstract attributes.
+  Attributor &A;
+
+  /// The abstract attribute currently updated.
+  AANoCapture &NoCaptureAA;
+
+  /// The abstract liveness state.
+  const AAIsDead &IsDeadAA;
+
+  /// The state currently updated.
+  IntegerState &State;
+
+  /// Set of potential copies of the tracked value.
+  SmallVectorImpl<const Value *> &PotentialCopies;
+
+  /// Global counter to limit the number of explored uses.
+  unsigned &RemainingUsesToExplore;
+};
+
+ChangeStatus AANoCaptureImpl::updateImpl(Attributor &A) {
+  const IRPosition &IRP = getIRPosition();
+  const Value *V =
+      getArgNo() >= 0 ? IRP.getAssociatedArgument() : &IRP.getAssociatedValue();
+  if (!V)
+    return indicatePessimisticFixpoint();
+
+  const Function *F =
+      getArgNo() >= 0 ? IRP.getAssociatedFunction() : IRP.getAnchorScope();
+  assert(F && "Expected a function!");
+  const auto &IsDeadAA = A.getAAFor<AAIsDead>(*this, IRPosition::function(*F));
+
+  AANoCapture::StateType T;
+  // TODO: Once we have memory behavior attributes we should use them here
+  // similar to the reasoning in
+  // AANoCaptureImpl::determineFunctionCaptureCapabilities(...).
+
+  // TODO: Use the AAReturnedValues to learn if the argument can return or
+  // not.
+
+  // Use the CaptureTracker interface and logic with the specialized tracker,
+  // defined in AACaptureUseTracker, that can look at in-flight abstract
+  // attributes and directly updates the assumed state.
+  SmallVector<const Value *, 4> PotentialCopies;
+  unsigned RemainingUsesToExplore = DefaultMaxUsesToExplore;
+  AACaptureUseTracker Tracker(A, *this, IsDeadAA, T, PotentialCopies,
+                              RemainingUsesToExplore);
+
+  // Check all potential copies of the associated value until we can assume
+  // none will be captured or we have to assume at least one might be.
+  unsigned Idx = 0;
+  PotentialCopies.push_back(V);
+  while (T.isAssumed(NO_CAPTURE_MAYBE_RETURNED) && Idx < PotentialCopies.size())
+    Tracker.valueMayBeCaptured(PotentialCopies[Idx++]);
+
+  AAAlign::StateType &S = getState();
+  auto Assumed = S.getAssumed();
+  S.intersectAssumedBits(T.getAssumed());
+  return Assumed == S.getAssumed() ? ChangeStatus::UNCHANGED
+                                   : ChangeStatus::CHANGED;
+}
+
+/// NoCapture attribute for function arguments.
+struct AANoCaptureArgument final : AANoCaptureImpl {
+  AANoCaptureArgument(const IRPosition &IRP) : AANoCaptureImpl(IRP) {}
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override { STATS_DECLTRACK_ARG_ATTR(nocapture) }
+};
+
+/// NoCapture attribute for call site arguments.
+struct AANoCaptureCallSiteArgument final : AANoCaptureImpl {
+  AANoCaptureCallSiteArgument(const IRPosition &IRP) : AANoCaptureImpl(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    // TODO: Once we have call site specific value information we can provide
+    //       call site specific liveness information and then it makes
+    //       sense to specialize attributes for call sites arguments instead of
+    //       redirecting requests to the callee argument.
+    Argument *Arg = getAssociatedArgument();
+    if (!Arg)
+      return indicatePessimisticFixpoint();
+    const IRPosition &ArgPos = IRPosition::argument(*Arg);
+    auto &ArgAA = A.getAAFor<AANoCapture>(*this, ArgPos);
+    return clampStateAndIndicateChange(
+        getState(),
+        static_cast<const AANoCapture::StateType &>(ArgAA.getState()));
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override{STATS_DECLTRACK_CSARG_ATTR(nocapture)};
+};
+
+/// NoCapture attribute for floating values.
+struct AANoCaptureFloating final : AANoCaptureImpl {
+  AANoCaptureFloating(const IRPosition &IRP) : AANoCaptureImpl(IRP) {}
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_FLOATING_ATTR(nocapture)
+  }
+};
+
+/// NoCapture attribute for function return value.
+struct AANoCaptureReturned final : AANoCaptureImpl {
+  AANoCaptureReturned(const IRPosition &IRP) : AANoCaptureImpl(IRP) {
+    llvm_unreachable("NoCapture is not applicable to function returns!");
+  }
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    llvm_unreachable("NoCapture is not applicable to function returns!");
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    llvm_unreachable("NoCapture is not applicable to function returns!");
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {}
+};
+
+/// NoCapture attribute deduction for a call site return value.
+struct AANoCaptureCallSiteReturned final : AANoCaptureImpl {
+  AANoCaptureCallSiteReturned(const IRPosition &IRP) : AANoCaptureImpl(IRP) {}
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_CSRET_ATTR(nocapture)
+  }
+};
+
+/// ------------------ Value Simplify Attribute ----------------------------
+struct AAValueSimplifyImpl : AAValueSimplify {
+  AAValueSimplifyImpl(const IRPosition &IRP) : AAValueSimplify(IRP) {}
+
+  /// See AbstractAttribute::getAsStr().
+  const std::string getAsStr() const override {
+    return getAssumed() ? (getKnown() ? "simplified" : "maybe-simple")
+                        : "not-simple";
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {}
+
+  /// See AAValueSimplify::getAssumedSimplifiedValue()
+  Optional<Value *> getAssumedSimplifiedValue(Attributor &A) const override {
+    if (!getAssumed())
+      return const_cast<Value *>(&getAssociatedValue());
+    return SimplifiedAssociatedValue;
+  }
+  void initialize(Attributor &A) override {}
+
+  /// Helper function for querying AAValueSimplify and updating candicate.
+  /// \param QueryingValue Value trying to unify with SimplifiedValue
+  /// \param AccumulatedSimplifiedValue Current simplification result.
+  static bool checkAndUpdate(Attributor &A, const AbstractAttribute &QueryingAA,
+                             Value &QueryingValue,
+                             Optional<Value *> &AccumulatedSimplifiedValue) {
+    // FIXME: Add a typecast support.
+
+    auto &ValueSimpifyAA = A.getAAFor<AAValueSimplify>(
+        QueryingAA, IRPosition::value(QueryingValue));
+
+    Optional<Value *> QueryingValueSimplified =
+        ValueSimpifyAA.getAssumedSimplifiedValue(A);
+
+    if (!QueryingValueSimplified.hasValue())
+      return true;
+
+    if (!QueryingValueSimplified.getValue())
+      return false;
+
+    Value &QueryingValueSimplifiedUnwrapped =
+        *QueryingValueSimplified.getValue();
+
+    if (isa<UndefValue>(QueryingValueSimplifiedUnwrapped))
+      return true;
+
+    if (AccumulatedSimplifiedValue.hasValue())
+      return AccumulatedSimplifiedValue == QueryingValueSimplified;
+
+    LLVM_DEBUG(dbgs() << "[Attributor][ValueSimplify] " << QueryingValue
+                      << " is assumed to be "
+                      << QueryingValueSimplifiedUnwrapped << "\n");
+
+    AccumulatedSimplifiedValue = QueryingValueSimplified;
+    return true;
+  }
+
+  /// See AbstractAttribute::manifest(...).
+  ChangeStatus manifest(Attributor &A) override {
+    ChangeStatus Changed = ChangeStatus::UNCHANGED;
+
+    if (!SimplifiedAssociatedValue.hasValue() ||
+        !SimplifiedAssociatedValue.getValue())
+      return Changed;
+
+    if (auto *C = dyn_cast<Constant>(SimplifiedAssociatedValue.getValue())) {
+      // We can replace the AssociatedValue with the constant.
+      Value &V = getAssociatedValue();
+      if (!V.user_empty() && &V != C && V.getType() == C->getType()) {
+        LLVM_DEBUG(dbgs() << "[Attributor][ValueSimplify] " << V << " -> " << *C
+                          << "\n");
+        V.replaceAllUsesWith(C);
+        Changed = ChangeStatus::CHANGED;
+      }
+    }
+
+    return Changed | AAValueSimplify::manifest(A);
+  }
+
+protected:
+  // An assumed simplified value. Initially, it is set to Optional::None, which
+  // means that the value is not clear under current assumption. If in the
+  // pessimistic state, getAssumedSimplifiedValue doesn't return this value but
+  // returns orignal associated value.
+  Optional<Value *> SimplifiedAssociatedValue;
+};
+
+struct AAValueSimplifyArgument final : AAValueSimplifyImpl {
+  AAValueSimplifyArgument(const IRPosition &IRP) : AAValueSimplifyImpl(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    bool HasValueBefore = SimplifiedAssociatedValue.hasValue();
+
+    auto PredForCallSite = [&](AbstractCallSite ACS) {
+      // Check if we have an associated argument or not (which can happen for
+      // callback calls).
+      if (Value *ArgOp = ACS.getCallArgOperand(getArgNo()))
+        return checkAndUpdate(A, *this, *ArgOp, SimplifiedAssociatedValue);
+      return false;
+    };
+
+    if (!A.checkForAllCallSites(PredForCallSite, *this, true))
+      return indicatePessimisticFixpoint();
+
+    // If a candicate was found in this update, return CHANGED.
+    return HasValueBefore == SimplifiedAssociatedValue.hasValue()
+               ? ChangeStatus::UNCHANGED
+               : ChangeStatus ::CHANGED;
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_ARG_ATTR(value_simplify)
+  }
+};
+
+struct AAValueSimplifyReturned : AAValueSimplifyImpl {
+  AAValueSimplifyReturned(const IRPosition &IRP) : AAValueSimplifyImpl(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    bool HasValueBefore = SimplifiedAssociatedValue.hasValue();
+
+    auto PredForReturned = [&](Value &V) {
+      return checkAndUpdate(A, *this, V, SimplifiedAssociatedValue);
+    };
+
+    if (!A.checkForAllReturnedValues(PredForReturned, *this))
+      return indicatePessimisticFixpoint();
+
+    // If a candicate was found in this update, return CHANGED.
+    return HasValueBefore == SimplifiedAssociatedValue.hasValue()
+               ? ChangeStatus::UNCHANGED
+               : ChangeStatus ::CHANGED;
+  }
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_FNRET_ATTR(value_simplify)
+  }
+};
+
+struct AAValueSimplifyFloating : AAValueSimplifyImpl {
+  AAValueSimplifyFloating(const IRPosition &IRP) : AAValueSimplifyImpl(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    Value &V = getAnchorValue();
+
+    // TODO: add other stuffs
+    if (isa<Constant>(V) || isa<UndefValue>(V))
+      indicatePessimisticFixpoint();
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    bool HasValueBefore = SimplifiedAssociatedValue.hasValue();
+
+    auto VisitValueCB = [&](Value &V, BooleanState, bool Stripped) -> bool {
+      auto &AA = A.getAAFor<AAValueSimplify>(*this, IRPosition::value(V));
+      if (!Stripped && this == &AA) {
+        // TODO: Look the instruction and check recursively.
+        LLVM_DEBUG(
+            dbgs() << "[Attributor][ValueSimplify] Can't be stripped more : "
+                   << V << "\n");
+        indicatePessimisticFixpoint();
+        return false;
+      }
+      return checkAndUpdate(A, *this, V, SimplifiedAssociatedValue);
+    };
+
+    if (!genericValueTraversal<AAValueSimplify, BooleanState>(
+            A, getIRPosition(), *this, static_cast<BooleanState &>(*this),
+            VisitValueCB))
+      return indicatePessimisticFixpoint();
+
+    // If a candicate was found in this update, return CHANGED.
+
+    return HasValueBefore == SimplifiedAssociatedValue.hasValue()
+               ? ChangeStatus::UNCHANGED
+               : ChangeStatus ::CHANGED;
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_FLOATING_ATTR(value_simplify)
+  }
+};
+
+struct AAValueSimplifyFunction : AAValueSimplifyImpl {
+  AAValueSimplifyFunction(const IRPosition &IRP) : AAValueSimplifyImpl(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    SimplifiedAssociatedValue = &getAnchorValue();
+    indicateOptimisticFixpoint();
+  }
+  /// See AbstractAttribute::initialize(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    llvm_unreachable(
+        "AAValueSimplify(Function|CallSite)::updateImpl will not be called");
+  }
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_FN_ATTR(value_simplify)
+  }
+};
+
+struct AAValueSimplifyCallSite : AAValueSimplifyFunction {
+  AAValueSimplifyCallSite(const IRPosition &IRP)
+      : AAValueSimplifyFunction(IRP) {}
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECLTRACK_CS_ATTR(value_simplify)
+  }
+};
+
+struct AAValueSimplifyCallSiteReturned : AAValueSimplifyReturned {
+  AAValueSimplifyCallSiteReturned(const IRPosition &IRP)
+      : AAValueSimplifyReturned(IRP) {}
+
+  void trackStatistics() const override {
+    STATS_DECLTRACK_CSRET_ATTR(value_simplify)
+  }
+};
+struct AAValueSimplifyCallSiteArgument : AAValueSimplifyFloating {
+  AAValueSimplifyCallSiteArgument(const IRPosition &IRP)
+      : AAValueSimplifyFloating(IRP) {}
+
+  void trackStatistics() const override {
+    STATS_DECLTRACK_CSARG_ATTR(value_simplify)
+  }
+};
+
+/// ----------------------- Heap-To-Stack Conversion ---------------------------
+struct AAHeapToStackImpl : public AAHeapToStack {
+  AAHeapToStackImpl(const IRPosition &IRP) : AAHeapToStack(IRP) {}
+
+  const std::string getAsStr() const override {
+    return "[H2S] Mallocs: " + std::to_string(MallocCalls.size());
+  }
+
+  ChangeStatus manifest(Attributor &A) override {
+    assert(getState().isValidState() &&
+           "Attempted to manifest an invalid state!");
+
+    ChangeStatus HasChanged = ChangeStatus::UNCHANGED;
+    Function *F = getAssociatedFunction();
+    const auto *TLI = A.getInfoCache().getTargetLibraryInfoForFunction(*F);
+
+    for (Instruction *MallocCall : MallocCalls) {
+      // This malloc cannot be replaced.
+      if (BadMallocCalls.count(MallocCall))
+        continue;
+
+      for (Instruction *FreeCall : FreesForMalloc[MallocCall]) {
+        LLVM_DEBUG(dbgs() << "H2S: Removing free call: " << *FreeCall << "\n");
+        A.deleteAfterManifest(*FreeCall);
+        HasChanged = ChangeStatus::CHANGED;
+      }
+
+      LLVM_DEBUG(dbgs() << "H2S: Removing malloc call: " << *MallocCall
+                        << "\n");
+
+      Constant *Size;
+      if (isCallocLikeFn(MallocCall, TLI)) {
+        auto *Num = cast<ConstantInt>(MallocCall->getOperand(0));
+        auto *SizeT = dyn_cast<ConstantInt>(MallocCall->getOperand(1));
+        APInt TotalSize = SizeT->getValue() * Num->getValue();
+        Size =
+            ConstantInt::get(MallocCall->getOperand(0)->getType(), TotalSize);
+      } else {
+        Size = cast<ConstantInt>(MallocCall->getOperand(0));
+      }
+
+      unsigned AS = cast<PointerType>(MallocCall->getType())->getAddressSpace();
+      Instruction *AI = new AllocaInst(Type::getInt8Ty(F->getContext()), AS,
+                                       Size, "", MallocCall->getNextNode());
+
+      if (AI->getType() != MallocCall->getType())
+        AI = new BitCastInst(AI, MallocCall->getType(), "malloc_bc",
+                             AI->getNextNode());
+
+      MallocCall->replaceAllUsesWith(AI);
+
+      if (auto *II = dyn_cast<InvokeInst>(MallocCall)) {
+        auto *NBB = II->getNormalDest();
+        BranchInst::Create(NBB, MallocCall->getParent());
+        A.deleteAfterManifest(*MallocCall);
+      } else {
+        A.deleteAfterManifest(*MallocCall);
+      }
+
+      if (isCallocLikeFn(MallocCall, TLI)) {
+        auto *BI = new BitCastInst(AI, MallocCall->getType(), "calloc_bc",
+                                   AI->getNextNode());
+        Value *Ops[] = {
+            BI, ConstantInt::get(F->getContext(), APInt(8, 0, false)), Size,
+            ConstantInt::get(Type::getInt1Ty(F->getContext()), false)};
+
+        Type *Tys[] = {BI->getType(), MallocCall->getOperand(0)->getType()};
+        Module *M = F->getParent();
+        Function *Fn = Intrinsic::getDeclaration(M, Intrinsic::memset, Tys);
+        CallInst::Create(Fn, Ops, "", BI->getNextNode());
+      }
+      HasChanged = ChangeStatus::CHANGED;
+    }
+
+    return HasChanged;
+  }
+
+  /// Collection of all malloc calls in a function.
+  SmallSetVector<Instruction *, 4> MallocCalls;
+
+  /// Collection of malloc calls that cannot be converted.
+  DenseSet<const Instruction *> BadMallocCalls;
+
+  /// A map for each malloc call to the set of associated free calls.
+  DenseMap<Instruction *, SmallPtrSet<Instruction *, 4>> FreesForMalloc;
+
+  ChangeStatus updateImpl(Attributor &A) override;
+};
+
+ChangeStatus AAHeapToStackImpl::updateImpl(Attributor &A) {
+  const Function *F = getAssociatedFunction();
+  const auto *TLI = A.getInfoCache().getTargetLibraryInfoForFunction(*F);
+
+  auto UsesCheck = [&](Instruction &I) {
+    SmallPtrSet<const Use *, 8> Visited;
+    SmallVector<const Use *, 8> Worklist;
+
+    for (Use &U : I.uses())
+      Worklist.push_back(&U);
+
+    while (!Worklist.empty()) {
+      const Use *U = Worklist.pop_back_val();
+      if (!Visited.insert(U).second)
+        continue;
+
+      auto *UserI = U->getUser();
+
+      if (isa<LoadInst>(UserI) || isa<StoreInst>(UserI))
+        continue;
+
+      // NOTE: Right now, if a function that has malloc pointer as an argument
+      // frees memory, we assume that the malloc pointer is freed.
+
+      // TODO: Add nofree callsite argument attribute to indicate that pointer
+      // argument is not freed.
+      if (auto *CB = dyn_cast<CallBase>(UserI)) {
+        if (!CB->isArgOperand(U))
+          continue;
+
+        if (CB->isLifetimeStartOrEnd())
+          continue;
+
+        // Record malloc.
+        if (isFreeCall(UserI, TLI)) {
+          FreesForMalloc[&I].insert(
+              cast<Instruction>(const_cast<User *>(UserI)));
+          continue;
+        }
+
+        // If a function does not free memory we are fine
+        const auto &NoFreeAA =
+            A.getAAFor<AANoFree>(*this, IRPosition::callsite_function(*CB));
+
+        unsigned ArgNo = U - CB->arg_begin();
+        const auto &NoCaptureAA = A.getAAFor<AANoCapture>(
+            *this, IRPosition::callsite_argument(*CB, ArgNo));
+
+        if (!NoCaptureAA.isAssumedNoCapture() || !NoFreeAA.isAssumedNoFree()) {
+          LLVM_DEBUG(dbgs() << "[H2S] Bad user: " << *UserI << "\n");
+          return false;
+        }
+        continue;
+      }
+
+      if (isa<GetElementPtrInst>(UserI) || isa<BitCastInst>(UserI)) {
+        for (Use &U : UserI->uses())
+          Worklist.push_back(&U);
+        continue;
+      }
+
+      // Unknown user.
+      LLVM_DEBUG(dbgs() << "[H2S] Unknown user: " << *UserI << "\n");
+      return false;
+    }
+    return true;
+  };
+
+  auto MallocCallocCheck = [&](Instruction &I) {
+    if (isMallocLikeFn(&I, TLI)) {
+      if (auto *Size = dyn_cast<ConstantInt>(I.getOperand(0)))
+        if (!Size->getValue().sle(MaxHeapToStackSize))
+          return true;
+    } else if (isCallocLikeFn(&I, TLI)) {
+      bool Overflow = false;
+      if (auto *Num = dyn_cast<ConstantInt>(I.getOperand(0)))
+        if (auto *Size = dyn_cast<ConstantInt>(I.getOperand(1)))
+          if (!(Size->getValue().umul_ov(Num->getValue(), Overflow))
+                   .sle(MaxHeapToStackSize))
+            if (!Overflow)
+              return true;
+    } else {
+      BadMallocCalls.insert(&I);
+      return true;
+    }
+
+    if (BadMallocCalls.count(&I))
+      return true;
+
+    if (UsesCheck(I))
+      MallocCalls.insert(&I);
+    else
+      BadMallocCalls.insert(&I);
+    return true;
+  };
+
+  size_t NumBadMallocs = BadMallocCalls.size();
+
+  A.checkForAllCallLikeInstructions(MallocCallocCheck, *this);
+
+  if (NumBadMallocs != BadMallocCalls.size())
+    return ChangeStatus::CHANGED;
+
+  return ChangeStatus::UNCHANGED;
+}
+
+struct AAHeapToStackFunction final : public AAHeapToStackImpl {
+  AAHeapToStackFunction(const IRPosition &IRP) : AAHeapToStackImpl(IRP) {}
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    STATS_DECL(MallocCalls, Function,
+               "Number of MallocCalls converted to allocas");
+    BUILD_STAT_NAME(MallocCalls, Function) += MallocCalls.size();
+  }
+};
+} // namespace
+
+/// -------------------- Memory Behavior Attributes ----------------------------
+/// Includes read-none, read-only, and write-only.
+/// ----------------------------------------------------------------------------
+struct AAMemoryBehaviorImpl : public AAMemoryBehavior {
+  AAMemoryBehaviorImpl(const IRPosition &IRP) : AAMemoryBehavior(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    intersectAssumedBits(BEST_STATE);
+    getKnownStateFromValue(getIRPosition(), getState());
+    IRAttribute::initialize(A);
+  }
+
+  /// Return the memory behavior information encoded in the IR for \p IRP.
+  static void getKnownStateFromValue(const IRPosition &IRP,
+                                     IntegerState &State) {
+    SmallVector<Attribute, 2> Attrs;
+    IRP.getAttrs(AttrKinds, Attrs);
+    for (const Attribute &Attr : Attrs) {
+      switch (Attr.getKindAsEnum()) {
+      case Attribute::ReadNone:
+        State.addKnownBits(NO_ACCESSES);
+        break;
+      case Attribute::ReadOnly:
+        State.addKnownBits(NO_WRITES);
+        break;
+      case Attribute::WriteOnly:
+        State.addKnownBits(NO_READS);
+        break;
+      default:
+        llvm_unreachable("Unexpcted attribute!");
+      }
+    }
+
+    if (auto *I = dyn_cast<Instruction>(&IRP.getAnchorValue())) {
+      if (!I->mayReadFromMemory())
+        State.addKnownBits(NO_READS);
+      if (!I->mayWriteToMemory())
+        State.addKnownBits(NO_WRITES);
+    }
+  }
+
+  /// See AbstractAttribute::getDeducedAttributes(...).
+  void getDeducedAttributes(LLVMContext &Ctx,
+                            SmallVectorImpl<Attribute> &Attrs) const override {
+    assert(Attrs.size() == 0);
+    if (isAssumedReadNone())
+      Attrs.push_back(Attribute::get(Ctx, Attribute::ReadNone));
+    else if (isAssumedReadOnly())
+      Attrs.push_back(Attribute::get(Ctx, Attribute::ReadOnly));
+    else if (isAssumedWriteOnly())
+      Attrs.push_back(Attribute::get(Ctx, Attribute::WriteOnly));
+    assert(Attrs.size() <= 1);
+  }
+
+  /// See AbstractAttribute::manifest(...).
+  ChangeStatus manifest(Attributor &A) override {
+    IRPosition &IRP = getIRPosition();
+
+    // Check if we would improve the existing attributes first.
+    SmallVector<Attribute, 4> DeducedAttrs;
+    getDeducedAttributes(IRP.getAnchorValue().getContext(), DeducedAttrs);
+    if (llvm::all_of(DeducedAttrs, [&](const Attribute &Attr) {
+          return IRP.hasAttr(Attr.getKindAsEnum(),
+                             /* IgnoreSubsumingPositions */ true);
+        }))
+      return ChangeStatus::UNCHANGED;
+
+    // Clear existing attributes.
+    IRP.removeAttrs(AttrKinds);
+
+    // Use the generic manifest method.
+    return IRAttribute::manifest(A);
+  }
+
+  /// See AbstractState::getAsStr().
+  const std::string getAsStr() const override {
+    if (isAssumedReadNone())
+      return "readnone";
+    if (isAssumedReadOnly())
+      return "readonly";
+    if (isAssumedWriteOnly())
+      return "writeonly";
+    return "may-read/write";
+  }
+
+  /// The set of IR attributes AAMemoryBehavior deals with.
+  static const Attribute::AttrKind AttrKinds[3];
+};
+
+const Attribute::AttrKind AAMemoryBehaviorImpl::AttrKinds[] = {
+    Attribute::ReadNone, Attribute::ReadOnly, Attribute::WriteOnly};
+
+/// Memory behavior attribute for a floating value.
+struct AAMemoryBehaviorFloating : AAMemoryBehaviorImpl {
+  AAMemoryBehaviorFloating(const IRPosition &IRP) : AAMemoryBehaviorImpl(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    AAMemoryBehaviorImpl::initialize(A);
+    // Initialize the use vector with all direct uses of the associated value.
+    for (const Use &U : getAssociatedValue().uses())
+      Uses.insert(&U);
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override;
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    if (isAssumedReadNone())
+      STATS_DECLTRACK_FLOATING_ATTR(readnone)
+    else if (isAssumedReadOnly())
+      STATS_DECLTRACK_FLOATING_ATTR(readonly)
+    else if (isAssumedWriteOnly())
+      STATS_DECLTRACK_FLOATING_ATTR(writeonly)
+  }
+
+private:
+  /// Return true if users of \p UserI might access the underlying
+  /// variable/location described by \p U and should therefore be analyzed.
+  bool followUsersOfUseIn(Attributor &A, const Use *U,
+                          const Instruction *UserI);
+
+  /// Update the state according to the effect of use \p U in \p UserI.
+  void analyzeUseIn(Attributor &A, const Use *U, const Instruction *UserI);
+
+protected:
+  /// Container for (transitive) uses of the associated argument.
+  SetVector<const Use *> Uses;
+};
+
+/// Memory behavior attribute for function argument.
+struct AAMemoryBehaviorArgument : AAMemoryBehaviorFloating {
+  AAMemoryBehaviorArgument(const IRPosition &IRP)
+      : AAMemoryBehaviorFloating(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    AAMemoryBehaviorFloating::initialize(A);
+
+    // TODO: From readattrs.ll: "inalloca parameters are always
+    //                           considered written"
+    if (hasAttr({Attribute::InAlloca}))
+      removeAssumedBits(NO_WRITES);
+
+    // Initialize the use vector with all direct uses of the associated value.
+    Argument *Arg = getAssociatedArgument();
+    if (!Arg || !Arg->getParent()->hasExactDefinition())
+      indicatePessimisticFixpoint();
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    if (isAssumedReadNone())
+      STATS_DECLTRACK_ARG_ATTR(readnone)
+    else if (isAssumedReadOnly())
+      STATS_DECLTRACK_ARG_ATTR(readonly)
+    else if (isAssumedWriteOnly())
+      STATS_DECLTRACK_ARG_ATTR(writeonly)
+  }
+};
+
+struct AAMemoryBehaviorCallSiteArgument final : AAMemoryBehaviorArgument {
+  AAMemoryBehaviorCallSiteArgument(const IRPosition &IRP)
+      : AAMemoryBehaviorArgument(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    // TODO: Once we have call site specific value information we can provide
+    //       call site specific liveness liveness information and then it makes
+    //       sense to specialize attributes for call sites arguments instead of
+    //       redirecting requests to the callee argument.
+    Argument *Arg = getAssociatedArgument();
+    const IRPosition &ArgPos = IRPosition::argument(*Arg);
+    auto &ArgAA = A.getAAFor<AAMemoryBehavior>(*this, ArgPos);
+    return clampStateAndIndicateChange(
+        getState(),
+        static_cast<const AANoCapture::StateType &>(ArgAA.getState()));
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    if (isAssumedReadNone())
+      STATS_DECLTRACK_CSARG_ATTR(readnone)
+    else if (isAssumedReadOnly())
+      STATS_DECLTRACK_CSARG_ATTR(readonly)
+    else if (isAssumedWriteOnly())
+      STATS_DECLTRACK_CSARG_ATTR(writeonly)
+  }
+};
+
+/// Memory behavior attribute for a call site return position.
+struct AAMemoryBehaviorCallSiteReturned final : AAMemoryBehaviorFloating {
+  AAMemoryBehaviorCallSiteReturned(const IRPosition &IRP)
+      : AAMemoryBehaviorFloating(IRP) {}
+
+  /// See AbstractAttribute::manifest(...).
+  ChangeStatus manifest(Attributor &A) override {
+    // We do not annotate returned values.
+    return ChangeStatus::UNCHANGED;
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {}
+};
+
+/// An AA to represent the memory behavior function attributes.
+struct AAMemoryBehaviorFunction final : public AAMemoryBehaviorImpl {
+  AAMemoryBehaviorFunction(const IRPosition &IRP) : AAMemoryBehaviorImpl(IRP) {}
+
+  /// See AbstractAttribute::updateImpl(Attributor &A).
+  virtual ChangeStatus updateImpl(Attributor &A) override;
+
+  /// See AbstractAttribute::manifest(...).
+  ChangeStatus manifest(Attributor &A) override {
+    Function &F = cast<Function>(getAnchorValue());
+    if (isAssumedReadNone()) {
+      F.removeFnAttr(Attribute::ArgMemOnly);
+      F.removeFnAttr(Attribute::InaccessibleMemOnly);
+      F.removeFnAttr(Attribute::InaccessibleMemOrArgMemOnly);
+    }
+    return AAMemoryBehaviorImpl::manifest(A);
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    if (isAssumedReadNone())
+      STATS_DECLTRACK_FN_ATTR(readnone)
+    else if (isAssumedReadOnly())
+      STATS_DECLTRACK_FN_ATTR(readonly)
+    else if (isAssumedWriteOnly())
+      STATS_DECLTRACK_FN_ATTR(writeonly)
+  }
+};
+
+/// AAMemoryBehavior attribute for call sites.
+struct AAMemoryBehaviorCallSite final : AAMemoryBehaviorImpl {
+  AAMemoryBehaviorCallSite(const IRPosition &IRP) : AAMemoryBehaviorImpl(IRP) {}
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    AAMemoryBehaviorImpl::initialize(A);
+    Function *F = getAssociatedFunction();
+    if (!F || !F->hasExactDefinition())
+      indicatePessimisticFixpoint();
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    // TODO: Once we have call site specific value information we can provide
+    //       call site specific liveness liveness information and then it makes
+    //       sense to specialize attributes for call sites arguments instead of
+    //       redirecting requests to the callee argument.
+    Function *F = getAssociatedFunction();
+    const IRPosition &FnPos = IRPosition::function(*F);
+    auto &FnAA = A.getAAFor<AAMemoryBehavior>(*this, FnPos);
+    return clampStateAndIndicateChange(
+        getState(), static_cast<const AAAlign::StateType &>(FnAA.getState()));
+  }
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override {
+    if (isAssumedReadNone())
+      STATS_DECLTRACK_CS_ATTR(readnone)
+    else if (isAssumedReadOnly())
+      STATS_DECLTRACK_CS_ATTR(readonly)
+    else if (isAssumedWriteOnly())
+      STATS_DECLTRACK_CS_ATTR(writeonly)
+  }
+};
+
+ChangeStatus AAMemoryBehaviorFunction::updateImpl(Attributor &A) {
+
+  // The current assumed state used to determine a change.
+  auto AssumedState = getAssumed();
+
+  auto CheckRWInst = [&](Instruction &I) {
+    // If the instruction has an own memory behavior state, use it to restrict
+    // the local state. No further analysis is required as the other memory
+    // state is as optimistic as it gets.
+    if (ImmutableCallSite ICS = ImmutableCallSite(&I)) {
+      const auto &MemBehaviorAA = A.getAAFor<AAMemoryBehavior>(
+          *this, IRPosition::callsite_function(ICS));
+      intersectAssumedBits(MemBehaviorAA.getAssumed());
+      return !isAtFixpoint();
+    }
+
+    // Remove access kind modifiers if necessary.
+    if (I.mayReadFromMemory())
+      removeAssumedBits(NO_READS);
+    if (I.mayWriteToMemory())
+      removeAssumedBits(NO_WRITES);
+    return !isAtFixpoint();
+  };
+
+  if (!A.checkForAllReadWriteInstructions(CheckRWInst, *this))
+    return indicatePessimisticFixpoint();
+
+  return (AssumedState != getAssumed()) ? ChangeStatus::CHANGED
+                                        : ChangeStatus::UNCHANGED;
+}
+
+ChangeStatus AAMemoryBehaviorFloating::updateImpl(Attributor &A) {
+
+  const IRPosition &IRP = getIRPosition();
+  const IRPosition &FnPos = IRPosition::function_scope(IRP);
+  AAMemoryBehavior::StateType &S = getState();
+
+  // First, check the function scope. We take the known information and we avoid
+  // work if the assumed information implies the current assumed information for
+  // this attribute.
+  const auto &FnMemAA = A.getAAFor<AAMemoryBehavior>(*this, FnPos);
+  S.addKnownBits(FnMemAA.getKnown());
+  if ((S.getAssumed() & FnMemAA.getAssumed()) == S.getAssumed())
+    return ChangeStatus::UNCHANGED;
+
+  // Make sure the value is not captured (except through "return"), if
+  // it is, any information derived would be irrelevant anyway as we cannot
+  // check the potential aliases introduced by the capture.
+  const auto &ArgNoCaptureAA = A.getAAFor<AANoCapture>(*this, IRP);
+  if (!ArgNoCaptureAA.isAssumedNoCaptureMaybeReturned())
+    return indicatePessimisticFixpoint();
+
+  // The current assumed state used to determine a change.
+  auto AssumedState = S.getAssumed();
+
+  // Liveness information to exclude dead users.
+  // TODO: Take the FnPos once we have call site specific liveness information.
+  const auto &LivenessAA = A.getAAFor<AAIsDead>(
+      *this, IRPosition::function(*IRP.getAssociatedFunction()));
+
+  // Visit and expand uses until all are analyzed or a fixpoint is reached.
+  for (unsigned i = 0; i < Uses.size() && !isAtFixpoint(); i++) {
+    const Use *U = Uses[i];
+    Instruction *UserI = cast<Instruction>(U->getUser());
+    LLVM_DEBUG(dbgs() << "[AAMemoryBehavior] Use: " << **U << " in " << *UserI
+                      << " [Dead: " << (LivenessAA.isAssumedDead(UserI))
+                      << "]\n");
+    if (LivenessAA.isAssumedDead(UserI))
+      continue;
+
+    // Check if the users of UserI should also be visited.
+    if (followUsersOfUseIn(A, U, UserI))
+      for (const Use &UserIUse : UserI->uses())
+        Uses.insert(&UserIUse);
+
+    // If UserI might touch memory we analyze the use in detail.
+    if (UserI->mayReadOrWriteMemory())
+      analyzeUseIn(A, U, UserI);
+  }
+
+  return (AssumedState != getAssumed()) ? ChangeStatus::CHANGED
+                                        : ChangeStatus::UNCHANGED;
+}
+
+bool AAMemoryBehaviorFloating::followUsersOfUseIn(Attributor &A, const Use *U,
+                                                  const Instruction *UserI) {
+  // The loaded value is unrelated to the pointer argument, no need to
+  // follow the users of the load.
+  if (isa<LoadInst>(UserI))
+    return false;
+
+  // By default we follow all uses assuming UserI might leak information on U,
+  // we have special handling for call sites operands though.
+  ImmutableCallSite ICS(UserI);
+  if (!ICS || !ICS.isArgOperand(U))
+    return true;
+
+  // If the use is a call argument known not to be captured, the users of
+  // the call do not need to be visited because they have to be unrelated to
+  // the input. Note that this check is not trivial even though we disallow
+  // general capturing of the underlying argument. The reason is that the
+  // call might the argument "through return", which we allow and for which we
+  // need to check call users.
+  unsigned ArgNo = ICS.getArgumentNo(U);
+  const auto &ArgNoCaptureAA =
+      A.getAAFor<AANoCapture>(*this, IRPosition::callsite_argument(ICS, ArgNo));
+  return !ArgNoCaptureAA.isAssumedNoCapture();
+}
+
+void AAMemoryBehaviorFloating::analyzeUseIn(Attributor &A, const Use *U,
+                                            const Instruction *UserI) {
+  assert(UserI->mayReadOrWriteMemory());
+
+  switch (UserI->getOpcode()) {
+  default:
+    // TODO: Handle all atomics and other side-effect operations we know of.
+    break;
+  case Instruction::Load:
+    // Loads cause the NO_READS property to disappear.
+    removeAssumedBits(NO_READS);
+    return;
+
+  case Instruction::Store:
+    // Stores cause the NO_WRITES property to disappear if the use is the
+    // pointer operand. Note that we do assume that capturing was taken care of
+    // somewhere else.
+    if (cast<StoreInst>(UserI)->getPointerOperand() == U->get())
+      removeAssumedBits(NO_WRITES);
+    return;
+
+  case Instruction::Call:
+  case Instruction::CallBr:
+  case Instruction::Invoke: {
+    // For call sites we look at the argument memory behavior attribute (this
+    // could be recursive!) in order to restrict our own state.
+    ImmutableCallSite ICS(UserI);
+
+    // Give up on operand bundles.
+    if (ICS.isBundleOperand(U)) {
+      indicatePessimisticFixpoint();
+      return;
+    }
+
+    // Calling a function does read the function pointer, maybe write it if the
+    // function is self-modifying.
+    if (ICS.isCallee(U)) {
+      removeAssumedBits(NO_READS);
+      break;
+    }
+
+    // Adjust the possible access behavior based on the information on the
+    // argument.
+    unsigned ArgNo = ICS.getArgumentNo(U);
+    const IRPosition &ArgPos = IRPosition::callsite_argument(ICS, ArgNo);
+    const auto &MemBehaviorAA = A.getAAFor<AAMemoryBehavior>(*this, ArgPos);
+    // "assumed" has at most the same bits as the MemBehaviorAA assumed
+    // and at least "known".
+    intersectAssumedBits(MemBehaviorAA.getAssumed());
+    return;
+  }
+  };
+
+  // Generally, look at the "may-properties" and adjust the assumed state if we
+  // did not trigger special handling before.
+  if (UserI->mayReadFromMemory())
+    removeAssumedBits(NO_READS);
+  if (UserI->mayWriteToMemory())
+    removeAssumedBits(NO_WRITES);
+}
 
 /// ----------------------------------------------------------------------------
 ///                               Attributor
@@ -2613,18 +4139,21 @@ bool Attributor::isAssumedDead(const AbstractAttribute &AA,
   return true;
 }
 
-bool Attributor::checkForAllCallSites(const function_ref<bool(CallSite)> &Pred,
-                                      const AbstractAttribute &QueryingAA,
-                                      bool RequireAllCallSites) {
+bool Attributor::checkForAllCallSites(
+    const function_ref<bool(AbstractCallSite)> &Pred,
+    const AbstractAttribute &QueryingAA, bool RequireAllCallSites) {
   // We can try to determine information from
   // the call sites. However, this is only possible all call sites are known,
   // hence the function has internal linkage.
   const IRPosition &IRP = QueryingAA.getIRPosition();
   const Function *AssociatedFunction = IRP.getAssociatedFunction();
-  if (!AssociatedFunction)
+  if (!AssociatedFunction) {
+    LLVM_DEBUG(dbgs() << "[Attributor] No function associated with " << IRP
+                      << "\n");
     return false;
+  }
 
-  if (RequireAllCallSites && !AssociatedFunction->hasInternalLinkage()) {
+  if (RequireAllCallSites && !AssociatedFunction->hasLocalLinkage()) {
     LLVM_DEBUG(
         dbgs()
         << "[Attributor] Function " << AssociatedFunction->getName()
@@ -2633,15 +4162,21 @@ bool Attributor::checkForAllCallSites(const function_ref<bool(CallSite)> &Pred,
   }
 
   for (const Use &U : AssociatedFunction->uses()) {
-    Instruction *I = dyn_cast<Instruction>(U.getUser());
-    // TODO: Deal with abstract call sites here.
-    if (!I)
+    AbstractCallSite ACS(&U);
+    if (!ACS) {
+      LLVM_DEBUG(dbgs() << "[Attributor] Function "
+                        << AssociatedFunction->getName()
+                        << " has non call site use " << *U.get() << " in "
+                        << *U.getUser() << "\n");
       return false;
+    }
 
+    Instruction *I = ACS.getInstruction();
     Function *Caller = I->getFunction();
 
-    const auto &LivenessAA = getAAFor<AAIsDead>(
-        QueryingAA, IRPosition::function(*Caller), /* TrackDependence */ false);
+    const auto &LivenessAA =
+        getAAFor<AAIsDead>(QueryingAA, IRPosition::function(*Caller),
+                           /* TrackDependence */ false);
 
     // Skip dead calls.
     if (LivenessAA.isAssumedDead(I)) {
@@ -2651,22 +4186,22 @@ bool Attributor::checkForAllCallSites(const function_ref<bool(CallSite)> &Pred,
       continue;
     }
 
-    CallSite CS(U.getUser());
-    if (!CS || !CS.isCallee(&U) || !CS.getCaller()->hasExactDefinition()) {
+    const Use *EffectiveUse =
+        ACS.isCallbackCall() ? &ACS.getCalleeUseForCallback() : &U;
+    if (!ACS.isCallee(EffectiveUse)) {
       if (!RequireAllCallSites)
         continue;
-
-      LLVM_DEBUG(dbgs() << "[Attributor] User " << *U.getUser()
+      LLVM_DEBUG(dbgs() << "[Attributor] User " << EffectiveUse->getUser()
                         << " is an invalid use of "
                         << AssociatedFunction->getName() << "\n");
       return false;
     }
 
-    if (Pred(CS))
+    if (Pred(ACS))
       continue;
 
     LLVM_DEBUG(dbgs() << "[Attributor] Call site callback failed for "
-                      << *CS.getInstruction() << "\n");
+                      << *ACS.getInstruction() << "\n");
     return false;
   }
 
@@ -2682,7 +4217,7 @@ bool Attributor::checkForAllReturnedValuesAndReturnInsts(
   // Since we need to provide return instructions we have to have an exact
   // definition.
   const Function *AssociatedFunction = IRP.getAssociatedFunction();
-  if (!AssociatedFunction || !AssociatedFunction->hasExactDefinition())
+  if (!AssociatedFunction)
     return false;
 
   // If this is a call site query we use the call site specific return values
@@ -2702,7 +4237,7 @@ bool Attributor::checkForAllReturnedValues(
 
   const IRPosition &IRP = QueryingAA.getIRPosition();
   const Function *AssociatedFunction = IRP.getAssociatedFunction();
-  if (!AssociatedFunction || !AssociatedFunction->hasExactDefinition())
+  if (!AssociatedFunction)
     return false;
 
   // TODO: use the function scope once we have call site AAReturnedValues.
@@ -2717,6 +4252,26 @@ bool Attributor::checkForAllReturnedValues(
       });
 }
 
+static bool
+checkForAllInstructionsImpl(InformationCache::OpcodeInstMapTy &OpcodeInstMap,
+                            const function_ref<bool(Instruction &)> &Pred,
+                            const AAIsDead *LivenessAA, bool &AnyDead,
+                            const ArrayRef<unsigned> &Opcodes) {
+  for (unsigned Opcode : Opcodes) {
+    for (Instruction *I : OpcodeInstMap[Opcode]) {
+      // Skip dead instructions.
+      if (LivenessAA && LivenessAA->isAssumedDead(I)) {
+        AnyDead = true;
+        continue;
+      }
+
+      if (!Pred(*I))
+        return false;
+    }
+  }
+  return true;
+}
+
 bool Attributor::checkForAllInstructions(
     const llvm::function_ref<bool(Instruction &)> &Pred,
     const AbstractAttribute &QueryingAA, const ArrayRef<unsigned> &Opcodes) {
@@ -2724,7 +4279,7 @@ bool Attributor::checkForAllInstructions(
   const IRPosition &IRP = QueryingAA.getIRPosition();
   // Since we need to provide instructions we have to have an exact definition.
   const Function *AssociatedFunction = IRP.getAssociatedFunction();
-  if (!AssociatedFunction || !AssociatedFunction->hasExactDefinition())
+  if (!AssociatedFunction)
     return false;
 
   // TODO: use the function scope once we have call site AAReturnedValues.
@@ -2735,18 +4290,9 @@ bool Attributor::checkForAllInstructions(
 
   auto &OpcodeInstMap =
       InfoCache.getOpcodeInstMapForFunction(*AssociatedFunction);
-  for (unsigned Opcode : Opcodes) {
-    for (Instruction *I : OpcodeInstMap[Opcode]) {
-      // Skip dead instructions.
-      if (LivenessAA.isAssumedDead(I)) {
-        AnyDead = true;
-        continue;
-      }
-
-      if (!Pred(*I))
-        return false;
-    }
-  }
+  if (!checkForAllInstructionsImpl(OpcodeInstMap, Pred, &LivenessAA, AnyDead,
+                                   Opcodes))
+    return false;
 
   // If we actually used liveness information so we have to record a dependence.
   if (AnyDead)
@@ -2789,11 +4335,7 @@ bool Attributor::checkForAllReadWriteInstructions(
   return true;
 }
 
-ChangeStatus Attributor::run() {
-  // Initialize all abstract attributes, allow new ones to be created.
-  for (unsigned u = 0; u < AllAbstractAttributes.size(); u++)
-    AllAbstractAttributes[u]->initialize(*this);
-
+ChangeStatus Attributor::run(Module &M) {
   LLVM_DEBUG(dbgs() << "[Attributor] Identified and initialized "
                     << AllAbstractAttributes.size()
                     << " abstract attributes.\n");
@@ -2946,7 +4488,7 @@ ChangeStatus Attributor::run() {
   if (VerifyAttributor && FinishedAtFixpoint &&
       ManifestChange == ChangeStatus::CHANGED) {
     VerifyAttributor = false;
-    ChangeStatus VerifyStatus = run();
+    ChangeStatus VerifyStatus = run(M);
     if (VerifyStatus != ChangeStatus::UNCHANGED)
       llvm_unreachable(
           "Attributor verification failed, re-run did result in an IR change "
@@ -2964,22 +4506,64 @@ ChangeStatus Attributor::run() {
       "Expected the final number of abstract attributes to remain unchanged!");
 
   // Delete stuff at the end to avoid invalid references and a nice order.
-  LLVM_DEBUG(dbgs() << "\n[Attributor] Delete " << ToBeDeletedFunctions.size()
-                    << " functions and " << ToBeDeletedBlocks.size()
-                    << " blocks and " << ToBeDeletedInsts.size()
-                    << " instructions\n");
-  for (Instruction *I : ToBeDeletedInsts) {
-    if (I->hasNUsesOrMore(1))
-      I->replaceAllUsesWith(UndefValue::get(I->getType()));
-    I->eraseFromParent();
-  }
-  for (BasicBlock *BB : ToBeDeletedBlocks) {
-    // TODO: Check if we need to replace users (PHIs, indirect branches?)
-    BB->eraseFromParent();
-  }
-  for (Function *Fn : ToBeDeletedFunctions) {
-    Fn->replaceAllUsesWith(UndefValue::get(Fn->getType()));
-    Fn->eraseFromParent();
+  {
+    LLVM_DEBUG(dbgs() << "\n[Attributor] Delete at least "
+                      << ToBeDeletedFunctions.size() << " functions and "
+                      << ToBeDeletedBlocks.size() << " blocks and "
+                      << ToBeDeletedInsts.size() << " instructions\n");
+    for (Instruction *I : ToBeDeletedInsts) {
+      if (!I->use_empty())
+        I->replaceAllUsesWith(UndefValue::get(I->getType()));
+      I->eraseFromParent();
+    }
+
+    if (unsigned NumDeadBlocks = ToBeDeletedBlocks.size()) {
+      SmallVector<BasicBlock *, 8> ToBeDeletedBBs;
+      ToBeDeletedBBs.reserve(NumDeadBlocks);
+      ToBeDeletedBBs.append(ToBeDeletedBlocks.begin(), ToBeDeletedBlocks.end());
+      DeleteDeadBlocks(ToBeDeletedBBs);
+      STATS_DECLTRACK(AAIsDead, BasicBlock,
+                      "Number of dead basic blocks deleted.");
+    }
+
+    STATS_DECL(AAIsDead, Function, "Number of dead functions deleted.");
+    for (Function *Fn : ToBeDeletedFunctions) {
+      Fn->replaceAllUsesWith(UndefValue::get(Fn->getType()));
+      Fn->eraseFromParent();
+      STATS_TRACK(AAIsDead, Function);
+    }
+
+    // Identify dead internal functions and delete them. This happens outside
+    // the other fixpoint analysis as we might treat potentially dead functions
+    // as live to lower the number of iterations. If they happen to be dead, the
+    // below fixpoint loop will identify and eliminate them.
+    SmallVector<Function *, 8> InternalFns;
+    for (Function &F : M)
+      if (F.hasLocalLinkage())
+        InternalFns.push_back(&F);
+
+    bool FoundDeadFn = true;
+    while (FoundDeadFn) {
+      FoundDeadFn = false;
+      for (unsigned u = 0, e = InternalFns.size(); u < e; ++u) {
+        Function *F = InternalFns[u];
+        if (!F)
+          continue;
+
+        const auto *LivenessAA =
+            lookupAAFor<AAIsDead>(IRPosition::function(*F));
+        if (LivenessAA &&
+            !checkForAllCallSites([](AbstractCallSite ACS) { return false; },
+                                  *LivenessAA, true))
+          continue;
+
+        STATS_TRACK(AAIsDead, Function);
+        F->replaceAllUsesWith(UndefValue::get(F->getType()));
+        F->eraseFromParent();
+        InternalFns[u] = nullptr;
+        FoundDeadFn = true;
+      }
+    }
   }
 
   if (VerifyMaxFixpointIterations &&
@@ -2994,93 +4578,11 @@ ChangeStatus Attributor::run() {
   return ManifestChange;
 }
 
-/// Helper function that checks if an abstract attribute of type \p AAType
-/// should be created for IR position \p IRP and if so creates and registers it
-/// with the Attributor \p A.
-///
-/// This method will look at the provided whitelist. If one is given and the
-/// kind \p AAType::ID is not contained, no abstract attribute is created.
-///
-/// \returns The created abstract argument, or nullptr if none was created.
-template <typename AAType>
-static const AAType *checkAndRegisterAA(const IRPosition &IRP, Attributor &A,
-                                        DenseSet<const char *> *Whitelist) {
-  if (Whitelist && !Whitelist->count(&AAType::ID))
-    return nullptr;
+void Attributor::initializeInformationCache(Function &F) {
 
-  return &A.registerAA<AAType>(*new AAType(IRP));
-}
-
-void Attributor::identifyDefaultAbstractAttributes(
-    Function &F, DenseSet<const char *> *Whitelist) {
-
-  IRPosition FPos = IRPosition::function(F);
-
-  // Check for dead BasicBlocks in every function.
-  // We need dead instruction detection because we do not want to deal with
-  // broken IR in which SSA rules do not apply.
-  checkAndRegisterAA<AAIsDeadFunction>(FPos, *this, /* Whitelist */ nullptr);
-
-  // Every function might be "will-return".
-  checkAndRegisterAA<AAWillReturnFunction>(FPos, *this, Whitelist);
-
-  // Every function can be nounwind.
-  checkAndRegisterAA<AANoUnwindFunction>(FPos, *this, Whitelist);
-
-  // Every function might be marked "nosync"
-  checkAndRegisterAA<AANoSyncFunction>(FPos, *this, Whitelist);
-
-  // Every function might be "no-free".
-  checkAndRegisterAA<AANoFreeFunction>(FPos, *this, Whitelist);
-
-  // Every function might be "no-return".
-  checkAndRegisterAA<AANoReturnFunction>(FPos, *this, Whitelist);
-
-  // Return attributes are only appropriate if the return type is non void.
-  Type *ReturnType = F.getReturnType();
-  if (!ReturnType->isVoidTy()) {
-    // Argument attribute "returned" --- Create only one per function even
-    // though it is an argument attribute.
-    checkAndRegisterAA<AAReturnedValuesFunction>(FPos, *this, Whitelist);
-
-    if (ReturnType->isPointerTy()) {
-      IRPosition RetPos = IRPosition::returned(F);
-
-      // Every function with pointer return type might be marked align.
-      checkAndRegisterAA<AAAlignReturned>(RetPos, *this, Whitelist);
-
-      // Every function with pointer return type might be marked nonnull.
-      checkAndRegisterAA<AANonNullReturned>(RetPos, *this, Whitelist);
-
-      // Every function with pointer return type might be marked noalias.
-      checkAndRegisterAA<AANoAliasReturned>(RetPos, *this, Whitelist);
-
-      // Every function with pointer return type might be marked
-      // dereferenceable.
-      checkAndRegisterAA<AADereferenceableReturned>(RetPos, *this, Whitelist);
-    }
-  }
-
-  for (Argument &Arg : F.args()) {
-    if (Arg.getType()->isPointerTy()) {
-      IRPosition ArgPos = IRPosition::argument(Arg);
-      // Every argument with pointer type might be marked nonnull.
-      checkAndRegisterAA<AANonNullArgument>(ArgPos, *this, Whitelist);
-
-      // Every argument with pointer type might be marked noalias.
-      checkAndRegisterAA<AANoAliasArgument>(ArgPos, *this, Whitelist);
-
-      // Every argument with pointer type might be marked dereferenceable.
-      checkAndRegisterAA<AADereferenceableArgument>(ArgPos, *this, Whitelist);
-
-      // Every argument with pointer type might be marked align.
-      checkAndRegisterAA<AAAlignArgument>(ArgPos, *this, Whitelist);
-    }
-  }
-
-  // Walk all instructions to find more attribute opportunities and also
-  // interesting instructions that might be queried by abstract attributes
-  // during their initialization or update.
+  // Walk all instructions to find interesting instructions that might be
+  // queried by abstract attributes during their initialization or update.
+  // This has to happen before we create attributes.
   auto &ReadOrWriteInsts = InfoCache.FuncRWInstsMap[&F];
   auto &InstOpcodeMap = InfoCache.FuncInstOpcodeMap[&F];
 
@@ -3096,20 +4598,12 @@ void Attributor::identifyDefaultAbstractAttributes(
     default:
       assert((!ImmutableCallSite(&I)) && (!isa<CallBase>(&I)) &&
              "New call site/base instruction type needs to be known int the "
-             "attributor.");
+             "Attributor.");
       break;
     case Instruction::Load:
       // The alignment of a pointer is interesting for loads.
-      checkAndRegisterAA<AAAlignFloating>(
-          IRPosition::value(*cast<LoadInst>(I).getPointerOperand()), *this,
-          Whitelist);
-      break;
     case Instruction::Store:
       // The alignment of a pointer is interesting for stores.
-      checkAndRegisterAA<AAAlignFloating>(
-          IRPosition::value(*cast<StoreInst>(I).getPointerOperand()), *this,
-          Whitelist);
-      break;
     case Instruction::Call:
     case Instruction::CallBr:
     case Instruction::Invoke:
@@ -3123,31 +4617,154 @@ void Attributor::identifyDefaultAbstractAttributes(
       InstOpcodeMap[I.getOpcode()].push_back(&I);
     if (I.mayReadOrWriteMemory())
       ReadOrWriteInsts.push_back(&I);
+  }
+}
 
-    CallSite CS(&I);
-    if (CS && CS.getCalledFunction()) {
-      for (int i = 0, e = CS.getCalledFunction()->arg_size(); i < e; i++) {
-        if (!CS.getArgument(i)->getType()->isPointerTy())
-          continue;
-        IRPosition CSArgPos = IRPosition::callsite_argument(CS, i);
+void Attributor::identifyDefaultAbstractAttributes(Function &F) {
+  if (!VisitedFunctions.insert(&F).second)
+    return;
 
-        // Call site argument attribute "non-null".
-        checkAndRegisterAA<AANonNullCallSiteArgument>(CSArgPos, *this,
-                                                      Whitelist);
+  IRPosition FPos = IRPosition::function(F);
 
-        // Call site argument attribute "no-alias".
-        checkAndRegisterAA<AANoAliasCallSiteArgument>(CSArgPos, *this,
-                                                      Whitelist);
+  // Check for dead BasicBlocks in every function.
+  // We need dead instruction detection because we do not want to deal with
+  // broken IR in which SSA rules do not apply.
+  getOrCreateAAFor<AAIsDead>(FPos);
 
-        // Call site argument attribute "dereferenceable".
-        checkAndRegisterAA<AADereferenceableCallSiteArgument>(CSArgPos, *this,
-                                                              Whitelist);
+  // Every function might be "will-return".
+  getOrCreateAAFor<AAWillReturn>(FPos);
 
-        // Call site argument attribute "align".
-        checkAndRegisterAA<AAAlignCallSiteArgument>(CSArgPos, *this, Whitelist);
-      }
+  // Every function can be nounwind.
+  getOrCreateAAFor<AANoUnwind>(FPos);
+
+  // Every function might be marked "nosync"
+  getOrCreateAAFor<AANoSync>(FPos);
+
+  // Every function might be "no-free".
+  getOrCreateAAFor<AANoFree>(FPos);
+
+  // Every function might be "no-return".
+  getOrCreateAAFor<AANoReturn>(FPos);
+
+  // Every function might be "no-recurse".
+  getOrCreateAAFor<AANoRecurse>(FPos);
+
+  // Every function might be "readnone/readonly/writeonly/...".
+  getOrCreateAAFor<AAMemoryBehavior>(FPos);
+
+  // Every function might be applicable for Heap-To-Stack conversion.
+  if (EnableHeapToStack)
+    getOrCreateAAFor<AAHeapToStack>(FPos);
+
+  // Return attributes are only appropriate if the return type is non void.
+  Type *ReturnType = F.getReturnType();
+  if (!ReturnType->isVoidTy()) {
+    // Argument attribute "returned" --- Create only one per function even
+    // though it is an argument attribute.
+    getOrCreateAAFor<AAReturnedValues>(FPos);
+
+    IRPosition RetPos = IRPosition::returned(F);
+
+    // Every function might be simplified.
+    getOrCreateAAFor<AAValueSimplify>(RetPos);
+
+    if (ReturnType->isPointerTy()) {
+
+      // Every function with pointer return type might be marked align.
+      getOrCreateAAFor<AAAlign>(RetPos);
+
+      // Every function with pointer return type might be marked nonnull.
+      getOrCreateAAFor<AANonNull>(RetPos);
+
+      // Every function with pointer return type might be marked noalias.
+      getOrCreateAAFor<AANoAlias>(RetPos);
+
+      // Every function with pointer return type might be marked
+      // dereferenceable.
+      getOrCreateAAFor<AADereferenceable>(RetPos);
     }
   }
+
+  for (Argument &Arg : F.args()) {
+    IRPosition ArgPos = IRPosition::argument(Arg);
+
+    // Every argument might be simplified.
+    getOrCreateAAFor<AAValueSimplify>(ArgPos);
+
+    if (Arg.getType()->isPointerTy()) {
+      // Every argument with pointer type might be marked nonnull.
+      getOrCreateAAFor<AANonNull>(ArgPos);
+
+      // Every argument with pointer type might be marked noalias.
+      getOrCreateAAFor<AANoAlias>(ArgPos);
+
+      // Every argument with pointer type might be marked dereferenceable.
+      getOrCreateAAFor<AADereferenceable>(ArgPos);
+
+      // Every argument with pointer type might be marked align.
+      getOrCreateAAFor<AAAlign>(ArgPos);
+
+      // Every argument with pointer type might be marked nocapture.
+      getOrCreateAAFor<AANoCapture>(ArgPos);
+
+      // Every argument with pointer type might be marked
+      // "readnone/readonly/writeonly/..."
+      getOrCreateAAFor<AAMemoryBehavior>(ArgPos);
+    }
+  }
+
+  auto CallSitePred = [&](Instruction &I) -> bool {
+    CallSite CS(&I);
+    if (CS.getCalledFunction()) {
+      for (int i = 0, e = CS.getCalledFunction()->arg_size(); i < e; i++) {
+
+        IRPosition CSArgPos = IRPosition::callsite_argument(CS, i);
+
+        // Call site argument might be simplified.
+        getOrCreateAAFor<AAValueSimplify>(CSArgPos);
+
+        if (!CS.getArgument(i)->getType()->isPointerTy())
+          continue;
+
+        // Call site argument attribute "non-null".
+        getOrCreateAAFor<AANonNull>(CSArgPos);
+
+        // Call site argument attribute "no-alias".
+        getOrCreateAAFor<AANoAlias>(CSArgPos);
+
+        // Call site argument attribute "dereferenceable".
+        getOrCreateAAFor<AADereferenceable>(CSArgPos);
+
+        // Call site argument attribute "align".
+        getOrCreateAAFor<AAAlign>(CSArgPos);
+      }
+    }
+    return true;
+  };
+
+  auto &OpcodeInstMap = InfoCache.getOpcodeInstMapForFunction(F);
+  bool Success, AnyDead = false;
+  Success = checkForAllInstructionsImpl(
+      OpcodeInstMap, CallSitePred, nullptr, AnyDead,
+      {(unsigned)Instruction::Invoke, (unsigned)Instruction::CallBr,
+       (unsigned)Instruction::Call});
+  (void)Success;
+  assert(Success && !AnyDead && "Expected the check call to be successful!");
+
+  auto LoadStorePred = [&](Instruction &I) -> bool {
+    if (isa<LoadInst>(I))
+      getOrCreateAAFor<AAAlign>(
+          IRPosition::value(*cast<LoadInst>(I).getPointerOperand()));
+    else
+      getOrCreateAAFor<AAAlign>(
+          IRPosition::value(*cast<StoreInst>(I).getPointerOperand()));
+    return true;
+  };
+  Success = checkForAllInstructionsImpl(
+      OpcodeInstMap, LoadStorePred, nullptr, AnyDead,
+      {(unsigned)Instruction::Load, (unsigned)Instruction::Store});
+  (void)Success;
+  assert(Success && !AnyDead && "Expected the check call to be successful!");
 }
 
 /// Helpers to ease debugging through output streams and print calls.
@@ -3209,7 +4826,7 @@ void AbstractAttribute::print(raw_ostream &OS) const {
 ///                       Pass (Manager) Boilerplate
 /// ----------------------------------------------------------------------------
 
-static bool runAttributorOnModule(Module &M) {
+static bool runAttributorOnModule(Module &M, AnalysisGetter &AG) {
   if (DisableAttributor)
     return false;
 
@@ -3218,39 +4835,44 @@ static bool runAttributorOnModule(Module &M) {
 
   // Create an Attributor and initially empty information cache that is filled
   // while we identify default attribute opportunities.
-  InformationCache InfoCache(M.getDataLayout());
+  InformationCache InfoCache(M, AG);
   Attributor A(InfoCache, DepRecInterval);
 
+  for (Function &F : M)
+    A.initializeInformationCache(F);
+
   for (Function &F : M) {
-    // TODO: Not all attributes require an exact definition. Find a way to
-    //       enable deduction for some but not all attributes in case the
-    //       definition might be changed at runtime, see also
-    //       http://lists.llvm.org/pipermail/llvm-dev/2018-February/121275.html.
-    // TODO: We could always determine abstract attributes and if sufficient
-    //       information was found we could duplicate the functions that do not
-    //       have an exact definition.
-    if (!F.hasExactDefinition()) {
+    if (F.hasExactDefinition())
+      NumFnWithExactDefinition++;
+    else
       NumFnWithoutExactDefinition++;
-      continue;
-    }
 
     // For now we ignore naked and optnone functions.
     if (F.hasFnAttribute(Attribute::Naked) ||
         F.hasFnAttribute(Attribute::OptimizeNone))
       continue;
 
-    NumFnWithExactDefinition++;
+    // We look at internal functions only on-demand but if any use is not a
+    // direct call, we have to do it eagerly.
+    if (F.hasLocalLinkage()) {
+      if (llvm::all_of(F.uses(), [](const Use &U) {
+            return ImmutableCallSite(U.getUser()) &&
+                   ImmutableCallSite(U.getUser()).isCallee(&U);
+          }))
+        continue;
+    }
 
     // Populate the Attributor with abstract attribute opportunities in the
     // function and the information cache with IR information.
     A.identifyDefaultAbstractAttributes(F);
   }
 
-  return A.run() == ChangeStatus::CHANGED;
+  return A.run(M) == ChangeStatus::CHANGED;
 }
 
 PreservedAnalyses AttributorPass::run(Module &M, ModuleAnalysisManager &AM) {
-  if (runAttributorOnModule(M)) {
+  AnalysisGetter AG(AM);
+  if (runAttributorOnModule(M, AG)) {
     // FIXME: Think about passes we will preserve and add them here.
     return PreservedAnalyses::none();
   }
@@ -3269,11 +4891,14 @@ struct AttributorLegacyPass : public ModulePass {
   bool runOnModule(Module &M) override {
     if (skipModule(M))
       return false;
-    return runAttributorOnModule(M);
+
+    AnalysisGetter AG;
+    return runAttributorOnModule(M, AG);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     // FIXME: Think about passes we will preserve and add them here.
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
   }
 };
 
@@ -3295,6 +4920,10 @@ const char AANoReturn::ID = 0;
 const char AAIsDead::ID = 0;
 const char AADereferenceable::ID = 0;
 const char AAAlign::ID = 0;
+const char AANoCapture::ID = 0;
+const char AAValueSimplify::ID = 0;
+const char AAHeapToStack::ID = 0;
+const char AAMemoryBehavior::ID = 0;
 
 // Macro magic to create the static generator function for attributes that
 // follow the naming scheme.
@@ -3321,7 +4950,6 @@ const char AAAlign::ID = 0;
       SWITCH_PK_CREATE(CLASS, IRP, IRP_FUNCTION, Function)                     \
       SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE, CallSite)                    \
     }                                                                          \
-    AA->initialize(A);                                                         \
     return *AA;                                                                \
   }
 
@@ -3338,7 +4966,54 @@ const char AAAlign::ID = 0;
       SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_RETURNED, CallSiteReturned)   \
       SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_ARGUMENT, CallSiteArgument)   \
     }                                                                          \
-    AA->initialize(A);                                                         \
+    return *AA;                                                                \
+  }
+
+#define CREATE_ALL_ABSTRACT_ATTRIBUTE_FOR_POSITION(CLASS)                      \
+  CLASS &CLASS::createForPosition(const IRPosition &IRP, Attributor &A) {      \
+    CLASS *AA = nullptr;                                                       \
+    switch (IRP.getPositionKind()) {                                           \
+      SWITCH_PK_INV(CLASS, IRP_INVALID, "invalid")                             \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_FUNCTION, Function)                     \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE, CallSite)                    \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_FLOAT, Floating)                        \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_ARGUMENT, Argument)                     \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_RETURNED, Returned)                     \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_RETURNED, CallSiteReturned)   \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_ARGUMENT, CallSiteArgument)   \
+    }                                                                          \
+    return *AA;                                                                \
+  }
+
+#define CREATE_FUNCTION_ONLY_ABSTRACT_ATTRIBUTE_FOR_POSITION(CLASS)            \
+  CLASS &CLASS::createForPosition(const IRPosition &IRP, Attributor &A) {      \
+    CLASS *AA = nullptr;                                                       \
+    switch (IRP.getPositionKind()) {                                           \
+      SWITCH_PK_INV(CLASS, IRP_INVALID, "invalid")                             \
+      SWITCH_PK_INV(CLASS, IRP_ARGUMENT, "argument")                           \
+      SWITCH_PK_INV(CLASS, IRP_FLOAT, "floating")                              \
+      SWITCH_PK_INV(CLASS, IRP_RETURNED, "returned")                           \
+      SWITCH_PK_INV(CLASS, IRP_CALL_SITE_RETURNED, "call site returned")       \
+      SWITCH_PK_INV(CLASS, IRP_CALL_SITE_ARGUMENT, "call site argument")       \
+      SWITCH_PK_INV(CLASS, IRP_CALL_SITE, "call site")                         \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_FUNCTION, Function)                     \
+    }                                                                          \
+    return *AA;                                                                \
+  }
+
+#define CREATE_NON_RET_ABSTRACT_ATTRIBUTE_FOR_POSITION(CLASS)                  \
+  CLASS &CLASS::createForPosition(const IRPosition &IRP, Attributor &A) {      \
+    CLASS *AA = nullptr;                                                       \
+    switch (IRP.getPositionKind()) {                                           \
+      SWITCH_PK_INV(CLASS, IRP_INVALID, "invalid")                             \
+      SWITCH_PK_INV(CLASS, IRP_RETURNED, "returned")                           \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_FUNCTION, Function)                     \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE, CallSite)                    \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_FLOAT, Floating)                        \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_ARGUMENT, Argument)                     \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_RETURNED, CallSiteReturned)   \
+      SWITCH_PK_CREATE(CLASS, IRP, IRP_CALL_SITE_ARGUMENT, CallSiteArgument)   \
+    }                                                                          \
     return *AA;                                                                \
   }
 
@@ -3355,13 +5030,24 @@ CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION(AANonNull)
 CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION(AANoAlias)
 CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION(AADereferenceable)
 CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAAlign)
+CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION(AANoCapture)
 
+CREATE_ALL_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAValueSimplify)
+
+CREATE_FUNCTION_ONLY_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAHeapToStack)
+
+CREATE_NON_RET_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAMemoryBehavior)
+
+#undef CREATE_FUNCTION_ONLY_ABSTRACT_ATTRIBUTE_FOR_POSITION
 #undef CREATE_FUNCTION_ABSTRACT_ATTRIBUTE_FOR_POSITION
+#undef CREATE_NON_RET_ABSTRACT_ATTRIBUTE_FOR_POSITION
 #undef CREATE_VALUE_ABSTRACT_ATTRIBUTE_FOR_POSITION
+#undef CREATE_ALL_ABSTRACT_ATTRIBUTE_FOR_POSITION
 #undef SWITCH_PK_CREATE
 #undef SWITCH_PK_INV
 
 INITIALIZE_PASS_BEGIN(AttributorLegacyPass, "attributor",
                       "Deduce and propagate attributes", false, false)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(AttributorLegacyPass, "attributor",
                     "Deduce and propagate attributes", false, false)

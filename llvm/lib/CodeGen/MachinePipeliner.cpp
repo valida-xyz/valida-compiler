@@ -160,6 +160,11 @@ static cl::opt<bool> EmitTestAnnotations(
              "with the generated schedule for feeding into the "
              "-modulo-schedule-test pass"));
 
+static cl::opt<bool> ExperimentalCodeGen(
+    "pipeliner-experimental-cg", cl::Hidden, cl::init(false),
+    cl::desc(
+        "Use the experimental peeling code generator for software pipelining"));
+
 namespace llvm {
 
 // A command line option to enable the CopyToPhi DAG mutation.
@@ -321,7 +326,7 @@ bool MachinePipeliner::canPipelineLoop(MachineLoop &L) {
 
   LI.LoopInductionVar = nullptr;
   LI.LoopCompare = nullptr;
-  if (TII->analyzeLoop(L, LI.LoopInductionVar, LI.LoopCompare)) {
+  if (!TII->analyzeLoopForPipelining(L.getTopBlock())) {
     LLVM_DEBUG(
         dbgs() << "Unable to analyzeLoop, can NOT pipeline current Loop\n");
     NumFailLoop++;
@@ -549,8 +554,15 @@ void SwingSchedulerDAG::schedule() {
     MSTI.annotate();
     return;
   }
-  ModuloScheduleExpander MSE(MF, MS, LIS, std::move(NewInstrChanges));
-  MSE.expand();
+  // The experimental code generator can't work if there are InstChanges.
+  if (ExperimentalCodeGen && NewInstrChanges.empty()) {
+    PeelingModuloScheduleExpander MSE(MF, MS, &LIS);
+    MSE.expand();
+  } else {
+    ModuloScheduleExpander MSE(MF, MS, LIS, std::move(NewInstrChanges));
+    MSE.expand();
+    MSE.cleanup();
+  }
   ++NumPipelined;
 }
 
@@ -685,7 +697,7 @@ void SwingSchedulerDAG::addLoopCarriedDependences(AliasAnalysis *AA) {
               TII->getMemOperandWithOffset(MI, BaseOp2, Offset2, TRI)) {
             if (BaseOp1->isIdenticalTo(*BaseOp2) &&
                 (int)Offset1 < (int)Offset2) {
-              assert(TII->areMemAccessesTriviallyDisjoint(LdMI, MI, AA) &&
+              assert(TII->areMemAccessesTriviallyDisjoint(LdMI, MI) &&
                      "What happened to the chain edge?");
               SDep Dep(Load, SDep::Barrier);
               Dep.setLatency(1);

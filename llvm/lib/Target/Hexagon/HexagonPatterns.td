@@ -344,6 +344,13 @@ multiclass MinMax_pats<InstHexagon PickT, InstHexagon PickS,
            (PickS CmpPred:$Vs, CmpPred:$Vt)>;
 }
 
+// Bitcasts between same-size vector types are no-ops, except for the
+// actual type change.
+multiclass NopCast_pat<ValueType Ty1, ValueType Ty2, RegisterClass RC> {
+  def: Pat<(Ty1 (bitconvert (Ty2 RC:$Val))), (Ty1 RC:$Val)>;
+  def: Pat<(Ty2 (bitconvert (Ty1 RC:$Val))), (Ty2 RC:$Val)>;
+}
+
 
 // Frags for commonly used SDNodes.
 def Add: pf2<add>;    def And: pf2<and>;    def Sra: pf2<sra>;
@@ -427,17 +434,18 @@ def: Pat<(f32 (bitconvert I32:$v)), (F32:$v)>;
 def: Pat<(i64 (bitconvert F64:$v)), (I64:$v)>;
 def: Pat<(f64 (bitconvert I64:$v)), (F64:$v)>;
 
-multiclass Cast_pat<ValueType Ta, ValueType Tb, RegisterClass RC> {
-  def: Pat<(Tb (bitconvert (Ta RC:$Rs))), (Tb RC:$Rs)>;
-  def: Pat<(Ta (bitconvert (Tb RC:$Rs))), (Ta RC:$Rs)>;
-}
-
-// Bit convert vector types to integers.
-defm: Cast_pat<v4i8,  i32, IntRegs>;
-defm: Cast_pat<v2i16, i32, IntRegs>;
-defm: Cast_pat<v8i8,  i64, DoubleRegs>;
-defm: Cast_pat<v4i16, i64, DoubleRegs>;
-defm: Cast_pat<v2i32, i64, DoubleRegs>;
+// Bit convert 32- and 64-bit types.
+// All of these are bitcastable to one another: i32, v2i16, v4i8.
+defm: NopCast_pat<i32,   v2i16, IntRegs>;
+defm: NopCast_pat<i32,    v4i8, IntRegs>;
+defm: NopCast_pat<v2i16,  v4i8, IntRegs>;
+// All of these are bitcastable to one another: i64, v2i32, v4i16, v8i8.
+defm: NopCast_pat<i64,   v2i32, DoubleRegs>;
+defm: NopCast_pat<i64,   v4i16, DoubleRegs>;
+defm: NopCast_pat<i64,    v8i8, DoubleRegs>;
+defm: NopCast_pat<v2i32, v4i16, DoubleRegs>;
+defm: NopCast_pat<v2i32,  v8i8, DoubleRegs>;
+defm: NopCast_pat<v4i16,  v8i8, DoubleRegs>;
 
 
 // --(3) Extend/truncate -------------------------------------------------
@@ -1677,19 +1685,19 @@ def: Pat<(v8i8 (mul V8I8:$Rs, V8I8:$Rt)),
 //
 
 // Count leading zeros.
-def: Pat<(ctlz I32:$Rs),                      (S2_cl0 I32:$Rs)>;
+def: Pat<(i32 (ctlz I32:$Rs)),                (S2_cl0 I32:$Rs)>;
 def: Pat<(i32 (trunc (ctlz I64:$Rss))),       (S2_cl0p I64:$Rss)>;
 
 // Count trailing zeros.
-def: Pat<(cttz I32:$Rs),                      (S2_ct0 I32:$Rs)>;
+def: Pat<(i32 (cttz I32:$Rs)),                (S2_ct0 I32:$Rs)>;
 def: Pat<(i32 (trunc (cttz I64:$Rss))),       (S2_ct0p I64:$Rss)>;
 
 // Count leading ones.
-def: Pat<(ctlz (not I32:$Rs)),                (S2_cl1 I32:$Rs)>;
+def: Pat<(i32 (ctlz (not I32:$Rs))),          (S2_cl1 I32:$Rs)>;
 def: Pat<(i32 (trunc (ctlz (not I64:$Rss)))), (S2_cl1p I64:$Rss)>;
 
 // Count trailing ones.
-def: Pat<(cttz (not I32:$Rs)),                (S2_ct1 I32:$Rs)>;
+def: Pat<(i32 (cttz (not I32:$Rs))),           (S2_ct1 I32:$Rs)>;
 def: Pat<(i32 (trunc (cttz (not I64:$Rss)))), (S2_ct1p I64:$Rss)>;
 
 // Define leading/trailing patterns that require zero-extensions to 64 bits.
@@ -1763,14 +1771,12 @@ def: Pat<(and (srl I64:$Rss, IsULE<32,31>:$u6), 1),
 def: Pat<(and (srl I64:$Rss, IsUGT<32,31>:$u6), 1),
          (ToZext64 (I1toI32 (S2_tstbit_i (HiReg $Rss), (UDEC32 $u6))))>;
 
-def N1toI32:  OutPatFrag<(ops node:$Pu), (C2_muxii (i1 $Pu), 0, 1)>;
-
 def: Pat<(and (not (srl I32:$Rs, u5_0ImmPred:$u5)), 1),
-         (N1toI32 (S2_tstbit_i I32:$Rs, imm:$u5))>;
+         (I1toI32 (S4_ntstbit_i I32:$Rs, imm:$u5))>;
 def: Pat<(and (not (srl I64:$Rss, IsULE<32,31>:$u6)), 1),
-         (ToZext64 (N1toI32 (S2_tstbit_i (LoReg $Rss), imm:$u6)))>;
+         (ToZext64 (I1toI32 (S4_ntstbit_i (LoReg $Rss), imm:$u6)))>;
 def: Pat<(and (not (srl I64:$Rss, IsUGT<32,31>:$u6)), 1),
-         (ToZext64 (N1toI32 (S2_tstbit_i (HiReg $Rss), (UDEC32 $u6))))>;
+         (ToZext64 (I1toI32 (S4_ntstbit_i (HiReg $Rss), (UDEC32 $u6))))>;
 
 let AddedComplexity = 20 in { // Complexity greater than compare reg-imm.
   def: Pat<(i1 (seteq (and I32:$Rs, u6_0ImmPred:$u6), 0)),
@@ -1792,23 +1798,28 @@ def: Pat<(HexagonTSTBIT I32:$Rs, u5_0ImmPred:$u5),
 def: Pat<(HexagonTSTBIT I32:$Rs, I32:$Rt),
          (S2_tstbit_r I32:$Rs, I32:$Rt)>;
 
-let AddedComplexity = 20 in {   // Complexity greater than cmp reg-imm.
-  def: Pat<(i1 (seteq (and (shl 1, u5_0ImmPred:$u5), I32:$Rs), 0)),
-           (S4_ntstbit_i I32:$Rs, imm:$u5)>;
-  def: Pat<(i1 (seteq (and (shl 1, I32:$Rt), I32:$Rs), 0)),
-           (S4_ntstbit_r I32:$Rs, I32:$Rt)>;
-}
-
 // Add extra complexity to prefer these instructions over bitsset/bitsclr.
 // The reason is that tstbit/ntstbit can be folded into a compound instruction:
 //   if ([!]tstbit(...)) jump ...
-let AddedComplexity = 100 in
-def: Pat<(i1 (setne (and I32:$Rs, (i32 IsPow2_32:$u5)), (i32 0))),
-         (S2_tstbit_i I32:$Rs, (Log2_32 imm:$u5))>;
+let AddedComplexity = 20 in {   // Complexity greater than cmp reg-imm.
+  def: Pat<(i1 (seteq (and I32:$Rs, IsPow2_32:$u5), 0)),
+           (S4_ntstbit_i I32:$Rs, (Log2_32 imm:$u5))>;
+  def: Pat<(i1 (setne (and I32:$Rs, IsPow2_32:$u5), 0)),
+           (S2_tstbit_i I32:$Rs, (Log2_32 imm:$u5))>;
+  def: Pat<(i1 (seteq (and (shl 1, I32:$Rt), I32:$Rs), 0)),
+           (S4_ntstbit_r I32:$Rs, I32:$Rt)>;
+  def: Pat<(i1 (setne (and (shl 1, I32:$Rt), I32:$Rs), 0)),
+           (S2_tstbit_r I32:$Rs, I32:$Rt)>;
+}
 
-let AddedComplexity = 100 in
-def: Pat<(i1 (seteq (and I32:$Rs, (i32 IsPow2_32:$u5)), (i32 0))),
-         (S4_ntstbit_i I32:$Rs, (Log2_32 imm:$u5))>;
+def: Pat<(i1 (seteq (and I64:$Rs, IsPow2_64L:$u6), 0)),
+         (S4_ntstbit_i (LoReg $Rs), (Log2_64 $u6))>;
+def: Pat<(i1 (seteq (and I64:$Rs, IsPow2_64H:$u6), 0)),
+         (S4_ntstbit_i (HiReg $Rs), (UDEC32 (i32 (Log2_64 $u6))))>;
+def: Pat<(i1 (setne (and I64:$Rs, IsPow2_64L:$u6), 0)),
+         (S2_tstbit_i (LoReg $Rs), (Log2_32 imm:$u6))>;
+def: Pat<(i1 (setne (and I64:$Rs, IsPow2_64H:$u6), 0)),
+         (S2_tstbit_i (HiReg $Rs), (UDEC32 (i32 (Log2_32 imm:$u6))))>;
 
 // Do not increase complexity of these patterns. In the DAG, "cmp i8" may be
 // represented as a compare against "value & 0xFF", which is an exact match
@@ -1828,10 +1839,18 @@ def: Pat<(i1 (setne (and I32:$Rs, I32:$Rt), I32:$Rt)),
 
 let AddedComplexity = 100 in {
   // Avoid A4_rcmp[n]eqi in these cases:
-  def: Pat<(i32 (zext (i1 (setne (and (shl 1, I32:$Rt), I32:$Rs), 0)))),
-           (I1toI32 (S2_tstbit_r IntRegs:$Rs, IntRegs:$Rt))>;
   def: Pat<(i32 (zext (i1 (seteq (and (shl 1, I32:$Rt), I32:$Rs), 0)))),
            (I1toI32 (S4_ntstbit_r IntRegs:$Rs, IntRegs:$Rt))>;
+  def: Pat<(i32 (zext (i1 (setne (and (shl 1, I32:$Rt), I32:$Rs), 0)))),
+           (I1toI32 (S2_tstbit_r IntRegs:$Rs, IntRegs:$Rt))>;
+  def: Pat<(i32 (zext (i1 (seteq (and I32:$Rs, IsPow2_32:$u5), 0)))),
+           (I1toI32 (S4_ntstbit_i I32:$Rs, (Log2_32 imm:$u5)))>;
+  def: Pat<(i32 (zext (i1 (setne (and I32:$Rs, IsPow2_32:$u5), 0)))),
+           (I1toI32 (S2_tstbit_i I32:$Rs, (Log2_32 imm:$u5)))>;
+  def: Pat<(i32 (zext (i1 (seteq (and (shl 1, I32:$Rt), I32:$Rs), 0)))),
+           (I1toI32 (S4_ntstbit_r I32:$Rs, I32:$Rt))>;
+  def: Pat<(i32 (zext (i1 (setne (and (shl 1, I32:$Rt), I32:$Rs), 0)))),
+           (I1toI32 (S2_tstbit_r I32:$Rs, I32:$Rt))>;
 }
 
 // --(11) PIC ------------------------------------------------------------

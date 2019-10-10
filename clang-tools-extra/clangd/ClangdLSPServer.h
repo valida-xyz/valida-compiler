@@ -107,6 +107,8 @@ private:
   void onChangeConfiguration(const DidChangeConfigurationParams &);
   void onSymbolInfo(const TextDocumentPositionParams &,
                     Callback<std::vector<SymbolDetails>>);
+  void onSelectionRange(const SelectionRangeParams &,
+                        Callback<std::vector<SelectionRange>>);
 
   std::vector<Fix> getFixes(StringRef File, const clangd::Diagnostic &D);
 
@@ -155,7 +157,7 @@ private:
   void call(StringRef Method, llvm::json::Value Params, Callback<Response> CB) {
     // Wrap the callback with LSP conversion and error-handling.
     auto HandleReply =
-        [CB = std::move(CB)](
+        [CB = std::move(CB), Ctx = Context::current().clone()](
             llvm::Expected<llvm::json::Value> RawResponse) mutable {
           Response Rsp;
           if (!RawResponse) {

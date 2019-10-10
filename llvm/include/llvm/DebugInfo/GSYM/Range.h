@@ -1,4 +1,4 @@
-//===- AddressRange.h -------------------------------------------*- C++ -*-===//
+//===- Range.h --------------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -80,6 +80,7 @@ public:
   void clear() { Ranges.clear(); }
   bool empty() const { return Ranges.empty(); }
   bool contains(uint64_t Addr) const;
+  bool contains(AddressRange Range) const;
   void insert(AddressRange Range);
   size_t size() const { return Ranges.size(); }
   bool operator==(const AddressRanges &RHS) const {

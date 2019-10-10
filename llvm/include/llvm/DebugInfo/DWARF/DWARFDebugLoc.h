@@ -40,8 +40,8 @@ public:
     /// All the locations in which the variable is stored.
     SmallVector<Entry, 2> Entries;
     /// Dump this list on OS.
-    void dump(raw_ostream &OS, bool IsLittleEndian, unsigned AddressSize,
-              const MCRegisterInfo *MRI, DWARFUnit *U, uint64_t BaseAddress,
+    void dump(raw_ostream &OS, uint64_t BaseAddress, bool IsLittleEndian,
+              unsigned AddressSize, const MCRegisterInfo *MRI, DWARFUnit *U,
               unsigned Indent) const;
   };
 
@@ -68,7 +68,7 @@ public:
   /// Return the location list at the given offset or nullptr.
   LocationList const *getLocationListAtOffset(uint64_t Offset) const;
 
-  static Expected<LocationList>
+  Expected<LocationList>
   parseOneLocationList(const DWARFDataExtractor &Data, uint64_t *Offset);
 };
 
@@ -99,7 +99,7 @@ private:
   bool IsLittleEndian;
 
 public:
-  void parse(DataExtractor data, unsigned Version);
+  void parse(DataExtractor data, uint64_t Offset, uint64_t EndOffset, uint16_t Version);
   void dump(raw_ostream &OS, uint64_t BaseAddr, const MCRegisterInfo *RegInfo,
             Optional<uint64_t> Offset) const;
 

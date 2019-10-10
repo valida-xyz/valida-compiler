@@ -111,9 +111,14 @@ void JSONNodeDumper::Visit(const Decl *D) {
   if (const auto *ND = dyn_cast<NamedDecl>(D))
     attributeOnlyIfTrue("isHidden", ND->isHidden());
 
-  if (D->getLexicalDeclContext() != D->getDeclContext())
-    JOS.attribute("parentDeclContext",
-                  createPointerRepresentation(D->getDeclContext()));
+  if (D->getLexicalDeclContext() != D->getDeclContext()) {
+    // Because of multiple inheritance, a DeclContext pointer does not produce
+    // the same pointer representation as a Decl pointer that references the
+    // same AST Node.
+    const auto *ParentDeclContextDecl = dyn_cast<Decl>(D->getDeclContext());
+    JOS.attribute("parentDeclContextId",
+                  createPointerRepresentation(ParentDeclContextDecl));
+  }
 
   addPreviousDeclaration(D);
   InnerDeclVisitor::Visit(D);
@@ -281,7 +286,7 @@ llvm::json::Array JSONNodeDumper::createCastPath(const CastExpr *C) {
   for (auto I = C->path_begin(), E = C->path_end(); I != E; ++I) {
     const CXXBaseSpecifier *Base = *I;
     const auto *RD =
-        cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
+        cast<CXXRecordDecl>(Base->getType()->castAs<RecordType>()->getDecl());
 
     llvm::json::Object Val{{"name", RD->getName()}};
     if (Base->isVirtual())
@@ -845,6 +850,12 @@ void JSONNodeDumper::VisitLinkageSpecDecl(const LinkageSpecDecl *LSD) {
   switch (LSD->getLanguage()) {
   case LinkageSpecDecl::lang_c: Lang = "C"; break;
   case LinkageSpecDecl::lang_cxx: Lang = "C++"; break;
+  case LinkageSpecDecl::lang_cxx_11:
+    Lang = "C++11";
+    break;
+  case LinkageSpecDecl::lang_cxx_14:
+    Lang = "C++14";
+    break;
   }
   JOS.attribute("language", Lang);
   attributeOnlyIfTrue("hasBraces", LSD->hasBraces());

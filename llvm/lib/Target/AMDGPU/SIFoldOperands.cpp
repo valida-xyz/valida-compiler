@@ -142,16 +142,20 @@ static bool isInlineConstantIfFolded(const SIInstrInfo *TII,
   switch (Opc) {
   case AMDGPU::V_MAC_F32_e64:
   case AMDGPU::V_MAC_F16_e64:
-  case AMDGPU::V_FMAC_F32_e64: {
+  case AMDGPU::V_FMAC_F32_e64:
+  case AMDGPU::V_FMAC_F16_e64: {
     // Special case for mac. Since this is replaced with mad when folded into
     // src2, we need to check the legality for the final instruction.
     int Src2Idx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::src2);
     if (static_cast<int>(OpNo) == Src2Idx) {
-      bool IsFMA = Opc == AMDGPU::V_FMAC_F32_e64;
-      bool IsF32 = Opc == AMDGPU::V_MAC_F32_e64;
+      bool IsFMA = Opc == AMDGPU::V_FMAC_F32_e64 ||
+                   Opc == AMDGPU::V_FMAC_F16_e64;
+      bool IsF32 = Opc == AMDGPU::V_MAC_F32_e64 ||
+                   Opc == AMDGPU::V_FMAC_F32_e64;
 
       unsigned Opc = IsFMA ?
-        AMDGPU::V_FMA_F32 : (IsF32 ? AMDGPU::V_MAD_F32 : AMDGPU::V_MAD_F16);
+        (IsF32 ? AMDGPU::V_FMA_F32 : AMDGPU::V_FMA_F16_gfx9) :
+        (IsF32 ? AMDGPU::V_MAD_F32 : AMDGPU::V_MAD_F16);
       const MCInstrDesc &MadDesc = TII->get(Opc);
       return TII->isInlineConstant(OpToFold, MadDesc.OpInfo[OpNo].OperandType);
     }
@@ -314,12 +318,15 @@ static bool tryAddToFoldList(SmallVectorImpl<FoldCandidate> &FoldList,
     // Special case for v_mac_{f16, f32}_e64 if we are trying to fold into src2
     unsigned Opc = MI->getOpcode();
     if ((Opc == AMDGPU::V_MAC_F32_e64 || Opc == AMDGPU::V_MAC_F16_e64 ||
-         Opc == AMDGPU::V_FMAC_F32_e64) &&
+         Opc == AMDGPU::V_FMAC_F32_e64 || Opc == AMDGPU::V_FMAC_F16_e64) &&
         (int)OpNo == AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::src2)) {
-      bool IsFMA = Opc == AMDGPU::V_FMAC_F32_e64;
-      bool IsF32 = Opc == AMDGPU::V_MAC_F32_e64;
+      bool IsFMA = Opc == AMDGPU::V_FMAC_F32_e64 ||
+                   Opc == AMDGPU::V_FMAC_F16_e64;
+      bool IsF32 = Opc == AMDGPU::V_MAC_F32_e64 ||
+                   Opc == AMDGPU::V_FMAC_F32_e64;
       unsigned NewOpc = IsFMA ?
-        AMDGPU::V_FMA_F32 : (IsF32 ? AMDGPU::V_MAD_F32 : AMDGPU::V_MAD_F16);
+        (IsF32 ? AMDGPU::V_FMA_F32 : AMDGPU::V_FMA_F16_gfx9) :
+        (IsF32 ? AMDGPU::V_MAD_F32 : AMDGPU::V_MAD_F16);
 
       // Check if changing this to a v_mad_{f16, f32} instruction will allow us
       // to fold the operand.
@@ -574,13 +581,17 @@ void SIFoldOperands::foldOperand(
 
   if (FoldingImmLike && UseMI->isCopy()) {
     Register DestReg = UseMI->getOperand(0).getReg();
-    const TargetRegisterClass *DestRC = Register::isVirtualRegister(DestReg)
-                                            ? MRI->getRegClass(DestReg)
-                                            : TRI->getPhysRegClass(DestReg);
+
+    // Don't fold into a copy to a physical register. Doing so would interfere
+    // with the register coalescer's logic which would avoid redundant
+    // initalizations.
+    if (DestReg.isPhysical())
+      return;
+
+    const TargetRegisterClass *DestRC =  MRI->getRegClass(DestReg);
 
     Register SrcReg = UseMI->getOperand(1).getReg();
-    if (Register::isVirtualRegister(DestReg) &&
-        Register::isVirtualRegister(SrcReg)) {
+    if (SrcReg.isVirtual()) { // XXX - This can be an assert?
       const TargetRegisterClass * SrcRC = MRI->getRegClass(SrcReg);
       if (TRI->isSGPRClass(SrcRC) && TRI->hasVectorRegisters(DestRC)) {
         MachineRegisterInfo::use_iterator NextUse;
@@ -1086,6 +1097,13 @@ void SIFoldOperands::foldInstOperand(MachineInstr &MI,
     Copy->addImplicitDefUseOperands(*MF);
 
   for (FoldCandidate &Fold : FoldList) {
+    if (Fold.isReg() && Register::isVirtualRegister(Fold.OpToFold->getReg())) {
+      Register Reg = Fold.OpToFold->getReg();
+      MachineInstr *DefMI = Fold.OpToFold->getParent();
+      if (DefMI->readsRegister(AMDGPU::EXEC, TRI) &&
+          execMayBeModifiedBeforeUse(*MRI, Reg, *DefMI, *Fold.UseMI))
+        continue;
+    }
     if (updateOperand(Fold, *TII, *TRI, *ST)) {
       // Clear kill flags.
       if (Fold.isReg()) {

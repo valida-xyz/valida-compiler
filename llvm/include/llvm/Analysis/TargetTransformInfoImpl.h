@@ -247,14 +247,14 @@ public:
 
   bool isLegalMaskedLoad(Type *DataType) { return false; }
 
-  bool isLegalNTStore(Type *DataType, unsigned Alignment) {
+  bool isLegalNTStore(Type *DataType, Align Alignment) {
     // By default, assume nontemporal memory stores are available for stores
     // that are aligned and have a size that is a power of 2.
     unsigned DataSize = DL.getTypeStoreSize(DataType);
     return Alignment >= DataSize && isPowerOf2_32(DataSize);
   }
 
-  bool isLegalNTLoad(Type *DataType, unsigned Alignment) {
+  bool isLegalNTLoad(Type *DataType, Align Alignment) {
     // By default, assume nontemporal memory loads are available for loads that
     // are aligned and have a size that is a power of 2.
     unsigned DataSize = DL.getTypeStoreSize(DataType);
@@ -293,10 +293,6 @@ public:
   bool useAA() { return false; }
 
   bool isTypeLegal(Type *Ty) { return false; }
-
-  unsigned getJumpBufAlignment() { return 0; }
-
-  unsigned getJumpBufSize() { return 0; }
 
   bool shouldBuildLookupTables() { return true; }
   bool shouldBuildLookupTablesForConstant(Constant *C) { return true; }
@@ -374,37 +370,6 @@ public:
     AllowPromotionWithoutCommonHeader = false;
     return false;
   }
-
-  unsigned getCacheLineSize() { return 0; }
-
-  llvm::Optional<unsigned> getCacheSize(TargetTransformInfo::CacheLevel Level) {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
-
-  llvm::Optional<unsigned> getCacheAssociativity(
-    TargetTransformInfo::CacheLevel Level) {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
-
-  unsigned getPrefetchDistance() { return 0; }
-
-  unsigned getMinPrefetchStride() { return 1; }
-
-  unsigned getMaxPrefetchIterationsAhead() { return UINT_MAX; }
 
   unsigned getMaxInterleaveFactor(unsigned VF) { return 1; }
 

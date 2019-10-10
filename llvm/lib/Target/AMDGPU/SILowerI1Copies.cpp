@@ -489,6 +489,15 @@ bool SILowerI1Copies::runOnMachineFunction(MachineFunction &TheMF) {
   return true;
 }
 
+#ifndef NDEBUG
+static bool isVRegCompatibleReg(const SIRegisterInfo &TRI,
+                                const MachineRegisterInfo &MRI,
+                                Register Reg) {
+  unsigned Size = TRI.getRegSizeInBits(Reg, MRI);
+  return Size == 1 || Size == 32;
+}
+#endif
+
 void SILowerI1Copies::lowerCopiesFromI1() {
   SmallVector<MachineInstr *, 4> DeadCopies;
 
@@ -509,7 +518,7 @@ void SILowerI1Copies::lowerCopiesFromI1() {
       LLVM_DEBUG(dbgs() << "Lower copy from i1: " << MI);
       DebugLoc DL = MI.getDebugLoc();
 
-      assert(TII->getRegisterInfo().getRegSizeInBits(DstReg, *MRI) == 32);
+      assert(isVRegCompatibleReg(TII->getRegisterInfo(), *MRI, DstReg));
       assert(!MI.getOperand(0).getSubReg());
 
       ConstrainRegs.insert(SrcReg);
@@ -580,12 +589,12 @@ void SILowerI1Copies::lowerPhis() {
 
       // Phis in a loop that are observed outside the loop receive a simple but
       // conservatively correct treatment.
-      MachineBasicBlock *PostDomBound = &MBB;
-      for (MachineInstr &Use : MRI->use_instructions(DstReg)) {
-        PostDomBound =
-            PDT->findNearestCommonDominator(PostDomBound, Use.getParent());
-      }
+      std::vector<MachineBasicBlock *> DomBlocks = {&MBB};
+      for (MachineInstr &Use : MRI->use_instructions(DstReg))
+        DomBlocks.push_back(Use.getParent());
 
+      MachineBasicBlock *PostDomBound =
+          PDT->findNearestCommonDominator(DomBlocks);
       unsigned FoundLoopLevel = LF.findLoop(PostDomBound);
 
       SSAUpdater.Initialize(DstReg);
@@ -702,12 +711,12 @@ void SILowerI1Copies::lowerCopiesToI1() {
 
       // Defs in a loop that are observed outside the loop must be transformed
       // into appropriate bit manipulation.
-      MachineBasicBlock *PostDomBound = &MBB;
-      for (MachineInstr &Use : MRI->use_instructions(DstReg)) {
-        PostDomBound =
-            PDT->findNearestCommonDominator(PostDomBound, Use.getParent());
-      }
+      std::vector<MachineBasicBlock *> DomBlocks = {&MBB};
+      for (MachineInstr &Use : MRI->use_instructions(DstReg))
+        DomBlocks.push_back(Use.getParent());
 
+      MachineBasicBlock *PostDomBound =
+          PDT->findNearestCommonDominator(DomBlocks);
       unsigned FoundLoopLevel = LF.findLoop(PostDomBound);
       if (FoundLoopLevel) {
         SSAUpdater.Initialize(DstReg);

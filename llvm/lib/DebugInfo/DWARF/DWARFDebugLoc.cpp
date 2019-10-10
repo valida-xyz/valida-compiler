@@ -35,11 +35,10 @@ static void dumpExpression(raw_ostream &OS, ArrayRef<uint8_t> Data,
   DWARFExpression(Extractor, dwarf::DWARF_VERSION, AddressSize).print(OS, MRI, U);
 }
 
-void DWARFDebugLoc::LocationList::dump(raw_ostream &OS, bool IsLittleEndian,
+void DWARFDebugLoc::LocationList::dump(raw_ostream &OS, uint64_t BaseAddress,
+                                       bool IsLittleEndian,
                                        unsigned AddressSize,
-                                       const MCRegisterInfo *MRI,
-                                       DWARFUnit *U,
-                                       uint64_t BaseAddress,
+                                       const MCRegisterInfo *MRI, DWARFUnit *U,
                                        unsigned Indent) const {
   for (const Entry &E : Entries) {
     OS << '\n';
@@ -67,7 +66,7 @@ void DWARFDebugLoc::dump(raw_ostream &OS, const MCRegisterInfo *MRI,
                          Optional<uint64_t> Offset) const {
   auto DumpLocationList = [&](const LocationList &L) {
     OS << format("0x%8.8" PRIx64 ": ", L.Offset);
-    L.dump(OS, IsLittleEndian, AddressSize, MRI, nullptr, 0, 12);
+    L.dump(OS, 0, IsLittleEndian, AddressSize, MRI, nullptr, 12);
     OS << "\n\n";
   };
 
@@ -102,6 +101,7 @@ DWARFDebugLoc::parseOneLocationList(const DWARFDataExtractor &Data,
 
     if (Error Err = C.takeError())
       return std::move(Err);
+
     // The end of any given location list is marked by an end of list entry,
     // which consists of a 0 for the beginning address offset and a 0 for the
     // ending address offset.
@@ -110,9 +110,12 @@ DWARFDebugLoc::parseOneLocationList(const DWARFDataExtractor &Data,
       return LL;
     }
 
-    unsigned Bytes = Data.getU16(C);
-    // A single location description describing the location of the object...
-    Data.getU8(C, E.Loc, Bytes);
+    if (E.Begin != (AddressSize == 4 ? -1U : -1ULL)) {
+      unsigned Bytes = Data.getU16(C);
+      // A single location description describing the location of the object...
+      Data.getU8(C, E.Loc, Bytes);
+    }
+
     LL.Entries.push_back(std::move(E));
   }
 }
@@ -140,7 +143,7 @@ DWARFDebugLoclists::parseOneLocationList(const DataExtractor &Data,
   DataExtractor::Cursor C(*Offset);
 
   // dwarf::DW_LLE_end_of_list_entry is 0 and indicates the end of the list.
-  while (auto Kind = static_cast<dwarf::LocationListEntry>(Data.getU8(C))) {
+  while (auto Kind = Data.getU8(C)) {
     Entry E;
     E.Kind = Kind;
     switch (Kind) {
@@ -184,12 +187,11 @@ DWARFDebugLoclists::parseOneLocationList(const DataExtractor &Data,
   return LL;
 }
 
-void DWARFDebugLoclists::parse(DataExtractor data, unsigned Version) {
+void DWARFDebugLoclists::parse(DataExtractor data, uint64_t Offset, uint64_t EndOffset, uint16_t Version) {
   IsLittleEndian = data.isLittleEndian();
   AddressSize = data.getAddressSize();
 
-  uint64_t Offset = 0;
-  while (Offset < data.getData().size()) {
+  while (Offset < EndOffset) {
     if (auto LL = parseOneLocationList(data, &Offset, Version))
       Locations.push_back(std::move(*LL));
     else {

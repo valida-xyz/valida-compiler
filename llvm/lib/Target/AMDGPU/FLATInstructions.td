@@ -786,7 +786,7 @@ def : FlatLoadAtomicPat <FLAT_LOAD_DWORDX2, atomic_load_64_flat, i64>;
 def : FlatStorePat <FLAT_STORE_BYTE, truncstorei8_flat, i32>;
 def : FlatStorePat <FLAT_STORE_SHORT, truncstorei16_flat, i32>;
 
-foreach vt = [i32, f32, v2i16, v2f16, p2, p3, p5, p6] in {
+foreach vt = Reg32Types.types in {
 def : FlatLoadPat <FLAT_LOAD_DWORD, load_flat, vt>;
 def : FlatStorePat <FLAT_STORE_DWORD, store_flat, vt>;
 }
@@ -867,7 +867,7 @@ def : FlatLoadSignedPat <GLOBAL_LOAD_USHORT, zextloadi16_global, i32>;
 def : FlatLoadSignedPat <GLOBAL_LOAD_SSHORT, sextloadi16_global, i32>;
 def : FlatLoadSignedPat <GLOBAL_LOAD_USHORT, load_global, i16>;
 
-foreach vt = [i32, f32, v2i16, v2f16, p2, p3, p5, p6] in {
+foreach vt = Reg32Types.types in {
 def : FlatLoadSignedPat <GLOBAL_LOAD_DWORD, load_global, vt>;
 def : FlatStoreSignedPat <GLOBAL_STORE_DWORD, store_global, vt, VGPR_32>;
 }
@@ -1184,7 +1184,7 @@ class FLAT_Real_gfx10<bits<7> op, FLAT_Pseudo ps> :
   let AssemblerPredicate = isGFX10Plus;
   let DecoderNamespace = "GFX10";
 
-  let Inst{11-0}  = {offset{12}, offset{10-0}};
+  let Inst{11-0}  = offset{11-0};
   let Inst{12}    = !if(ps.has_dlc, dlc, ps.dlcValue);
   let Inst{54-48} = !if(ps.has_saddr, !if(ps.enabled_saddr, saddr, 0x7d), 0x7d);
   let Inst{55}    = 0;

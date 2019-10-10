@@ -1,16 +1,10 @@
-LEVEL := ../../../make
-
-LIB_PREFIX := load_
-
-LD_EXTRAS := -L. -l$(LIB_PREFIX)a
+LD_EXTRAS := -L. -lload_a
 CXX_SOURCES := main.cpp
 
-include $(LEVEL)/Makefile.rules
+a.out: libload_a
 
-a.out: lib_a
+include Makefile.rules
 
-lib_%:
-	$(MAKE) VPATH=$(SRCDIR) -I $(SRCDIR) -f $(SRCDIR)/$*.mk
-
-clean::
-	$(MAKE) -f $(SRCDIR)/a.mk clean
+libload_a:
+	$(MAKE) -f $(MAKEFILE_RULES) \
+		DYLIB_ONLY=YES DYLIB_NAME=load_a DYLIB_CXX_SOURCES=a.cpp

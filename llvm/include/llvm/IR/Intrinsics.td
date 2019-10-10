@@ -187,6 +187,16 @@ class LLVMVectorElementType<int num> : LLVMMatchType<num>;
 // vector type, but change the element count to be half as many
 class LLVMHalfElementsVectorType<int num> : LLVMMatchType<num>;
 
+// Match the type of another intrinsic parameter that is expected to be a
+// vector type (i.e. <N x iM>) but with each element subdivided to
+// form a vector with more elements that are smaller than the original.
+class LLVMSubdivide2VectorType<int num> : LLVMMatchType<num>;
+class LLVMSubdivide4VectorType<int num> : LLVMMatchType<num>;
+
+// Match the element count and bit width of another intrinsic parameter, but
+// change the element type to an integer.
+class LLVMVectorOfBitcastsToInt<int num> : LLVMMatchType<num>;
+
 def llvm_void_ty       : LLVMType<isVoid>;
 let isAny = 1 in {
   def llvm_any_ty        : LLVMType<Any>;
@@ -693,6 +703,14 @@ let IntrProperties = [IntrInaccessibleMemOnly, IntrWillReturn] in {
                                                          [ LLVMMatchType<0>,
                                                            llvm_metadata_ty,
                                                            llvm_metadata_ty ]>;
+  def int_experimental_constrained_lrint : Intrinsic<[ llvm_anyint_ty ],
+                                                     [ llvm_anyfloat_ty,
+                                                       llvm_metadata_ty,
+                                                       llvm_metadata_ty ]>;
+  def int_experimental_constrained_llrint : Intrinsic<[ llvm_anyint_ty ],
+                                                      [ llvm_anyfloat_ty,
+                                                        llvm_metadata_ty,
+                                                        llvm_metadata_ty ]>;
   def int_experimental_constrained_maxnum : Intrinsic<[ llvm_anyfloat_ty ],
                                                       [ LLVMMatchType<0>,
                                                         LLVMMatchType<0>,
@@ -711,6 +729,12 @@ let IntrProperties = [IntrInaccessibleMemOnly, IntrWillReturn] in {
                                                      [ LLVMMatchType<0>,
                                                        llvm_metadata_ty,
                                                        llvm_metadata_ty ]>;
+  def int_experimental_constrained_lround : Intrinsic<[ llvm_anyint_ty ],
+                                                      [ llvm_anyfloat_ty,
+                                                        llvm_metadata_ty ]>;
+  def int_experimental_constrained_llround : Intrinsic<[ llvm_anyint_ty ],
+                                                       [ llvm_anyfloat_ty,
+                                                         llvm_metadata_ty ]>;
   def int_experimental_constrained_round : Intrinsic<[ llvm_anyfloat_ty ],
                                                      [ LLVMMatchType<0>,
                                                       llvm_metadata_ty,
@@ -893,6 +917,9 @@ def int_umul_fix : Intrinsic<[llvm_anyint_ty],
 //===------------------- Fixed Point Saturation Arithmetic Intrinsics ----------------===//
 //
 def int_smul_fix_sat : Intrinsic<[llvm_anyint_ty],
+                                 [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
+                                 [IntrNoMem, IntrSpeculatable, IntrWillReturn, Commutative, ImmArg<2>]>;
+def int_umul_fix_sat : Intrinsic<[llvm_anyint_ty],
                                  [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
                                  [IntrNoMem, IntrSpeculatable, IntrWillReturn, Commutative, ImmArg<2>]>;
 
@@ -1126,6 +1153,8 @@ def int_load_relative: Intrinsic<[llvm_ptr_ty], [llvm_ptr_ty, llvm_anyint_ty],
                                  [IntrReadMem, IntrArgMemOnly]>;
 
 def int_hwasan_check_memaccess :
+  Intrinsic<[], [llvm_ptr_ty, llvm_ptr_ty, llvm_i32_ty], [IntrInaccessibleMemOnly, ImmArg<2>]>;
+def int_hwasan_check_memaccess_shortgranules :
   Intrinsic<[], [llvm_ptr_ty, llvm_ptr_ty, llvm_i32_ty], [IntrInaccessibleMemOnly, ImmArg<2>]>;
 
 // Xray intrinsics

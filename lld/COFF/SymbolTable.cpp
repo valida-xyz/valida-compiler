@@ -15,6 +15,7 @@
 #include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Memory.h"
 #include "lld/Common/Timer.h"
+#include "llvm/DebugInfo/Symbolize/Symbolize.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Object/WindowsMachineFlag.h"
 #include "llvm/Support/Debug.h"
@@ -61,6 +62,24 @@ static void errorOrWarn(const Twine &s) {
     error(s);
 }
 
+// Causes the file associated with a lazy symbol to be linked in.
+static void forceLazy(Symbol *s) {
+  s->pendingArchiveLoad = true;
+  switch (s->kind()) {
+  case Symbol::Kind::LazyArchiveKind: {
+    auto *l = cast<LazyArchive>(s);
+    l->file->addMember(l->sym);
+    break;
+  }
+  case Symbol::Kind::LazyObjectKind:
+    cast<LazyObject>(s)->file->fetch();
+    break;
+  default:
+    llvm_unreachable(
+        "symbol passed to forceLazy is not a LazyArchive or LazyObject");
+  }
+}
+
 // Returns the symbol in SC whose value is <= Addr that is closest to Addr.
 // This is generally the global variable or function whose definition contains
 // Addr.
@@ -87,6 +106,30 @@ static std::vector<std::string> getSymbolLocations(BitcodeFile *file) {
     res += source.str() + "\n>>>               ";
   res += toString(file);
   return {res};
+}
+
+static std::pair<StringRef, uint32_t> getFileLineDwarf(const SectionChunk *c,
+                                                       uint32_t addr) {
+  if (!config->symbolizer)
+    config->symbolizer = make<symbolize::LLVMSymbolizer>();
+  Expected<DILineInfo> expectedLineInfo = config->symbolizer->symbolizeCode(
+      *c->file->getCOFFObj(), {addr, c->getSectionNumber() - 1});
+  if (!expectedLineInfo)
+    return {"", 0};
+  const DILineInfo &lineInfo = *expectedLineInfo;
+  if (lineInfo.FileName == DILineInfo::BadString)
+    return {"", 0};
+  return {saver.save(lineInfo.FileName), lineInfo.Line};
+}
+
+static std::pair<StringRef, uint32_t> getFileLine(const SectionChunk *c,
+                                                  uint32_t addr) {
+  // MinGW can optionally use codeview, even if the default is dwarf.
+  std::pair<StringRef, uint32_t> fileLine = getFileLineCodeView(c, addr);
+  // If codeview didn't yield any result, check dwarf in MinGW mode.
+  if (fileLine.first.empty() && config->mingw)
+    fileLine = getFileLineDwarf(c, addr);
+  return fileLine;
 }
 
 // Given a file and the index of a symbol in that file, returns a description
@@ -192,16 +235,15 @@ void SymbolTable::loadMinGWAutomaticImports() {
 
     if (name.startswith("__imp_"))
       continue;
-    // If we have an undefined symbol, but we have a Lazy representing a
-    // symbol we could load from file, make sure to load that.
-    Lazy *l = dyn_cast_or_null<Lazy>(find(("__imp_" + name).str()));
-    if (!l || l->pendingArchiveLoad)
+    // If we have an undefined symbol, but we have a lazy symbol we could
+    // load, load it.
+    Symbol *l = find(("__imp_" + name).str());
+    if (!l || l->pendingArchiveLoad || !l->isLazy())
       continue;
 
-    log("Loading lazy " + l->getName() + " from " + l->file->getName() +
+    log("Loading lazy " + l->getName() + " from " + l->getFile()->getName() +
         " for automatic import");
-    l->pendingArchiveLoad = true;
-    l->file->addMember(l->sym);
+    forceLazy(l);
   }
 }
 
@@ -435,26 +477,22 @@ Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
   Symbol *s;
   bool wasInserted;
   std::tie(s, wasInserted) = insert(name, f);
-  if (wasInserted || (isa<Lazy>(s) && isWeakAlias)) {
+  if (wasInserted || (s->isLazy() && isWeakAlias)) {
     replaceSymbol<Undefined>(s, name);
     return s;
   }
-  if (auto *l = dyn_cast<Lazy>(s)) {
-    if (!s->pendingArchiveLoad) {
-      s->pendingArchiveLoad = true;
-      l->file->addMember(l->sym);
-    }
-  }
+  if (s->isLazy())
+    forceLazy(s);
   return s;
 }
 
-void SymbolTable::addLazy(ArchiveFile *f, const Archive::Symbol &sym) {
+void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
   StringRef name = sym.getName();
   Symbol *s;
   bool wasInserted;
   std::tie(s, wasInserted) = insert(name);
   if (wasInserted) {
-    replaceSymbol<Lazy>(s, f, sym);
+    replaceSymbol<LazyArchive>(s, f, sym);
     return;
   }
   auto *u = dyn_cast<Undefined>(s);
@@ -462,6 +500,21 @@ void SymbolTable::addLazy(ArchiveFile *f, const Archive::Symbol &sym) {
     return;
   s->pendingArchiveLoad = true;
   f->addMember(sym);
+}
+
+void SymbolTable::addLazyObject(LazyObjFile *f, StringRef n) {
+  Symbol *s;
+  bool wasInserted;
+  std::tie(s, wasInserted) = insert(n, f);
+  if (wasInserted) {
+    replaceSymbol<LazyObject>(s, f, n);
+    return;
+  }
+  auto *u = dyn_cast<Undefined>(s);
+  if (!u || u->weakAlias || s->pendingArchiveLoad)
+    return;
+  s->pendingArchiveLoad = true;
+  f->fetch();
 }
 
 void SymbolTable::reportDuplicate(Symbol *existing, InputFile *newFile) {
@@ -480,7 +533,7 @@ Symbol *SymbolTable::addAbsolute(StringRef n, COFFSymbolRef sym) {
   bool wasInserted;
   std::tie(s, wasInserted) = insert(n, nullptr);
   s->isUsedInRegularObj = true;
-  if (wasInserted || isa<Undefined>(s) || isa<Lazy>(s))
+  if (wasInserted || isa<Undefined>(s) || s->isLazy())
     replaceSymbol<DefinedAbsolute>(s, n, sym);
   else if (!isa<DefinedCOFF>(s))
     reportDuplicate(s, nullptr);
@@ -492,7 +545,7 @@ Symbol *SymbolTable::addAbsolute(StringRef n, uint64_t va) {
   bool wasInserted;
   std::tie(s, wasInserted) = insert(n, nullptr);
   s->isUsedInRegularObj = true;
-  if (wasInserted || isa<Undefined>(s) || isa<Lazy>(s))
+  if (wasInserted || isa<Undefined>(s) || s->isLazy())
     replaceSymbol<DefinedAbsolute>(s, n, va);
   else if (!isa<DefinedCOFF>(s))
     reportDuplicate(s, nullptr);
@@ -504,7 +557,7 @@ Symbol *SymbolTable::addSynthetic(StringRef n, Chunk *c) {
   bool wasInserted;
   std::tie(s, wasInserted) = insert(n, nullptr);
   s->isUsedInRegularObj = true;
-  if (wasInserted || isa<Undefined>(s) || isa<Lazy>(s))
+  if (wasInserted || isa<Undefined>(s) || s->isLazy())
     replaceSymbol<DefinedSynthetic>(s, n, c);
   else if (!isa<DefinedCOFF>(s))
     reportDuplicate(s, nullptr);
@@ -560,7 +613,7 @@ Symbol *SymbolTable::addImportData(StringRef n, ImportFile *f) {
   bool wasInserted;
   std::tie(s, wasInserted) = insert(n, nullptr);
   s->isUsedInRegularObj = true;
-  if (wasInserted || isa<Undefined>(s) || isa<Lazy>(s)) {
+  if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
     replaceSymbol<DefinedImportData>(s, n, f);
     return s;
   }
@@ -575,7 +628,7 @@ Symbol *SymbolTable::addImportThunk(StringRef name, DefinedImportData *id,
   bool wasInserted;
   std::tie(s, wasInserted) = insert(name, nullptr);
   s->isUsedInRegularObj = true;
-  if (wasInserted || isa<Undefined>(s) || isa<Lazy>(s)) {
+  if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
     replaceSymbol<DefinedImportThunk>(s, name, id, machine);
     return s;
   }
@@ -589,9 +642,12 @@ void SymbolTable::addLibcall(StringRef name) {
   if (!sym)
     return;
 
-  if (Lazy *l = dyn_cast<Lazy>(sym)) {
+  if (auto *l = dyn_cast<LazyArchive>(sym)) {
     MemoryBufferRef mb = l->getMemberBuffer();
-    if (identify_magic(mb.getBuffer()) == llvm::file_magic::bitcode)
+    if (isBitcode(mb))
+      addUndefined(sym->getName());
+  } else if (LazyObject *o = dyn_cast<LazyObject>(sym)) {
+    if (isBitcode(o->file->mb))
       addUndefined(sym->getName());
   }
 }

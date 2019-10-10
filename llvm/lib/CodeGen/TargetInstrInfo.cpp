@@ -143,7 +143,7 @@ TargetInstrInfo::ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
   while (Tail != MBB->end()) {
     auto MI = Tail++;
     if (MI->isCall())
-      MBB->getParent()->updateCallSiteInfo(&*MI);
+      MBB->getParent()->eraseCallSiteInfo(&*MI);
     MBB->erase(MI);
   }
 
@@ -282,7 +282,7 @@ bool TargetInstrInfo::fixCommutedOpIndices(unsigned &ResultIdx1,
   return true;
 }
 
-bool TargetInstrInfo::findCommutedOpIndices(MachineInstr &MI,
+bool TargetInstrInfo::findCommutedOpIndices(const MachineInstr &MI,
                                             unsigned &SrcOpIdx1,
                                             unsigned &SrcOpIdx2) const {
   assert(!MI.isBundle() &&
@@ -394,7 +394,7 @@ bool TargetInstrInfo::getStackSlotRange(const TargetRegisterClass *RC,
   if (BitOffset < 0 || BitOffset % 8)
     return false;
 
-  Size = BitSize /= 8;
+  Size = BitSize / 8;
   Offset = (unsigned)BitOffset / 8;
 
   assert(TRI->getSpillSize(*RC) >= (Offset + Size) && "bad subregister range");
@@ -1129,22 +1129,10 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI) const {
 
   if (isCopyInstr(MI, SrcRegOp, DestRegOp)) {
     Op = SrcRegOp;
-    return ParamLoadedValue(Op, Expr);
+    return ParamLoadedValue(*Op, Expr);
   } else if (MI.isMoveImmediate()) {
     Op = &MI.getOperand(1);
-    return ParamLoadedValue(Op, Expr);
-  } else if (MI.hasOneMemOperand()) {
-    int64_t Offset;
-    const auto &TRI = MF->getSubtarget().getRegisterInfo();
-    const auto &TII = MF->getSubtarget().getInstrInfo();
-    const MachineOperand *BaseOp;
-
-    if (!TII->getMemOperandWithOffset(MI, BaseOp, Offset, TRI))
-      return None;
-
-    Expr = DIExpression::prepend(Expr, DIExpression::DerefAfter, Offset);
-    Op = BaseOp;
-    return ParamLoadedValue(Op, Expr);
+    return ParamLoadedValue(*Op, Expr);
   }
 
   return None;
@@ -1257,3 +1245,5 @@ bool TargetInstrInfo::getInsertSubregInputs(
   InsertedReg.SubIdx = (unsigned)MOSubIdx.getImm();
   return true;
 }
+
+TargetInstrInfo::PipelinerLoopInfo::~PipelinerLoopInfo() {}

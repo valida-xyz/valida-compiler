@@ -89,6 +89,10 @@ def int_wasm_atomic_notify:
 // SIMD intrinsics
 //===----------------------------------------------------------------------===//
 
+def int_wasm_swizzle :
+  Intrinsic<[llvm_v16i8_ty],
+            [llvm_v16i8_ty, llvm_v16i8_ty],
+            [IntrNoMem, IntrSpeculatable]>;
 def int_wasm_sub_saturate_signed :
   Intrinsic<[llvm_anyvector_ty],
             [LLVMMatchType<0>, LLVMMatchType<0>],
@@ -117,6 +121,31 @@ def int_wasm_qfms :
   Intrinsic<[llvm_anyvector_ty],
             [LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>],
             [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_narrow_signed :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty, LLVMMatchType<1>],
+            [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_narrow_unsigned :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty, LLVMMatchType<1>],
+            [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_widen_low_signed :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty],
+            [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_widen_high_signed :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty],
+            [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_widen_low_unsigned :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty],
+            [IntrNoMem, IntrSpeculatable]>;
+def int_wasm_widen_high_unsigned :
+  Intrinsic<[llvm_anyvector_ty],
+            [llvm_anyvector_ty],
+            [IntrNoMem, IntrSpeculatable]>;
+
 
 //===----------------------------------------------------------------------===//
 // Bulk memory intrinsics

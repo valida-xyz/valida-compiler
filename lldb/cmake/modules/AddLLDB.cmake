@@ -27,6 +27,12 @@ function(lldb_tablegen)
   endif()
 endfunction(lldb_tablegen)
 
+function(add_lldb_test_dependency)
+  foreach(dependency ${ARGN})
+    add_dependencies(lldb-test-deps ${dependency})
+  endforeach()
+endfunction(add_lldb_test_dependency)
+
 function(add_lldb_library name)
   include_directories(BEFORE
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -37,7 +43,7 @@ function(add_lldb_library name)
   cmake_parse_arguments(PARAM
     "MODULE;SHARED;STATIC;OBJECT;PLUGIN"
     "INSTALL_PREFIX;ENTITLEMENTS"
-    "EXTRA_CXXFLAGS;DEPENDS;LINK_LIBS;LINK_COMPONENTS"
+    "EXTRA_CXXFLAGS;DEPENDS;LINK_LIBS;LINK_COMPONENTS;CLANG_LIBS"
     ${ARGN})
   llvm_process_sources(srcs ${PARAM_UNPARSED_ARGUMENTS})
   list(APPEND LLVM_LINK_COMPONENTS ${PARAM_LINK_COMPONENTS})
@@ -91,6 +97,12 @@ function(add_lldb_library name)
       ${pass_ENTITLEMENTS}
       ${pass_NO_INSTALL_RPATH}
     )
+
+    if(CLANG_LINK_CLANG_DYLIB)
+      target_link_libraries(${name} PRIVATE clang-cpp)
+    else()
+      target_link_libraries(${name} PRIVATE ${PARAM_CLANG_LIBS})
+    endif()
   endif()
 
   if(PARAM_SHARED)
@@ -136,7 +148,7 @@ function(add_lldb_executable name)
   cmake_parse_arguments(ARG
     "GENERATE_INSTALL"
     "INSTALL_PREFIX;ENTITLEMENTS"
-    "LINK_LIBS;LINK_COMPONENTS"
+    "LINK_LIBS;CLANG_LIBS;LINK_COMPONENTS"
     ${ARGN}
     )
 
@@ -156,6 +168,11 @@ function(add_lldb_executable name)
   )
 
   target_link_libraries(${name} PRIVATE ${ARG_LINK_LIBS})
+  if(CLANG_LINK_CLANG_DYLIB)
+    target_link_libraries(${name} PRIVATE clang-cpp)
+  else()
+    target_link_libraries(${name} PRIVATE ${ARG_CLANG_LIBS})
+  endif()
   set_target_properties(${name} PROPERTIES FOLDER "lldb executables")
 
   if(ARG_GENERATE_INSTALL)

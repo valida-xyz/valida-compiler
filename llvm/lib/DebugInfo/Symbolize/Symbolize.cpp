@@ -205,7 +205,7 @@ bool checkFileCRC(StringRef Path, uint32_t CRCHash) {
       MemoryBuffer::getFileOrSTDIN(Path);
   if (!MB)
     return false;
-  return CRCHash == llvm::crc32(0, MB.get()->getBuffer());
+  return CRCHash == llvm::crc32(arrayRefFromStringRef(MB.get()->getBuffer()));
 }
 
 bool findDebugBinary(const std::string &OrigPath,
@@ -401,7 +401,7 @@ LLVMSymbolizer::getOrCreateObject(const std::string &Path,
       return I->second.get();
 
     Expected<std::unique_ptr<ObjectFile>> ObjOrErr =
-        UB->getObjectForArch(ArchName);
+        UB->getMachOObjectForArch(ArchName);
     if (!ObjOrErr) {
       ObjectForUBPathAndArch.emplace(std::make_pair(Path, ArchName),
                                      std::unique_ptr<ObjectFile>());

@@ -336,7 +336,7 @@ static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
     break;
   case llvm::Triple::riscv32:
   case llvm::Triple::riscv64:
-    riscv::getRISCVTargetFeatures(D, Args, Features);
+    riscv::getRISCVTargetFeatures(D, Triple, Args, Features);
     break;
   case llvm::Triple::systemz:
     systemz::getSystemZTargetFeatures(Args, Features);
@@ -609,15 +609,16 @@ getFramePointerKind(const ArgList &Args, const llvm::Triple &Triple) {
 }
 
 /// Add a CC1 option to specify the debug compilation directory.
-static void addDebugCompDirArg(const ArgList &Args, ArgStringList &CmdArgs,
-                               const llvm::vfs::FileSystem &VFS) {
+static void addDebugCompDirArg(const ArgList &Args, ArgStringList &CmdArgs) {
   if (Arg *A = Args.getLastArg(options::OPT_fdebug_compilation_dir)) {
     CmdArgs.push_back("-fdebug-compilation-dir");
     CmdArgs.push_back(A->getValue());
-  } else if (llvm::ErrorOr<std::string> CWD =
-                 VFS.getCurrentWorkingDirectory()) {
-    CmdArgs.push_back("-fdebug-compilation-dir");
-    CmdArgs.push_back(Args.MakeArgString(*CWD));
+  } else {
+    SmallString<128> cwd;
+    if (!llvm::sys::fs::current_path(cwd)) {
+      CmdArgs.push_back("-fdebug-compilation-dir");
+      CmdArgs.push_back(Args.MakeArgString(cwd));
+    }
   }
 }
 
@@ -832,12 +833,14 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
     }
   }
 
-  if (Args.hasArg(options::OPT_ftest_coverage) ||
-      Args.hasArg(options::OPT_coverage))
+  bool EmitCovNotes = Args.hasArg(options::OPT_ftest_coverage) ||
+                      Args.hasArg(options::OPT_coverage);
+  bool EmitCovData = Args.hasFlag(options::OPT_fprofile_arcs,
+                                  options::OPT_fno_profile_arcs, false) ||
+                     Args.hasArg(options::OPT_coverage);
+  if (EmitCovNotes)
     CmdArgs.push_back("-femit-coverage-notes");
-  if (Args.hasFlag(options::OPT_fprofile_arcs, options::OPT_fno_profile_arcs,
-                   false) ||
-      Args.hasArg(options::OPT_coverage))
+  if (EmitCovData)
     CmdArgs.push_back("-femit-coverage-data");
 
   if (Args.hasFlag(options::OPT_fcoverage_mapping,
@@ -873,35 +876,48 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
     CmdArgs.push_back(Args.MakeArgString(Twine("-fprofile-filter-files=" + v)));
   }
 
-  if (C.getArgs().hasArg(options::OPT_c) ||
-      C.getArgs().hasArg(options::OPT_S)) {
-    if (Output.isFilename()) {
-      CmdArgs.push_back("-coverage-notes-file");
-      SmallString<128> OutputFilename;
-      if (Arg *FinalOutput = C.getArgs().getLastArg(options::OPT_o))
-        OutputFilename = FinalOutput->getValue();
-      else
-        OutputFilename = llvm::sys::path::filename(Output.getBaseInput());
-      SmallString<128> CoverageFilename = OutputFilename;
-      if (llvm::sys::path::is_relative(CoverageFilename))
-        (void)D.getVFS().makeAbsolute(CoverageFilename);
-      llvm::sys::path::replace_extension(CoverageFilename, "gcno");
-      CmdArgs.push_back(Args.MakeArgString(CoverageFilename));
+  // Leave -fprofile-dir= an unused argument unless .gcda emission is
+  // enabled. To be polite, with '-fprofile-arcs -fno-profile-arcs' consider
+  // the flag used. There is no -fno-profile-dir, so the user has no
+  // targeted way to suppress the warning.
+  Arg *FProfileDir = nullptr;
+  if (Args.hasArg(options::OPT_fprofile_arcs) ||
+      Args.hasArg(options::OPT_coverage))
+    FProfileDir = Args.getLastArg(options::OPT_fprofile_dir);
 
-      // Leave -fprofile-dir= an unused argument unless .gcda emission is
-      // enabled. To be polite, with '-fprofile-arcs -fno-profile-arcs' consider
-      // the flag used. There is no -fno-profile-dir, so the user has no
-      // targeted way to suppress the warning.
-      if (Args.hasArg(options::OPT_fprofile_arcs) ||
-          Args.hasArg(options::OPT_coverage)) {
-        CmdArgs.push_back("-coverage-data-file");
-        if (Arg *FProfileDir = Args.getLastArg(options::OPT_fprofile_dir)) {
-          CoverageFilename = FProfileDir->getValue();
-          llvm::sys::path::append(CoverageFilename, OutputFilename);
-        }
-        llvm::sys::path::replace_extension(CoverageFilename, "gcda");
-        CmdArgs.push_back(Args.MakeArgString(CoverageFilename));
+  // Put the .gcno and .gcda files (if needed) next to the object file or
+  // bitcode file in the case of LTO.
+  // FIXME: There should be a simpler way to find the object file for this
+  // input, and this code probably does the wrong thing for commands that
+  // compile and link all at once.
+  if ((Args.hasArg(options::OPT_c) || Args.hasArg(options::OPT_S)) &&
+      (EmitCovNotes || EmitCovData) && Output.isFilename()) {
+    SmallString<128> OutputFilename;
+    if (Arg *FinalOutput = C.getArgs().getLastArg(options::OPT_o))
+      OutputFilename = FinalOutput->getValue();
+    else
+      OutputFilename = llvm::sys::path::filename(Output.getBaseInput());
+    SmallString<128> CoverageFilename = OutputFilename;
+    if (llvm::sys::path::is_relative(CoverageFilename)) {
+      SmallString<128> Pwd;
+      if (!llvm::sys::fs::current_path(Pwd)) {
+        llvm::sys::path::append(Pwd, CoverageFilename);
+        CoverageFilename.swap(Pwd);
       }
+    }
+    llvm::sys::path::replace_extension(CoverageFilename, "gcno");
+
+    CmdArgs.push_back("-coverage-notes-file");
+    CmdArgs.push_back(Args.MakeArgString(CoverageFilename));
+
+    if (EmitCovData) {
+      if (FProfileDir) {
+        CoverageFilename = FProfileDir->getValue();
+        llvm::sys::path::append(CoverageFilename, OutputFilename);
+      }
+      llvm::sys::path::replace_extension(CoverageFilename, "gcda");
+      CmdArgs.push_back("-coverage-data-file");
+      CmdArgs.push_back(Args.MakeArgString(CoverageFilename));
     }
   }
 }
@@ -1056,7 +1072,6 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
                                     ArgStringList &CmdArgs,
                                     const InputInfo &Output,
                                     const InputInfoList &Inputs) const {
-  Arg *A;
   const bool IsIAMCU = getToolChain().getTriple().isOSIAMCU();
 
   CheckPreprocessingOptions(D, Args);
@@ -1065,9 +1080,20 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_CC);
 
   // Handle dependency file generation.
-  if ((A = Args.getLastArg(options::OPT_M, options::OPT_MM)) ||
-      (A = Args.getLastArg(options::OPT_MD)) ||
-      (A = Args.getLastArg(options::OPT_MMD))) {
+  Arg *ArgM = Args.getLastArg(options::OPT_MM);
+  if (!ArgM)
+    ArgM = Args.getLastArg(options::OPT_M);
+  Arg *ArgMD = Args.getLastArg(options::OPT_MMD);
+  if (!ArgMD)
+    ArgMD = Args.getLastArg(options::OPT_MD);
+
+  // -M and -MM imply -w.
+  if (ArgM)
+    CmdArgs.push_back("-w");
+  else
+    ArgM = ArgMD;
+
+  if (ArgM) {
     // Determine the output location.
     const char *DepFile;
     if (Arg *MF = Args.getLastArg(options::OPT_MF)) {
@@ -1075,8 +1101,7 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
       C.addFailureResultFile(DepFile, &JA);
     } else if (Output.getType() == types::TY_Dependencies) {
       DepFile = Output.getFilename();
-    } else if (A->getOption().matches(options::OPT_M) ||
-               A->getOption().matches(options::OPT_MM)) {
+    } else if (!ArgMD) {
       DepFile = "-";
     } else {
       DepFile = getDependencyFileName(Args, Inputs);
@@ -1085,8 +1110,22 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-dependency-file");
     CmdArgs.push_back(DepFile);
 
+    bool HasTarget = false;
+    for (const Arg *A : Args.filtered(options::OPT_MT, options::OPT_MQ)) {
+      HasTarget = true;
+      A->claim();
+      if (A->getOption().matches(options::OPT_MT)) {
+        A->render(Args, CmdArgs);
+      } else {
+        CmdArgs.push_back("-MT");
+        SmallString<128> Quoted;
+        QuoteTarget(A->getValue(), Quoted);
+        CmdArgs.push_back(Args.MakeArgString(Quoted));
+      }
+    }
+
     // Add a default target if one wasn't specified.
-    if (!Args.hasArg(options::OPT_MT) && !Args.hasArg(options::OPT_MQ)) {
+    if (!HasTarget) {
       const char *DepTarget;
 
       // If user provided -o, that is the dependency target, except
@@ -1103,17 +1142,14 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
         DepTarget = Args.MakeArgString(llvm::sys::path::filename(P));
       }
 
-      if (!A->getOption().matches(options::OPT_MD) && !A->getOption().matches(options::OPT_MMD)) {
-        CmdArgs.push_back("-w");
-      }
       CmdArgs.push_back("-MT");
       SmallString<128> Quoted;
       QuoteTarget(DepTarget, Quoted);
       CmdArgs.push_back(Args.MakeArgString(Quoted));
     }
 
-    if (A->getOption().matches(options::OPT_M) ||
-        A->getOption().matches(options::OPT_MD))
+    if (ArgM->getOption().matches(options::OPT_M) ||
+        ArgM->getOption().matches(options::OPT_MD))
       CmdArgs.push_back("-sys-header-deps");
     if ((isa<PrecompileJobAction>(JA) &&
          !Args.hasArg(options::OPT_fno_module_file_deps)) ||
@@ -1122,30 +1158,14 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   }
 
   if (Args.hasArg(options::OPT_MG)) {
-    if (!A || A->getOption().matches(options::OPT_MD) ||
-        A->getOption().matches(options::OPT_MMD))
+    if (!ArgM || ArgM->getOption().matches(options::OPT_MD) ||
+        ArgM->getOption().matches(options::OPT_MMD))
       D.Diag(diag::err_drv_mg_requires_m_or_mm);
     CmdArgs.push_back("-MG");
   }
 
   Args.AddLastArg(CmdArgs, options::OPT_MP);
   Args.AddLastArg(CmdArgs, options::OPT_MV);
-
-  // Convert all -MQ <target> args to -MT <quoted target>
-  for (const Arg *A : Args.filtered(options::OPT_MT, options::OPT_MQ)) {
-    A->claim();
-
-    if (A->getOption().matches(options::OPT_MQ)) {
-      CmdArgs.push_back("-MT");
-      SmallString<128> Quoted;
-      QuoteTarget(A->getValue(), Quoted);
-      CmdArgs.push_back(Args.MakeArgString(Quoted));
-
-      // -MT flag - no change
-    } else {
-      A->render(Args, CmdArgs);
-    }
-  }
 
   // Add offload include arguments specific for CUDA.  This must happen before
   // we -I or -include anything else, because we must pick up the CUDA headers
@@ -1653,7 +1673,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   CmdArgs.push_back("-target-abi");
   CmdArgs.push_back(ABIName.data());
 
-  mips::FloatABI ABI = mips::getMipsFloatABI(D, Args);
+  mips::FloatABI ABI = mips::getMipsFloatABI(D, Args, Triple);
   if (ABI == mips::FloatABI::Soft) {
     // Floating point operations and argument passing are soft.
     CmdArgs.push_back("-msoft-float");
@@ -1664,13 +1684,6 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     assert(ABI == mips::FloatABI::Hard && "Invalid float abi!");
     CmdArgs.push_back("-mfloat-abi");
     CmdArgs.push_back("hard");
-  }
-
-  if (Arg *A = Args.getLastArg(options::OPT_mxgot, options::OPT_mno_xgot)) {
-    if (A->getOption().matches(options::OPT_mxgot)) {
-      CmdArgs.push_back("-mllvm");
-      CmdArgs.push_back("-mxgot");
-    }
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_mldc1_sdc1,
@@ -2014,14 +2027,13 @@ void Clang::DumpCompilationDatabase(Compilation &C, StringRef Filename,
     CompilationDatabase = std::move(File);
   }
   auto &CDB = *CompilationDatabase;
-  auto CWD = D.getVFS().getCurrentWorkingDirectory();
-  if (!CWD)
-    CWD = ".";
-  CDB << "{ \"directory\": \"" << escape(*CWD) << "\"";
+  SmallString<128> Buf;
+  if (llvm::sys::fs::current_path(Buf))
+    Buf = ".";
+  CDB << "{ \"directory\": \"" << escape(Buf) << "\"";
   CDB << ", \"file\": \"" << escape(Input.getFilename()) << "\"";
   CDB << ", \"output\": \"" << escape(Output.getFilename()) << "\"";
   CDB << ", \"arguments\": [\"" << escape(D.ClangExecutable) << "\"";
-  SmallString<128> Buf;
   Buf = "-x";
   Buf += types::getTypeName(Input.getType());
   CDB << ", \"" << escape(Buf) << "\"";
@@ -3393,7 +3405,6 @@ static void RenderDebugOptions(const ToolChain &TC, const Driver &D,
       Args.getLastArg(options::OPT_ggnu_pubnames, options::OPT_gno_gnu_pubnames,
                       options::OPT_gpubnames, options::OPT_gno_pubnames);
   if (DwarfFission != DwarfFissionKind::None ||
-      DebuggerTuning == llvm::DebuggerKind::LLDB ||
       (PubnamesArg && checkDebugInfoOption(PubnamesArg, Args, D, TC)))
     if (!PubnamesArg ||
         (!PubnamesArg->getOption().matches(options::OPT_gno_gnu_pubnames) &&
@@ -3673,32 +3684,15 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     } else if (JA.getType() == types::TY_LLVM_BC ||
                JA.getType() == types::TY_LTO_BC) {
       CmdArgs.push_back("-emit-llvm-bc");
-    } else if (JA.getType() == types::TY_IFS) {
+    } else if (JA.getType() == types::TY_IFS ||
+               JA.getType() == types::TY_IFS_CPP) {
       StringRef ArgStr =
           Args.hasArg(options::OPT_iterface_stub_version_EQ)
               ? Args.getLastArgValue(options::OPT_iterface_stub_version_EQ)
-              : "";
-      StringRef StubFormat =
-          llvm::StringSwitch<StringRef>(ArgStr)
-              .Case("experimental-ifs-v1", "experimental-ifs-v1")
-              .Default("");
-
-      if (StubFormat.empty()) {
-        std::string ErrorMessage =
-            "Invalid interface stub format: " + ArgStr.str() +
-            ((ArgStr == "experimental-yaml-elf-v1" ||
-              ArgStr == "experimental-tapi-elf-v1")
-                 ? " is deprecated."
-                 : ".");
-        D.Diag(diag::err_drv_invalid_value)
-            << "Must specify a valid interface stub format type, ie: "
-               "-interface-stub-version=experimental-ifs-v1"
-            << ErrorMessage;
-      }
-
+              : "experimental-ifs-v1";
       CmdArgs.push_back("-emit-interface-stubs");
       CmdArgs.push_back(
-          Args.MakeArgString(Twine("-interface-stub-version=") + StubFormat));
+          Args.MakeArgString(Twine("-interface-stub-version=") + ArgStr.str()));
     } else if (JA.getType() == types::TY_PP_Asm) {
       CmdArgs.push_back("-S");
     } else if (JA.getType() == types::TY_AST) {
@@ -4465,7 +4459,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-autolink");
 
   // Add in -fdebug-compilation-dir if necessary.
-  addDebugCompDirArg(Args, CmdArgs, D.getVFS());
+  addDebugCompDirArg(Args, CmdArgs);
 
   addDebugPrefixMapArg(D, Args, CmdArgs);
 
@@ -4489,6 +4483,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fconstexpr-steps");
     CmdArgs.push_back(A->getValue());
   }
+
+  if (Args.hasArg(options::OPT_fexperimental_new_constant_interpreter))
+    CmdArgs.push_back("-fexperimental-new-constant-interpreter");
+
+  if (Args.hasArg(options::OPT_fforce_experimental_new_constant_interpreter))
+    CmdArgs.push_back("-fforce-experimental-new-constant-interpreter");
 
   if (Arg *A = Args.getLastArg(options::OPT_fbracket_depth_EQ)) {
     CmdArgs.push_back("-fbracket-depth");
@@ -4675,15 +4675,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (TC.SupportsProfiling())
     Args.AddLastArg(CmdArgs, options::OPT_mfentry);
 
-  // -flax-vector-conversions is default.
-  if (!Args.hasFlag(options::OPT_flax_vector_conversions,
-                    options::OPT_fno_lax_vector_conversions))
-    CmdArgs.push_back("-fno-lax-vector-conversions");
-
   if (Args.getLastArg(options::OPT_fapple_kext) ||
       (Args.hasArg(options::OPT_mkernel) && types::isCXX(InputType)))
     CmdArgs.push_back("-fapple-kext");
 
+  Args.AddLastArg(CmdArgs, options::OPT_flax_vector_conversions_EQ);
   Args.AddLastArg(CmdArgs, options::OPT_fobjc_sender_dependent_dispatch);
   Args.AddLastArg(CmdArgs, options::OPT_fdiagnostics_print_source_range_info);
   Args.AddLastArg(CmdArgs, options::OPT_fdiagnostics_parseable_fixits);
@@ -4771,6 +4767,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Forward -cl options to -cc1
   RenderOpenCLOptions(Args, CmdArgs);
+
+  if (Args.hasFlag(options::OPT_fhip_new_launch_api,
+                   options::OPT_fno_hip_new_launch_api, false))
+    CmdArgs.push_back("-fhip-new-launch-api");
 
   if (Arg *A = Args.getLastArg(options::OPT_fcf_protection_EQ)) {
     CmdArgs.push_back(
@@ -4978,9 +4978,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     addExceptionArgs(Args, InputType, TC, KernelOrKext, Runtime, CmdArgs);
 
   // Handle exception personalities
-  Arg *A = Args.getLastArg(options::OPT_fsjlj_exceptions,
-                           options::OPT_fseh_exceptions,
-                           options::OPT_fdwarf_exceptions);
+  Arg *A = Args.getLastArg(
+      options::OPT_fsjlj_exceptions, options::OPT_fseh_exceptions,
+      options::OPT_fdwarf_exceptions, options::OPT_fwasm_exceptions);
   if (A) {
     const Option &Opt = A->getOption();
     if (Opt.matches(options::OPT_fsjlj_exceptions))
@@ -4989,6 +4989,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-fseh-exceptions");
     if (Opt.matches(options::OPT_fdwarf_exceptions))
       CmdArgs.push_back("-fdwarf-exceptions");
+    if (Opt.matches(options::OPT_fwasm_exceptions))
+      CmdArgs.push_back("-fwasm-exceptions");
   } else {
     switch (TC.GetExceptionModel(Args)) {
     default:
@@ -5438,14 +5440,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fwhole-program-vtables");
   }
 
-  bool RequiresSplitLTOUnit = WholeProgramVTables || Sanitize.needsLTO();
+  bool DefaultsSplitLTOUnit = WholeProgramVTables || Sanitize.needsLTO();
   bool SplitLTOUnit =
       Args.hasFlag(options::OPT_fsplit_lto_unit,
-                   options::OPT_fno_split_lto_unit, RequiresSplitLTOUnit);
-  if (RequiresSplitLTOUnit && !SplitLTOUnit)
-    D.Diag(diag::err_drv_argument_not_allowed_with)
-        << "-fno-split-lto-unit"
-        << (WholeProgramVTables ? "-fwhole-program-vtables" : "-fsanitize=cfi");
+                   options::OPT_fno_split_lto_unit, DefaultsSplitLTOUnit);
+  if (Sanitize.needsLTO() && !SplitLTOUnit)
+    D.Diag(diag::err_drv_argument_not_allowed_with) << "-fno-split-lto-unit"
+                                                    << "-fsanitize=cfi";
   if (SplitLTOUnit)
     CmdArgs.push_back("-fsplit-lto-unit");
 
@@ -6059,15 +6060,14 @@ const char *Clang::getBaseInputStem(const ArgList &Args,
 const char *Clang::getDependencyFileName(const ArgList &Args,
                                          const InputInfoList &Inputs) {
   // FIXME: Think about this more.
-  std::string Res;
 
   if (Arg *OutputOpt = Args.getLastArg(options::OPT_o)) {
-    std::string Str(OutputOpt->getValue());
-    Res = Str.substr(0, Str.rfind('.'));
-  } else {
-    Res = getBaseInputStem(Args, Inputs);
+    SmallString<128> OutputFilename(OutputOpt->getValue());
+    llvm::sys::path::replace_extension(OutputFilename, llvm::Twine('d'));
+    return Args.MakeArgString(OutputFilename);
   }
-  return Args.MakeArgString(Res + ".d");
+
+  return Args.MakeArgString(Twine(getBaseInputStem(Args, Inputs)) + ".d");
 }
 
 // Begin ClangAs
@@ -6193,7 +6193,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     DebugInfoKind = (WantDebug ? codegenoptions::LimitedDebugInfo
                                : codegenoptions::NoDebugInfo);
     // Add the -fdebug-compilation-dir flag if needed.
-    addDebugCompDirArg(Args, CmdArgs, C.getDriver().getVFS());
+    addDebugCompDirArg(Args, CmdArgs);
 
     addDebugPrefixMapArg(getToolChain().getDriver(), Args, CmdArgs);
 
@@ -6463,4 +6463,58 @@ void OffloadBundler::ConstructJobMultipleOutputs(
       JA, *this,
       TCArgs.MakeArgString(getToolChain().GetProgramPath(getShortName())),
       CmdArgs, None));
+}
+
+void OffloadWrapper::ConstructJob(Compilation &C, const JobAction &JA,
+                                  const InputInfo &Output,
+                                  const InputInfoList &Inputs,
+                                  const ArgList &Args,
+                                  const char *LinkingOutput) const {
+  ArgStringList CmdArgs;
+
+  const llvm::Triple &Triple = getToolChain().getEffectiveTriple();
+
+  // Add the "effective" target triple.
+  CmdArgs.push_back("-target");
+  CmdArgs.push_back(Args.MakeArgString(Triple.getTriple()));
+
+  assert(JA.getInputs().size() == Inputs.size() &&
+         "Not have inputs for all dependence actions??");
+
+  // Add offload targets. It is a comma-separated list of offload target
+  // triples.
+  SmallString<128> Targets;
+  Targets += "-offload-targets=";
+  for (unsigned I = 0; I < Inputs.size(); ++I) {
+    if (I)
+      Targets += ',';
+
+    // Get input's Offload Kind and ToolChain.
+    const auto *OA = cast<OffloadAction>(JA.getInputs()[I]);
+    assert(OA->hasSingleDeviceDependence(/*DoNotConsiderHostActions=*/true) &&
+           "Expected one device dependence!");
+    const ToolChain *DeviceTC = nullptr;
+    OA->doOnEachDependence([&DeviceTC](Action *, const ToolChain *TC,
+                                       const char *) { DeviceTC = TC; });
+
+    // And add it to the offload targets.
+    Targets += DeviceTC->getTriple().normalize();
+  }
+  CmdArgs.push_back(Args.MakeArgString(Targets));
+
+  // Add the output file name.
+  assert(Output.isFilename() && "Invalid output.");
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  // Add inputs.
+  for (const InputInfo &I : Inputs) {
+    assert(I.isFilename() && "Invalid input.");
+    CmdArgs.push_back(I.getFilename());
+  }
+
+  C.addCommand(std::make_unique<Command>(
+    JA, *this,
+    Args.MakeArgString(getToolChain().GetProgramPath(getShortName())),
+    CmdArgs, Inputs));
 }

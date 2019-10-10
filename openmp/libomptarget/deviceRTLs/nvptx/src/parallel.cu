@@ -44,16 +44,17 @@ typedef struct ConvergentSimdJob {
 ////////////////////////////////////////////////////////////////////////////////
 // support for convergent simd (team of threads in a warp only)
 ////////////////////////////////////////////////////////////////////////////////
-EXTERN bool __kmpc_kernel_convergent_simd(void *buffer, uint32_t Mask,
+EXTERN bool __kmpc_kernel_convergent_simd(void *buffer,
+                                          __kmpc_impl_lanemask_t Mask,
                                           bool *IsFinal, int32_t *LaneSource,
                                           int32_t *LaneId, int32_t *NumLanes) {
   PRINT0(LD_IO, "call to __kmpc_kernel_convergent_simd\n");
-  uint32_t ConvergentMask = Mask;
+  __kmpc_impl_lanemask_t ConvergentMask = Mask;
   int32_t ConvergentSize = __kmpc_impl_popc(ConvergentMask);
-  uint32_t WorkRemaining = ConvergentMask >> (*LaneSource + 1);
+  __kmpc_impl_lanemask_t WorkRemaining = ConvergentMask >> (*LaneSource + 1);
   *LaneSource += __kmpc_impl_ffs(WorkRemaining);
   *IsFinal = __kmpc_impl_popc(WorkRemaining) == 1;
-  uint32_t lanemask_lt = __kmpc_impl_lanemask_lt();
+  __kmpc_impl_lanemask_t lanemask_lt = __kmpc_impl_lanemask_lt();
   *LaneId = __kmpc_impl_popc(ConvergentMask & lanemask_lt);
 
   int threadId = GetLogicalThreadIdInBlock(isSPMDMode());
@@ -117,16 +118,17 @@ typedef struct ConvergentParallelJob {
 ////////////////////////////////////////////////////////////////////////////////
 // support for convergent parallelism (team of threads in a warp only)
 ////////////////////////////////////////////////////////////////////////////////
-EXTERN bool __kmpc_kernel_convergent_parallel(void *buffer, uint32_t Mask,
+EXTERN bool __kmpc_kernel_convergent_parallel(void *buffer,
+                                              __kmpc_impl_lanemask_t Mask,
                                               bool *IsFinal,
                                               int32_t *LaneSource) {
   PRINT0(LD_IO, "call to __kmpc_kernel_convergent_parallel\n");
-  uint32_t ConvergentMask = Mask;
+  __kmpc_impl_lanemask_t ConvergentMask = Mask;
   int32_t ConvergentSize = __kmpc_impl_popc(ConvergentMask);
-  uint32_t WorkRemaining = ConvergentMask >> (*LaneSource + 1);
+  __kmpc_impl_lanemask_t WorkRemaining = ConvergentMask >> (*LaneSource + 1);
   *LaneSource += __kmpc_impl_ffs(WorkRemaining);
   *IsFinal = __kmpc_impl_popc(WorkRemaining) == 1;
-  uint32_t lanemask_lt = __kmpc_impl_lanemask_lt();
+  __kmpc_impl_lanemask_t lanemask_lt = __kmpc_impl_lanemask_lt();
   uint32_t OmpId = __kmpc_impl_popc(ConvergentMask & lanemask_lt);
 
   int threadId = GetLogicalThreadIdInBlock(isSPMDMode());
@@ -311,7 +313,16 @@ EXTERN bool __kmpc_kernel_parallel(void **WorkFn,
           (int)newTaskDescr->ThreadId(), (int)nThreads);
 
     isActive = true;
-    IncParallelLevel(threadsInTeam != 1);
+    // Reconverge the threads at the end of the parallel region to correctly
+    // handle parallel levels.
+    // In Cuda9+ in non-SPMD mode we have either 1 worker thread or the whole
+    // warp. If only 1 thread is active, not need to reconverge the threads.
+    // If we have the whole warp, reconverge all the threads in the warp before
+    // actually trying to change the parallel level. Otherwise, parallel level
+    // can be changed incorrectly because of threads divergence.
+    bool IsActiveParallelRegion = threadsInTeam != 1;
+    IncParallelLevel(IsActiveParallelRegion,
+                     IsActiveParallelRegion ? __kmpc_impl_all_lanes : 1u);
   }
 
   return isActive;
@@ -329,7 +340,16 @@ EXTERN void __kmpc_kernel_end_parallel() {
   omptarget_nvptx_threadPrivateContext->SetTopLevelTaskDescr(
       threadId, currTaskDescr->GetPrevTaskDescr());
 
-  DecParallelLevel(threadsInTeam != 1);
+  // Reconverge the threads at the end of the parallel region to correctly
+  // handle parallel levels.
+  // In Cuda9+ in non-SPMD mode we have either 1 worker thread or the whole
+  // warp. If only 1 thread is active, not need to reconverge the threads.
+  // If we have the whole warp, reconverge all the threads in the warp before
+  // actually trying to change the parallel level. Otherwise, parallel level can
+  // be changed incorrectly because of threads divergence.
+    bool IsActiveParallelRegion = threadsInTeam != 1;
+    DecParallelLevel(IsActiveParallelRegion,
+                     IsActiveParallelRegion ? __kmpc_impl_all_lanes : 1u);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -339,7 +359,7 @@ EXTERN void __kmpc_kernel_end_parallel() {
 EXTERN void __kmpc_serialized_parallel(kmp_Ident *loc, uint32_t global_tid) {
   PRINT0(LD_IO, "call to __kmpc_serialized_parallel\n");
 
-  IncParallelLevel(/*ActiveParallel=*/false);
+  IncParallelLevel(/*ActiveParallel=*/false, __kmpc_impl_activemask());
 
   if (checkRuntimeUninitialized(loc)) {
     ASSERT0(LT_FUSSY, checkSPMDMode(loc),
@@ -378,7 +398,7 @@ EXTERN void __kmpc_end_serialized_parallel(kmp_Ident *loc,
                                            uint32_t global_tid) {
   PRINT0(LD_IO, "call to __kmpc_end_serialized_parallel\n");
 
-  DecParallelLevel(/*ActiveParallel=*/false);
+  DecParallelLevel(/*ActiveParallel=*/false, __kmpc_impl_activemask());
 
   if (checkRuntimeUninitialized(loc)) {
     ASSERT0(LT_FUSSY, checkSPMDMode(loc),

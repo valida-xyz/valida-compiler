@@ -280,7 +280,8 @@ static RecordDecl *buildRecordForGlobalizedVars(
       }
     } else {
       llvm::APInt ArraySize(32, BufSize);
-      Type = C.getConstantArrayType(Type, ArraySize, ArrayType::Normal, 0);
+      Type = C.getConstantArrayType(Type, ArraySize, nullptr, ArrayType::Normal,
+                                    0);
       Field = FieldDecl::Create(
           C, GlobalizedRD, Loc, Loc, VD->getIdentifier(), Type,
           C.getTrivialTypeSourceInfo(Type, SourceLocation()),
@@ -291,10 +292,11 @@ static RecordDecl *buildRecordForGlobalizedVars(
                                      static_cast<CharUnits::QuantityType>(
                                          GlobalMemoryAlignment)));
       Field->addAttr(AlignedAttr::CreateImplicit(
-          C, AlignedAttr::GNU_aligned, /*IsAlignmentExpr=*/true,
+          C, /*IsAlignmentExpr=*/true,
           IntegerLiteral::Create(C, Align,
                                  C.getIntTypeForBitwidth(32, /*Signed=*/0),
-                                 SourceLocation())));
+                                 SourceLocation()),
+          {}, AttributeCommonInfo::AS_GNU, AlignedAttr::GNU_aligned));
     }
     GlobalizedRD->addDecl(Field);
     MappedDeclsFields.try_emplace(VD, Field);
@@ -794,6 +796,7 @@ static bool hasNestedSPMDDirective(ASTContext &Ctx,
     case OMPD_teams_distribute_parallel_for_simd:
     case OMPD_target_update:
     case OMPD_declare_simd:
+    case OMPD_declare_variant:
     case OMPD_declare_target:
     case OMPD_end_declare_target:
     case OMPD_declare_reduction:
@@ -864,6 +867,7 @@ static bool supportsSPMDExecutionMode(ASTContext &Ctx,
   case OMPD_teams_distribute_parallel_for_simd:
   case OMPD_target_update:
   case OMPD_declare_simd:
+  case OMPD_declare_variant:
   case OMPD_declare_target:
   case OMPD_end_declare_target:
   case OMPD_declare_reduction:
@@ -1027,6 +1031,7 @@ static bool hasNestedLightweightDirective(ASTContext &Ctx,
     case OMPD_teams_distribute_parallel_for_simd:
     case OMPD_target_update:
     case OMPD_declare_simd:
+    case OMPD_declare_variant:
     case OMPD_declare_target:
     case OMPD_end_declare_target:
     case OMPD_declare_reduction:
@@ -1103,6 +1108,7 @@ static bool supportsLightweightRuntime(ASTContext &Ctx,
   case OMPD_teams_distribute_parallel_for_simd:
   case OMPD_target_update:
   case OMPD_declare_simd:
+  case OMPD_declare_variant:
   case OMPD_declare_target:
   case OMPD_end_declare_target:
   case OMPD_declare_reduction:
@@ -4264,7 +4270,7 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   }
   llvm::APInt ArraySize(/*unsigned int numBits=*/32, Size);
   QualType ReductionArrayTy =
-      C.getConstantArrayType(C.VoidPtrTy, ArraySize, ArrayType::Normal,
+      C.getConstantArrayType(C.VoidPtrTy, ArraySize, nullptr, ArrayType::Normal,
                              /*IndexTypeQuals=*/0);
   Address ReductionList =
       CGF.CreateMemTemp(ReductionArrayTy, ".omp.reduction.red_list");
@@ -4725,7 +4731,7 @@ Address CGOpenMPRuntimeNVPTX::getAddressOfLocalVariable(CodeGenFunction &CGF,
           /*InsertBefore=*/nullptr, llvm::GlobalValue::NotThreadLocal,
           CGM.getContext().getTargetAddressSpace(LangAS::cuda_constant));
       CharUnits Align = CGM.getContext().getDeclAlign(VD);
-      GV->setAlignment(Align.getQuantity());
+      GV->setAlignment(Align.getAsAlign());
       return Address(GV, Align);
     }
     case OMPAllocateDeclAttr::OMPPTeamMemAlloc: {
@@ -4737,7 +4743,7 @@ Address CGOpenMPRuntimeNVPTX::getAddressOfLocalVariable(CodeGenFunction &CGF,
           /*InsertBefore=*/nullptr, llvm::GlobalValue::NotThreadLocal,
           CGM.getContext().getTargetAddressSpace(LangAS::cuda_shared));
       CharUnits Align = CGM.getContext().getDeclAlign(VD);
-      GV->setAlignment(Align.getQuantity());
+      GV->setAlignment(Align.getAsAlign());
       return Address(GV, Align);
     }
     case OMPAllocateDeclAttr::OMPLargeCapMemAlloc:
@@ -4748,7 +4754,7 @@ Address CGOpenMPRuntimeNVPTX::getAddressOfLocalVariable(CodeGenFunction &CGF,
           llvm::GlobalValue::InternalLinkage,
           llvm::Constant::getNullValue(VarTy), VD->getName());
       CharUnits Align = CGM.getContext().getDeclAlign(VD);
-      GV->setAlignment(Align.getQuantity());
+      GV->setAlignment(Align.getAsAlign());
       return Address(GV, Align);
     }
     }
@@ -5051,7 +5057,7 @@ void CGOpenMPRuntimeNVPTX::clear() {
       Size = llvm::alignTo(Size, RecAlignment);
       llvm::APInt ArySize(/*numBits=*/64, Size);
       QualType SubTy = C.getConstantArrayType(
-          C.CharTy, ArySize, ArrayType::Normal, /*IndexTypeQuals=*/0);
+          C.CharTy, ArySize, nullptr, ArrayType::Normal, /*IndexTypeQuals=*/0);
       const bool UseSharedMemory = Size <= SharedMemorySize;
       auto *Field =
           FieldDecl::Create(C, UseSharedMemory ? SharedStaticRD : StaticRD,
@@ -5078,7 +5084,7 @@ void CGOpenMPRuntimeNVPTX::clear() {
     if (!SharedStaticRD->field_empty()) {
       llvm::APInt ArySize(/*numBits=*/64, SharedMemorySize);
       QualType SubTy = C.getConstantArrayType(
-          C.CharTy, ArySize, ArrayType::Normal, /*IndexTypeQuals=*/0);
+          C.CharTy, ArySize, nullptr, ArrayType::Normal, /*IndexTypeQuals=*/0);
       auto *Field = FieldDecl::Create(
           C, SharedStaticRD, SourceLocation(), SourceLocation(), nullptr, SubTy,
           C.getTrivialTypeSourceInfo(SubTy, SourceLocation()),
@@ -5111,11 +5117,12 @@ void CGOpenMPRuntimeNVPTX::clear() {
       std::pair<unsigned, unsigned> SMsBlockPerSM = getSMsBlocksPerSM(CGM);
       llvm::APInt Size1(32, SMsBlockPerSM.second);
       QualType Arr1Ty =
-          C.getConstantArrayType(StaticTy, Size1, ArrayType::Normal,
+          C.getConstantArrayType(StaticTy, Size1, nullptr, ArrayType::Normal,
                                  /*IndexTypeQuals=*/0);
       llvm::APInt Size2(32, SMsBlockPerSM.first);
-      QualType Arr2Ty = C.getConstantArrayType(Arr1Ty, Size2, ArrayType::Normal,
-                                               /*IndexTypeQuals=*/0);
+      QualType Arr2Ty =
+          C.getConstantArrayType(Arr1Ty, Size2, nullptr, ArrayType::Normal,
+                                 /*IndexTypeQuals=*/0);
       llvm::Type *LLVMArr2Ty = CGM.getTypes().ConvertTypeForMem(Arr2Ty);
       // FIXME: nvlink does not handle weak linkage correctly (object with the
       // different size are reported as erroneous).

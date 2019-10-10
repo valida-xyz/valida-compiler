@@ -1,10 +1,9 @@
-LEVEL = ../../../make
-
 OBJC_SOURCES := main.m
 
-CFLAGS_EXTRAS += -g0 # No debug info.
+CFLAGS_EXTRAS := -g0 # No debug info.
 MAKE_DSYM := NO
 
-include $(LEVEL)/Makefile.rules
 
-LDFLAGS += -framework Foundation
+
+LD_EXTRAS := -framework Foundation
+include Makefile.rules

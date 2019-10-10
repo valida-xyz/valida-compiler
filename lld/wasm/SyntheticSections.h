@@ -175,17 +175,23 @@ class GlobalSection : public SyntheticSection {
 public:
   GlobalSection() : SyntheticSection(llvm::wasm::WASM_SEC_GLOBAL) {}
   uint32_t numGlobals() const {
-    return inputGlobals.size() + definedFakeGlobals.size() + gotSymbols.size();
+    assert(isSealed);
+    return inputGlobals.size() + dataAddressGlobals.size() +
+           staticGotSymbols.size();
   }
   bool isNeeded() const override { return numGlobals() > 0; }
   void assignIndexes() override;
   void writeBody() override;
   void addGlobal(InputGlobal *global);
-  void addDummyGOTEntry(Symbol *sym);
+  void addDataAddressGlobal(DefinedData *global);
+  void addStaticGOTEntry(Symbol *sym);
 
-  std::vector<const DefinedData *> definedFakeGlobals;
+  std::vector<const DefinedData *> dataAddressGlobals;
+
+protected:
+  bool isSealed = false;
   std::vector<InputGlobal *> inputGlobals;
-  std::vector<Symbol *> gotSymbols;
+  std::vector<Symbol *> staticGotSymbols;
 };
 
 // The event section contains a list of declared wasm events associated with the
@@ -215,6 +221,18 @@ public:
   void writeBody() override;
 
   std::vector<llvm::wasm::WasmExport> exports;
+};
+
+class StartSection : public SyntheticSection {
+public:
+  StartSection(uint32_t numSegments)
+      : SyntheticSection(llvm::wasm::WASM_SEC_START), numSegments(numSegments) {
+  }
+  bool isNeeded() const override;
+  void writeBody() override;
+
+protected:
+  uint32_t numSegments;
 };
 
 class ElemSection : public SyntheticSection {
@@ -327,6 +345,7 @@ struct OutStruct {
   GlobalSection *globalSec;
   EventSection *eventSec;
   ExportSection *exportSec;
+  StartSection *startSec;
   ElemSection *elemSec;
   DataCountSection *dataCountSec;
   LinkingSection *linkingSec;

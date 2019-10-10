@@ -40,6 +40,9 @@ Non-comprehensive list of changes in this release
    functionality, or simply have a lot to talk about), see the `NOTE` below
    for adding a new subsection.
 
+* The ISD::FP_ROUND_INREG opcode and related code was removed from SelectionDAG.
+* Enabled MemorySSA as a loop dependency.
+
 .. NOTE
    If you would like to document a larger change, then you can add a
    subsection about it right here. You can copy the following boilerplate
@@ -49,10 +52,6 @@ Non-comprehensive list of changes in this release
    -------------------
 
    Makes programs 10x faster by doing Special New Thing.
-
-* The Loop Idiom Recognition (``-loop-idiom``) pass has learned to recognize
-  ``bcmp`` pattern, and convert it into a call to ``bcmp`` (or ``memcmp``)
-  function.
 
 Changes to the LLVM IR
 ----------------------
@@ -97,6 +96,10 @@ Changes to the X86 Target
   be passed in ZMM registers for calls and returns. Previously they were passed
   in two YMM registers. Old behavior can be enabled by passing
   -x86-enable-old-knl-abi
+* -mprefer-vector-width=256 is now the default behavior skylake-avx512 and later
+  Intel CPUs. This tries to limit the use of 512-bit registers which can cause a
+  decrease in CPU frequency on these CPUs. This can be re-enabled by passing
+  -mprefer-vector-width=512 to clang or passing -mattr=-prefer-256-bit to llc.
 
 Changes to the AMDGPU Target
 -----------------------------

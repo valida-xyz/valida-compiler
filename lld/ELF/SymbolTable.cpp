@@ -27,10 +27,9 @@ using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::ELF;
 
-using namespace lld;
-using namespace lld::elf;
-
-SymbolTable *elf::symtab;
+namespace lld {
+namespace elf {
+SymbolTable *symtab;
 
 void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
   // Swap symbols as instructed by -wrap.
@@ -123,10 +122,7 @@ StringMap<std::vector<Symbol *>> &SymbolTable::getDemangledSyms() {
     for (Symbol *sym : symVector) {
       if (!sym->isDefined() && !sym->isCommon())
         continue;
-      if (Optional<std::string> s = demangleItanium(sym->getName()))
-        (*demangledSyms)[*s].push_back(sym);
-      else
-        (*demangledSyms)[sym->getName()].push_back(sym);
+      (*demangledSyms)[demangleItanium(sym->getName())].push_back(sym);
     }
   }
   return *demangledSyms;
@@ -268,3 +264,6 @@ void SymbolTable::scanVersionScript() {
   // --dynamic-list.
   handleDynamicList();
 }
+
+} // namespace elf
+} // namespace lld

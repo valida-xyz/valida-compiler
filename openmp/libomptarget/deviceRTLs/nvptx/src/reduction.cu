@@ -24,14 +24,14 @@ EXTERN
 void __kmpc_nvptx_end_reduce_nowait(int32_t global_tid) {}
 
 EXTERN int32_t __kmpc_shuffle_int32(int32_t val, int16_t delta, int16_t size) {
-  return __kmpc_impl_shfl_down_sync(0xFFFFFFFF, val, delta, size);
+  return __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, val, delta, size);
 }
 
 EXTERN int64_t __kmpc_shuffle_int64(int64_t val, int16_t delta, int16_t size) {
    uint32_t lo, hi;
    __kmpc_impl_unpack(val, lo, hi);
-   hi = __kmpc_impl_shfl_down_sync(0xFFFFFFFF, hi, delta, size);
-   lo = __kmpc_impl_shfl_down_sync(0xFFFFFFFF, lo, delta, size);
+   hi = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, hi, delta, size);
+   lo = __kmpc_impl_shfl_down_sync(__kmpc_impl_all_lanes, lo, delta, size);
    return __kmpc_impl_pack(lo, hi);
 }
 
@@ -61,12 +61,12 @@ INLINE static uint32_t
 gpu_irregular_simd_reduce(void *reduce_data, kmp_ShuffleReductFctPtr shflFct) {
   uint32_t size, remote_id, physical_lane_id;
   physical_lane_id = GetThreadIdInBlock() % WARPSIZE;
-  uint32_t lanemask_lt = __kmpc_impl_lanemask_lt();
-  uint32_t Liveness = __ACTIVEMASK();
+  __kmpc_impl_lanemask_t lanemask_lt = __kmpc_impl_lanemask_lt();
+  __kmpc_impl_lanemask_t Liveness = __kmpc_impl_activemask();
   uint32_t logical_lane_id = __kmpc_impl_popc(Liveness & lanemask_lt) * 2;
-  uint32_t lanemask_gt = __kmpc_impl_lanemask_gt();
+  __kmpc_impl_lanemask_t lanemask_gt = __kmpc_impl_lanemask_gt();
   do {
-    Liveness = __ACTIVEMASK();
+    Liveness = __kmpc_impl_activemask();
     remote_id = __kmpc_impl_ffs(Liveness & lanemask_gt);
     size = __kmpc_impl_popc(Liveness);
     logical_lane_id /= 2;
@@ -81,8 +81,8 @@ int32_t __kmpc_nvptx_simd_reduce_nowait(int32_t global_tid, int32_t num_vars,
                                         size_t reduce_size, void *reduce_data,
                                         kmp_ShuffleReductFctPtr shflFct,
                                         kmp_InterWarpCopyFctPtr cpyFct) {
-  uint32_t Liveness = __ACTIVEMASK();
-  if (Liveness == 0xffffffff) {
+  __kmpc_impl_lanemask_t Liveness = __kmpc_impl_activemask();
+  if (Liveness == __kmpc_impl_all_lanes) {
     gpu_regular_warp_reduce(reduce_data, shflFct);
     return GetThreadIdInBlock() % WARPSIZE ==
            0; // Result on lane 0 of the simd warp.
@@ -142,8 +142,8 @@ static int32_t nvptx_parallel_reduce_nowait(
   }
   return BlockThreadId == 0;
 #else
-  uint32_t Liveness = __ACTIVEMASK();
-  if (Liveness == 0xffffffff) // Full warp
+  __kmpc_impl_lanemask_t Liveness = __kmpc_impl_activemask();
+  if (Liveness == __kmpc_impl_all_lanes) // Full warp
     gpu_regular_warp_reduce(reduce_data, shflFct);
   else if (!(Liveness & (Liveness + 1))) // Partial warp but contiguous lanes
     gpu_irregular_warp_reduce(reduce_data, shflFct,
@@ -317,8 +317,8 @@ static int32_t nvptx_teams_reduce_nowait(int32_t global_tid, int32_t num_vars,
     ldFct(reduce_data, scratchpad, i, NumTeams, /*Load and reduce*/ 1);
 
   // Reduce across warps to the warp master.
-  uint32_t Liveness = __ACTIVEMASK();
-  if (Liveness == 0xffffffff) // Full warp
+  __kmpc_impl_lanemask_t Liveness = __kmpc_impl_activemask();
+  if (Liveness == __kmpc_impl_all_lanes) // Full warp
     gpu_regular_warp_reduce(reduce_data, shflFct);
   else // Partial warp but contiguous lanes
     gpu_irregular_warp_reduce(reduce_data, shflFct,

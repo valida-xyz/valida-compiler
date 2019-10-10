@@ -413,13 +413,19 @@ Error RawInstrProfReader<IntPtrT>::readRawCounts(
   if (NumCounters == 0)
     return error(instrprof_error::malformed);
 
-  auto RawCounts = makeArrayRef(getCounter(CounterPtr), NumCounters);
   auto *NamesStartAsCounter = reinterpret_cast<const uint64_t *>(NamesStart);
+  ptrdiff_t MaxNumCounters = NamesStartAsCounter - CountersStart;
 
-  // Check bounds.
-  if (RawCounts.data() < CountersStart ||
-      RawCounts.data() + RawCounts.size() > NamesStartAsCounter)
+  // Check bounds. Note that the counter pointer embedded in the data record
+  // may itself be corrupt.
+  if (NumCounters > MaxNumCounters)
     return error(instrprof_error::malformed);
+  ptrdiff_t CounterOffset = getCounterOffset(CounterPtr);
+  if (CounterOffset < 0 || CounterOffset > MaxNumCounters ||
+      (CounterOffset + NumCounters) > MaxNumCounters)
+    return error(instrprof_error::malformed);
+
+  auto RawCounts = makeArrayRef(getCounter(CounterOffset), NumCounters);
 
   if (ShouldSwapBytes) {
     Record.Counts.clear();
@@ -777,13 +783,13 @@ IndexedInstrProfReader::readSummary(IndexedInstrProf::ProfVersion Version,
         SummaryData->get(Summary::TotalNumFunctions));
     return Cur + SummarySize;
   } else {
-    // For older version of profile data, we need to compute on the fly:
-    using namespace IndexedInstrProf;
-
+    // The older versions do not support a profile summary. This just computes
+    // an empty summary, which will not result in accurate hot/cold detection.
+    // We would need to call addRecord for all NamedInstrProfRecords to get the
+    // correct summary. However, this version is old (prior to early 2016) and
+    // has not been supporting an accurate summary for several years.
     InstrProfSummaryBuilder Builder(ProfileSummaryBuilder::DefaultCutoffs);
-    // FIXME: This only computes an empty summary. Need to call addRecord for
-    // all NamedInstrProfRecords to get the correct summary.
-    this->Summary = Builder.getSummary();
+    Summary = Builder.getSummary();
     return Cur;
   }
 }
@@ -901,7 +907,7 @@ Error IndexedInstrProfReader::readNextRecord(NamedInstrProfRecord &Record) {
   return success();
 }
 
-void InstrProfReader::accumuateCounts(CountSumOrPercent &Sum, bool IsCS) {
+void InstrProfReader::accumulateCounts(CountSumOrPercent &Sum, bool IsCS) {
   uint64_t NumFuncs = 0;
   for (const auto &Func : *this) {
     if (isIRLevelProfile()) {
@@ -909,7 +915,7 @@ void InstrProfReader::accumuateCounts(CountSumOrPercent &Sum, bool IsCS) {
       if (FuncIsCS != IsCS)
         continue;
     }
-    Func.accumuateCounts(Sum);
+    Func.accumulateCounts(Sum);
     ++NumFuncs;
   }
   Sum.NumEntries = NumFuncs;

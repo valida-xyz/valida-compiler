@@ -29,12 +29,12 @@
 #include "lldb/Target/Language.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
-#include "lldb/Utility/CleanUp.h"
 #include "lldb/Utility/DataExtractor.h"
 #include "lldb/Utility/State.h"
 #include "lldb/Utility/StreamString.h"
 
 #include "llvm/ADT/IntervalMap.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -519,10 +519,10 @@ Error opts::symbols::findTypes(lldb_private::Module &Module) {
   DenseSet<SymbolFile *> SearchedFiles;
   TypeMap Map;
   if (!Name.empty())
-    Symfile.FindTypes(ConstString(Name), ContextPtr, true, UINT32_MAX,
-                      SearchedFiles, Map);
+    Symfile.FindTypes(ConstString(Name), ContextPtr, UINT32_MAX, SearchedFiles,
+                      Map);
   else
-    Module.FindTypes(parseCompilerContext(), languages, true, Map);
+    Module.FindTypes(parseCompilerContext(), languages, Map);
 
   outs() << formatv("Found {0} types:\n", Map.GetSize());
   StreamString Stream;
@@ -1035,7 +1035,8 @@ int main(int argc, const char *argv[]) {
     return 1;
   }
 
-  CleanUp TerminateDebugger([&] { DebuggerLifetime.Terminate(); });
+  auto TerminateDebugger =
+      llvm::make_scope_exit([&] { DebuggerLifetime.Terminate(); });
 
   auto Dbg = lldb_private::Debugger::CreateInstance();
   ModuleList::GetGlobalModuleListProperties().SetEnableExternalLookup(false);

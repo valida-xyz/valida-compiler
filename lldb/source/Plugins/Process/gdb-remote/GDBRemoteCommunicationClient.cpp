@@ -23,7 +23,6 @@
 #include "lldb/Target/UnixSignals.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/DataBufferHeap.h"
-#include "lldb/Utility/JSON.h"
 #include "lldb/Utility/LLDBAssert.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/State.h"
@@ -35,14 +34,15 @@
 #include "lldb/Utility/StringExtractorGDBRemote.h"
 
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/JSON.h"
 
 #if defined(HAVE_LIBCOMPRESSION)
 #include <compression.h>
 #endif
 
 using namespace lldb;
-using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
+using namespace lldb_private;
 using namespace std::chrono;
 
 // GDBRemoteCommunicationClient constructor
@@ -931,6 +931,11 @@ llvm::VersionTuple GDBRemoteCommunicationClient::GetOSVersion() {
   return m_os_version;
 }
 
+llvm::VersionTuple GDBRemoteCommunicationClient::GetMacCatalystVersion() {
+  GetHostInfo();
+  return m_maccatalyst_version;
+}
+
 bool GDBRemoteCommunicationClient::GetOSBuildString(std::string &s) {
   if (GetHostInfo()) {
     if (!m_os_build.empty()) {
@@ -1133,6 +1138,7 @@ bool GDBRemoteCommunicationClient::GetHostInfo(bool force) {
         uint32_t sub = 0;
         std::string arch_name;
         std::string os_name;
+        std::string environment;
         std::string vendor_name;
         std::string triple;
         std::string distribution_id;
@@ -1172,7 +1178,11 @@ bool GDBRemoteCommunicationClient::GetHostInfo(bool force) {
             extractor.GetHexByteString(m_os_kernel);
             ++num_keys_decoded;
           } else if (name.equals("ostype")) {
-            os_name = value;
+            if (value.equals("maccatalyst")) {
+              os_name = "ios";
+              environment = "macabi";
+            } else
+              os_name = value;
             ++num_keys_decoded;
           } else if (name.equals("vendor")) {
             vendor_name = value;
@@ -1195,6 +1205,9 @@ bool GDBRemoteCommunicationClient::GetHostInfo(bool force) {
                                      // "os_version"...
           {
             if (!m_os_version.tryParse(value))
+              ++num_keys_decoded;
+          } else if (name.equals("maccatalyst_version")) {
+            if (!m_maccatalyst_version.tryParse(value))
               ++num_keys_decoded;
           } else if (name.equals("watchpoint_exceptions_received")) {
             m_watchpoints_trigger_after_instruction =
@@ -1233,6 +1246,8 @@ bool GDBRemoteCommunicationClient::GetHostInfo(bool force) {
                     llvm::StringRef(vendor_name));
               if (!os_name.empty())
                 m_host_arch.GetTriple().setOSName(llvm::StringRef(os_name));
+              if (!environment.empty())
+                m_host_arch.GetTriple().setEnvironmentName(environment);
             }
           } else {
             std::string triple;
@@ -1891,7 +1906,7 @@ bool GDBRemoteCommunicationClient::DecodeProcessInfoResponse(
       } else if (name.equals("euid")) {
         uint32_t uid = UINT32_MAX;
         value.getAsInteger(0, uid);
-        process_info.SetEffectiveGroupID(uid);
+        process_info.SetEffectiveUserID(uid);
       } else if (name.equals("gid")) {
         uint32_t gid = UINT32_MAX;
         value.getAsInteger(0, gid);
@@ -1985,6 +2000,7 @@ bool GDBRemoteCommunicationClient::GetCurrentProcessInfo(bool allow_lazy) {
       uint32_t sub = 0;
       std::string arch_name;
       std::string os_name;
+      std::string environment;
       std::string vendor_name;
       std::string triple;
       std::string elf_abi;
@@ -2005,7 +2021,11 @@ bool GDBRemoteCommunicationClient::GetCurrentProcessInfo(bool allow_lazy) {
           extractor.GetHexByteString(triple);
           ++num_keys_decoded;
         } else if (name.equals("ostype")) {
-          os_name = value;
+          if (value.equals("maccatalyst")) {
+            os_name = "ios";
+            environment = "macabi";
+          } else
+            os_name = value;
           ++num_keys_decoded;
         } else if (name.equals("vendor")) {
           vendor_name = value;
@@ -2046,6 +2066,8 @@ bool GDBRemoteCommunicationClient::GetCurrentProcessInfo(bool allow_lazy) {
       } else if (cpu != LLDB_INVALID_CPUTYPE && !os_name.empty() &&
                  !vendor_name.empty()) {
         llvm::Triple triple(llvm::Twine("-") + vendor_name + "-" + os_name);
+        if (!environment.empty())
+            triple.setEnvironmentName(environment);
 
         assert(triple.getObjectFormat() != llvm::Triple::UnknownObjectFormat);
         assert(triple.getObjectFormat() != llvm::Triple::Wasm);
@@ -2077,8 +2099,10 @@ bool GDBRemoteCommunicationClient::GetCurrentProcessInfo(bool allow_lazy) {
         }
         m_process_arch.GetTriple().setVendorName(llvm::StringRef(vendor_name));
         m_process_arch.GetTriple().setOSName(llvm::StringRef(os_name));
+        m_process_arch.GetTriple().setEnvironmentName(llvm::StringRef(environment));
         m_host_arch.GetTriple().setVendorName(llvm::StringRef(vendor_name));
         m_host_arch.GetTriple().setOSName(llvm::StringRef(os_name));
+        m_host_arch.GetTriple().setEnvironmentName(llvm::StringRef(environment));
       }
       return true;
     }
@@ -3585,21 +3609,21 @@ ParseModuleSpec(StructuredData::Dictionary *dict) {
 llvm::Optional<std::vector<ModuleSpec>>
 GDBRemoteCommunicationClient::GetModulesInfo(
     llvm::ArrayRef<FileSpec> module_file_specs, const llvm::Triple &triple) {
+  namespace json = llvm::json;
+
   if (!m_supports_jModulesInfo)
     return llvm::None;
 
-  JSONArray::SP module_array_sp = std::make_shared<JSONArray>();
+  json::Array module_array;
   for (const FileSpec &module_file_spec : module_file_specs) {
-    JSONObject::SP module_sp = std::make_shared<JSONObject>();
-    module_array_sp->AppendObject(module_sp);
-    module_sp->SetObject(
-        "file", std::make_shared<JSONString>(module_file_spec.GetPath(false)));
-    module_sp->SetObject("triple",
-                         std::make_shared<JSONString>(triple.getTriple()));
+    module_array.push_back(
+        json::Object{{"file", module_file_spec.GetPath(false)},
+                     {"triple", triple.getTriple()}});
   }
   StreamString unescaped_payload;
   unescaped_payload.PutCString("jModulesInfo:");
-  module_array_sp->Write(unescaped_payload);
+  unescaped_payload.AsRawOstream() << std::move(module_array);
+
   StreamGDBRemote payload;
   payload.PutEscapedBytes(unescaped_payload.GetString().data(),
                           unescaped_payload.GetSize());

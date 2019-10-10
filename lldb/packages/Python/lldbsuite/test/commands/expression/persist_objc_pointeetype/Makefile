@@ -1,7 +1,6 @@
-LEVEL = ../../../make
-
 OBJC_SOURCES := main.m
 
-include $(LEVEL)/Makefile.rules
-LDFLAGS += -framework Foundation -framework CloudKit
 
+LD_EXTRAS := -framework Foundation -framework CloudKit
+
+include Makefile.rules

@@ -580,9 +580,9 @@ public:
   bool isLegalMaskedLoad(Type *DataType) const;
 
   /// Return true if the target supports nontemporal store.
-  bool isLegalNTStore(Type *DataType, unsigned Alignment) const;
+  bool isLegalNTStore(Type *DataType, Align Alignment) const;
   /// Return true if the target supports nontemporal load.
-  bool isLegalNTLoad(Type *DataType, unsigned Alignment) const;
+  bool isLegalNTLoad(Type *DataType, Align Alignment) const;
 
   /// Return true if the target supports masked scatter.
   bool isLegalMaskedScatter(Type *DataType) const;
@@ -640,12 +640,6 @@ public:
 
   /// Return true if this type is legal.
   bool isTypeLegal(Type *Ty) const;
-
-  /// Returns the target's jmp_buf alignment in bytes.
-  unsigned getJumpBufAlignment() const;
-
-  /// Returns the target's jmp_buf size in bytes.
-  unsigned getJumpBufSize() const;
 
   /// Return true if switches should be turned into lookup tables for the
   /// target.
@@ -843,18 +837,20 @@ public:
   /// \return The associativity of the cache level, if available.
   llvm::Optional<unsigned> getCacheAssociativity(CacheLevel Level) const;
 
-  /// \return How much before a load we should place the prefetch instruction.
-  /// This is currently measured in number of instructions.
+  /// \return How much before a load we should place the prefetch
+  /// instruction.  This is currently measured in number of
+  /// instructions.
   unsigned getPrefetchDistance() const;
 
-  /// \return Some HW prefetchers can handle accesses up to a certain constant
-  /// stride.  This is the minimum stride in bytes where it makes sense to start
-  /// adding SW prefetches.  The default is 1, i.e. prefetch with any stride.
+  /// \return Some HW prefetchers can handle accesses up to a certain
+  /// constant stride.  This is the minimum stride in bytes where it
+  /// makes sense to start adding SW prefetches.  The default is 1,
+  /// i.e. prefetch with any stride.
   unsigned getMinPrefetchStride() const;
 
-  /// \return The maximum number of iterations to prefetch ahead.  If the
-  /// required number of iterations is more than this number, no prefetching is
-  /// performed.
+  /// \return The maximum number of iterations to prefetch ahead.  If
+  /// the required number of iterations is more than this number, no
+  /// prefetching is performed.
   unsigned getMaxPrefetchIterationsAhead() const;
 
   /// \return The maximum interleave factor that any transform should try to
@@ -1202,8 +1198,8 @@ public:
   virtual bool shouldFavorBackedgeIndex(const Loop *L) const = 0;
   virtual bool isLegalMaskedStore(Type *DataType) = 0;
   virtual bool isLegalMaskedLoad(Type *DataType) = 0;
-  virtual bool isLegalNTStore(Type *DataType, unsigned Alignment) = 0;
-  virtual bool isLegalNTLoad(Type *DataType, unsigned Alignment) = 0;
+  virtual bool isLegalNTStore(Type *DataType, Align Alignment) = 0;
+  virtual bool isLegalNTLoad(Type *DataType, Align Alignment) = 0;
   virtual bool isLegalMaskedScatter(Type *DataType) = 0;
   virtual bool isLegalMaskedGather(Type *DataType) = 0;
   virtual bool isLegalMaskedCompressStore(Type *DataType) = 0;
@@ -1219,8 +1215,6 @@ public:
   virtual bool isProfitableToHoist(Instruction *I) = 0;
   virtual bool useAA() = 0;
   virtual bool isTypeLegal(Type *Ty) = 0;
-  virtual unsigned getJumpBufAlignment() = 0;
-  virtual unsigned getJumpBufSize() = 0;
   virtual bool shouldBuildLookupTables() = 0;
   virtual bool shouldBuildLookupTablesForConstant(Constant *C) = 0;
   virtual bool useColdCCForColdCall(Function &F) = 0;
@@ -1258,12 +1252,26 @@ public:
   virtual unsigned getMinimumVF(unsigned ElemWidth) const = 0;
   virtual bool shouldConsiderAddressTypePromotion(
       const Instruction &I, bool &AllowPromotionWithoutCommonHeader) = 0;
-  virtual unsigned getCacheLineSize() = 0;
-  virtual llvm::Optional<unsigned> getCacheSize(CacheLevel Level) = 0;
-  virtual llvm::Optional<unsigned> getCacheAssociativity(CacheLevel Level) = 0;
-  virtual unsigned getPrefetchDistance() = 0;
-  virtual unsigned getMinPrefetchStride() = 0;
-  virtual unsigned getMaxPrefetchIterationsAhead() = 0;
+  virtual unsigned getCacheLineSize() const = 0;
+  virtual llvm::Optional<unsigned> getCacheSize(CacheLevel Level) const = 0;
+  virtual llvm::Optional<unsigned> getCacheAssociativity(CacheLevel Level) const = 0;
+
+  /// \return How much before a load we should place the prefetch
+  /// instruction.  This is currently measured in number of
+  /// instructions.
+  virtual unsigned getPrefetchDistance() const = 0;
+
+  /// \return Some HW prefetchers can handle accesses up to a certain
+  /// constant stride.  This is the minimum stride in bytes where it
+  /// makes sense to start adding SW prefetches.  The default is 1,
+  /// i.e. prefetch with any stride.
+  virtual unsigned getMinPrefetchStride() const = 0;
+
+  /// \return The maximum number of iterations to prefetch ahead.  If
+  /// the required number of iterations is more than this number, no
+  /// prefetching is performed.
+  virtual unsigned getMaxPrefetchIterationsAhead() const = 0;
+
   virtual unsigned getMaxInterleaveFactor(unsigned VF) = 0;
   virtual unsigned
   getArithmeticInstrCost(unsigned Opcode, Type *Ty, OperandValueKind Opd1Info,
@@ -1479,10 +1487,10 @@ public:
   bool isLegalMaskedLoad(Type *DataType) override {
     return Impl.isLegalMaskedLoad(DataType);
   }
-  bool isLegalNTStore(Type *DataType, unsigned Alignment) override {
+  bool isLegalNTStore(Type *DataType, Align Alignment) override {
     return Impl.isLegalNTStore(DataType, Alignment);
   }
-  bool isLegalNTLoad(Type *DataType, unsigned Alignment) override {
+  bool isLegalNTLoad(Type *DataType, Align Alignment) override {
     return Impl.isLegalNTLoad(DataType, Alignment);
   }
   bool isLegalMaskedScatter(Type *DataType) override {
@@ -1523,8 +1531,6 @@ public:
   }
   bool useAA() override { return Impl.useAA(); }
   bool isTypeLegal(Type *Ty) override { return Impl.isTypeLegal(Ty); }
-  unsigned getJumpBufAlignment() override { return Impl.getJumpBufAlignment(); }
-  unsigned getJumpBufSize() override { return Impl.getJumpBufSize(); }
   bool shouldBuildLookupTables() override {
     return Impl.shouldBuildLookupTables();
   }
@@ -1616,22 +1622,36 @@ public:
     return Impl.shouldConsiderAddressTypePromotion(
         I, AllowPromotionWithoutCommonHeader);
   }
-  unsigned getCacheLineSize() override {
+  unsigned getCacheLineSize() const override {
     return Impl.getCacheLineSize();
   }
-  llvm::Optional<unsigned> getCacheSize(CacheLevel Level) override {
+  llvm::Optional<unsigned> getCacheSize(CacheLevel Level) const override {
     return Impl.getCacheSize(Level);
   }
-  llvm::Optional<unsigned> getCacheAssociativity(CacheLevel Level) override {
+  llvm::Optional<unsigned> getCacheAssociativity(CacheLevel Level) const override {
     return Impl.getCacheAssociativity(Level);
   }
-  unsigned getPrefetchDistance() override { return Impl.getPrefetchDistance(); }
-  unsigned getMinPrefetchStride() override {
+
+  /// Return the preferred prefetch distance in terms of instructions.
+  ///
+  unsigned getPrefetchDistance() const override {
+    return Impl.getPrefetchDistance();
+  }
+
+  /// Return the minimum stride necessary to trigger software
+  /// prefetching.
+  ///
+  unsigned getMinPrefetchStride() const override {
     return Impl.getMinPrefetchStride();
   }
-  unsigned getMaxPrefetchIterationsAhead() override {
+
+  /// Return the maximum prefetch distance in terms of loop
+  /// iterations.
+  ///
+  unsigned getMaxPrefetchIterationsAhead() const override {
     return Impl.getMaxPrefetchIterationsAhead();
   }
+
   unsigned getMaxInterleaveFactor(unsigned VF) override {
     return Impl.getMaxInterleaveFactor(VF);
   }

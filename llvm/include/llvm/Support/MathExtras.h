@@ -39,6 +39,7 @@ unsigned char _BitScanReverse64(unsigned long *_Index, unsigned __int64 _Mask);
 #endif
 
 namespace llvm {
+
 /// The behavior an operation has on an input of 0.
 enum ZeroBehavior {
   /// The returned value is undefined.
@@ -48,6 +49,42 @@ enum ZeroBehavior {
   /// The returned value is numeric_limits<T>::digits
   ZB_Width
 };
+
+/// Mathematical constants.
+namespace numbers {
+// TODO: Track C++20 std::numbers.
+// TODO: Favor using the hexadecimal FP constants (requires C++17).
+constexpr double e          = 2.7182818284590452354, // (0x1.5bf0a8b145749P+1) https://oeis.org/A001113
+                 egamma     = .57721566490153286061, // (0x1.2788cfc6fb619P-1) https://oeis.org/A001620
+                 ln2        = .69314718055994530942, // (0x1.62e42fefa39efP-1) https://oeis.org/A002162
+                 ln10       = 2.3025850929940456840, // (0x1.24bb1bbb55516P+1) https://oeis.org/A002392
+                 log2e      = 1.4426950408889634074, // (0x1.71547652b82feP+0)
+                 log10e     = .43429448190325182765, // (0x1.bcb7b1526e50eP-2)
+                 pi         = 3.1415926535897932385, // (0x1.921fb54442d18P+1) https://oeis.org/A000796
+                 inv_pi     = .31830988618379067154, // (0x1.45f306bc9c883P-2) https://oeis.org/A049541
+                 sqrtpi     = 1.7724538509055160273, // (0x1.c5bf891b4ef6bP+0) https://oeis.org/A002161
+                 inv_sqrtpi = .56418958354775628695, // (0x1.20dd750429b6dP-1) https://oeis.org/A087197
+                 sqrt2      = 1.4142135623730950488, // (0x1.6a09e667f3bcdP+0) https://oeis.org/A00219
+                 inv_sqrt2  = .70710678118654752440, // (0x1.6a09e667f3bcdP-1)
+                 sqrt3      = 1.7320508075688772935, // (0x1.bb67ae8584caaP+0) https://oeis.org/A002194
+                 inv_sqrt3  = .57735026918962576451, // (0x1.279a74590331cP-1)
+                 phi        = 1.6180339887498948482; // (0x1.9e3779b97f4a8P+0) https://oeis.org/A001622
+constexpr float ef          = 2.71828183F, // (0x1.5bf0a8P+1) https://oeis.org/A001113
+                egammaf     = .577215665F, // (0x1.2788d0P-1) https://oeis.org/A001620
+                ln2f        = .693147181F, // (0x1.62e430P-1) https://oeis.org/A002162
+                ln10f       = 2.30258509F, // (0x1.26bb1cP+1) https://oeis.org/A002392
+                log2ef      = 1.44269504F, // (0x1.715476P+0)
+                log10ef     = .434294482F, // (0x1.bcb7b2P-2)
+                pif         = 3.14159265F, // (0x1.921fb6P+1) https://oeis.org/A000796
+                inv_pif     = .318309886F, // (0x1.45f306P-2) https://oeis.org/A049541
+                sqrtpif     = 1.77245385F, // (0x1.c5bf8aP+0) https://oeis.org/A002161
+                inv_sqrtpif = .564189584F, // (0x1.20dd76P-1) https://oeis.org/A087197
+                sqrt2f      = 1.41421356F, // (0x1.6a09e6P+0) https://oeis.org/A002193
+                inv_sqrt2f  = .707106781F, // (0x1.6a09e6P-1)
+                sqrt3f      = 1.73205081F, // (0x1.bb67aeP+0) https://oeis.org/A002194
+                inv_sqrt3f  = .577350269F, // (0x1.279a74P-1)
+                phif        = 1.61803399F; // (0x1.9e377aP+0) https://oeis.org/A001622
+} // namespace numbers
 
 namespace detail {
 template <typename T, std::size_t SizeOfT> struct TrailingZerosCounter {
@@ -712,13 +749,6 @@ inline uint64_t alignDown(uint64_t Value, uint64_t Align, uint64_t Skew = 0) {
   return (Value - Skew) / Align * Align + Skew;
 }
 
-/// Returns the offset to the next integer (mod 2**64) that is greater than
-/// or equal to \p Value and is a multiple of \p Align. \p Align must be
-/// non-zero.
-inline uint64_t OffsetToAlignment(uint64_t Value, uint64_t Align) {
-  return alignTo(Value, Align) - Value;
-}
-
 /// Sign-extend the number in the bottom B bits of X to a 32-bit integer.
 /// Requires 0 < B <= 32.
 template <unsigned B> constexpr inline int32_t SignExtend32(uint32_t X) {
@@ -902,9 +932,6 @@ SubOverflow(T X, T Y, T &Result) {
 template <typename T>
 typename std::enable_if<std::is_signed<T>::value, T>::type
 MulOverflow(T X, T Y, T &Result) {
-#if __has_builtin(__builtin_mul_overflow)
-  return __builtin_mul_overflow(X, Y, &Result);
-#else
   // Perform the unsigned multiplication on absolute values.
   using U = typename std::make_unsigned<T>::type;
   const U UX = X < 0 ? (0 - static_cast<U>(X)) : static_cast<U>(X);
@@ -926,7 +953,6 @@ MulOverflow(T X, T Y, T &Result) {
     return UX > (static_cast<U>(std::numeric_limits<T>::max()) + U(1)) / UY;
   else
     return UX > (static_cast<U>(std::numeric_limits<T>::max())) / UY;
-#endif
 }
 
 } // End llvm namespace

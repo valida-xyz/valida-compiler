@@ -246,13 +246,15 @@ public:
       Status error;
       const int short_option = m_getopt_table[option_idx].val;
       switch (short_option) {
-      case 'r':
-        if (option_arg.getAsInteger(0, relative_frame_offset)) {
-          relative_frame_offset = INT32_MIN;
+      case 'r': {
+        int32_t offset = 0;
+        if (option_arg.getAsInteger(0, offset) || offset == INT32_MIN) {
           error.SetErrorStringWithFormat("invalid frame offset argument '%s'",
                                          option_arg.str().c_str());
-        }
+        } else
+          relative_frame_offset = offset;
         break;
+      }
 
       default:
         llvm_unreachable("Unimplemented option");
@@ -262,14 +264,14 @@ public:
     }
 
     void OptionParsingStarting(ExecutionContext *execution_context) override {
-      relative_frame_offset = INT32_MIN;
+      relative_frame_offset.reset();
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
       return llvm::makeArrayRef(g_frame_select_options);
     }
 
-    int32_t relative_frame_offset;
+    llvm::Optional<int32_t> relative_frame_offset;
   };
 
   CommandObjectFrameSelect(CommandInterpreter &interpreter)
@@ -307,15 +309,16 @@ protected:
     Thread *thread = m_exe_ctx.GetThreadPtr();
 
     uint32_t frame_idx = UINT32_MAX;
-    if (m_options.relative_frame_offset != INT32_MIN) {
+    if (m_options.relative_frame_offset.hasValue()) {
       // The one and only argument is a signed relative frame index
       frame_idx = thread->GetSelectedFrameIndex();
       if (frame_idx == UINT32_MAX)
         frame_idx = 0;
 
-      if (m_options.relative_frame_offset < 0) {
-        if (static_cast<int32_t>(frame_idx) >= -m_options.relative_frame_offset)
-          frame_idx += m_options.relative_frame_offset;
+      if (*m_options.relative_frame_offset < 0) {
+        if (static_cast<int32_t>(frame_idx) >=
+            -*m_options.relative_frame_offset)
+          frame_idx += *m_options.relative_frame_offset;
         else {
           if (frame_idx == 0) {
             // If you are already at the bottom of the stack, then just warn
@@ -326,15 +329,15 @@ protected:
           } else
             frame_idx = 0;
         }
-      } else if (m_options.relative_frame_offset > 0) {
+      } else if (*m_options.relative_frame_offset > 0) {
         // I don't want "up 20" where "20" takes you past the top of the stack
         // to produce
         // an error, but rather to just go to the top.  So I have to count the
         // stack here...
         const uint32_t num_frames = thread->GetStackFrameCount();
         if (static_cast<int32_t>(num_frames - frame_idx) >
-            m_options.relative_frame_offset)
-          frame_idx += m_options.relative_frame_offset;
+            *m_options.relative_frame_offset)
+          frame_idx += *m_options.relative_frame_offset;
         else {
           if (frame_idx == num_frames - 1) {
             // If we are already at the top of the stack, just warn and don't
@@ -358,7 +361,7 @@ protected:
       }
 
       if (command.GetArgumentCount() == 1) {
-        if (command[0].ref.getAsInteger(0, frame_idx)) {
+        if (command[0].ref().getAsInteger(0, frame_idx)) {
           result.AppendErrorWithFormat("invalid frame index argument '%s'.",
                                        command[0].c_str());
           result.SetStatus(eReturnStatusFailed);
@@ -527,7 +530,7 @@ protected:
         for (auto &entry : command) {
           if (m_option_variable.use_regex) {
             const size_t regex_start_index = regex_var_list.GetSize();
-            llvm::StringRef name_str = entry.ref;
+            llvm::StringRef name_str = entry.ref();
             RegularExpression regex(name_str);
             if (regex.IsValid()) {
               size_t num_matches = 0;
@@ -586,7 +589,7 @@ protected:
                 StackFrame::eExpressionPathOptionsInspectAnonymousUnions;
             lldb::VariableSP var_sp;
             valobj_sp = frame->GetValueForVariableExpressionPath(
-                entry.ref, m_varobj_options.use_dynamic, expr_path_options,
+                entry.ref(), m_varobj_options.use_dynamic, expr_path_options,
                 var_sp, error);
             if (valobj_sp) {
               std::string scope_string;
