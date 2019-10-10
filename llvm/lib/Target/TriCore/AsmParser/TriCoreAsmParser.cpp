@@ -164,6 +164,14 @@ public:
     return (getConstantImm() & ~0xf01ffffe) == 0;
   }
 
+  // checking if in the range of 6 bit signed immediate
+  bool isSImm9Shift() const {
+    if (!isConstantImm())
+      return false;
+
+    return (getConstantImm() >= -32 && getConstantImm() <= 31);
+  }
+
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
   /// getEndLoc - Gets location of the last token of this operand
@@ -301,6 +309,9 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                       (1 << 8) - 1);
   case Match_InvalidUImm9:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 9) - 1);
+  case Match_InvalidSImm9Shift:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 5),
+                                      (1 << 5) - 1);
   case Match_InvalidSImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 15),
                                       (1 << 15) - 1);

@@ -68,6 +68,11 @@ def uimm8 : GenericUnsignedImmediate<8>;
 // A 8-bit signed immediate, shifted left by 1
 def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
 
+// A 6 bit signed immediate encoded in 9 bit
+def simm9_shift : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"SImm9Shift">;
+}
+
 // A 9-bit signed immediate.
 def simm9 : GenericSignedImmediate<9>;
 
@@ -144,6 +149,20 @@ let isReMaterializable = 1 in {
                       (ins DataRegs:$src, DataRegs:$s2),
                       mnemonic, "\t$s1_d, $s2">;
 }  // isReMaterializable = 1
+
+// 2.1.10 Shift.
+
+class SHIFT_RC<bits<8> opc1, bits<7> opc2, string mnemonic>
+            :  RC<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, simm9_shift:$const9),
+                  mnemonic, "\t$d, $s1, $const9">;
+
+let n = 0 in
+class SHIFT_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+            :  RR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s1, $s2">;
+
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
@@ -413,6 +432,32 @@ def XNOR_ddd         :  LOGIC_RR<0x0F, 0x0D, "xnor">;
 def XOR_ddc          :  LOGIC_RC<0x8F, 0x0C, "xor">;
 def XOR_ddd          :  LOGIC_RR<0x0F, 0x0C, "xor">;
 def XOR_16_dd        :  LOGIC_SRR<0xC6,      "xor">;
+
+// 2.1.10 Shift.
+
+// SH
+def SH_ddc           :  SHIFT_RC<0x8F, 0x00,  "sh">;
+def SH_ddd           :  SHIFT_RR<0x0F, 0x00,  "sh">;
+
+let Constraints = "$s1_d = $src" in
+def SH_16_dc         :  SRC<0x06, (outs DataRegs:$s1_d),
+                            (ins DataRegs:$src, simm4:$const4),
+                            "sh", "\t$s1_d, $const4">;
+
+let Defs = [PSW] in {
+  // SHA
+  def SHA_ddc        :  SHIFT_RC<0x8F, 0x01,  "sha">;
+  def SHA_ddd        :  SHIFT_RR<0x0F, 0x01,  "sha">;
+
+  let Constraints = "$s1_d = $src" in
+  def SHA_16_dc      :  SRC<0x86, (outs DataRegs:$s1_d),
+                            (ins DataRegs:$src, simm4:$const4),
+                            "sha", "\t$s1_d, $const4">;
+
+  // SHAS
+  def SHAS_ddc       :  SHIFT_RC<0x8F, 0x02,  "shas">;
+  def SHAS_ddd       :  SHIFT_RR<0x0F, 0x02,  "shas">;
+} // Defs = [PSW]
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
