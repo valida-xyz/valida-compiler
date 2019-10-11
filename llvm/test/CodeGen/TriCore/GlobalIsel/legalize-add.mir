@@ -1,0 +1,123 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+---
+name:            test_add_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_add_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ADD]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_ADD %0, %1
+    $d2 = COPY %2(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_add_small_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_add_small_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[COPY2]], [[COPY3]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[ADD]](s32)
+    ; CHECK: $d2 = COPY [[COPY4]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s8) = G_TRUNC %0:_(s32)
+    %3:_(s8) = G_TRUNC %1:_(s32)
+    %4:_(s8) = G_ADD %2, %3
+    %5:_(s32) = G_ANYEXT %4:_(s8)
+    $d2 = COPY %5(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_add_small_nonpow2_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_add_small_nonpow2_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[COPY2]], [[COPY3]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[ADD]](s32)
+    ; CHECK: $d2 = COPY [[COPY4]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s3) = G_TRUNC %0:_(s32)
+    %3:_(s3) = G_TRUNC %1:_(s32)
+    %4:_(s3) = G_ADD %2, %3
+    %5:_(s32) = G_ANYEXT %4:_(s3)
+    $d2 = COPY %5(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_add_big_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_add_big_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[UNMERGE:%[0-9]+]]:_(s32), [[UNMERGE1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:_(s32), [[UNMERGE3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32), [[CARRY:%[0-9]+]]:_(s1) = G_UADDO [[UNMERGE]], [[UNMERGE2]]
+    ; CHECK: [[ADD1:%[0-9]+]]:_(s32), [[CARRY1:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE1]], [[UNMERGE3]], [[CARRY]]
+    ; CHECK: [[MERGE:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[ADD]](s32), [[ADD1]](s32)
+    ; CHECK: $e2 = COPY [[MERGE]](s64)
+    ; CHECK: RET implicit $a11, implicit $e2
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s64) = G_ADD %0, %1
+    $e2 = COPY %2(s64)
+    RET implicit $a11, implicit $e2
+
+...
+---
+name:            test_add_big_nonpow2_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_add_big_nonpow2_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[UNMERGE:%[0-9]+]]:_(s32), [[UNMERGE1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:_(s32), [[UNMERGE3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE4:%[0-9]+]]:_(s32), [[UNMERGE5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE6:%[0-9]+]]:_(s32), [[UNMERGE7:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[UNMERGE8:%[0-9]+]]:_(s32), [[UNMERGE9:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[UNMERGE10:%[0-9]+]]:_(s32), [[UNMERGE11:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32), [[CARRY:%[0-9]+]]:_(s1) = G_UADDO [[UNMERGE]], [[UNMERGE6]]
+    ; CHECK: [[ADD1:%[0-9]+]]:_(s32), [[CARRY1:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE1]], [[UNMERGE7]], [[CARRY]]
+    ; CHECK: [[ADD2:%[0-9]+]]:_(s32), [[CARRY2:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE2]], [[UNMERGE8]], [[CARRY1]]
+    ; CHECK: [[ADD3:%[0-9]+]]:_(s32), [[CARRY3:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE3]], [[UNMERGE9]], [[CARRY2]]
+    ; CHECK: [[ADD4:%[0-9]+]]:_(s32), [[CARRY4:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE4]], [[UNMERGE10]], [[CARRY3]]
+    ; CHECK: [[ADD5:%[0-9]+]]:_(s32), [[CARRY5:%[0-9]+]]:_(s1) = G_UADDE [[UNMERGE5]], [[UNMERGE11]], [[CARRY4]]
+    ; CHECK: [[MERGE:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[ADD]](s32), [[ADD1]](s32)
+    ; CHECK: [[MERGE1:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[ADD2]](s32), [[ADD3]](s32)
+    ; CHECK: [[MERGE2:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[ADD4]](s32), [[ADD5]](s32)
+    ; CHECK: $e2 = COPY [[MERGE]](s64)
+    ; CHECK: $e4 = COPY [[MERGE1]](s64)
+    ; CHECK: $e6 = COPY [[MERGE2]](s64)
+    ; CHECK: RET implicit $a11, implicit $e2, implicit $e4, implicit $e6
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s192) = G_MERGE_VALUES %0:_(s64), %0:_(s64), %0:_(s64)
+    %3:_(s192) = G_MERGE_VALUES %1:_(s64), %1:_(s64), %1:_(s64)
+    %4:_(s192) = G_ADD %2, %3
+    %5:_(s64), %6:_(s64), %7:_(s64) = G_UNMERGE_VALUES %4:_(s192)
+    $e2 = COPY %5(s64)
+    $e4 = COPY %6(s64)
+    $e6 = COPY %7(s64)
+    RET implicit $a11, implicit $e2, implicit $e4, implicit $e6
+
+...

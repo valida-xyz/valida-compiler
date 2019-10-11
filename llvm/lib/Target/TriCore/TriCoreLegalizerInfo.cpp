@@ -12,9 +12,58 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreLegalizerInfo.h"
+#include "TriCoreSubtarget.h"
+#include "llvm/CodeGen/TargetOpcodes.h"
+#include "llvm/CodeGen/ValueTypes.h"
 
 using namespace llvm;
 
 TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
+  using namespace TargetOpcode;
+  const LLT p0 = LLT::pointer(0, 32);
+  const LLT s1 = LLT::scalar(1);
+  const LLT s8 = LLT::scalar(8);
+  const LLT s16 = LLT::scalar(16);
+  const LLT s32 = LLT::scalar(32);
+  const LLT s64 = LLT::scalar(64);
+
+  // at least one G_IMPLICIT_DEF must be legal. we allow all types
+  getActionDefinitionsBuilder(G_IMPLICIT_DEF)
+      .legalFor({p0, s1, s8, s16, s32, s64})
+      .clampScalar(0, s1, s64)
+      .widenScalarToNextPow2(0, 32);
+
+  // G_CONSTANT is only legal for types that match our register size
+  getActionDefinitionsBuilder(G_CONSTANT)
+      .legalFor({p0, s32, s64})
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0);
+
+  // G_ADD and G_SUB are only legal for 32bit types
+  getActionDefinitionsBuilder({G_ADD, G_SUB})
+      .legalFor({s32})
+      .clampScalar(0, s32, s32);
+
+  getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
+      .legalFor({{s32, s1}});
+
+  // G_MERGE_VALUES and G_UNMERGE_VALUES should require the smaller type to be
+  // s32 and the bigger type to be 64 bits
+  for (unsigned OpCode : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
+    unsigned BigTyIdx = OpCode == G_MERGE_VALUES ? 0 : 1;
+    unsigned SmallTyIdx = OpCode == G_MERGE_VALUES ? 1 : 0;
+
+    getActionDefinitionsBuilder(OpCode)
+        .legalIf([=](const LegalityQuery &Query) {
+          const LLT &BigTy = Query.Types[BigTyIdx];
+          const LLT &SmallTy = Query.Types[SmallTyIdx];
+
+          return SmallTy == s32 && BigTy == s64;
+        })
+        .clampScalar(SmallTyIdx, s32, s32)
+        .clampScalar(BigTyIdx, s64, s64);
+  }
+
   computeTables();
+  verify(*ST.getInstrInfo());
 }
