@@ -1,0 +1,25 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=regbankselect -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_constant_s32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_constant_s32
+    ; CHECK: [[C:%[0-9]+]]:dataregbank(s32) = G_CONSTANT i32 123
+    %0(s32) = G_CONSTANT i32 123
+...
+
+---
+name:            test_constant_s64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_constant_s64
+    ; CHECK: [[C:%[0-9]+]]:dataregbank(s64) = G_CONSTANT i64 123
+    %0(s64) = G_CONSTANT i64 123
+...

@@ -21,7 +21,240 @@
 #define GET_TARGET_REGBANK_IMPL
 #include "TriCoreGenRegisterBank.inc"
 
+// XXX: Replace this with the tablegen'ed variant once available.
+#include "TriCoreGenRegisterBankInfo.def"
+
 using namespace llvm;
 
 TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
-    : TriCoreGenRegisterBankInfo() {}
+    : TriCoreGenRegisterBankInfo() {
+  static bool AlreadyInit = false;
+  // We have only one set of register banks, whatever the subtarget
+  // is. Therefore, the initialization of the RegBanks table should be
+  // done only once. Indeed the table of all register banks
+  // (TriCore::RegBanks) is unique in the compiler. At some point, it
+  // will get tablegen'ed and the whole constructor becomes empty.
+  if (AlreadyInit)
+    return;
+  AlreadyInit = true;
+
+  // This constructor is only used for assertions of the register banks and
+  // the partial mappings.
+
+  // Check register bank order
+  const RegisterBank &DataRegBank = getRegBank(TriCore::DataRegBankID);
+  (void)DataRegBank;
+  assert(&TriCore::DataRegBank == &DataRegBank &&
+         "The order in RegBanks is messed up");
+
+  const RegisterBank &AddrRegBank = getRegBank(TriCore::AddrRegBankID);
+  (void)AddrRegBank;
+  assert(&TriCore::AddrRegBank == &AddrRegBank &&
+         "The order in RegBanks is messed up");
+
+  // Check data register bank coverage
+  assert(DataRegBank.covers(*TRI.getRegClass(TriCore::DataRegsRegClassID)) &&
+         "Subclass not added?");
+  assert(DataRegBank.getSize() == 64 && "DataRegBank should hold up to 64-bit");
+
+  // Check address register bank coverage
+  assert(AddrRegBank.covers(*TRI.getRegClass(TriCore::AddrRegsRegClassID)) &&
+         "Subclass not added?");
+  assert(AddrRegBank.getSize() == 64 && "AddrRegBank should hold up to 64-bit");
+
+  // Check that the to-be-tablegen'ed file is in sync with our expectations.
+  // First, the Idx.
+  assert(checkPartialMappingIdx(PMI_FirstDataReg, PMI_LastDataReg,
+                                {PMI_DataReg, PMI_ExtDataReg}) &&
+         "PartialMappingIdx is incorrectly ordered for DataRegs");
+  assert(checkPartialMappingIdx(PMI_FirstAddrReg, PMI_LastAddrReg,
+                                {PMI_AddrReg, PMI_ExtAddrReg}) &&
+         "PartialMappingIdx is incorrectly ordered for AddrRegs");
+
+  // Next, the content.
+  // Check partial mapping.
+  // use macro to stringify enum value for better assertion message
+#define CHECK_PARTIALMAP(Idx, ValStartIdx, ValLength, RB)                      \
+  do {                                                                         \
+    assert(                                                                    \
+        checkPartialMap(PartialMappingIdx::Idx, ValStartIdx, ValLength, RB) && \
+        #Idx " is incorrectly initialized");                                   \
+  } while (false)
+
+  CHECK_PARTIALMAP(PMI_DataReg, 0, 32, DataRegBank);
+  CHECK_PARTIALMAP(PMI_ExtDataReg, 0, 64, DataRegBank);
+  CHECK_PARTIALMAP(PMI_AddrReg, 0, 32, AddrRegBank);
+  CHECK_PARTIALMAP(PMI_ExtAddrReg, 0, 64, AddrRegBank);
+
+  // get rid of unused function warning in some IDEs
+  (void)checkPartialMap;
+
+  // Check value mapping.
+  // same as above: use macro to stringify enum
+#define CHECK_VALUEMAP_IMPL(Idx, FirstIdx, Size, Offset)                       \
+  do {                                                                         \
+    assert(checkValueMapImpl(PartialMappingIdx::Idx,                           \
+                             PartialMappingIdx::FirstIdx, Size, Offset) &&     \
+           #Idx " " #Offset " is incorrectly initialized");                    \
+  } while (false)
+
+#define CHECK_VALUEMAP(Idx, FirstIdx, Size)                                    \
+  CHECK_VALUEMAP_IMPL(Idx, FirstIdx, Size, 0)
+
+  CHECK_VALUEMAP(PMI_DataReg, PMI_FirstDataReg, 32);
+  CHECK_VALUEMAP(PMI_ExtDataReg, PMI_FirstDataReg, 64);
+
+  // TODO: check value map for address register once implemented
+  // CHECK_VALUEMAP(PMI_AddrReg, PMI_FirstAddrReg, 32);
+  // CHECK_VALUEMAP(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
+
+  // get rid of unused function warning in some IDEs
+  (void)checkValueMapImpl;
+
+  // Check the value mapping for 3-operands instructions where all the operands
+  // map to the same value mapping.
+#define CHECK_VALUEMAP_3OPS(Idx, FirstIdx, Size)                               \
+  do {                                                                         \
+    CHECK_VALUEMAP_IMPL(Idx, FirstIdx, Size, 0);                               \
+    CHECK_VALUEMAP_IMPL(Idx, FirstIdx, Size, 1);                               \
+    CHECK_VALUEMAP_IMPL(Idx, FirstIdx, Size, 2);                               \
+  } while (false)
+
+  CHECK_VALUEMAP_3OPS(PMI_DataReg, PMI_FirstDataReg, 32);
+  CHECK_VALUEMAP_3OPS(PMI_ExtDataReg, PMI_FirstDataReg, 64);
+
+  // TODO: check value mapping for 3-operands instructions with address
+  //  registers once implemented
+  // CHECK_VALUEMAP_3OPS(PMI_AddrReg, PMI_FirstAddrReg, 32);
+  // CHECK_VALUEMAP_3OPS(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
+
+  // TODO: check cross register bank copy mappings once implemented
+
+  assert(verify(TRI) && "Invalid register bank information");
+}
+
+const RegisterBank &TriCoreRegisterBankInfo::getRegBankFromRegClass(
+    const TargetRegisterClass &RC) const {
+  switch (RC.getID()) {
+  case TriCore::AddrRegsRegClassID:
+  case TriCore::ExtAddrRegsRegClassID:
+  case TriCore::ExtAddrRegs_with_even_in_ImplStackPtrRegRegClassID:
+  case TriCore::ExtAddrRegs_with_odd_in_ImplAddrRegRegClassID:
+  case TriCore::ImplAddrRegRegClassID:
+  case TriCore::ImplStackPtrRegRegClassID:
+    return getRegBank(TriCore::AddrRegBankID);
+  case TriCore::DataRegsRegClassID:
+  case TriCore::ExtDataRegsRegClassID:
+  case TriCore::ExtDataRegs_with_odd_in_ImplDataRegRegClassID:
+  case TriCore::ImplDataRegRegClassID:
+    return getRegBank(TriCore::DataRegBankID);
+  default:
+    llvm_unreachable("Register class not supported");
+  }
+}
+
+const RegisterBankInfo::InstructionMapping &
+TriCoreRegisterBankInfo::getSameKindOfOperandsMapping(
+    const MachineInstr &MI) const {
+
+  const MachineFunction &MF = *MI.getParent()->getParent();
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  unsigned NumOperands = MI.getNumOperands();
+  assert(NumOperands <= 3 &&
+         "This code is for instructions with 3 or less operands");
+
+  LLT Ty = MRI.getType(MI.getOperand(0).getReg());
+  unsigned Size = Ty.getSizeInBits();
+  bool IsAddrReg = Ty.isPointer();
+
+  // get the partial mapping index for the required register bank
+  PartialMappingIdx RBIdx = IsAddrReg ? PMI_FirstAddrReg : PMI_FirstDataReg;
+
+#ifndef NDEBUG
+  // Make sure all the operands are using similar size by checking that the
+  // register bank base offset of the operand is equal to the base offset of the
+  // result register bank
+  for (unsigned Idx = 1; Idx != NumOperands; ++Idx) {
+    LLT OpTy = MRI.getType(MI.getOperand(Idx).getReg());
+    assert(
+        TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(
+            RBIdx, OpTy.getSizeInBits()) ==
+            TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(RBIdx, Size) &&
+        "Operand has incompatible size");
+    bool IsOpTyAddrReg = OpTy.isPointer();
+    (void)IsOpTyAddrReg;
+    assert(IsOpTyAddrReg == IsAddrReg && "Operand has incompatible type.");
+  }
+#endif // NDEBUG
+
+  return getInstructionMapping(DefaultMappingID, 1,
+                               getValueMapping(RBIdx, Size), NumOperands);
+}
+
+const RegisterBankInfo::InstructionMapping &
+TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
+  unsigned OpCode = MI.getOpcode();
+
+  // try the default logic. if this fails, map manually
+  if (!isPreISelGenericOpcode(OpCode)) {
+    const RegisterBankInfo::InstructionMapping &Mapping =
+        getInstrMappingImpl(MI);
+    if (Mapping.isValid())
+      return Mapping;
+  }
+
+  const MachineFunction &MF = *MI.getParent()->getParent();
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  switch (OpCode) {
+  // Arithmetic ops.
+  case TargetOpcode::G_ADD:
+  case TargetOpcode::G_SUB:
+    return getSameKindOfOperandsMapping(MI);
+  default:
+    break;
+  }
+
+  unsigned NumOperands = MI.getNumOperands();
+
+  // Track the size and bank of each register. We don't do partial mappings.
+  SmallVector<unsigned, 4> OpSize(NumOperands);
+  SmallVector<PartialMappingIdx, 4> OpRegBankIdx(NumOperands);
+  for (unsigned Idx = 0; Idx < NumOperands; ++Idx) {
+    auto &MO = MI.getOperand(Idx);
+
+    // Skip if the operand does not have a register
+    if (!MO.isReg() || !MO.getReg())
+      continue;
+
+    LLT Ty = MRI.getType(MO.getReg());
+    OpSize[Idx] = Ty.getSizeInBits();
+
+    // As a first guess, scalars go in DataRegs, pointers in AddrRegs
+    if (Ty.isPointer())
+      OpRegBankIdx[Idx] = PMI_FirstAddrReg;
+    else
+      OpRegBankIdx[Idx] = PMI_FirstDataReg;
+  }
+
+  unsigned Cost = 1;
+
+  // TODO: fine-tune the mapping guessed above if there are mixed-register
+  //  instructions
+
+  // Construct the computed mapping
+  SmallVector<const ValueMapping *, 8> OpdsMapping(NumOperands);
+  for (unsigned Idx = 0; Idx < NumOperands; ++Idx) {
+    if (MI.getOperand(Idx).isReg() && MI.getOperand(Idx).getReg()) {
+      auto Mapping = getValueMapping(OpRegBankIdx[Idx], OpSize[Idx]);
+      if (!Mapping->isValid())
+        return getInvalidInstructionMapping();
+
+      OpdsMapping[Idx] = Mapping;
+    }
+  }
+
+  return getInstructionMapping(DefaultMappingID, Cost,
+                               getOperandsMapping(OpdsMapping), NumOperands);
+}
