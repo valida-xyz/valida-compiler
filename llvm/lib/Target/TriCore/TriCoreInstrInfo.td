@@ -165,6 +165,26 @@ class SHIFT_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
 
 
 //===----------------------------------------------------------------------===//
+//  2.5 Compare Instructions.
+//
+
+// 2.5.1 Simple Compare.
+
+let isCompare = 1, isReMaterializable = 1 in {
+  class CMP_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
+                Operand op_type = simm9>
+              :  RC<opc1, opc2, (outs DataRegs:$d),
+                    (ins DataRegs:$s1, op_type:$const9),
+                    mnemonic, "\t$d, $s1, $const9">;
+
+  let n = 0 in
+  class CMP_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+              :  RR<opc1, opc2, (outs DataRegs:$d),
+                    (ins DataRegs:$s1, DataRegs:$s2),
+                    mnemonic, "\t$d, $s1, $s2">;
+} // isCompare = 1, isReMaterializable = 1
+
+//===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
 
@@ -458,6 +478,60 @@ let Defs = [PSW] in {
   def SHAS_ddc       :  SHIFT_RC<0x8F, 0x02,  "shas">;
   def SHAS_ddd       :  SHIFT_RR<0x0F, 0x02,  "shas">;
 } // Defs = [PSW]
+
+//===----------------------------------------------------------------------===//
+//  2.5 Compare Instructions.
+//
+
+// 2.5.1 Simple Compare.
+
+// EQ
+def EQ_ddc           :  CMP_RC<0x8B, 0x10, "eq">;
+
+let isCommutable = 1 in
+def EQ_ddd           :  CMP_RR<0x0B, 0x10, "eq">;
+
+let isCompare = 1, isReMaterializable = 1 in {
+  def EQ_16_d15dc    : SRC<0xBA, (outs ImplDataReg:$d15),
+                           (ins DataRegs:$s1_d, simm4:$const4),
+                           "eq", "\t$d15, $s1_d, $const4">;
+
+  def EQ_16_d15dd    : SRR<0x3A, (outs ImplDataReg:$d15),
+                           (ins DataRegs:$s1_d, DataRegs:$s2),
+                           "eq", "\t$d15, $s1_d, $s2">;
+} // isCompare = 1, isReMaterializable = 1
+
+// NE
+def NE_ddc           :  CMP_RC<0x8B, 0x11, "ne">;
+
+let isCommutable = 1 in
+def NE_ddd           :  CMP_RR<0x0B, 0x11, "ne">;
+
+// LT
+def LT_ddc           :  CMP_RC<0x8B, 0x12, "lt">;
+def LT_ddd           :  CMP_RR<0x0B, 0x12, "lt">;
+
+let isCompare = 1, isReMaterializable = 1 in {
+  def LT_16_d15dc    : SRC<0xFA, (outs ImplDataReg:$d15),
+                           (ins DataRegs:$s1_d, simm4:$const4),
+                           "lt", "\t$d15, $s1_d, $const4">;
+
+  def LT_16_d15dd    : SRR<0x7A, (outs ImplDataReg:$d15),
+                           (ins DataRegs:$s1_d, DataRegs:$s2),
+                           "lt", "\t$d15, $s1_d, $s2">;
+} // isCompare = 1, isReMaterializable = 1
+
+// LT.U
+def LTU_ddc          :  CMP_RC<0x8B, 0x13, "lt.u", uimm9>;
+def LTU_ddd          :  CMP_RR<0x0B, 0x13, "lt.u">;
+
+// GE
+def GE_ddc           :  CMP_RC<0x8B, 0x14, "ge">;
+def GE_ddd           :  CMP_RR<0x0B, 0x14, "ge">;
+
+// GE.U
+def GEU_ddc          :  CMP_RC<0x8B, 0x15, "ge.u", uimm9>;
+def GEU_ddd          :  CMP_RR<0x0B, 0x15, "ge.u">;
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
