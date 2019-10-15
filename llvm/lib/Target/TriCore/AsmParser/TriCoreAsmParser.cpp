@@ -341,13 +341,13 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidUImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 16) - 1);
   case Match_InvalidSImm8_Lsb1:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 8),
-                                      (1 << 8) - 2),
-           "value must be even integer and in the range";
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
+        "value must be even integer and in the range");
   case Match_InvalidSImm24_Lsb1:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 24),
-                                      (1 << 24) - 2),
-           "value must be even integer and in the range";
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 24), (1 << 24) - 2,
+        "value must be even integer and in the range");
   case Match_InvalidOff18Abs:
     return Error(((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
                  "value must be a 32 bit address & bit 27-15, 0 must be 0");
