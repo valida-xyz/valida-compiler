@@ -52,6 +52,7 @@ class TriCoreAsmParser : public MCTargetAsmParser {
 
   OperandMatchResultTy parseImmediate(OperandVector &Operands);
   OperandMatchResultTy parseRegister(OperandVector &Operands);
+  OperandMatchResultTy parseMemOpBaseReg(OperandVector &Operands);
 
   bool parseOperand(OperandVector &Operands);
 
@@ -155,6 +156,22 @@ public:
 
   template <int WIDTH, int SHIFT> bool isScaledSImm() const {
     return (isConstantImm() && isShiftedInt<WIDTH, SHIFT>(getConstantImm()));
+  }
+
+  // checking against {off18[17:14], 14'b0, off18[13:0]} form
+  bool isOff18Abs() const {
+    if (!isConstantImm())
+      return false;
+
+    return (getConstantImm() & ~0xf0003fff) == 0;
+  }
+
+  // checking against {off18[17:0], 14'b0} form
+  bool isOff18AbsV2() const {
+    if (!isConstantImm())
+      return false;
+
+    return (getConstantImm() & ~0xffffc000) == 0;
   }
 
   // checking against {disp24[23:20], 7'b0, disp24[19:0], 1'b0} form
@@ -300,6 +317,8 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         ErrorLoc = IDLoc;
     }
     return Error(ErrorLoc, "invalid operand for instruction");
+  case Match_InvalidUImm2:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 2) - 1);
   case Match_InvalidSImm4:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 3),
                                       (1 << 3) - 1);
@@ -313,6 +332,9 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm9Shift:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 5),
                                       (1 << 5) - 1);
+  case Match_InvalidSImm10:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 9),
+                                      (1 << 9) - 1);
   case Match_InvalidSImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 15),
                                       (1 << 15) - 1);
@@ -326,6 +348,13 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 24),
                                       (1 << 24) - 2),
            "value must be even integer and in the range";
+  case Match_InvalidOff18Abs:
+    return Error(((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
+                 "value must be a 32 bit address & bit 27-15, 0 must be 0");
+  case Match_InvalidOff18AbsV2:
+    return Error(
+        ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
+        "value must be a 32 bit address with the low 14 bits are set to 0");
   case Match_InvalidDisp24Abs:
     ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
     return Error(ErrorLoc,
@@ -402,6 +431,30 @@ OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
   return MatchOperand_Success;
 }
 
+OperandMatchResultTy
+TriCoreAsmParser::parseMemOpBaseReg(OperandVector &Operands) {
+  if (getLexer().isNot(AsmToken::LBrac))
+    return MatchOperand_ParseFail;
+
+  // creating '[' token operand
+  Operands.push_back(TriCoreOperand::createToken("[", getLoc()));
+  getParser().Lex(); // eat '['
+
+  // parse the address register
+  if (parseRegister(Operands) != MatchOperand_Success)
+    return MatchOperand_ParseFail;
+
+  // check if next token is ']'
+  if (getLexer().isNot(AsmToken::RBrac))
+    return MatchOperand_ParseFail;
+
+  // creating ']' token operand
+  Operands.push_back(TriCoreOperand::createToken("]", getLoc()));
+  getParser().Lex(); // eat ']'
+
+  return MatchOperand_Success;
+}
+
 /// Looks at a token type and creates the relevant operand
 /// from this information, adding to Operands.
 /// If operand was parsed, returns false, else true.
@@ -413,6 +466,16 @@ bool TriCoreAsmParser::parseOperand(OperandVector &Operands) {
   // Attempt to parse token as an immediate
   if (parseImmediate(Operands) == MatchOperand_Success)
     return false;
+
+  // Attempt to parse token as a memory operand
+  if (parseMemOpBaseReg(Operands) == MatchOperand_Success) {
+    // parse offset
+    if (getLexer().isNot(AsmToken::EndOfStatement) &&
+        getLexer().isNot(AsmToken::Comma))
+      return parseImmediate(Operands) != MatchOperand_Success;
+
+    return false;
+  }
 
   // Finally we have exhausted all options and must declare defeat.
   Error(getLoc(), "unknown operand");

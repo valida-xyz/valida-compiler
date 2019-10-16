@@ -59,6 +59,9 @@ class GenericSImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
 
 //// Operand Definitions
 
+// A 2-bit unsigned immediate.
+def uimm2 : GenericUnsignedImmediate<2>;
+
 // A 4-bit signed immediate.
 def simm4 : GenericSignedImmediate<4>;
 
@@ -79,6 +82,9 @@ def simm9 : GenericSignedImmediate<9>;
 // A 9-bit unsigned immediate.
 def uimm9 : GenericUnsignedImmediate<9>;
 
+// A 10-bit signed immediate.
+def simm10 : GenericSignedImmediate<10>;
+
 // A 16-bit signed immediate.
 def simm16 : GenericSignedImmediate<16>;
 
@@ -87,6 +93,18 @@ def uimm16 : GenericUnsignedImmediate<16>;
 
 // A 24-bit signed immediate, shifted left by 1
 def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1>;
+
+// A 18-bit immediate as 32 bit absolute address
+def off18_abs : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"Off18Abs">;
+  let EncoderMethod = "getOff18Abs";
+}
+
+// A 18-bit immediate as 32 bit absolute address
+def off18_abs_v2 : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"Off18AbsV2">;
+  let EncoderMethod = "getScaledSImmOpValue<14>";
+}
 
 // A 24-bit signed immediate as 32 bit absolute address
 def disp24_abs : Operand<OtherVT> {
@@ -532,6 +550,79 @@ def GE_ddd           :  CMP_RR<0x0B, 0x14, "ge">;
 // GE.U
 def GEU_ddc          :  CMP_RC<0x8B, 0x15, "ge.u", uimm9>;
 def GEU_ddd          :  CMP_RR<0x0B, 0x15, "ge.u">;
+
+//===----------------------------------------------------------------------===//
+//  2.7 Address Arithmetic.
+//
+let isReMaterializable = 1 in {
+  let isAdd = 1 in {
+    // ADD.A
+    let n = 0, isCommutable = 1 in
+    def ADDA_aaa        :  RR<0x01, 0x01, (outs AddrRegs:$d),
+                              (ins AddrRegs:$s1, AddrRegs:$s2),
+                              "add.a", "\t$d, $s1, $s2">;
+
+    let Constraints = "$s1_d = $src" in {
+      def ADDA_16_ac    :  SRC<0xB0, (outs AddrRegs:$s1_d),
+                              (ins AddrRegs:$src, simm4:$const4),
+                              "add.a", "\t$s1_d, $const4">;
+
+      def ADDA_16_aa    :  SRR<0x30, (outs AddrRegs:$s1_d),
+                              (ins AddrRegs:$src, AddrRegs:$s2),
+                              "add.a", "\t$s1_d, $s2">;
+    } // Constraints = "$s1_d = $src"
+
+    // ADDIH.A
+    def ADDIHA_aac      :  RLC<0x11, (outs AddrRegs:$d),
+                              (ins AddrRegs:$s1, uimm16:$const16),
+                              "addih.a", "\t$d, $s1, $const16">;
+
+    // ADDSC.A
+    def ADDSCA_aadc      :  RR<0x01, 0x60, (outs AddrRegs:$d),
+                              (ins AddrRegs:$s2, DataRegs:$s1, uimm2:$n),
+                              "addsc.a", "\t$d, $s2, $s1, $n">;
+
+    def ADDSCA_16_aad15c : SRRS<0x10, (outs AddrRegs:$s1_d),
+                                (ins AddrRegs:$s2, ImplDataReg:$d15, uimm2:$n),
+                                "addsc.a", "\t$s1_d, $s2, $d15, $n">;
+
+    // ADDSC.AT
+    let n = 0 in
+    def ADDSCAT_aad      :  RR<0x01, 0x62, (outs AddrRegs:$d),
+                              (ins AddrRegs:$s2, DataRegs:$s1),
+                              "addsc.at", "\t$d, $s2, $s1">;
+  } // isAdd = 1
+
+  // SUB.A
+  let n = 0 in
+  def SUBA_aaa           :  RR<0x01, 0x02, (outs AddrRegs:$d),
+                              (ins AddrRegs:$s1, AddrRegs:$s2),
+                              "sub.a", "\t$d, $s1, $s2">;
+
+  let Constraints = "$a10 = $src" in
+  def SUBA_16_a10c       :  SC<0x20, (outs ImplStackPtrReg:$a10),
+                              (ins ImplStackPtrReg:$src, uimm8:$const8),
+                              "sub.a", "\t$a10, $const8">;
+  // LEA
+  def LEA_ac             : ABS<0xC5, 0x00, (outs AddrRegs:$s1_d),
+                              (ins off18_abs:$off18),
+                              "lea", "\t$s1_d, $off18">;
+
+  let isCodeGenOnly = 1 in
+  def LEA_aasc           :  BO<0x49, 0x28, (outs AddrRegs:$s1_d),
+                              (ins AddrRegs:$s2, simm10:$off10),
+                              "lea", "\t$s1_d, [$s2], $off10">;
+
+  def LEA_aac            : BOL<0xD9, (outs AddrRegs:$s1_d),
+                              (ins AddrRegs:$s2, simm16:$off16),
+                              "lea", "\t$s1_d, [$s2], $off16">;
+
+  // LHA
+  def LHA_ac             : ABS<0xC5, 0x01, (outs AddrRegs:$s1_d),
+                              (ins off18_abs_v2:$off18),
+                              "lha", "\t$s1_d, $off18">;
+} // isReMaterializable = 1
+
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
