@@ -1,10 +1,14 @@
 pipeline {
   agent none
+  options {
+    disableConcurrentBuilds()
+  }
   stages {
     stage('Test-Linux') {
       agent {
         docker {
           image 'harbor.software.htc/toolchain/toolchain_build_linux:2.0'
+          label 'llvm-project'
           args '-v /etc/passwd:/etc/passwd'
           registryUrl 'https://harbor.software.htc'
           registryCredentialsId 'jenkins'
@@ -37,29 +41,31 @@ pipeline {
 
       post {
         always {
-
           script {
-            try {
-              junit 'build/**/testresults.xunit.xml'
-            } catch (Exception e) {
-              curentBuild.result = 'FAILURE'
+            if (currentBuild.currentResult != 'ABORTED') {
+              try {
+                junit 'build/**/testresults.xunit.xml'
+              } catch (Exception e) {
+                currentBuild.currentResult = 'FAILURE'
+              }
             }
-          }
 
-          script {
             mattermostColor = "good"
             mattermostEmoji = ":sunny:"
+            buildResult = "succeeded"
 
-            if (currentBuild.result == null) {
-              currentBuild.result = 'SUCCESS'
-            } else if(currentBuild.result == 'FAILURE' || currentBuild.result == 'UNSTABLE') {
-              if(currentBuild.result == 'FAILURE') {
-                mattermostColor = "danger"
-                mattermostEmoji = ":no_entry_sign:"
-              } else {
-                mattermostColor = "warning"
-                mattermostEmoji = ":warning:"
-              }
+            if (currentBuild.currentResult == 'ABORTED') {
+              mattermostColor = "warning"
+              mattermostEmoji = ":warning:"
+              buildResult = "aborted"
+            } else if(currentBuild.currentResult == 'FAILURE') {
+              mattermostColor = "danger"
+              mattermostEmoji = ":no_entry_sign:"
+              buildResult = "failed"
+            } else if (currentBuild.currentResult == 'UNSTABLE') {
+              mattermostColor = "warning"
+              mattermostEmoji = ":warning:"
+              buildResult = "unstable"
             }
 
             def testResultAction = currentBuild.rawBuild.getAction(hudson.tasks.test.AbstractTestResultAction.class)
@@ -68,16 +74,16 @@ pipeline {
               def failed = testResultAction.getFailCount()
               def skipped = testResultAction.getSkipCount()
 
-            summary = "\nTest results:\n\t"
-            summary = summary + ("Passed: " + (total - failed - skipped))
-            summary = summary + (", Failed: " + failed)
-            summary = summary + (", Skipped: " + skipped)
+              summary = "\nTest results:\n\t"
+              summary = summary + ("Passed: " + (total - failed - skipped))
+              summary = summary + (", Failed: " + failed)
+              summary = summary + (", Skipped: " + skipped)
             } else {
-              summary = "No tests found"
+              summary = "\nNo tests found"
             }
           }
 
-          mattermostSend channel: "#llvm-dev", color: mattermostColor, message: "${mattermostEmoji} ${env.JOB_NAME} - #${env.BUILD_NUMBER} after ${currentBuild.durationString.replace(' and counting', '')} <${env.BUILD_URL}|Open>${summary}"
+          mattermostSend channel: "#llvm-dev", color: mattermostColor, message: "${mattermostEmoji} ${env.JOB_NAME} - #${env.BUILD_NUMBER} ${buildResult} after ${currentBuild.durationString.replace(' and counting', '')} <${env.BUILD_URL}|Open>${summary}"
         }
       }
     }
