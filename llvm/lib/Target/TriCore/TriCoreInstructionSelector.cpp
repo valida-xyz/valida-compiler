@@ -75,15 +75,26 @@ TriCoreInstructionSelector::TriCoreInstructionSelector(
 }
 
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
+  assert(I.getParent() && "Instruction should be in a basic block!");
+  assert(I.getParent()->getParent() && "Instruction should be in a function!");
 
   if (!isPreISelGenericOpcode(I.getOpcode())) {
-    // Certain non-generic instructions also need some special handling.
+    // TODO: Do we need special handling for non-generic instructions?
     return true;
   }
 
+  // make sure no implicit operands are present
+  if (I.getNumOperands() != I.getNumExplicitOperands()) {
+    LLVM_DEBUG(
+        dbgs() << "Generic instruction has unexpected implicit operands.\n");
+    return false;
+  }
+
+  // Try the TableGen'ed implementation first
   if (selectImpl(I, *CoverageInfo))
     return true;
 
+  LLVM_DEBUG(dbgs() << "Manual instruction selection not supported yet.\n");
   return false;
 }
 
