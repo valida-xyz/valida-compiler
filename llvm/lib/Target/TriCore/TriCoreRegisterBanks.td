@@ -10,8 +10,8 @@
 //===----------------------------------------------------------------------===//
 
 /// Data registers: D.
-def DataRegBank : RegisterBank<"DataRegBank", [DataRegs]>;
+def DataRegBank : RegisterBank<"DataRegBank", [ExtDataRegs]>;
 
 /// Address registers: A
-def AddrRegBank : RegisterBank<"AddrRegBank", [AddrRegs]>;
+def AddrRegBank : RegisterBank<"AddrRegBank", [ExtAddrRegs]>;
 
