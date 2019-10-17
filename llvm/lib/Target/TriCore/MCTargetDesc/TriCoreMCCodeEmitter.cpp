@@ -68,6 +68,10 @@ public:
                        SmallVectorImpl<MCFixup> &Fixups,
                        const MCSubtargetInfo &STI) const;
 
+  unsigned getDisp4_16(const MCInst &MI, unsigned OpNo,
+                       SmallVectorImpl<MCFixup> &Fixups,
+                       const MCSubtargetInfo &STI) const;
+
   unsigned getDisp24Abs(const MCInst &MI, unsigned OpNo,
                         SmallVectorImpl<MCFixup> &Fixups,
                         const MCSubtargetInfo &STI) const;
@@ -141,6 +145,19 @@ unsigned TriCoreMCCodeEmitter::getOff18Abs(const MCInst &MI, unsigned OpNo,
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
     return ((Value & 0xf0000000) >> 14) | ((Value & 0x3fff));
+  }
+  return 0; // to silence warnigns, later relocation will be generated here
+}
+
+unsigned TriCoreMCCodeEmitter::getDisp4_16(const MCInst &MI, unsigned OpNo,
+                                           SmallVectorImpl<MCFixup> &Fixups,
+                                           const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  assert(MO.isImm() && "Operand must be an immediate.");
+  if (MO.isImm()) {
+    unsigned Value = MO.getImm();
+
+    return (Value / 2) - 16;
   }
   return 0; // to silence warnigns, later relocation will be generated here
 }

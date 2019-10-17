@@ -154,8 +154,13 @@ public:
     return (isConstantImm() && isUInt<N>(getConstantImm()));
   }
 
-  template <int WIDTH, int SHIFT> bool isScaledSImm() const {
-    return (isConstantImm() && isShiftedInt<WIDTH, SHIFT>(getConstantImm()));
+  template <int WIDTH, int SHIFT, bool SIGNED> bool isScaledImm() const {
+    if (!isConstantImm())
+      return false;
+
+    bool valid = SIGNED ? isShiftedInt<WIDTH, SHIFT>(getConstantImm())
+                        : isShiftedUInt<WIDTH, SHIFT>(getConstantImm());
+    return valid;
   }
 
   // checking against {off18[17:14], 14'b0, off18[13:0]} form
@@ -172,6 +177,16 @@ public:
       return false;
 
     return (getConstantImm() & ~0xffffc000) == 0;
+  }
+
+  // checking against zero_ext(disp4 + 16) * 2 form
+  bool isDisp4_16() const {
+    if (!isConstantImm())
+      return false;
+
+    int64_t Val = getConstantImm();
+
+    return Val >= 32 && Val <= 62 && (Val % 2 == 0);
   }
 
   // checking against {disp24[23:20], 7'b0, disp24[19:0], 1'b0} form
@@ -322,6 +337,10 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm4:
     return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 3),
                                       (1 << 3) - 1);
+  case Match_InvalidUImm4:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 4) - 1);
+  case Match_InvalidUImm5:
+    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 5) - 1);
   case Match_InvalidUImm8:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 8) - 1);
   case Match_InvalidSImm9:
@@ -340,9 +359,17 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                       (1 << 15) - 1);
   case Match_InvalidUImm16:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 16) - 1);
+  case Match_InvalidUImm4_Lsb1:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 4), (1 << 4) - 2,
+        "value must be even integer and in the range");
   case Match_InvalidSImm8_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
+        "value must be even integer and in the range");
+  case Match_InvalidSImm15_Lsb1:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 15), (1 << 15) - 2,
         "value must be even integer and in the range");
   case Match_InvalidSImm24_Lsb1:
     return generateImmOutOfRangeError(
@@ -355,6 +382,10 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return Error(
         ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
         "value must be a 32 bit address with the low 14 bits are set to 0");
+  case Match_InvalidDisp4_16:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 16 * 2, (15 + 16) * 2,
+        "value must be even integer and in the range");
   case Match_InvalidDisp24Abs:
     ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
     return Error(ErrorLoc,

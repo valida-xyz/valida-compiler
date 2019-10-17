@@ -34,11 +34,18 @@ class SImmAsmOperand<int width> : ImmAsmOperand<"S", width>;
 class UImmAsmOperand<int width> : ImmAsmOperand<"U", width>;
 
 // for M + N bit long operands having their least significant N bits 0
-class SImmLsbNIsZero<int M, int N> : AsmOperandClass {
-  let Name = "SImm" # M # "_Lsb" # N;
+class ImmLsbNIsZero<int M, int N, string prefix> : AsmOperandClass {
+  let Name = prefix # "Imm" # M # "_Lsb" # N;
   let RenderMethod = "addImmOperands";
-  let PredicateMethod = "isScaledSImm<" # M # ", " # N # ">";
   let DiagnosticType = !strconcat("Invalid", Name);
+}
+
+class SImmLsbNIsZero<int M, int N> : ImmLsbNIsZero<M, N, "S"> {
+  let PredicateMethod = "isScaledImm<" # M # ", " # N # ", true>";
+}
+
+class UImmLsbNIsZero<int M, int N> : ImmLsbNIsZero<M, N, "U"> {
+  let PredicateMethod = "isScaledImm<" # M # ", " # N # ", false>";
 }
 
 //// Operand Classes
@@ -57,6 +64,11 @@ class GenericSImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
   let EncoderMethod = "getScaledSImmOpValue<" # shift # ">";
 }
 
+class GenericUImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
+  let ParserMatchClass = UImmLsbNIsZero<width, shift>;
+  let EncoderMethod = "getScaledSImmOpValue<" # shift # ">";
+}
+
 //// Operand Definitions
 
 // A 2-bit unsigned immediate.
@@ -64,6 +76,15 @@ def uimm2 : GenericUnsignedImmediate<2>;
 
 // A 4-bit signed immediate.
 def simm4 : GenericSignedImmediate<4>;
+
+// A 4-bit unsigned immediate.
+def uimm4 : GenericUnsignedImmediate<4>;
+
+// A 4-bit unsigned immediate, shifted left by 1
+def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>;
+
+// A 5-bit unsigned immediate.
+def uimm5 : GenericUnsignedImmediate<5>;
 
 // A 8-bit unsigned immediate.
 def uimm8 : GenericUnsignedImmediate<8>;
@@ -90,6 +111,15 @@ def simm16 : GenericSignedImmediate<16>;
 
 // A 16-bit unsigned immediate.
 def uimm16 : GenericUnsignedImmediate<16>;
+
+// A an unsigned 4 bit N value which comply: (N + 16) * 2
+def disp4_16 : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"Disp4_16">;
+  let EncoderMethod = "getDisp4_16";
+}
+
+// A 15-bit signed immediate, shifted left by 1
+def simm15_lsb0 : GenericSImmLsbNIsZero<15, 1>;
 
 // A 24-bit signed immediate, shifted left by 1
 def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1>;
@@ -220,6 +250,38 @@ let s2 = 0, d = 0, n = 0 in
 class UBI_RR<bits<8> opc2, string mnemonic>
                 :  RR<0x2D, opc2, (outs), (ins AddrRegs:$s1),
                       mnemonic, "\t$s1">;
+
+// 2.9.2 Conditional Branch Instructions.
+
+let isBranch = 1, isTerminator = 1 in {
+  class CB_BRC<bits<8> opc1, bit opc2, string mnemonic, Operand op_type = simm4>
+                : BRC<opc1, opc2, (outs),
+                      (ins DataRegs:$s1, op_type:$const4, simm15_lsb0:$disp15),
+                      mnemonic, "\t$s1, $const4, $disp15">;
+
+  class CB_BRR<bits<8> opc1, bit opc2, string mnemonic,
+                RegisterClass RC = DataRegs>
+                : BRR<opc1, opc2, (outs),
+                      (ins RC:$s1, RC:$s2, simm15_lsb0:$disp15),
+                      mnemonic, "\t$s1, $s2, $disp15">;
+
+  class CB_SBC<bits<8> opc1, string mnemonic, 
+                Operand disp4_type = uimm4_lsb0>
+                : SBC<opc1, (outs),
+                      (ins ImplDataReg:$d15, simm4:$const4, disp4_type:$disp4),
+                      mnemonic, "\t$d15, $const4, $disp4">;
+
+  class CB_D15_SBR<bits<8> opc1, string mnemonic, 
+                Operand disp4_type = uimm4_lsb0>
+                : SBR<opc1, (outs),
+                      (ins ImplDataReg:$d15, DataRegs:$s2, disp4_type:$disp4),
+                      mnemonic, "\t$d15, $s2, $disp4">;
+
+  class CB_SBR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
+                : SBR<opc1, (outs),
+                      (ins RC:$s2, uimm4_lsb0:$disp4),
+                      mnemonic, "\t$s2, $disp4">;
+} // isBranch = 1, isTerminator = 1
 
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
@@ -663,3 +725,114 @@ let Uses = [A11], isReturn = 1, isTerminator = 1, isBarrier = 1, s1_d = 0 in {
   def RFE    : SYS<0x0D, 0x07, (outs), (ins), "rfe", "">;
   def RFE_16 :  SR<0x00, 0x08, (outs), (ins), "rfe", "">;
 } // Uses = [A11], isReturn = 1, isTerminator = 1, isBarrier = 1, s1_d = 0 
+
+
+// 2.9.2 Conditional Branch Instructions.
+
+// JEQ
+def JEQ_dcc        : CB_BRC<0xDF, 0x00, "jeq">;
+def JEQ_ddc        : CB_BRR<0x5F, 0x00, "jeq">;
+
+def JEQ_16_d15cc   : CB_SBC<0x1E,       "jeq">;
+def JEQ_16_d15clc  : CB_SBC<0x9E,       "jeq", disp4_16>;
+
+def JEQ_16_d15dc   : CB_D15_SBR<0x3E,   "jeq">;
+def JEQ_16_d15dlc  : CB_D15_SBR<0xBE,   "jeq", disp4_16>;
+
+// JEQ.A
+def JEQA_aac       : CB_BRR<0x7D, 0x00, "jeq.a", AddrRegs>;
+
+// JGE
+def JGE_dcc        : CB_BRC<0xFF, 0x00, "jge">;
+def JGE_ddc        : CB_BRR<0x7F, 0x00, "jge">;
+
+// JGE.U
+def JGEU_dcc       : CB_BRC<0xFF, 0x01, "jge.u", uimm4>;
+def JGEU_ddc       : CB_BRR<0x7F, 0x01, "jge.u">;
+
+// JGEZ
+def JGEZ_16_dc     : CB_SBR<0xCE,       "jgez">;
+
+// JGTZ
+def JGTZ_16_dc     : CB_SBR<0x4E,       "jgtz">;
+
+// JLEZ
+def JLEZ_16_dc     : CB_SBR<0x8E,       "jlez">;
+
+// JLT
+def JLT_dcc        : CB_BRC<0xBF, 0x00, "jlt">;
+def JLT_ddc        : CB_BRR<0x3F, 0x00, "jlt">;
+
+// JLT.U
+def JLTU_dcc       : CB_BRC<0xBF, 0x01, "jlt.u", uimm4>;
+def JLTU_ddc       : CB_BRR<0x3F, 0x01, "jlt.u">;
+
+// JLTZ
+def JLTZ_16_dc     : CB_SBR<0x0E,       "jltz">;
+
+// JNE
+def JNE_dcc        : CB_BRC<0xDF, 0x01, "jne">;
+def JNE_ddc        : CB_BRR<0x5F, 0x01, "jne">;
+
+def JNE_16_d15cc   : CB_SBC<0x5E,       "jne">;
+def JNE_16_d15clc  : CB_SBC<0xDE,       "jne", disp4_16>;
+
+def JNE_16_d15dc   : CB_D15_SBR<0x7E,   "jne">;
+def JNE_16_d15dlc  : CB_D15_SBR<0xFE,   "jne", disp4_16>;
+
+// JNE.A
+def JNEA_aac       : CB_BRR<0x7D, 0x01, "jne.a", AddrRegs>;
+
+// JNZ
+let isBranch = 1, isTerminator = 1 in
+def JNZ_16_d15c    : SB<0xEE, (outs),
+                        (ins ImplDataReg:$d15, simm8_lsb0:$disp8),
+                        "jnz", "\t$d15, $disp8">;
+
+def JNZ_16_dc      : CB_SBR<0xF6,       "jnz">;
+
+// JNZ.A
+let s2 = 0, isBranch = 1, isTerminator = 1 in
+def JNZA_ac        : BRR<0xBD, 0x01, (outs),
+                         (ins AddrRegs:$s1, simm15_lsb0:$disp15),
+                         "jnz.a", "\t$s1, $disp15">;
+
+def JNZA_16_ac     : CB_SBR<0x7C,            "jnz.a", AddrRegs>;
+
+// JNZ.T
+let isBranch = 1, isTerminator = 1 in {
+  def JNZT_dcc     : BRN<0x6F, 0x01, (outs),
+                         (ins DataRegs:$s1, uimm5:$n, simm15_lsb0:$disp15),
+                         "jnz.t", "\t$s1, $n, $disp15">;
+
+  def JNZT_16_d15cc : SBRN<0xAE, (outs),
+                          (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
+                          "jnz.t", "\t$d15, $n, $disp4">;
+} // isBranch = 1, isTerminator = 1
+
+// JZ
+let isBranch = 1, isTerminator = 1 in
+def JZ_16_d15c     : SB<0x6E, (outs),
+                        (ins ImplDataReg:$d15, simm8_lsb0:$disp8),
+                        "jz", "\t$d15, $disp8">;
+
+def JZ_16_dc       : CB_SBR<0x76,       "jz">;
+
+// JZ.A
+let s2 = 0, isBranch = 1, isTerminator = 1 in
+def JZA_ac         : BRR<0xBD, 0x00, (outs),
+                         (ins AddrRegs:$s1, simm15_lsb0:$disp15),
+                         "jz.a", "\t$s1, $disp15">;
+
+def JZA_16_ac      : CB_SBR<0xBC,            "jz.a", AddrRegs>;
+
+// JZ.T
+let isBranch = 1, isTerminator = 1 in {
+  def JZT_dcc      : BRN<0x6F, 0x00, (outs),
+                         (ins DataRegs:$s1, uimm5:$n, simm15_lsb0:$disp15),
+                         "jz.t", "\t$s1, $n, $disp15">;
+
+  def JZT_16_d15cc : SBRN<0x2E, (outs),
+                          (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
+                          "jz.t", "\t$d15, $n, $disp4">;
+} // isBranch = 1, isTerminator = 1
