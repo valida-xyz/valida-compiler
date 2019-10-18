@@ -1,0 +1,145 @@
+# RUN: llc -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_constant_s32
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_s32
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 722
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 18838, implicit-def $psw
+    ; CHECK: $d2 = COPY [[HIGHER]]
+    %0(s32) = G_CONSTANT i32 1234567890
+    $d2 = COPY %0(s32)
+...
+
+---
+name:            test_constant_small_s32
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_small_s32
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 42
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 0, implicit-def $psw
+    ; CHECK: $d2 = COPY [[HIGHER]]
+    %0(s32) = G_CONSTANT i32 42
+    $d2 = COPY %0(s32)
+...
+---
+name:            test_constant_negative_s32
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_negative_s32
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 65535, implicit-def $psw
+    ; CHECK: $d2 = COPY [[HIGHER]]
+    %0(s32) = G_CONSTANT i32 -1
+    $d2 = COPY %0(s32)
+...
+
+---
+name:            test_constant_s64
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_s64
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 28849
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 56423, implicit-def $psw
+    ; CHECK: [[LOWER1:%[0-9]+]]:dataregs = MOVU_dc 43404
+    ; CHECK: [[HIGHER1:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER1]], 43860, implicit-def $psw
+    ; CHECK: [[REG_SEQ:%[0-9]+]]:extdataregs = REG_SEQUENCE [[HIGHER]], %subreg.dsub0, [[HIGHER1]], %subreg.dsub1
+    ; CHECK: $e2 = COPY [[REG_SEQ]]
+    %0(s64) = G_CONSTANT i64 12345678900987654321
+    $e2 = COPY %0(s64)
+...
+
+---
+name:            test_constant_small_s64
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_small_s64
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 10
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 0, implicit-def $psw
+    ; CHECK: [[LOWER1:%[0-9]+]]:dataregs = MOVU_dc 0
+    ; CHECK: [[HIGHER1:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER1]], 0, implicit-def $psw
+    ; CHECK: [[REG_SEQ:%[0-9]+]]:extdataregs = REG_SEQUENCE [[HIGHER]], %subreg.dsub0, [[HIGHER1]], %subreg.dsub1
+    ; CHECK: $e2 = COPY [[REG_SEQ]]
+    %0(s64) = G_CONSTANT i64 10
+    $e2 = COPY %0(s64)
+...
+
+---
+name:            test_constant_negative_s64
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_negative_s64
+    ; CHECK: [[LOWER:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[HIGHER:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER]], 65535, implicit-def $psw
+    ; CHECK: [[LOWER1:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[HIGHER1:%[0-9]+]]:dataregs = ADDIH_ddc [[LOWER1]], 65535, implicit-def $psw
+    ; CHECK: [[REG_SEQ:%[0-9]+]]:extdataregs = REG_SEQUENCE [[HIGHER]], %subreg.dsub0, [[HIGHER1]], %subreg.dsub1
+    ; CHECK: $e2 = COPY [[REG_SEQ]]
+    %0(s64) = G_CONSTANT i64 -1
+    $e2 = COPY %0(s64)
+...
+
+---
+name:            test_constant_nullptr_p0
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_nullptr_p0
+    ; CHECK: [[HIGHER:%[0-9]+]]:addrregs = MOVHA_ac 0
+    ; CHECK: [[LOWER:%[0-9]+]]:addrregs = LEA_aac [[HIGHER]], 0
+    ; CHECK: $a2 = COPY [[LOWER]]
+    %0(p0) = G_CONSTANT i32 0
+    $a2 = COPY %0(p0)
+...
+
+---
+name:            test_constant_p0
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_constant_p0
+    ; CHECK: [[HIGHER:%[0-9]+]]:addrregs = MOVHA_ac 43691
+    ; CHECK: [[LOWER:%[0-9]+]]:addrregs = LEA_aac [[HIGHER]], 43690
+    ; CHECK: $a2 = COPY [[LOWER]]
+    %0(p0) = G_CONSTANT i32 2863311530
+    $a2 = COPY %0(p0)
+...
