@@ -361,7 +361,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 16) - 1);
   case Match_InvalidUImm4_Lsb1:
     return generateImmOutOfRangeError(
-        Operands, ErrorInfo, -(1 << 4), (1 << 4) - 2,
+        Operands, ErrorInfo, 0, ((1 << 4) - 1) * 2,
         "value must be even integer and in the range");
   case Match_InvalidUImm4_Lsb2:
     return generateImmOutOfRangeError(
