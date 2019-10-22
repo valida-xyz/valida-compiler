@@ -83,6 +83,9 @@ def uimm4 : GenericUnsignedImmediate<4>;
 // A 4-bit unsigned immediate, shifted left by 1
 def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>;
 
+// A 4-bit unsigned immediate, shifted left by 2
+def uimm4_lsb00 : GenericUImmLsbNIsZero<4, 2>;
+
 // A 5-bit unsigned immediate.
 def uimm5 : GenericUnsignedImmediate<5>;
 
@@ -91,6 +94,9 @@ def uimm8 : GenericUnsignedImmediate<8>;
 
 // A 8-bit signed immediate, shifted left by 1
 def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
+
+// A 8-bit unsigned immediate, shifted left by 2
+def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2>;
 
 // A 6 bit signed immediate encoded in 9 bit
 def simm9_shift : Operand<OtherVT> {
@@ -284,6 +290,164 @@ let isBranch = 1, isTerminator = 1 in {
 } // isBranch = 1, isTerminator = 1
 
 //===----------------------------------------------------------------------===//
+//  2.10 Load and Store Instructions.
+//
+
+// 2.10.1. Load/Store Basic Data Types
+
+// LOADS
+let mayLoad = 1, mayStore = 0 in {
+  class LOAD_ABS<bits<8> opc1, bits<2> opc2, string mnemonic,
+                RegisterClass RC = DataRegs>
+                  : ABS<opc1, opc2, (outs RC:$s1_d),
+                        (ins off18_abs:$off18),
+                        mnemonic, "\t$s1_d, $off18">;
+
+  class LOAD_BO_BASE<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                    RegisterClass RC, string post,
+                    RegisterClass RC2 = AddrRegs>
+                  :  BO<opc1, opc2, (outs RC:$s1_d),
+                        (ins RC2:$s2, simm10:$off10),
+                        mnemonic, "\t$s1_d, [${s2}" #post# "], $off10">;
+
+  let isCodeGenOnly = 1 in
+  class LOAD_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                RegisterClass RC = DataRegs>
+                  :  LOAD_BO_BASE<opc1, opc2, mnemonic, RC, "">;
+
+  let off10 = 0 in
+  class LOAD_BO_BR<bits<8> opc1, bits<6> opc2, string mnemonic,
+                  RegisterClass RC = DataRegs>
+                  :  BO<opc1, opc2, (outs RC:$s1_d), (ins ExtAddrRegs:$s2),
+                        mnemonic, "\t$s1_d, [${s2} + r]">;
+
+  class LOAD_BO_CR<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                RegisterClass RC = DataRegs>
+                  : LOAD_BO_BASE<opc1, opc2, mnemonic, RC, " + c", ExtAddrRegs>;
+
+  // These also define the index register since they increment it
+  let Constraints = "$s2 = $dest" in 
+  class LOAD_BO_INC_BASE<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs, string pre, string post>
+                  :  BO<opc1, opc2, (outs RC:$s1_d, AddrRegs:$dest),
+                        (ins AddrRegs:$s2, simm10:$off10), mnemonic,
+                        "\t$s1_d, [" #pre# "${s2}" #post# "], $off10">;
+
+  class LOAD_BO_PRE<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs>
+                  :  LOAD_BO_INC_BASE<opc1, opc2, mnemonic, RC, "+", "">; 
+
+  class LOAD_BO_POST<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs>
+                  :  LOAD_BO_INC_BASE<opc1, opc2, mnemonic, RC, "", "+">; 
+
+  class LOAD_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
+                  :  BOL<opc1, (outs RC:$s1_d),
+                        (ins AddrRegs:$s2, simm16:$off16),
+                        mnemonic, "\t$s1_d, [$s2], $off16">;
+
+  class LOAD_SLR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
+                  : SLR<opc1, (outs RC:$d), (ins AddrRegs:$s2),
+                        mnemonic, "\t$d, [$s2]">;
+
+  // These also define the index register since they increment it
+  let Constraints = "$s2 = $dest" in 
+  class LOAD_SLR_POST<bits<8> opc1, string mnemonic, 
+                      RegisterClass RC = DataRegs>
+                  : SLR<opc1, (outs RC:$d, AddrRegs:$dest), (ins AddrRegs:$s2),
+                        mnemonic, "\t$d, [${s2}+]">;
+
+  class LOAD_SLRO<bits<8> opc1, string mnemonic, 
+                      RegisterClass RC, Operand op_type>
+                  : SLRO<opc1, (outs RC:$d),
+                        (ins ImplAddrReg:$a15, op_type:$off4),
+                        mnemonic, "\t$d, [$a15], $off4">;
+
+  class LOAD_SRO<bits<8> opc1, string mnemonic, RegisterClass RC,
+                      Operand op_type>
+                  : SRO<opc1, (outs RC:$x15),
+                        (ins AddrRegs:$s2, op_type:$off4),
+                        mnemonic, "\t$x15, [$s2], $off4">;
+} // mayLoad = 1, mayStore = 0
+
+// STORES
+let mayLoad = 0, mayStore = 1 in {
+  class STORE_ABS<bits<8> opc1, bits<2> opc2, string mnemonic,
+                RegisterClass RC = DataRegs>
+                  : ABS<opc1, opc2, (outs),
+                        (ins off18_abs:$off18, RC:$s1_d),
+                        mnemonic, "\t$off18, $s1_d">;
+
+  class STORE_BO_BASE<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                      RegisterClass RC, string post, 
+                      RegisterClass RC2 = AddrRegs>
+                  :  BO<opc1, opc2, (outs),
+                        (ins RC2:$s2, simm10:$off10, RC:$s1_d),
+                        mnemonic, "\t[${s2}" #post# "], $off10, $s1_d">;
+
+  let isCodeGenOnly = 1 in
+  class STORE_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                RegisterClass RC = DataRegs>
+                  : STORE_BO_BASE<opc1, opc2, mnemonic, RC, "">;
+
+  let off10 = 0 in
+  class STORE_BO_BR<bits<8> opc1, bits<6> opc2, string mnemonic,
+                  RegisterClass RC = DataRegs>
+                  :  BO<opc1, opc2, (outs), (ins ExtAddrRegs:$s2, RC:$s1_d),
+                        mnemonic, "\t[$s2 + r], $s1_d">;
+
+  class STORE_BO_CR<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                RegisterClass RC = DataRegs>
+                : STORE_BO_BASE<opc1, opc2, mnemonic, RC, " + c", ExtAddrRegs>;
+
+
+  // These also define the index register since they increment it
+  let Constraints = "$s2 = $dest" in 
+  class STORE_BO_INC_BASE<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC, string pre, string post>
+                :  BO<opc1, opc2, (outs AddrRegs:$dest),
+                      (ins AddrRegs:$s2, simm10:$off10, RC:$s1_d),
+                      mnemonic, "\t[" #pre# "${s2}" #post# "], $off10, $s1_d">;
+
+  class STORE_BO_PRE<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs>
+                  :  STORE_BO_INC_BASE<opc1, opc2, mnemonic, RC, "+", "">;
+
+  class STORE_BO_POST<bits<8> opc1, bits<6> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs>
+                  :  STORE_BO_INC_BASE<opc1, opc2, mnemonic, RC, "", "+">;
+
+  class STORE_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
+                  :  BOL<opc1, (outs),
+                        (ins AddrRegs:$s2, simm16:$off16, RC:$s1_d),
+                        mnemonic, "\t[$s2], $off16, $s1_d">;
+
+  class STORE_SSR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
+                  : SSR<opc1, (outs), (ins AddrRegs:$s2, RC:$s1),
+                        mnemonic, "\t[$s2], $s1">;
+
+  // These also define the index register since they increment it
+  let Constraints = "$s2 = $dest" in 
+  class STORE_SSR_POST<bits<8> opc1, string mnemonic, 
+                      RegisterClass RC = DataRegs>
+                  : SSR<opc1, (outs AddrRegs:$dest),
+                        (ins AddrRegs:$s2,  RC:$s1),
+                        mnemonic, "\t[${s2}+], $s1">;
+
+  class STORE_SSRO<bits<8> opc1, string mnemonic, RegisterClass RC,
+                        Operand op_type>
+                  : SSRO<opc1, (outs),
+                         (ins ImplAddrReg:$a15, op_type:$off4, RC:$s1),
+                         mnemonic, "\t[$a15], $off4, $s1">;
+
+  class STORE_SRO<bits<8> opc1, string mnemonic, RegisterClass RC,
+                      Operand op_type>
+                  : SRO<opc1, (outs),
+                        (ins AddrRegs:$s2, op_type:$off4, RC:$x15),
+                        mnemonic, "\t[$s2], $off4, $x15">;
+} // mayLoad = 0, mayStore = 1
+
+//===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
 
@@ -301,6 +465,7 @@ let isBranch = 1, isTerminator = 1 in {
 // p - extended address register operand
 // _16 - 16 bit instruction (always append it first)
 // _poi - post increment
+// _pri - pre increment
 
 // Ex.: MOV_16_d15c is a 16 bit length MOV instruction with d15 and a 
 // constant operands in this order.
@@ -836,3 +1001,229 @@ let isBranch = 1, isTerminator = 1 in {
                           (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
                           "jz.t", "\t$d15, $n, $disp4">;
 } // isBranch = 1, isTerminator = 1
+
+//===----------------------------------------------------------------------===//
+//  2.10 Load and Store Instructions.
+//
+
+// 2.10.1. Load/Store Basic Data Types
+
+// LD.A
+def LDA_ac          : LOAD_ABS<     0x85, 0x02, "ld.a", AddrRegs>;
+def LDA_aac         : LOAD_BO<      0x09, 0x26, "ld.a", AddrRegs>;
+def LDA_ap          : LOAD_BO_BR<   0x29, 0x06, "ld.a", AddrRegs>;
+def LDA_apc         : LOAD_BO_CR<   0x29, 0x16, "ld.a", AddrRegs>;
+
+let Constraints = "$s2 = $dest,@earlyclobber $dest" in {
+  def LDA_aac_poi   : LOAD_BO_POST< 0x09, 0x06, "ld.a", AddrRegs>;
+  def LDA_aac_pri   : LOAD_BO_PRE<  0x09, 0x16, "ld.a", AddrRegs>;
+} // Constraints = "$s2 = $dest,@earlyclobber $dest"
+
+def LDA_aalc        : LOAD_BOL<           0x99, "ld.a", AddrRegs>;
+
+let mayLoad = 1, mayStore = 0 in
+def LDA_16_a15a10c  : SC<0xD8, (outs ImplAddrReg:$a15),
+                        (ins ImplStackPtrReg:$a10, uimm8_lsb00:$const8),
+                        "ld.a", "\t$a15, [$a10], $const8">;
+
+def LDA_16_aa       : LOAD_SLR<           0xD4, "ld.a", AddrRegs>;
+
+let Constraints = "$s2 = $dest,@earlyclobber $dest" in
+def LDA_16_aa_poi   : LOAD_SLR_POST<      0xC4, "ld.a", AddrRegs>;
+
+def LDA_16_aa15c    : LOAD_SLRO<0xC8, "ld.a", AddrRegs,    uimm4_lsb00>;
+def LDA_16_a15ac    : LOAD_SRO<0xCC,  "ld.a", ImplAddrReg, uimm4_lsb00>;
+
+// LD.B
+def LDB_dc          : LOAD_ABS<     0x05, 0x00, "ld.b">;
+def LDB_dac         : LOAD_BO<      0x09, 0x20, "ld.b">;
+def LDB_dp          : LOAD_BO_BR<   0x29, 0x00, "ld.b">;
+def LDB_dpc         : LOAD_BO_CR<   0x29, 0x10, "ld.b">;
+def LDB_dac_poi     : LOAD_BO_POST< 0x09, 0x00, "ld.b">;
+def LDB_dac_pri     : LOAD_BO_PRE<  0x09, 0x10, "ld.b">;
+def LDB_dalc        : LOAD_BOL<           0x79, "ld.b">;
+
+// LD.BU
+def LDBU_dc         : LOAD_ABS<     0x05, 0x01, "ld.bu">;
+def LDBU_dac        : LOAD_BO<      0x09, 0x21, "ld.bu">;
+def LDBU_dp         : LOAD_BO_BR<   0x29, 0x01, "ld.bu">;
+def LDBU_dpc        : LOAD_BO_CR<   0x29, 0x11, "ld.bu">;
+def LDBU_dac_poi    : LOAD_BO_POST< 0x09, 0x01, "ld.bu">;
+def LDBU_dac_pri    : LOAD_BO_PRE<  0x09, 0x11, "ld.bu">;
+def LDBU_dalc       : LOAD_BOL<           0x39, "ld.bu">;
+def LDBU_16_da      : LOAD_SLR<           0x14, "ld.bu">;
+def LDBU_16_da_poi  : LOAD_SLR_POST<      0x04, "ld.bu">;
+def LDBU_16_da15c   : LOAD_SLRO<0x08,           "ld.bu", DataRegs,    uimm4>;
+def LDBU_16_d15ac   : LOAD_SRO<0x0C,            "ld.bu", ImplDataReg, uimm4>;
+
+// LD.D
+def LDD_ec          : LOAD_ABS<     0x85, 0x01, "ld.d", ExtDataRegs>;
+
+let isCodeGenOnly = 0 in
+def LDD_eac         : LOAD_BO<      0x09, 0x25, "ld.d", ExtDataRegs>;
+def LDD_ep          : LOAD_BO_BR<   0x29, 0x05, "ld.d", ExtDataRegs>;
+def LDD_epc         : LOAD_BO_CR<   0x29, 0x15, "ld.d", ExtDataRegs>;
+def LDD_eac_poi     : LOAD_BO_POST< 0x09, 0x05, "ld.d", ExtDataRegs>;
+def LDD_eac_pri     : LOAD_BO_PRE<  0x09, 0x15, "ld.d", ExtDataRegs>;
+
+// LD.DA
+def LDDA_pc         : LOAD_ABS<     0x85, 0x03, "ld.da", ExtAddrRegs>;
+
+let isCodeGenOnly = 0 in
+def LDDA_pac        : LOAD_BO<      0x09, 0x27, "ld.da", ExtAddrRegs>;
+def LDDA_pp         : LOAD_BO_BR<   0x29, 0x07, "ld.da", ExtAddrRegs>;
+def LDDA_ppc        : LOAD_BO_CR<   0x29, 0x17, "ld.da", ExtAddrRegs>;
+def LDDA_pac_poi    : LOAD_BO_POST< 0x09, 0x07, "ld.da", ExtAddrRegs>;
+def LDDA_pac_pri    : LOAD_BO_PRE<  0x09, 0x17, "ld.da", ExtAddrRegs>;
+
+// LD.H
+def LDH_dc          : LOAD_ABS<     0x05, 0x02, "ld.h">;
+def LDH_dac         : LOAD_BO<      0x09, 0x22, "ld.h">;
+def LDH_dp          : LOAD_BO_BR<   0x29, 0x02, "ld.h">;
+def LDH_dpc         : LOAD_BO_CR<   0x29, 0x12, "ld.h">;
+def LDH_dac_poi     : LOAD_BO_POST< 0x09, 0x02, "ld.h">;
+def LDH_dac_pri     : LOAD_BO_PRE<  0x09, 0x12, "ld.h">;
+def LDH_dalc        : LOAD_BOL<           0xC9, "ld.h">;
+def LDH_16_da       : LOAD_SLR<           0x94, "ld.h">;
+def LDH_16_da_poi   : LOAD_SLR_POST<      0x84, "ld.h">;
+def LDH_16_da15c    : LOAD_SLRO<0x88, "ld.h", DataRegs,    uimm4_lsb0>;
+def LDH_16_d15ac    : LOAD_SRO<0x8C,  "ld.h", ImplDataReg, uimm4_lsb0>;
+
+// LD.HU
+def LDHU_dc         : LOAD_ABS<     0x05, 0x03, "ld.hu">;
+def LDHU_dac        : LOAD_BO<      0x09, 0x23, "ld.hu">;
+def LDHU_dp         : LOAD_BO_BR<   0x29, 0x03, "ld.hu">;
+def LDHU_dpc        : LOAD_BO_CR<   0x29, 0x13, "ld.hu">;
+def LDHU_dac_poi    : LOAD_BO_POST< 0x09, 0x03, "ld.hu">;
+def LDHU_dac_pri    : LOAD_BO_PRE<  0x09, 0x13, "ld.hu">;
+def LDHU_dalc       : LOAD_BOL<           0xB9, "ld.hu">;
+
+// LD.Q
+def LDQ_dc          : LOAD_ABS<     0x45, 0x00, "ld.q">;
+
+let isCodeGenOnly = 0 in
+def LDQ_dac         : LOAD_BO<      0x09, 0x28, "ld.q">;
+def LDQ_dp          : LOAD_BO_BR<   0x29, 0x08, "ld.q">;
+def LDQ_dpc         : LOAD_BO_CR<   0x29, 0x18, "ld.q">;
+def LDQ_dac_poi     : LOAD_BO_POST< 0x09, 0x08, "ld.q">;
+def LDQ_dac_pri     : LOAD_BO_PRE<  0x09, 0x18, "ld.q">;
+
+// LD.W
+def LDW_dc         : LOAD_ABS<      0x85, 0x00, "ld.w">;
+def LDW_dac        : LOAD_BO<       0x09, 0x24, "ld.w">;
+def LDW_dp         : LOAD_BO_BR<    0x29, 0x04, "ld.w">;
+def LDW_dpc        : LOAD_BO_CR<    0x29, 0x14, "ld.w">;
+def LDW_dac_poi    : LOAD_BO_POST<  0x09, 0x04, "ld.w">;
+def LDW_dac_pri    : LOAD_BO_PRE<   0x09, 0x14, "ld.w">;
+def LDW_dalc       : LOAD_BOL<            0x19, "ld.w">;
+
+let mayLoad = 1, mayStore = 0 in
+def LDW_16_d15a10c : SC<0x58, (outs ImplDataReg:$d15),
+                        (ins ImplStackPtrReg:$a10, uimm8_lsb00:$const8),
+                        "ld.w", "\t$d15, [$a10], $const8">;
+
+def LDW_16_da      : LOAD_SLR<            0x54, "ld.w">;
+def LDW_16_da_poi  : LOAD_SLR_POST<       0x44, "ld.w">;
+def LDW_16_da15c   : LOAD_SLRO<0x48, "ld.w", DataRegs,    uimm4_lsb00>;
+def LDW_16_d15ac   : LOAD_SRO<0x4C,  "ld.w", ImplDataReg, uimm4_lsb00>;
+
+// ST.A
+def STA_ca          : STORE_ABS<    0xA5, 0x02, "st.a", AddrRegs>;
+def STA_aca         : STORE_BO<     0x89, 0x26, "st.a", AddrRegs>;
+def STA_pa          : STORE_BO_BR<  0xA9, 0x06, "st.a", AddrRegs>;
+def STA_pca         : STORE_BO_CR<  0xA9, 0x16, "st.a", AddrRegs>;
+
+let Constraints = "$s2 = $dest,@earlyclobber $dest" in {
+  def STA_aca_poi   : STORE_BO_POST<0x89, 0x06, "st.a", AddrRegs>;
+  def STA_aca_pri   : STORE_BO_PRE< 0x89, 0x16, "st.a", AddrRegs>;
+} // Constraints = "$s2 = $dest,@earlyclobber $dest"
+
+def STA_alca        : STORE_BOL<          0xB5, "st.a", AddrRegs>;
+
+let mayStore = 1, mayLoad = 0 in
+def STA_16_a10ca15  : SC<0xF8, (outs), (ins ImplStackPtrReg:$a10,
+                         uimm8_lsb00:$const8, ImplAddrReg:$a15),
+                         "st.a", "\t[$a10], $const8, $a15">;
+
+def STA_16_aca15    : STORE_SRO<0xEC,  "st.a", ImplAddrReg, uimm4_lsb00>;
+def STA_16_aa       : STORE_SSR<          0xF4, "st.a", AddrRegs>;
+
+let Constraints = "$s2 = $dest,@earlyclobber $dest" in
+def STA_16_aa_poi   : STORE_SSR_POST<     0xE4, "st.a", AddrRegs>;
+
+def STA_16_a15ca    : STORE_SSRO<0xE8, "st.a", AddrRegs,    uimm4_lsb00>;
+
+// ST.B
+def STB_cd          : STORE_ABS<    0x25, 0x00, "st.b">;
+def STB_acd         : STORE_BO<     0x89, 0x20, "st.b">;
+def STB_pd          : STORE_BO_BR<  0xA9, 0x00, "st.b">;
+def STB_pcd         : STORE_BO_CR<  0xA9, 0x10, "st.b">;
+def STB_acd_poi     : STORE_BO_POST<0x89, 0x00, "st.b">;
+def STB_acd_pri     : STORE_BO_PRE< 0x89, 0x10, "st.b">;
+def STB_alcd        : STORE_BOL<          0xE9, "st.b">;
+def STB_16_acd15    : STORE_SRO<0x2C,  "st.b", ImplDataReg, uimm4>;
+def STB_16_ad       : STORE_SSR<          0x34, "st.b">;
+def STB_16_ad_poi   : STORE_SSR_POST<     0x24, "st.b">;
+def STB_16_a15cd    : STORE_SSRO<0x28, "st.b", DataRegs,    uimm4>;
+
+// ST.D
+def STD_ce          : STORE_ABS<    0xA5, 0x01, "st.d", ExtDataRegs>;
+
+let isCodeGenOnly = 0 in
+def STD_ace         : STORE_BO<     0x89, 0x25, "st.d", ExtDataRegs>;
+def STD_pe          : STORE_BO_BR<  0xA9, 0x05, "st.d", ExtDataRegs>;
+def STD_pce         : STORE_BO_CR<  0xA9, 0x15, "st.d", ExtDataRegs>;
+def STD_ace_poi     : STORE_BO_POST<0x89, 0x05, "st.d", ExtDataRegs>;
+def STD_ace_pri     : STORE_BO_PRE< 0x89, 0x15, "st.d", ExtDataRegs>;
+
+// ST.DA
+def STDA_cp         : STORE_ABS<    0xA5, 0x03, "st.da", ExtAddrRegs>;
+
+let isCodeGenOnly = 0 in
+def STDA_acp        : STORE_BO<     0x89, 0x27, "st.da", ExtAddrRegs>;
+def STDA_pp         : STORE_BO_BR<  0xA9, 0x07, "st.da", ExtAddrRegs>;
+def STDA_pcp        : STORE_BO_CR<  0xA9, 0x17, "st.da", ExtAddrRegs>;
+def STDA_acp_poi    : STORE_BO_POST<0x89, 0x07, "st.da", ExtAddrRegs>;
+def STDA_acp_pri    : STORE_BO_PRE< 0x89, 0x17, "st.da", ExtAddrRegs>;
+
+// ST.H
+def STH_cd          : STORE_ABS<    0x25, 0x02, "st.h">;
+def STH_acd         : STORE_BO<     0x89, 0x22, "st.h">;
+def STH_pd          : STORE_BO_BR<  0xA9, 0x02, "st.h">;
+def STH_pcd         : STORE_BO_CR<  0xA9, 0x12, "st.h">;
+def STH_acd_poi     : STORE_BO_POST<0x89, 0x02, "st.h">;
+def STH_acd_pri     : STORE_BO_PRE< 0x89, 0x12, "st.h">;
+def STH_alcd        : STORE_BOL<          0xF9, "st.h">;
+def STH_16_acd15    : STORE_SRO<0xAC,  "st.h", ImplDataReg, uimm4_lsb0>;
+def STH_16_ad       : STORE_SSR<          0xB4, "st.h">;
+def STH_16_ad_poi   : STORE_SSR_POST<     0xA4, "st.h">;
+def STH_16_a15cd    : STORE_SSRO<0xA8, "st.h", DataRegs,    uimm4_lsb0>;
+
+// ST.Q
+def STQ_cd          : STORE_ABS<    0x65, 0x00, "st.q">;
+
+let isCodeGenOnly = 0 in
+def STQ_acd         : STORE_BO<     0x89, 0x28, "st.q">;
+def STQ_pd          : STORE_BO_BR<  0xA9, 0x08, "st.q">;
+def STQ_pcd         : STORE_BO_CR<  0xA9, 0x18, "st.q">;
+def STQ_acd_poi     : STORE_BO_POST<0x89, 0x08, "st.q">;
+def STQ_acd_pri     : STORE_BO_PRE< 0x89, 0x18, "st.q">;
+
+// ST.W
+def STW_cd          : STORE_ABS<    0xA5, 0x00, "st.w">;
+def STW_acd         : STORE_BO<     0x89, 0x24, "st.w">;
+def STW_pd          : STORE_BO_BR<  0xA9, 0x04, "st.w">;
+def STW_pcd         : STORE_BO_CR<  0xA9, 0x14, "st.w">;
+def STW_acd_poi     : STORE_BO_POST<0x89, 0x04, "st.w">;
+def STW_acd_pri     : STORE_BO_PRE< 0x89, 0x14, "st.w">;
+def STW_alcd        : STORE_BOL<          0x59, "st.w">;
+
+let mayStore = 1, mayLoad = 0 in
+def STW_16_a10cd15  : SC<0x78, (outs), (ins ImplStackPtrReg:$a10,
+                         uimm8_lsb00:$const8, ImplDataReg:$d15),
+                         "st.w", "\t[$a10], $const8, $d15">;
+
+def STW_16_acd15    : STORE_SRO<0x6C,  "st.w", ImplDataReg, uimm4_lsb00>;
+def STW_16_ad       : STORE_SSR<          0x74, "st.w">;
+def STW_16_ad_poi   : STORE_SSR_POST<     0x64, "st.w">;
+def STW_16_a15cd    : STORE_SSRO<0x68, "st.w", DataRegs,    uimm4_lsb00>;

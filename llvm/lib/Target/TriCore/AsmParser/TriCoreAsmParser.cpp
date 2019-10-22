@@ -363,10 +363,18 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 4), (1 << 4) - 2,
         "value must be even integer and in the range");
+  case Match_InvalidUImm4_Lsb2:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, ((1 << 4) - 1) * 4,
+        "value must be divisible by 4 and in the range");
   case Match_InvalidSImm8_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
         "value must be even integer and in the range");
+  case Match_InvalidUImm8_Lsb2:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, ((1 << 8) - 1) * 4,
+        "value must be divisible by 4 and in the range");
   case Match_InvalidSImm15_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 2,
@@ -462,18 +470,51 @@ OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
   return MatchOperand_Success;
 }
 
+// Parsing operand in the forms:
+// [<reg>], [+<reg>], [<reg>+], [<reg>+r], [<reg>+c]
 OperandMatchResultTy
 TriCoreAsmParser::parseMemOpBaseReg(OperandVector &Operands) {
+  bool PlusFound = false;
+
   if (getLexer().isNot(AsmToken::LBrac))
-    return MatchOperand_ParseFail;
+    return MatchOperand_NoMatch;
 
   // creating '[' token operand
   Operands.push_back(TriCoreOperand::createToken("[", getLoc()));
   getParser().Lex(); // eat '['
 
+  if (getLexer().is(AsmToken::Plus)) {
+    PlusFound = true;
+    Operands.push_back(TriCoreOperand::createToken("+", getLoc()));
+    getParser().Lex(); // eat '+'
+  }
+
   // parse the address register
   if (parseRegister(Operands) != MatchOperand_Success)
     return MatchOperand_ParseFail;
+
+  // cant have 2 '+'
+  if (getLexer().is(AsmToken::Plus) && PlusFound)
+    return MatchOperand_ParseFail;
+
+  // parse '+', "+r", "+c"
+  if ((getLexer().is(AsmToken::Plus) && !PlusFound)) {
+    // creating '+' token operand
+    Operands.push_back(TriCoreOperand::createToken("+", getLoc()));
+    getParser().Lex(); // eat '+'
+
+    if (getLexer().getKind() == AsmToken::Identifier) {
+      StringRef Identifier = getParser().getTok().getIdentifier();
+
+      if (!Identifier.equals("r") && !Identifier.equals("c"))
+        return MatchOperand_ParseFail;
+      else {
+        // creating 'c' or 'r' token operand
+        Operands.push_back(TriCoreOperand::createToken(Identifier, getLoc()));
+        getParser().Lex(); // eat 'Identifier'
+      }
+    }
+  }
 
   // check if next token is ']'
   if (getLexer().isNot(AsmToken::RBrac))
