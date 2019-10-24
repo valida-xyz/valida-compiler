@@ -447,6 +447,21 @@ let mayLoad = 0, mayStore = 1 in {
                         mnemonic, "\t[$s2], $off4, $x15">;
 } // mayLoad = 0, mayStore = 1
 
+// 2.10.4 Move to Address
+
+let isMoveReg = 1, isReMaterializable = 1 in {
+  let s1 = 0, n = 0 in
+  class M2ADDR_RR<bits<8> opc1, bits<8> opc2, string mnemonic,
+                  RegisterClass DEST = AddrRegs, RegisterClass SRC = DEST> 
+                  :  RR<opc1, opc2, (outs DEST:$d), (ins SRC:$s2),
+                        mnemonic, "\t$d, $s2">;
+
+  class M2ADDR_SRR<bits<8> opc1, string mnemonic,
+                  RegisterClass DEST = AddrRegs, RegisterClass SRC = DEST> 
+                  : SRR<opc1, (outs DEST:$s1_d), (ins SRC:$s2),
+                        mnemonic, "\t$s1_d, $s2">;
+} // isMoveReg = 1, isReMaterializable = 1
+
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
@@ -1227,3 +1242,28 @@ def STW_16_acd15    : STORE_SRO<0x6C,  "st.w", ImplDataReg, uimm4_lsb00>;
 def STW_16_ad       : STORE_SSR<          0x74, "st.w">;
 def STW_16_ad_poi   : STORE_SSR_POST<     0x64, "st.w">;
 def STW_16_a15cd    : STORE_SSRO<0x68, "st.w", DataRegs,    uimm4_lsb00>;
+
+
+// 2.10.4 Move to Address
+
+// MOV.A
+def MOVA_ad         : M2ADDR_RR<0x01, 0x63, "mov.a", AddrRegs, DataRegs>;
+
+let isMoveImm = 1 in
+def MOVA_16_ac      : SRC<0xA0, (outs AddrRegs:$s1_d), (ins uimm4:$const4),
+                                            "mov.a", "\t$s1_d, $const4">;
+
+def MOVA_16_da      : M2ADDR_SRR<0x60,      "mov.a", AddrRegs, DataRegs>;
+
+// MOV.AA
+def MOVAA_aa        : M2ADDR_RR<0x01, 0x00, "mov.aa">;
+def MOVAA_16_da     : M2ADDR_SRR<0x40,      "mov.aa">;
+
+// MOV.D
+def MOVD_da         : M2ADDR_RR<0x01, 0x4C, "mov.d", DataRegs, AddrRegs>;
+def MOVD_16_da      : M2ADDR_SRR<0x80,      "mov.d", DataRegs ,AddrRegs>;
+
+// MOVH.A
+let s1 = 0, isMoveImm = 1 in
+def MOVHA_ac        : RLC<0x91, (outs AddrRegs:$d), (ins uimm16:$const16),
+                                            "movh.a", "\t$d, $const16">;
