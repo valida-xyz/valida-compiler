@@ -565,6 +565,20 @@ let isMoveReg = 1, isReMaterializable = 1 in {
                         mnemonic, "\t$s1_d, $s2">;
 } // isMoveReg = 1, isReMaterializable = 1
 
+// 2.11.2 Context Loading and Storing
+
+let s1_d = 0 in {
+  class CLS_ABS<bits<8> opc1, bits<2> opc2, string mnemonic>
+              : ABS<opc1, opc2, (outs),
+                    (ins off18_abs:$off18),
+                    mnemonic , "\t$off18">;
+
+  class CLS_BO<bits<8> opc1, bits<6> opc2, string mnemonic>
+             : BO<opc1, opc2, (outs), 
+                  (ins AddrRegs:$s2, simm10:$off10),
+                  mnemonic , "\t[${s2}], $off10">;
+} // s1_d = 0
+
 //===----------------------------------------------------------------------===//
 //  Check Instructions.
 //
@@ -1908,3 +1922,34 @@ let n = 0, isReMaterializable = 1 in {
   // IXMINU
   def IXMINU_eed      : CHECK_RRR<0x6B, 0x09, "ixmin.u">;
 } // n = 0, isReMaterializable = 1
+
+// 2.11.2 Context Loading and Storing
+
+let mayLoad = 1, mayStore = 0 in {
+  let Defs = [A10,A11,A12,A13,A14,A15,D8,D9,D10,D11,D12,D13,D14,D15] in {
+    // LDUCX
+    def LDUCX_c       : CLS_ABS<0x15, 0x03, "lducx" >;
+    def LDUCX_ac      : CLS_BO<0x49,  0x25, "lducx" >;
+  } // Defs = [A10,A11,A12,A13,A14,A15,D8,D9,D10,D11,D12,D13,D14,D15]
+
+  let Defs = [A2,A3,A4,A5,A6,A7,D0,D1,D2,D3,D4,D5,D6,D7] in {
+    // LDLCX
+    def LDLCX_c       : CLS_ABS<0x15, 0x02, "ldlcx" >;
+    def LDLCX_ac      : CLS_BO<0x49,  0x24, "ldlcx" >;
+  } // Defs = [A2,A3,A4,A5,A6,A7,D0,D1,D2,D3,D4,D5,D6,D7]
+} // mayLoad = 1, mayStore = 0
+
+let mayLoad = 0, mayStore = 1 in {
+  let Uses = [A10,A11,A12,A13,A14,A15,D8,D9,D10,D11,D12,D13,D14,
+              D15,PCXI,PSW] in {
+    // STUCX
+    def STUCX_c         : CLS_ABS<0x15, 0x01, "stucx" >;
+    def STUCX_ac        : CLS_BO<0x49,  0x27, "stucx" >;
+  } // Uses = [A10,A11,A12,A13,A14,A15,D8,D9,D10,D11,D12,D13,D14,D15,PCXI,PSW]
+
+  let Uses = [A2,A3,A4,A5,A6,A7,A11,D0,D1,D2,D3,D4,D5,D6,D7,PCXI] in {
+    // STLCX
+    def STLCX_c         : CLS_ABS<0x15, 0x00, "stlcx" >;
+    def STLCX_ac        : CLS_BO<0x49,  0x26, "stlcx" >;
+  } // Uses = [A2,A3,A4,A5,A6,A7,A11,D0,D1,D2,D3,D4,D5,D6,D7,PCXI]
+} // mayLoad = 0, mayStore = 1
