@@ -109,6 +109,10 @@ def simm9 : GenericSignedImmediate<9>;
 // A 9-bit unsigned immediate.
 def uimm9 : GenericUnsignedImmediate<9>;
 
+// A 16-bit signed immediate for BOL types which has BO variant too
+// to enforce the generation of the BOL type
+def off16 : GenericSignedImmediate<16>;
+
 // A 10-bit signed immediate.
 def simm10 : GenericSignedImmediate<10>;
 
@@ -367,7 +371,6 @@ let mayLoad = 1, mayStore = 0 in {
                         (ins RC2:$s2, simm10:$off10),
                         mnemonic, "\t$s1_d, [${s2}" #post# "], $off10">;
 
-  let isCodeGenOnly = 1 in
   class LOAD_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
                 RegisterClass RC = DataRegs>
                   :  LOAD_BO_BASE<opc1, opc2, mnemonic, RC, "">;
@@ -400,7 +403,7 @@ let mayLoad = 1, mayStore = 0 in {
 
   class LOAD_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
                   :  BOL<opc1, (outs RC:$s1_d),
-                        (ins AddrRegs:$s2, simm16:$off16),
+                        (ins AddrRegs:$s2, off16:$off16),
                         mnemonic, "\t$s1_d, [$s2], $off16">;
 
   class LOAD_SLR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
@@ -442,7 +445,6 @@ let mayLoad = 0, mayStore = 1 in {
                         (ins RC2:$s2, simm10:$off10, RC:$s1_d),
                         mnemonic, "\t[${s2}" #post# "], $off10, $s1_d">;
 
-  let isCodeGenOnly = 1 in
   class STORE_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
                 RegisterClass RC = DataRegs>
                   : STORE_BO_BASE<opc1, opc2, mnemonic, RC, "">;
@@ -476,7 +478,7 @@ let mayLoad = 0, mayStore = 1 in {
 
   class STORE_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
                   :  BOL<opc1, (outs),
-                        (ins AddrRegs:$s2, simm16:$off16, RC:$s1_d),
+                        (ins AddrRegs:$s2, off16:$off16, RC:$s1_d),
                         mnemonic, "\t[$s2], $off16, $s1_d">;
 
   class STORE_SSR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
@@ -1141,13 +1143,12 @@ let isReMaterializable = 1 in {
                               (ins off18_abs:$off18),
                               "lea", "\t$s1_d, $off18">;
 
-  let isCodeGenOnly = 1 in
   def LEA_aasc           :  BO<0x49, 0x28, (outs AddrRegs:$s1_d),
                               (ins AddrRegs:$s2, simm10:$off10),
                               "lea", "\t$s1_d, [$s2], $off10">;
 
   def LEA_aac            : BOL<0xD9, (outs AddrRegs:$s1_d),
-                              (ins AddrRegs:$s2, simm16:$off16),
+                              (ins AddrRegs:$s2, off16:$off16),
                               "lea", "\t$s1_d, [$s2], $off16">;
 
   // LHA
@@ -1364,8 +1365,6 @@ def LDBU_16_d15ac   : LOAD_SRO<0x0C,            "ld.bu", ImplDataReg, uimm4>;
 
 // LD.D
 def LDD_ec          : LOAD_ABS<     0x85, 0x01, "ld.d", ExtDataRegs>;
-
-let isCodeGenOnly = 0 in
 def LDD_eac         : LOAD_BO<      0x09, 0x25, "ld.d", ExtDataRegs>;
 def LDD_ep          : LOAD_BO_BR<   0x29, 0x05, "ld.d", ExtDataRegs>;
 def LDD_epc         : LOAD_BO_CR<   0x29, 0x15, "ld.d", ExtDataRegs>;
@@ -1374,8 +1373,6 @@ def LDD_eac_pri     : LOAD_BO_PRE<  0x09, 0x15, "ld.d", ExtDataRegs>;
 
 // LD.DA
 def LDDA_pc         : LOAD_ABS<     0x85, 0x03, "ld.da", ExtAddrRegs>;
-
-let isCodeGenOnly = 0 in
 def LDDA_pac        : LOAD_BO<      0x09, 0x27, "ld.da", ExtAddrRegs>;
 def LDDA_pp         : LOAD_BO_BR<   0x29, 0x07, "ld.da", ExtAddrRegs>;
 def LDDA_ppc        : LOAD_BO_CR<   0x29, 0x17, "ld.da", ExtAddrRegs>;
@@ -1406,8 +1403,6 @@ def LDHU_dalc       : LOAD_BOL<           0xB9, "ld.hu">;
 
 // LD.Q
 def LDQ_dc          : LOAD_ABS<     0x45, 0x00, "ld.q">;
-
-let isCodeGenOnly = 0 in
 def LDQ_dac         : LOAD_BO<      0x09, 0x28, "ld.q">;
 def LDQ_dp          : LOAD_BO_BR<   0x29, 0x08, "ld.q">;
 def LDQ_dpc         : LOAD_BO_CR<   0x29, 0x18, "ld.q">;
@@ -1474,8 +1469,6 @@ def STB_16_a15cd    : STORE_SSRO<0x28, "st.b", DataRegs,    uimm4>;
 
 // ST.D
 def STD_ce          : STORE_ABS<    0xA5, 0x01, "st.d", ExtDataRegs>;
-
-let isCodeGenOnly = 0 in
 def STD_ace         : STORE_BO<     0x89, 0x25, "st.d", ExtDataRegs>;
 def STD_pe          : STORE_BO_BR<  0xA9, 0x05, "st.d", ExtDataRegs>;
 def STD_pce         : STORE_BO_CR<  0xA9, 0x15, "st.d", ExtDataRegs>;
@@ -1484,8 +1477,6 @@ def STD_ace_pri     : STORE_BO_PRE< 0x89, 0x15, "st.d", ExtDataRegs>;
 
 // ST.DA
 def STDA_cp         : STORE_ABS<    0xA5, 0x03, "st.da", ExtAddrRegs>;
-
-let isCodeGenOnly = 0 in
 def STDA_acp        : STORE_BO<     0x89, 0x27, "st.da", ExtAddrRegs>;
 def STDA_pp         : STORE_BO_BR<  0xA9, 0x07, "st.da", ExtAddrRegs>;
 def STDA_pcp        : STORE_BO_CR<  0xA9, 0x17, "st.da", ExtAddrRegs>;
@@ -1507,8 +1498,6 @@ def STH_16_a15cd    : STORE_SSRO<0xA8, "st.h", DataRegs,    uimm4_lsb0>;
 
 // ST.Q
 def STQ_cd          : STORE_ABS<    0x65, 0x00, "st.q">;
-
-let isCodeGenOnly = 0 in
 def STQ_acd         : STORE_BO<     0x89, 0x28, "st.q">;
 def STQ_pd          : STORE_BO_BR<  0xA9, 0x08, "st.q">;
 def STQ_pcd         : STORE_BO_CR<  0xA9, 0x18, "st.q">;
