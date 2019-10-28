@@ -22,6 +22,7 @@
 namespace llvm {
 
 class TriCoreInstrInfo : public TriCoreGenInstrInfo {
+  const TriCoreRegisterInfo TRI;
 
 public:
   TriCoreInstrInfo();
@@ -31,6 +32,10 @@ public:
 
   ArrayRef<std::pair<unsigned int, const char *>>
   getSerializableDirectMachineOperandTargetFlags() const override;
+
+  void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
+                   const DebugLoc &DL, unsigned DestReg, unsigned SrcReg,
+                   bool KillSrc) const override;
 };
 } // namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREINSTRINFO_H

@@ -1,0 +1,207 @@
+# RUN: llc -mtriple=tricore -global-isel -run-pass=postrapseudos -verify-machineinstrs %s -o - | FileCheck %s
+
+# Check that we select a physical register COPY to an appropriate MOV instruction.
+
+---
+name:            mov_dd
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mov_dd
+    ; CHECK: $d2 = MOV_dd $d4
+    $d2 = COPY $d4
+...
+
+---
+name:            mov_dd_killed
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mov_dd_killed
+    ; CHECK: $d2 = MOV_dd killed $d4
+    $d2 = COPY killed $d4
+...
+
+---
+name:            movd_da
+body:             |
+  bb.0:
+    liveins: $a4
+
+    ; CHECK-LABEL: name: movd_da
+    ; CHECK: $d2 = MOVD_da $a4
+    $d2 = COPY $a4
+...
+
+---
+name:            movd_da_killed
+body:             |
+  bb.0:
+    liveins: $a4
+
+    ; CHECK-LABEL: name: movd_da_killed
+    ; CHECK: $d2 = MOVD_da killed $a4
+    $d2 = COPY killed $a4
+...
+
+---
+name:            mova_ad
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mova_ad
+    ; CHECK: $a2 = MOVA_ad $d4
+    $a2 = COPY $d4
+...
+
+---
+name:            mova_ad_killed
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mova_ad_killed
+    ; CHECK: $a2 = MOVA_ad killed $d4
+    $a2 = COPY killed $d4
+...
+
+---
+name:            mova_aa
+body:             |
+  bb.0:
+    liveins: $a4
+
+    ; CHECK-LABEL: name: mova_aa
+    ; CHECK: $a2 = MOVAA_aa $a4
+    $a2 = COPY $a4
+...
+
+---
+name:            mova_aa_killed
+body:             |
+  bb.0:
+    liveins: $a4
+
+    ; CHECK-LABEL: name: mova_aa_killed
+    ; CHECK: $a2 = MOVAA_aa killed $a4
+    $a2 = COPY killed $a4
+...
+
+---
+name:            mov_ed
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mov_ed
+    ; CHECK: $e2 = MOV_ed $d4
+    $e2 = COPY $d4
+...
+
+---
+name:            mov_ed_killed
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mov_ed_killed
+    ; CHECK: $e2 = MOV_ed killed $d4
+    $e2 = COPY killed $d4
+...
+
+---
+name:            mov_edd
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: mov_edd
+    ; CHECK: $e2 = MOV_edd $d5, $d4
+    $e2 = COPY $e4
+...
+
+---
+name:            mov_edd_killed
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: mov_edd_killed
+    ; CHECK: $e2 = MOV_edd killed $d5, killed $d4
+    $e2 = COPY killed $e4
+...
+
+---
+name:            copy_e_p
+body:             |
+  bb.0:
+    liveins: $p4
+
+    ; CHECK-LABEL: name: copy_e_p
+    ; CHECK: $d2 = MOVD_da $a4
+    ; CHECK: $d3 = MOVD_da $a5
+    $e2 = COPY $p4
+...
+
+---
+name:            copy_e_p_killed
+body:             |
+  bb.0:
+    liveins: $p4
+
+    ; CHECK-LABEL: name: copy_e_p_killed
+    ; CHECK: $d2 = MOVD_da killed $a4
+    ; CHECK: $d3 = MOVD_da killed $a5
+    $e2 = COPY killed $p4
+...
+
+---
+name:            copy_p_p
+body:             |
+  bb.0:
+    liveins: $p4
+
+    ; CHECK-LABEL: name: copy_p_p
+    ; CHECK: $a2 = MOVAA_aa $a4
+    ; CHECK: $a3 = MOVAA_aa $a5
+    $p2 = COPY $p4
+...
+
+---
+name:            copy_p_p_killed
+body:             |
+  bb.0:
+    liveins: $p4
+
+    ; CHECK-LABEL: name: copy_p_p_killed
+    ; CHECK: $a2 = MOVAA_aa killed $a4
+    ; CHECK: $a3 = MOVAA_aa killed $a5
+    $p2 = COPY killed $p4
+...
+
+---
+name:            copy_p_e
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: copy_p_e
+    ; CHECK: $a2 = MOVA_ad $d4
+    ; CHECK: $a3 = MOVA_ad $d5
+    $p2 = COPY $e4
+...
+
+---
+name:            copy_p_e_killed
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: copy_p_e_killed
+    ; CHECK: $a2 = MOVA_ad killed $d4
+    ; CHECK: $a3 = MOVA_ad killed $d5
+    $p2 = COPY killed $e4
+...

@@ -29,7 +29,7 @@
 
 using namespace llvm;
 
-TriCoreInstrInfo::TriCoreInstrInfo() : TriCoreGenInstrInfo() {}
+TriCoreInstrInfo::TriCoreInstrInfo() : TriCoreGenInstrInfo(), TRI() {}
 
 std::pair<unsigned int, unsigned int>
 TriCoreInstrInfo::decomposeMachineOperandsTargetFlags(unsigned int TF) const {
@@ -47,4 +47,123 @@ TriCoreInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
   };
 
   return makeArrayRef(TargetFlags);
+}
+
+void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
+                                   MachineBasicBlock::iterator MI,
+                                   const DebugLoc &DL, unsigned DestReg,
+                                   unsigned SrcReg, bool KillSrc) const {
+
+  if (TriCore::DataRegsRegClass.contains(DestReg)) {
+
+    // Copy from data register to data register -> MOV_dd
+    if (TriCore::DataRegsRegClass.contains(SrcReg)) {
+      BuildMI(MBB, MI, DL, get(TriCore::MOV_dd), DestReg)
+          .addUse(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+
+    // Copy from address register to data register -> MOVD_da
+    if (TriCore::AddrRegsRegClass.contains(SrcReg)) {
+      BuildMI(MBB, MI, DL, get(TriCore::MOVD_da), DestReg)
+          .addUse(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
+
+  if (TriCore::AddrRegsRegClass.contains(DestReg)) {
+    // Copy from address register to address register -> MOVAA_aa
+    if (TriCore::AddrRegsRegClass.contains(SrcReg)) {
+      BuildMI(MBB, MI, DL, get(TriCore::MOVAA_aa), DestReg)
+          .addUse(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+
+    // Copy from data register to address register -> MOVA_ad
+    if (TriCore::DataRegsRegClass.contains(SrcReg)) {
+      BuildMI(MBB, MI, DL, get(TriCore::MOVA_ad), DestReg)
+          .addUse(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
+
+  if (TriCore::ExtDataRegsRegClass.contains(DestReg)) {
+
+    // Copy from extended data register to extended data register -> MOV_edd
+    if (TriCore::ExtDataRegsRegClass.contains(SrcReg)) {
+      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
+      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOV_edd), DestReg)
+          .addUse(HigherSrcReg, getKillRegState(KillSrc))
+          .addUse(LowerSrcReg, getKillRegState(KillSrc));
+      return;
+    }
+
+    // Copy from data register to extended data register -> MOV_ed
+    if (TriCore::DataRegsRegClass.contains(SrcReg)) {
+      BuildMI(MBB, MI, DL, get(TriCore::MOV_ed), DestReg)
+          .addUse(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+
+    // Copy from extended address register to extended data register
+    // We need to move both sub-registers from the extended address
+    // register to data registers using MOV_da
+    if (TriCore::ExtAddrRegsRegClass.contains(SrcReg)) {
+      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
+      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
+
+      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::dsub0);
+      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::dsub1);
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVD_da), LowerDstReg)
+          .addUse(LowerSrcReg, getKillRegState(KillSrc));
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVD_da), HigherDstReg)
+          .addUse(HigherSrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
+
+  if (TriCore::ExtAddrRegsRegClass.contains(DestReg)) {
+
+    // Copy from extended address register to extended address register
+    // We need to move both sub-registers from the extended address
+    // register to the address registers using MOVAA_aa
+    if (TriCore::ExtAddrRegsRegClass.contains(SrcReg)) {
+      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
+      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
+
+      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
+      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVAA_aa), LowerDstReg)
+          .addUse(LowerSrcReg, getKillRegState(KillSrc));
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVAA_aa), HigherDstReg)
+          .addUse(HigherSrcReg, getKillRegState(KillSrc));
+      return;
+    }
+
+    // Copy from extended data register to extended address register
+    // We need to move both sub-registers from the extended address
+    // register to the data registers using MOVA_ad
+    if (TriCore::ExtDataRegsRegClass.contains(SrcReg)) {
+      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
+      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
+
+      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
+      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVA_ad), LowerDstReg)
+          .addUse(LowerSrcReg, getKillRegState(KillSrc));
+
+      BuildMI(MBB, MI, DL, get(TriCore::MOVA_ad), HigherDstReg)
+          .addUse(HigherSrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
+
+  llvm_unreachable("unimplemented reg-to-reg copy");
 }
