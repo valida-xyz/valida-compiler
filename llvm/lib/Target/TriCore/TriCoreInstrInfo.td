@@ -819,6 +819,24 @@ let n = 0 in {
   } // s1 = 0
 } // n = 0
 
+// 2.1.9 Count Leading Zeros, Ones and Signs
+
+let n = 0, s2 = 0, isReMaterializable = 1 in {
+  // CLZ
+  def CLZ_dd         :  RR<0x0F, 0x1B, (outs DataRegs:$d),
+                            (ins DataRegs:$s1),
+                            "clz", "\t$d, $s1">;
+
+  // CLO
+  def CLO_dd         :  RR<0x0F, 0x1C, (outs DataRegs:$d),
+                            (ins DataRegs:$s1),
+                            "clo", "\t$d, $s1">;
+
+  // CLS
+  def CLS_dd         :  RR<0x0F, 0x1D, (outs DataRegs:$d),
+                            (ins DataRegs:$s1),
+                            "cls", "\t$d, $s1">;
+} // n = 0, s2 = 0, isReMaterializable = 1
 
 // 2.1.10 Shift.
 
