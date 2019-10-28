@@ -882,6 +882,108 @@ let Defs = [PSW] in {
   def SHAS_ddd       :  SHIFT_RR<0x0F, 0x02,  "shas">;
 } // Defs = [PSW]
 
+// 2.1.11 Bit-Field Extract and Insert
+
+let isReMaterializable = 1 in {
+  let s2 = 0 in {
+    // EXTR
+    def EXTR_ddcc    :  RRPW<0x37, 0x02, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, uimm5:$pos, uimm5:$width),
+                            "extr", "\t$d, $s1, $pos, $width">;
+
+    def EXTR_dde     :  RRRR<0x17, 0x02, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, ExtDataRegs:$s3),
+                            "extr", "\t$d, $s1, $s3">;
+
+    def EXTR_dddc    :  RRRW<0x57, 0x02, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, DataRegs:$s3, uimm5:$width),
+                            "extr", "\t$d, $s1, $s3, $width">;
+
+    // EXTR.U
+    def EXTRU_ddcc   :  RRPW<0x37, 0x03, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, uimm5:$pos, uimm5:$width),
+                            "extr.u", "\t$d, $s1, $pos, $width">;
+
+    def EXTRU_dde    :  RRRR<0x17, 0x03, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, ExtDataRegs:$s3),
+                            "extr.u", "\t$d, $s1, $s3">;
+
+    def EXTRU_dddc   :  RRRW<0x57, 0x03, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, DataRegs:$s3, uimm5:$width),
+                            "extr.u", "\t$d, $s1, $s3, $width">;
+  } // s2 = 0
+
+  // DEXTR
+  let width = 0 in
+    def DEXTR_dddc   :  RRPW<0x77, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2, uimm5:$pos),
+                          "dextr", "\t$d, $s1, $s2, $pos">;
+
+  def DEXTR_dddd     :  RRRR<0x17, 0x04, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2, DataRegs:$s3),
+                          "dextr", "\t$d, $s1, $s2, $s3">;
+
+  // INSERT
+  def INSERT_ddccc   :  RCPW<0xB7, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, uimm4:$const4,
+                          uimm5:$pos, uimm5:$width),
+                          "insert", "\t$d, $s1, $const4, $pos, $width">;
+
+  def INSERT_ddce    :  RCRR<0x97, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, uimm4:$const4, ExtDataRegs:$s3),
+                          "insert", "\t$d, $s1, $const4, $s3">;
+
+  def INSERT_ddcdc   :  RCRW<0xD7, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, uimm4:$const4,
+                          DataRegs:$s3, uimm5:$width),
+                          "insert", "\t$d, $s1, $const4, $s3, $width">;
+
+  def INSERT_dddcc   :  RRPW<0x37, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2,
+                          uimm5:$pos, uimm5:$width),
+                          "insert", "\t$d, $s1, $s2, $pos, $width">;
+
+  def INSERT_ddde    :  RRRR<0x17, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2, ExtDataRegs:$s3),
+                          "insert", "\t$d, $s1, $s2, $s3">;
+
+  def INSERT_ddddc   :  RRRW<0x57, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2,
+                          DataRegs:$s3, uimm5:$width),
+                          "insert", "\t$d, $s1, $s2, $s3, $width">;
+
+  // INS.T
+  def INST_ddcdc     : BIT<0x67, 0x00, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, uimm5:$pos1,
+                          DataRegs:$s2, uimm5:$pos2),
+                          "ins.t", "\t$d, $s1, $pos1, $s2, $pos2">;
+
+  // INSN.T
+  def INSNT_ddcdc    : BIT<0x67, 0x01, (outs DataRegs:$d),
+                          (ins DataRegs:$s1, uimm5:$pos1,
+                          DataRegs:$s2, uimm5:$pos2),
+                          "insn.t", "\t$d, $s1, $pos1, $s2, $pos2">;
+
+  let s1 = 0 in {
+    // IMASK
+    def IMASK_eccc   :  RCPW<0xB7, 0x01, (outs ExtDataRegs:$d),
+                          (ins uimm4:$const4, uimm5:$pos, uimm5:$width),
+                          "imask", "\t$d, $const4, $pos, $width">; 
+
+    def IMASK_ecdc   :  RCRW<0xD7, 0x01, (outs ExtDataRegs:$d),
+                          (ins uimm4:$const4, DataRegs:$s3, uimm5:$width),
+                          "imask", "\t$d, $const4, $s3, $width">;
+
+    def IMASK_edcc   :  RRPW<0x37, 0x01, (outs ExtDataRegs:$d),
+                          (ins DataRegs:$s2, uimm5:$pos, uimm5:$width),
+                          "imask", "\t$d, $s2, $pos, $width">;
+
+    def IMASK_eddc   :  RRRW<0x57, 0x01, (outs ExtDataRegs:$d),
+                          (ins DataRegs:$s2, DataRegs:$s3, uimm5:$width),
+                          "imask", "\t$d, $s2, $s3, $width">;
+  } // s1 = 0
+} // isReMaterializable = 1
+
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.
 //
