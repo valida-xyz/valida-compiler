@@ -32,6 +32,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s1, s64)
       .widenScalarToNextPow2(0, 32);
 
+  // Constants
+
   // G_CONSTANT is only legal for types that match our register size
   getActionDefinitionsBuilder(G_CONSTANT)
       .legalFor({p0, s32, s64})
@@ -45,6 +47,26 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
+
+  // Comparisons & Select
+
+  // G_ICMP is only legal for scalar 32-bit and pointer types. Result is s32.
+  getActionDefinitionsBuilder(G_ICMP)
+      .legalFor({{s32, s32}, {s32, p0}})
+      .clampScalar(1, s32, s32)
+      .clampScalar(0, s32, s32);
+
+  // G_SELECT is only valid for 32-bit and pointer types. Condition is s1.
+  getActionDefinitionsBuilder(G_SELECT)
+      .legalFor({{s32, s1}, {p0, s1}})
+      .clampScalar(0, s32, s32);
+
+  // Extensions
+
+  // G_{ANY,S,Z}EXT is legal when the result type is s32 or s64 and the operand
+  // type is s1, s8, s16 or s32
+  getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT})
+      .legalForCartesianProduct({s32, s64}, {s1, s8, s16, s32});
 
   // G_MERGE_VALUES and G_UNMERGE_VALUES should require the smaller type to be
   // s32 and the bigger type to be 64 bits

@@ -1,0 +1,81 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_select_p0
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_select_p0
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY2:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(p0) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: $a2 = COPY [[SELECT]](p0)
+    %0:_(s32) = COPY $d4
+    %1:_(p0) = COPY $a4
+    %2:_(p0) = COPY $a5
+    %3:_(s1) = G_TRUNC %0(s32)
+    %4:_(p0) = G_SELECT %3(s1), %1, %2
+    $a2 = COPY %4(p0)
+...
+
+---
+name:            test_select_s16
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_select_s16
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: $d2 = COPY [[SELECT]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = COPY $d6
+    %3:_(s1) = G_TRUNC %0(s32)
+    %4:_(s32) =G_SELECT %3(s1), %1, %2
+    $d2 = COPY %4(s32)
+...
+
+---
+name:            test_select_s32
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_select_s32
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: $d2 = COPY [[SELECT]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = COPY $d6
+    %3:_(s1) = G_TRUNC %0(s32)
+    %4:_(s32) =G_SELECT %3(s1), %1, %2
+    $d2 = COPY %4(s32)
+...
+
+---
+name:            test_select_s64
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_select_s64
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e8
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[UNMERGE:%[0-9]+]]:_(s32), [[UNMERGE1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:_(s32), [[UNMERGE3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY2]](s64)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[UNMERGE]], [[UNMERGE2]]
+    ; CHECK: [[SELECT1:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[UNMERGE1]], [[UNMERGE3]]
+    ; CHECK: [[MERGE:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[SELECT]](s32), [[SELECT1]]
+    ; CHECK: $e2 = COPY [[MERGE]](s64)
+    %0:_(s32) = COPY $d4
+    %1:_(s64) = COPY $e6
+    %2:_(s64) = COPY $e8
+    %3:_(s1) = G_TRUNC %0(s32)
+    %4:_(s64) =G_SELECT %3(s1), %1, %2
+    $e2 = COPY %4(s64)
+...

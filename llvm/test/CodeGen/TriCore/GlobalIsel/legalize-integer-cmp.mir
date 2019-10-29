@@ -1,0 +1,92 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+
+# No need to test G_ICMP with result type != s1 as this cannot be encountered in the wild. AArch64 also does not support it.
+---
+name:            test_icmp_p0
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_p0
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[COPY]](p0), [[COPY1]]
+    ; CHECK: [[CONST:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]]
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[CONST]]
+    ; CHECK: $d2 = COPY [[AND]]
+    %0:_(p0) = COPY $a4
+    %1:_(p0) = COPY $a5
+    %2:_(s1) = G_ICMP intpred(slt), %0(p0), %1
+    %3:_(s32) = G_ZEXT %2(s1)
+    $d2 = COPY %3(s32)
+...
+
+---
+name:            test_icmp_s16
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_s16
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s16) = G_TRUNC [[COPY1]](s32)
+    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC]](s16)
+    ; CHECK: [[SEXT1:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC1]](s16)
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[SEXT]](s32), [[SEXT1]]
+    ; CHECK: [[CONST:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]]
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[CONST]]
+    ; CHECK: $d2 = COPY [[AND]]
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s16) = G_TRUNC %0(s32)
+    %3:_(s16) = G_TRUNC %1(s32)
+    %4:_(s1) = G_ICMP intpred(slt), %2(s16), %3
+    %5:_(s32) = G_ZEXT %4(s1)
+    $d2 = COPY %5(s32)
+...
+
+---
+name:            test_icmp_s32
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_s32
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[COPY]](s32), [[COPY1]]
+    ; CHECK: [[CONST:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]]
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[CONST]]
+    ; CHECK: $d2 = COPY [[AND]]
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s1) = G_ICMP intpred(slt), %0(s32), %1
+    %3:_(s32) = G_ZEXT %2(s1)
+    $d2 = COPY %3(s32)
+...
+
+---
+name:            test_icmp_s64
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_s64
+    ; CHECK: [[E4:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[E6:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[E4_LOWER:%[0-9]+]]:_(s32), [[E4_UPPER:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E4]](s64)
+    ; CHECK: [[E6_LOWER:%[0-9]+]]:_(s32), [[E6_UPPER:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E6]](s64)
+    ; CHECK: [[SLT:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[E4_UPPER]](s32), [[E6_UPPER]]
+    ; CHECK: [[EQ:%[0-9]+]]:_(s32) = G_ICMP intpred(eq), [[E4_UPPER]](s32), [[E6_UPPER]]
+    ; CHECK: [[EQ_TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[EQ]](s32)
+    ; CHECK: [[ULT:%[0-9]+]]:_(s32) = G_ICMP intpred(ult), [[E4_LOWER]](s32), [[E6_LOWER]]
+    ; CHECK: [[ULT_COPY:%[0-9]+]]:_(s32) = COPY [[ULT]](s32)
+    ; CHECK: [[SLT_COPY:%[0-9]+]]:_(s32) = COPY [[SLT]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[EQ_TRUNC]](s1), [[ULT_COPY]], [[SLT_COPY]]
+    ; CHECK: [[CONST:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[SELECT]]
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[CONST]]
+    ; CHECK: $d2 = COPY [[AND]]
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s1) = G_ICMP intpred(slt), %0(s64), %1
+    %3:_(s32) = G_ZEXT %2(s1)
+    $d2 = COPY %3(s32)
+...
