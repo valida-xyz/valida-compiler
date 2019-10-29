@@ -2,7 +2,7 @@
 
 ---
 # Check that we select a 32-bit dataregbank G_ADD into ADD_ddd on dataregbank.
-# Also check that we constrain the register class of the COPY to dataregbank.
+# Also check that we constrain the register class of the COPY to dataregs.
 name:            add_s32
 legalized:       true
 regBankSelected: true
@@ -50,5 +50,83 @@ body:             |
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
     %2(s32) = G_SUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+# Same as add_s32, for G_AND operations.
+name:            and
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: and
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[AND_ddd:%[0-9]+]]:dataregs = AND_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d4 = COPY [[AND_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_AND %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+# Same as add_s32, for G_OR operations.
+name:            or
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: or
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[OR_ddd:%[0-9]+]]:dataregs = OR_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d4 = COPY [[OR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_OR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+# Same as add_s32, for G_XOR operations.
+name:            xor
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: xor
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[XOR_ddd:%[0-9]+]]:dataregs = XOR_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d4 = COPY [[XOR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_XOR %0, %1
     $d4 = COPY %2(s32)
 ...
