@@ -14,7 +14,6 @@
 #include "TriCoreLegalizerInfo.h"
 #include "TriCoreSubtarget.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
-#include "llvm/CodeGen/ValueTypes.h"
 
 using namespace llvm;
 
@@ -39,8 +38,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
-  // G_ADD and G_SUB are only legal for 32bit types
-  getActionDefinitionsBuilder({G_ADD, G_SUB})
+  // G_ADD, G_SUB, G_AND, G_OR and G_XOR are only legal for 32bit types
+  getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR})
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
