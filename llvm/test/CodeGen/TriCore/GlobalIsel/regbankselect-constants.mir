@@ -23,3 +23,15 @@ body: |
     ; CHECK: [[C:%[0-9]+]]:dataregbank(s64) = G_CONSTANT i64 123
     %0(s64) = G_CONSTANT i64 123
 ...
+
+---
+name:            test_constant_p0
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_constant_p0
+    ; CHECK: [[C:%[0-9]+]]:addrregbank(p0) = G_CONSTANT i32 123
+    %0(p0) = G_CONSTANT i32 123
+...

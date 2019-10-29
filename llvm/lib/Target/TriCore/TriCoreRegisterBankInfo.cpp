@@ -103,10 +103,10 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
 
   CHECK_VALUEMAP(PMI_DataReg, PMI_FirstDataReg, 32);
   CHECK_VALUEMAP(PMI_ExtDataReg, PMI_FirstDataReg, 64);
+  CHECK_VALUEMAP(PMI_AddrReg, PMI_FirstAddrReg, 32);
 
-  // TODO: check value map for address register once implemented
-  // CHECK_VALUEMAP(PMI_AddrReg, PMI_FirstAddrReg, 32);
-  // CHECK_VALUEMAP(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
+  // TODO: Enable this check when 64-bit pointers are supported.
+  //  CHECK_VALUEMAP(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
 
   // get rid of unused function warning in some IDEs
   (void)checkValueMapImpl;
@@ -122,11 +122,10 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
 
   CHECK_VALUEMAP_3OPS(PMI_DataReg, PMI_FirstDataReg, 32);
   CHECK_VALUEMAP_3OPS(PMI_ExtDataReg, PMI_FirstDataReg, 64);
+  CHECK_VALUEMAP_3OPS(PMI_AddrReg, PMI_FirstAddrReg, 32);
 
-  // TODO: check value mapping for 3-operands instructions with address
-  //  registers once implemented
-  // CHECK_VALUEMAP_3OPS(PMI_AddrReg, PMI_FirstAddrReg, 32);
-  // CHECK_VALUEMAP_3OPS(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
+  // TODO: Enable this check when 64-bit pointers are supported.
+  //  CHECK_VALUEMAP_3OPS(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
 
   // TODO: check cross register bank copy mappings once implemented
 

@@ -29,18 +29,21 @@ RegisterBankInfo::ValueMapping TriCoreGenRegisterBankInfo::ValMappings[]{
     // 0: invalid
     {nullptr, 0},
     // 3-operand instructions (all binary operations should end up with one of
-    // those mappings) 1: DataReg 32-bit value. <-- This must match
-    // First3OpsIdx.
+    // those mappings)
+    // 1: DataReg 32-bit value. <-- This must match First3OpsIdx.
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
-    // TODO: Change Last3OpsIdx when adding support for operations that use
-    // address registers. 4: ExtDataReg 64-bit value. <-- This must match
-    // Last3OpsIdx.
+    // 4: ExtDataReg 64-bit value.
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
-    // TODO: Add mappings for ops that use address registers.
+    // 7: AddrReg 32-bit value. <-- This must match Last3OpsIdx.
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
+    // TODO: Add support for 64-bit pointers.
+    //  Change Last3OpsIdx when adding support for 64-bit pointers
     // TODO: Add mappings for cross register bank copies.
     //  Create FirstCrossRegCpyIdx and LastCrossRegCpyIdx.
     //  Create DistanceBetweenCrossRegCpy = <num operands>.

@@ -44,7 +44,7 @@ protected:
   enum ValueMappingIdx {
     InvalidIdx = 0,
     First3OpsIdx = 1,
-    Last3OpsIdx = 4,
+    Last3OpsIdx = 7,
     DistanceBetweenRegBanks = 3,
   };
 
