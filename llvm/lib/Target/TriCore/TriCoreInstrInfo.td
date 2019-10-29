@@ -596,6 +596,12 @@ class CHECK_RRR<bits<8> opc1, bits<4> opc2, string mnemonic>
                   :  RRR<opc1, opc2, (outs ExtDataRegs:$d),
                         (ins ExtDataRegs:$s3, DataRegs:$s2),
                         mnemonic, "\t$d, $s3, $s2">;
+// Floating Point Operations
+
+class FPO_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+           : RR<opc1, opc2, (outs DataRegs:$d),
+                (ins DataRegs:$s1, DataRegs:$s2),
+                mnemonic, "\t$d, $s1, $s2">;
 
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
@@ -1986,3 +1992,47 @@ let mayLoad = 0, mayStore = 1 in {
     def STLCX_ac        : CLS_BO<0x49,  0x26, "stlcx" >;
   } // Uses = [A2,A3,A4,A5,A6,A7,A11,D0,D1,D2,D3,D4,D5,D6,D7,PCXI]
 } // mayLoad = 0, mayStore = 1
+
+// Floating Point Operations
+
+let n = 1, Defs = [PSW] in {
+  // ADD.F
+  let Uses = [PSW], s2 = 0 in
+  def ADDF_ddd      : RRR<0x6B, 0x02, (outs DataRegs:$d),
+                          (ins DataRegs:$s3, DataRegs:$s1),
+                          "add.f", "\t$d, $s3, $s1">;
+
+  // CMP.F
+  def CMPF_ddd      : FPO_RR<0x4B,  0x00, "cmp.f">;
+
+ let Uses = [PSW] in {
+    // DIV.F
+    def DIVF_ddd    : FPO_RR<0x4B,  0x05, "div.f">;
+
+    // MADD.F
+    def MADDF_dddd  : RRR<0x6B, 0x06, (outs DataRegs:$d),
+                          (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2),
+                          "madd.f", "\t$d, $s3, $s1, $s2">;
+
+    // MSUB.F
+    def MSUBF_dddd  : RRR<0x6B, 0x07, (outs DataRegs:$d),
+                          (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2),
+                          "msub.f", "\t$d, $s3, $s1, $s2">;
+
+    // MUL.F
+    let isCommutable = 1 in
+    def MULF_ddd    : FPO_RR<0x4B,  0x04, "mul.f">;
+
+    // SUB.F
+    let s2 = 0 in
+    def SUBF_ddd    : RRR<0x6B, 0x03, (outs DataRegs:$d),
+                          (ins DataRegs:$s3, DataRegs:$s1),
+                          "sub.f", "\t$d, $s3, $s1">;
+  } // Uses = [PSW]
+
+  // QSEED.F
+  let s2 = 0 in
+  def QSEEDF_dd     : RR<0x4B, 0x19, (outs DataRegs:$d),
+                         (ins DataRegs:$s1),
+                         "qseed.f" , "\t$d, $s1">;
+} // n = 1, Defs = [PSW]
