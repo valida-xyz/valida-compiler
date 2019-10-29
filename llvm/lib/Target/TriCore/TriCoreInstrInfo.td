@@ -263,6 +263,22 @@ let isReMaterializable = 1 in {
                  mnemonic, "\t$d, $s1, $s2">;
 } // isReMaterializable = 1 
 
+// 2.5.3 Compare with Shift
+
+let isReMaterializable = 1 in {
+  class CWH_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
+               Operand op_type = simm9>
+            :  RC<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, op_type:$const9),
+                  mnemonic, "\t$d, $s1, $const9">;
+
+  let n = 0 in
+  class CWH_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+            :  RR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s1, $s2">;
+} // isReMaterializable = 1
+
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
@@ -868,6 +884,7 @@ def GE_ddd           :  CMP_RR<0x0B, 0x14, "ge">;
 def GEU_ddc          :  CMP_RC<0x8B, 0x15, "ge.u", uimm9>;
 def GEU_ddd          :  CMP_RR<0x0B, 0x15, "ge.u">;
 
+
 // 2.5.2 Accumulating Compare
 
 // AND.EQ
@@ -948,6 +965,36 @@ def XORLTU_ddd       : AC_RR<0x0B, 0x32, "xor.lt.u">;
 def XORNE_ddc        : AC_RC<0x8B, 0x30, "xor.ne"  >;
 let isCommutable = 1 in
 def XORNE_ddd        : AC_RR<0x0B, 0x30, "xor.ne"  >;
+
+
+// 2.5.3 Compare with Shift
+
+// SH.EQ
+def SHEQ_ddc         : CWH_RC<0x8B, 0x37, "sh.eq"  >;
+let isCommutable = 1 in
+def SHEQ_ddd         : CWH_RR<0x0B, 0x37, "sh.eq"  >;
+
+// SH.GE
+def SHGE_ddc         : CWH_RC<0x8B, 0x3B, "sh.ge"  >;
+def SHGE_ddd         : CWH_RR<0x0B, 0x3B, "sh.ge"  >;
+
+// SH.GE.U
+def SHGEU_ddc        : CWH_RC<0x8B, 0x3C, "sh.ge.u", uimm9>;
+def SHGEU_ddd        : CWH_RR<0x0B, 0x3C, "sh.ge.u">;
+
+// SH.LT
+def SHLT_ddc         : CWH_RC<0x8B, 0x39, "sh.lt"  >;
+def SHLT_ddd         : CWH_RR<0x0B, 0x39, "sh.lt"  >;
+
+// SH.LT.U
+def SHLTU_ddc        : CWH_RC<0x8B, 0x3A, "sh.lt.u", uimm9>;
+def SHLTU_ddd        : CWH_RR<0x0B, 0x3A, "sh.lt.u">;
+
+// SH.NE
+def SHNE_ddc         : CWH_RC<0x8B, 0x38, "sh.ne"  >;
+let isCommutable = 1 in
+def SHNE_ddd         : CWH_RR<0x0B, 0x38, "sh.ne"  >;
+
 
 //===----------------------------------------------------------------------===//
 //  2.7 Address Arithmetic.
