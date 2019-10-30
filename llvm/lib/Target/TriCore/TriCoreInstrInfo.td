@@ -1323,6 +1323,29 @@ def SHXORT_ddcdc     : SHBO_BIT<0xA7, 0x03, "sh.xor.t" >;
 
 
 //===----------------------------------------------------------------------===//
+//  2.6.4 Miscellaneous Bit Operations.
+//
+let isReMaterializable = 1 in {
+  let n = 0 in {
+    // BMERGE
+    def BMERGE_ddd     :  RR<0x4B, 0x01, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, DataRegs:$s2),
+                            "bmerge", "\t$d, $s1, $s2">;
+
+    // BSPLIT
+    let s2 = 0 in
+    def BSPLIT_ed      :  RR<0x4B, 0x09, (outs ExtDataRegs:$d),
+                            (ins DataRegs:$s1),
+                            "bsplit", "\t$d, $s1">;
+  } // n = 0
+
+  // SHUFFLE
+  def SHUFFLE_ddc      :  RC<0x8F, 0x07, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, uimm9:$const9),
+                            "shuffle", "\t$d, $s1, $const9">;
+} // isRematerializable = 1
+
+//===----------------------------------------------------------------------===//
 //  2.7 Address Arithmetic.
 //
 let isReMaterializable = 1 in {
