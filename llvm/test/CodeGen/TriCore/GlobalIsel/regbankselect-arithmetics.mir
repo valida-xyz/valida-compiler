@@ -96,3 +96,147 @@ body: |
     %7(s32), %8(s1) = G_USUBE %2, %4, %6
     %9(s64) = G_MERGE_VALUES %5(s32), %7(s32)
 ...
+
+---
+name:            test_and_s32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    liveins: $d4
+    ; CHECK-LABEL: name: test_and_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[AND:%[0-9]+]]:dataregbank(s32) = G_AND [[COPY]], [[COPY]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_AND %0, %0
+...
+
+---
+name:            test_and_s64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+  - { id: 2, class: _ }
+  - { id: 3, class: _ }
+  - { id: 4, class: _ }
+  - { id: 5, class: _ }
+  - { id: 6, class: _ }
+  - { id: 7, class: _ }
+  - { id: 8, class: _ }
+  - { id: 9, class: _ }
+body: |
+  bb.0:
+    liveins: $e4
+    ; CHECK-LABEL: name: test_and_s64
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s64) = COPY $e4
+    ; CHECK: [[UNMERGE:%[0-9]+]]:dataregbank(s32), [[UNMERGE1:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:dataregbank(s32), [[UNMERGE3:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[AND:%[0-9]+]]:dataregbank(s32) = G_AND [[UNMERGE]], [[UNMERGE2]]
+    ; CHECK: [[AND1:%[0-9]+]]:dataregbank(s32) = G_AND [[UNMERGE1]], [[UNMERGE3]]
+    ; CHECK: [[MERGE:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[AND]](s32), [[AND1]](s32)
+    %0(s64) = COPY $e4
+    %1(s32), %2(s32) = G_UNMERGE_VALUES %0(s64)
+    %3(s32), %4(s32) = G_UNMERGE_VALUES %0(s64)
+    %5(s32) = G_AND %1, %3
+    %6(s32) = G_AND %2, %4
+    %9(s64) = G_MERGE_VALUES %5(s32), %6(s32)
+...
+
+---
+name:            test_or_s32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    liveins: $d4
+    ; CHECK-LABEL: name: test_or_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[OR:%[0-9]+]]:dataregbank(s32) = G_OR [[COPY]], [[COPY]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_OR %0, %0
+...
+
+---
+name:            test_or_s64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+  - { id: 2, class: _ }
+  - { id: 3, class: _ }
+  - { id: 4, class: _ }
+  - { id: 5, class: _ }
+  - { id: 6, class: _ }
+  - { id: 7, class: _ }
+  - { id: 8, class: _ }
+  - { id: 9, class: _ }
+body: |
+  bb.0:
+    liveins: $e4
+    ; CHECK-LABEL: name: test_or_s64
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s64) = COPY $e4
+    ; CHECK: [[UNMERGE:%[0-9]+]]:dataregbank(s32), [[UNMERGE1:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:dataregbank(s32), [[UNMERGE3:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[OR:%[0-9]+]]:dataregbank(s32) = G_OR [[UNMERGE]], [[UNMERGE2]]
+    ; CHECK: [[OR1:%[0-9]+]]:dataregbank(s32) = G_OR [[UNMERGE1]], [[UNMERGE3]]
+    ; CHECK: [[MERGE:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[OR]](s32), [[OR1]](s32)
+    %0(s64) = COPY $e4
+    %1(s32), %2(s32) = G_UNMERGE_VALUES %0(s64)
+    %3(s32), %4(s32) = G_UNMERGE_VALUES %0(s64)
+    %5(s32) = G_OR %1, %3
+    %6(s32) = G_OR %2, %4
+    %9(s64) = G_MERGE_VALUES %5(s32), %6(s32)
+...
+
+---
+name:            test_xor_s32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    liveins: $d4
+    ; CHECK-LABEL: name: test_xor_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[XOR:%[0-9]+]]:dataregbank(s32) = G_XOR [[COPY]], [[COPY]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_XOR %0, %0
+...
+
+---
+name:            test_xor_s64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+  - { id: 2, class: _ }
+  - { id: 3, class: _ }
+  - { id: 4, class: _ }
+  - { id: 5, class: _ }
+  - { id: 6, class: _ }
+  - { id: 7, class: _ }
+  - { id: 8, class: _ }
+  - { id: 9, class: _ }
+body: |
+  bb.0:
+    liveins: $e4
+    ; CHECK-LABEL: name: test_xor_s64
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s64) = COPY $e4
+    ; CHECK: [[UNMERGE:%[0-9]+]]:dataregbank(s32), [[UNMERGE1:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UNMERGE2:%[0-9]+]]:dataregbank(s32), [[UNMERGE3:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[XOR:%[0-9]+]]:dataregbank(s32) = G_XOR [[UNMERGE]], [[UNMERGE2]]
+    ; CHECK: [[XOR1:%[0-9]+]]:dataregbank(s32) = G_XOR [[UNMERGE1]], [[UNMERGE3]]
+    ; CHECK: [[MERGE:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[XOR]](s32), [[XOR1]](s32)
+    %0(s64) = COPY $e4
+    %1(s32), %2(s32) = G_UNMERGE_VALUES %0(s64)
+    %3(s32), %4(s32) = G_UNMERGE_VALUES %0(s64)
+    %5(s32) = G_XOR %1, %3
+    %6(s32) = G_XOR %2, %4
+    %9(s64) = G_MERGE_VALUES %5(s32), %6(s32)
+...
