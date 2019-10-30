@@ -247,6 +247,22 @@ let isCompare = 1, isReMaterializable = 1 in {
                     mnemonic, "\t$d, $s1, $s2">;
 } // isCompare = 1, isReMaterializable = 1
 
+// 2.5.2 Accumulating Compare
+
+let isReMaterializable = 1 in {
+  class AC_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
+              Operand op_type = simm9>
+           :  RC<opc1, opc2, (outs DataRegs:$d),
+                 (ins DataRegs:$s1, op_type:$const9),
+                 mnemonic, "\t$d, $s1, $const9">;
+
+  let n = 0  in
+  class AC_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+           :  RR<opc1, opc2, (outs DataRegs:$d),
+                 (ins DataRegs:$s1, DataRegs:$s2),
+                 mnemonic, "\t$d, $s1, $s2">;
+} // isReMaterializable = 1 
+
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
@@ -851,6 +867,87 @@ def GE_ddd           :  CMP_RR<0x0B, 0x14, "ge">;
 // GE.U
 def GEU_ddc          :  CMP_RC<0x8B, 0x15, "ge.u", uimm9>;
 def GEU_ddd          :  CMP_RR<0x0B, 0x15, "ge.u">;
+
+// 2.5.2 Accumulating Compare
+
+// AND.EQ
+def ANDEQ_ddc        : AC_RC<0x8B, 0x20, "and.eq"  >;
+let isCommutable = 1 in
+def ANDEQ_ddd        : AC_RR<0x0B, 0x20, "and.eq"  >;
+
+// AND.GE
+def ANDGE_ddc        : AC_RC<0x8B, 0x24, "and.ge"  >;
+def ANDGE_ddd        : AC_RR<0x0B, 0x24, "and.ge"  >;
+
+// AND.GE.U
+def ANDGEU_ddc       : AC_RC<0x8B, 0x25, "and.ge.u", uimm9>;
+def ANDGEU_ddd       : AC_RR<0x0B, 0x25, "and.ge.u">;
+
+// AND.LT
+def ANDLT_ddc        : AC_RC<0x8B, 0x22, "and.lt"  >;
+def ANDLT_ddd        : AC_RR<0x0B, 0x22, "and.lt"  >;
+
+// AND.LT.U
+def ANDLTU_ddc       : AC_RC<0x8B, 0x23, "and.lt.u", uimm9>;
+def ANDLTU_ddd       : AC_RR<0x0B, 0x23, "and.lt.u">;
+
+// AND.NE
+def ANDNE_ddc        : AC_RC<0x8B, 0x21, "and.ne"  >;
+let isCommutable = 1 in
+def ANDNE_ddd        : AC_RR<0x0B, 0x21, "and.ne"  >;
+
+// OR.EQ
+def OREQ_ddc         : AC_RC<0x8B, 0x27, "or.eq"   >;
+let isCommutable = 1 in
+def OREQ_ddd         : AC_RR<0x0B, 0x27, "or.eq"   >;
+
+// OR.GE
+def ORGE_ddc         : AC_RC<0x8B, 0x2B, "or.ge"   >;
+def ORGE_ddd         : AC_RR<0x0B, 0x2B, "or.ge"   >;
+
+// OR.GE.U
+def ORGEU_ddc        : AC_RC<0x8B, 0x2C, "or.ge.u",  uimm9>;
+def ORGEU_ddd        : AC_RR<0x0B, 0x2C, "or.ge.u" >;
+
+// OR.LT
+def ORLT_ddc         : AC_RC<0x8B, 0x29, "or.lt"   >;
+def ORLT_ddd         : AC_RR<0x0B, 0x29, "or.lt"   >;
+
+// OR.LT.U
+def ORLTU_ddc        : AC_RC<0x8B, 0x2A, "or.lt.u",  uimm9>;
+def ORLTU_ddd        : AC_RR<0x0B, 0x2A, "or.lt.u" >;
+
+
+// OR.NE
+def ORNE_ddc         : AC_RC<0x8B, 0x28, "or.ne"   >;
+let isCommutable = 1 in
+def ORNE_ddd         : AC_RR<0x0B, 0x28, "or.ne"   >;
+
+// XOR.EQ
+def XOREQ_ddc        : AC_RC<0x8B, 0x2F, "xor.eq"  >;
+let isCommutable = 1 in
+def XOREQ_ddd        : AC_RR<0x0B, 0x2F, "xor.eq"  >;
+
+// XOR.GE
+def XORGE_ddc        : AC_RC<0x8B, 0x33, "xor.ge"  >;
+def XORGE_ddd        : AC_RR<0x0B, 0x33, "xor.ge"  >;
+
+// XOR.GE.U
+def XORGEU_ddc       : AC_RC<0x8B, 0x34, "xor.ge.u", uimm9>;
+def XORGEU_ddd       : AC_RR<0x0B, 0x34, "xor.ge.u">;
+
+// XOR.LT
+def XORLT_ddc        : AC_RC<0x8B, 0x31, "xor.lt"  >;
+def XORLT_ddd        : AC_RR<0x0B, 0x31, "xor.lt"  >;
+
+// XOR.LT.U
+def XORLTU_ddc       : AC_RC<0x8B, 0x32, "xor.lt.u", uimm9>;
+def XORLTU_ddd       : AC_RR<0x0B, 0x32, "xor.lt.u">;
+
+// XOR.NE
+def XORNE_ddc        : AC_RC<0x8B, 0x30, "xor.ne"  >;
+let isCommutable = 1 in
+def XORNE_ddd        : AC_RR<0x0B, 0x30, "xor.ne"  >;
 
 //===----------------------------------------------------------------------===//
 //  2.7 Address Arithmetic.
