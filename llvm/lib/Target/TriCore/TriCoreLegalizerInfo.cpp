@@ -85,6 +85,14 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
         .clampScalar(BigTyIdx, s64, s64);
   }
 
+  // Branches
+
+  // G_BRCOND is valid for s1 and s32 scalars.
+  getActionDefinitionsBuilder(G_BRCOND).legalFor({s1, s32});
+
+  // G_BRINDIRECT is valid for p0 types.
+  getActionDefinitionsBuilder(G_BRINDIRECT).legalFor({p0});
+
   computeTables();
   verify(*ST.getInstrInfo());
 }
