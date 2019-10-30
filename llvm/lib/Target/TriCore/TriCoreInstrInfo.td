@@ -279,6 +279,14 @@ let isReMaterializable = 1 in {
                   mnemonic, "\t$d, $s1, $s2">;
 } // isReMaterializable = 1
 
+// 2.6.1 Simple Bit Operations
+
+let isReMaterializable = 1 in
+class SBO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
+            : BIT<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
+                  mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
+
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
@@ -995,6 +1003,32 @@ def SHNE_ddc         : CWH_RC<0x8B, 0x38, "sh.ne"  >;
 let isCommutable = 1 in
 def SHNE_ddd         : CWH_RR<0x0B, 0x38, "sh.ne"  >;
 
+
+// 2.6.1 Simple Bit Operations
+
+// AND.T
+def ANDT_ddcdc       : SBO_BIT<0x87, 0x00, "and.t" >;
+
+// ANDN.T
+def ANDN_ddcdc       : SBO_BIT<0x87, 0x03, "andn.t">;
+
+// NAND.T
+def NANDT_ddcdc      : SBO_BIT<0x07, 0x00, "nand.t">;
+
+// NOR.T
+def NORT_ddcdc       : SBO_BIT<0x87, 0x02, "nor.t" >;
+
+// OR.T
+def ORT_ddcdc        : SBO_BIT<0x87, 0x01, "or.t"  >;
+
+// ORN.T
+def ORNT_ddcdc       : SBO_BIT<0x07, 0x01, "orn.t" >;
+
+// XOR.T
+def XORT_ddcdc       : SBO_BIT<0x07, 0x03, "xor.t" >;
+
+// XNOR.T
+def XNORT_ddcdc      : SBO_BIT<0x07, 0x02, "xnor.t">;
 
 //===----------------------------------------------------------------------===//
 //  2.7 Address Arithmetic.
