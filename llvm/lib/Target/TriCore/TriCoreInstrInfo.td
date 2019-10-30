@@ -566,6 +566,16 @@ let isMoveReg = 1, isReMaterializable = 1 in {
 } // isMoveReg = 1, isReMaterializable = 1
 
 //===----------------------------------------------------------------------===//
+//  Check Instructions.
+//
+
+let s1 = 0 in
+class CHECK_RRR<bits<8> opc1, bits<4> opc2, string mnemonic>
+                  :  RRR<opc1, opc2, (outs ExtDataRegs:$d),
+                        (ins ExtDataRegs:$s3, DataRegs:$s2),
+                        mnemonic, "\t$d, $s3, $s2">;
+
+//===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
 
@@ -1826,3 +1836,52 @@ def MOVD_16_da      : M2ADDR_SRR<0x80,      "mov.d", DataRegs ,AddrRegs>;
 let s1 = 0, isMoveImm = 1 in
 def MOVHA_ac        : RLC<0x91, (outs AddrRegs:$d), (ins uimm16:$const16),
                                             "movh.a", "\t$d, $const16">;
+//===----------------------------------------------------------------------===//
+//  Check Instructions.
+//
+
+let n = 0, isReMaterializable = 1 in {
+  let s2 = 0 in {
+    // PARITY
+    def PARITY_dd     :  RR<0x4B, 0x02, (outs DataRegs:$d),
+                          (ins DataRegs:$s1),
+                          "parity", "\t$d, $s1">;
+
+    // POPCNTW
+    def POPCNTW_dd    :  RR<0x4B, 0x22, (outs DataRegs:$d),
+                          (ins DataRegs:$s1),
+                          "popcnt.w", "\t$d, $s1">;
+  } // s2 = 0
+
+  // CRC32B
+  def CRC32B_ddd      :  RR<0x4B, 0x06,(outs DataRegs:$d),
+                            (ins DataRegs:$s2, DataRegs:$s1),
+                            "crc32.b", "\t$d, $s2, $s1">;
+
+  // CRC32BW
+  def CRC32BW_ddd     :  RR<0x4B, 0x03,(outs DataRegs:$d),
+                            (ins DataRegs:$s2, DataRegs:$s1),
+                            "crc32b.w", "\t$d, $s2, $s1">;
+
+  // CRC32LW
+  def CRC32LW_ddd     :  RR<0x4B, 0x07,(outs DataRegs:$d),
+                            (ins DataRegs:$s2, DataRegs:$s1),
+                            "crc32l.w", "\t$d, $s2, $s1">;
+
+  // CRCN
+  def CRCN_dddd       : RRR<0x6B, 0x01, (outs DataRegs:$d),
+                        (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2),
+                        "crcn", "\t$d, $s3, $s1, $s2">;
+
+  // IXMAX
+  def IXMAX_eed       : CHECK_RRR<0x6B, 0x0A, "ixmax">;
+
+  // IXMAXU
+  def IXMAXU_eed      : CHECK_RRR<0x6B, 0x0B, "ixmax.u">;
+
+  // IXMIN
+  def IXMIN_eed       : CHECK_RRR<0x6B, 0x08, "ixmin">;
+
+  // IXMINU
+  def IXMINU_eed      : CHECK_RRR<0x6B, 0x09, "ixmin.u">;
+} // n = 0, isReMaterializable = 1
