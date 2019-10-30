@@ -287,6 +287,14 @@ class SBO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
                   (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
                   mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
 
+// 2.6.3 Shifting Bit Operations
+
+let isReMaterializable = 1 in
+class SHBO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
+             : BIT<opc1, opc2, (outs DataRegs:$d), 
+                   (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
+                   mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
+
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
 //
@@ -1029,6 +1037,34 @@ def XORT_ddcdc       : SBO_BIT<0x07, 0x03, "xor.t" >;
 
 // XNOR.T
 def XNORT_ddcdc      : SBO_BIT<0x07, 0x02, "xnor.t">;
+
+
+// 2.6.3 Shifting Bit Operations
+
+// SH.AND.T
+def SHANDT_ddcdc     : SHBO_BIT<0x27, 0x00, "sh.and.t" >;
+
+// SH.ANDN.T
+def SHANDNT_ddcdc    : SHBO_BIT<0x27, 0x03, "sh.andn.t">;
+
+// SH.NAND.T
+def SHNANDT_ddcdc    : SHBO_BIT<0xA7, 0x00, "sh.nand.t">;
+
+// SH.NOR.T
+def SHNORT_ddcdc     : SHBO_BIT<0x27, 0x02, "sh.nor.t" >;
+
+// SH.OR.T
+def SHORT_ddcdc      : SHBO_BIT<0x27, 0x01, "sh.or.t"  >;
+
+// SH.ORN.T
+def SHORNT_ddcdc     : SHBO_BIT<0xA7, 0x01, "sh.orn.t" >;
+
+// SH.XNOR.T
+def SHXNORT_ddcdc    : SHBO_BIT<0xA7, 0x02, "sh.xnor.t">;
+
+// SH.XOR.T
+def SHXORT_ddcdc     : SHBO_BIT<0xA7, 0x03, "sh.xor.t" >;
+
 
 //===----------------------------------------------------------------------===//
 //  2.7 Address Arithmetic.
