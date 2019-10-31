@@ -1,0 +1,72 @@
+# RUN: llc -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            trunc_s32_s64
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: trunc_s32_s64
+    ; CHECK: [[COPY:%[0-9]+]]:extdataregs = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY [[COPY]].dsub0
+    ; CHECK: $d4 = COPY [[COPY1]]
+    %0(s64) = COPY $e4
+    %1(s32) = G_TRUNC %0
+    $d4 = COPY %1(s32)
+...
+
+---
+name:            trunc_s1_s64
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: trunc_s1_s64
+    ; CHECK: [[COPY:%[0-9]+]]:extdataregs = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY [[COPY]].dsub0
+    ; CHECK: JNE_dcc [[COPY1]], 0, %bb.1
+    ; CHECK: J %bb.0
+    %0(s64) = COPY $e4
+    %1(s1) = G_TRUNC %0
+    G_BRCOND %1(s1), %bb.1
+    G_BR %bb.0
+
+  bb.1:
+...
+
+---
+name:            trunc_s32_s64_addrregs
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: addrregbank }
+  - { id: 1, class: addrregbank }
+
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: trunc_s32_s64
+    ; CHECK: [[COPY:%[0-9]+]]:extaddrregs = COPY $p4
+    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[COPY]].asub0
+    ; CHECK: $a4 = COPY [[COPY1]]
+    %0(s64) = COPY $p4
+    %1(s32) = G_TRUNC %0
+    $a4 = COPY %1(s32)
+...

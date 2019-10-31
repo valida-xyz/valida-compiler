@@ -59,8 +59,13 @@ private:
                           const Register &DestReg,
                           MachineRegisterInfo &MRI) const;
 
+  bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectBrIndirect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
+                        MachineIRBuilder &MIRBuilder) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
 } // end anonymous namespace
@@ -84,28 +89,37 @@ TriCoreInstructionSelector::TriCoreInstructionSelector(
 {
 }
 
-static unsigned int getOpCodeForPredicate(CmpInst::Predicate Predicate,
-                                          LLT OpTy, bool &SwapOperands) {
-  static const unsigned OpcTable[] = {
-      // Table structure: scalar compares, pointer compares
-      TriCore::NE_ddd,
-      TriCore::EQ_ddd,
-      TriCore::GE_ddd,
-      TriCore::GEU_ddd,
-      TriCore::LT_ddd,
-      TriCore::LTU_ddd,
-      TriCore::NEA_daa,
-      TriCore::EQA_daa,
-      /* signed pointer compare is invalid */ 0,
-      TriCore::GEA_daa,
-      /* signed pointer compare is invalid */ 0,
-      TriCore::LTA_daa,
-  };
-  static const unsigned OpcTableSize = sizeof(OpcTable) / sizeof(OpcTable[0]);
+static bool checkType(const LLT &ExpectedTy, const LLT &ActualTy,
+                      const std::string &OpCode) {
+  if (ActualTy != ExpectedTy) {
+    LLVM_DEBUG(dbgs() << OpCode << " has type " << ActualTy << ", expected "
+                      << ExpectedTy << "\n");
+    return false;
+  }
 
-  // Number of different opcodes per type in the above table
-  static const unsigned NumCmpOpc = 6;
+  return true;
+}
 
+// An OpcTable must have 10 entries (number of comparison predicates) each for
+// scalars and pointers
+static const unsigned NumPredicates = 10;
+static const unsigned OpcTableSize = NumPredicates * 2;
+
+// An OpcTable is a table which has a target op-code entry for each predicate,
+// once for scalars and once for pointers. If for a certain predicate-type
+// combination a target op-code is not available or if the operation itself is
+// invalid (e.g. signed pointer comparisons) it must hold a 0. The order of the
+// table is as follows:
+//
+// ne, eq, sge, uge, slt, ult, sgt, ugt, sle, ule
+//
+// repeated twice: first for scalars, then for pointers
+typedef unsigned OpcTableTy[OpcTableSize];
+
+static unsigned getOpCodeForPredicate(CmpInst::Predicate Predicate,
+                                      const RegisterBank &RB,
+                                      bool &SwapOperands,
+                                      const OpcTableTy &OpcTable) {
   unsigned PredicateIdx;
   switch (Predicate) {
   default:
@@ -143,11 +157,93 @@ static unsigned int getOpCodeForPredicate(CmpInst::Predicate Predicate,
     break;
   }
 
-  const unsigned Offset = OpTy.isPointer() ? 1 : 0;
-  const unsigned OpcTableIdx = PredicateIdx + Offset * NumCmpOpc;
+  unsigned Offset = RB.getID() == TriCore::AddrRegBankID ? 1 : 0;
+
+  const unsigned OpcTableIdx = PredicateIdx + Offset * NumPredicates;
   assert(OpcTableIdx < OpcTableSize && "OpcTableIdx out of bounds");
 
   return OpcTable[OpcTableIdx];
+}
+
+static unsigned getCmpOpCodeForPredicate(CmpInst::Predicate Predicate,
+                                         const RegisterBank &RB,
+                                         bool &SwapOperands) {
+  static const OpcTableTy OpcTable = {
+      // Scalar + pointer compares
+      TriCore::NE_ddd,
+      TriCore::EQ_ddd,
+      TriCore::GE_ddd,
+      TriCore::GEU_ddd,
+      TriCore::LT_ddd,
+      TriCore::LTU_ddd,
+      /* no GT instruction */ 0,
+      /* no GT.U instruction */ 0,
+      /* no LE instruction */ 0,
+      /* no LE.U instruction */ 0,
+      TriCore::NEA_daa,
+      TriCore::EQA_daa,
+      /* signed pointer compare is invalid */ 0,
+      TriCore::GEA_daa,
+      /* signed pointer compare is invalid */ 0,
+      TriCore::LTA_daa,
+      /* signed pointer compare is invalid */ 0,
+      /* no GT.A instruction */ 0,
+      /* signed pointer compare is invalid */ 0,
+      /* no LE.A instruction */ 0,
+  };
+
+  return getOpCodeForPredicate(Predicate, RB, SwapOperands, OpcTable);
+}
+
+static unsigned getBranchOpCodeForPredicate(CmpInst::Predicate Predicate,
+                                            const RegisterBank &RB,
+                                            bool &SwapOperands) {
+  static const OpcTableTy OpcTable = {
+      // Scalar + pointer compare-and-jumps
+      TriCore::JNE_ddc,
+      TriCore::JEQ_ddc,
+      TriCore::JGE_ddc,
+      TriCore::JGEU_ddc,
+      TriCore::JLT_ddc,
+      TriCore::JLTU_ddc,
+      /* no JGT instruction */ 0,
+      /* no JGT.U instruction */ 0,
+      /* no JLE instruction */ 0,
+      /* no JLE.U instruction */ 0,
+      TriCore::JNEA_aac,
+      TriCore::JEQA_aac,
+      /* signed pointer compare is invalid */ 0,
+      /* no JGE.A instruction */ 0,
+      /* signed pointer compare is invalid */ 0,
+      /* no JLT.A instruction */ 0,
+      /* signed pointer compare is invalid */ 0,
+      /* no JGT.A instruction */ 0,
+      /* signed pointer compare is invalid */ 0,
+      /* no JLE.A instruction */ 0,
+  };
+
+  return getOpCodeForPredicate(Predicate, RB, SwapOperands, OpcTable);
+}
+
+static const TargetRegisterClass *
+getRegClassForTypeOnBank(const LLT Ty, const RegisterBank &RB) {
+  if (RB.getID() == TriCore::DataRegBankID) {
+    if (Ty.getSizeInBits() <= 32)
+      return &TriCore::DataRegsRegClass;
+    else if (Ty.getSizeInBits() <= 64)
+      return &TriCore::ExtDataRegsRegClass;
+    return nullptr;
+  }
+
+  if (RB.getID() == TriCore::AddrRegBankID) {
+    if (Ty.getSizeInBits() <= 32)
+      return &TriCore::AddrRegsRegClass;
+    else if (Ty.getSizeInBits() <= 64)
+      return &TriCore::ExtAddrRegsRegClass;
+    return nullptr;
+  }
+
+  return nullptr;
 }
 
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
@@ -177,10 +273,16 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   const unsigned OpCode = I.getOpcode();
 
   switch (OpCode) {
+  case TargetOpcode::G_TRUNC:
+    return selectTrunc(I, MRI);
   case TargetOpcode::G_CONSTANT:
     return selectConstant(I, MRI);
   case TargetOpcode::G_ICMP:
     return selectICmp(I, MRI);
+  case TargetOpcode::G_BRCOND:
+    return selectBrCond(I, MRI);
+  case TargetOpcode::G_BRINDIRECT:
+    return selectBrIndirect(I, MRI);
   default:
     break;
   }
@@ -297,6 +399,56 @@ bool TriCoreInstructionSelector::selectConstant(
   return true;
 }
 
+bool TriCoreInstructionSelector::selectCmpAndJump(
+    MachineInstr &I, const MachineRegisterInfo &MRI,
+    MachineIRBuilder &MIRBuilder) const {
+
+  const Register CondReg = I.getOperand(0).getReg();
+  MachineBasicBlock *const DestMBB = I.getOperand(1).getMBB();
+  MachineInstr *CondMI = MRI.getVRegDef(CondReg);
+
+  // Check for G_ICMP, skipping a G_TRUNC
+  if (CondMI->getOpcode() == TargetOpcode::G_TRUNC)
+    CondMI = MRI.getVRegDef(CondMI->getOperand(1).getReg());
+
+  if (CondMI->getOpcode() != TargetOpcode::G_ICMP)
+    return false;
+
+  const MachineOperand &Predicate = CondMI->getOperand(1);
+  auto P = (CmpInst::Predicate)Predicate.getPredicate();
+
+  const Register &SrcReg = CondMI->getOperand(2).getReg();
+  const RegisterBank *RB = RBI.getRegBank(SrcReg, MRI, TRI);
+
+  if (!RB) {
+    LLVM_DEBUG(
+        dbgs() << "Could not determine register bank for source register.\n");
+    return false;
+  }
+
+  bool SwapOperands = false;
+  unsigned JumpOpCode = getBranchOpCodeForPredicate(P, *RB, SwapOperands);
+
+  if (JumpOpCode == 0) {
+    // Cannot select compare-and-jump. Fall back to normal selection
+    return false;
+  }
+
+  unsigned LHSIdx = SwapOperands ? 3 : 2;
+  unsigned RHSIdx = SwapOperands ? 2 : 3;
+
+  const Register LHS = CondMI->getOperand(LHSIdx).getReg();
+  const Register RHS = CondMI->getOperand(RHSIdx).getReg();
+
+  // Build the compare-and-jump instruction
+  auto JumpMI =
+      MIRBuilder.buildInstr(JumpOpCode).addUse(LHS).addUse(RHS).addMBB(DestMBB);
+  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
 bool TriCoreInstructionSelector::selectICmp(
     MachineInstr &I, const MachineRegisterInfo &MRI) const {
   assert(I.getOpcode() == TargetOpcode::G_ICMP && "Expected G_ICMP!");
@@ -320,13 +472,21 @@ bool TriCoreInstructionSelector::selectICmp(
   assert(I.getOperand(2).isReg() && I.getOperand(3).isReg() &&
          "Expected LHS and RHS to be registers!");
 
+  const Register &SrcReg = I.getOperand(2).getReg();
+  const RegisterBank *RB = RBI.getRegBank(SrcReg, MRI, TRI);
+
+  if (!RB) {
+    LLVM_DEBUG(
+        dbgs() << "Could not determine register bank for source register.\n");
+    return false;
+  }
+
   bool SwapOperands = false;
-  const LLT &SrcTy = MRI.getType(I.getOperand(2).getReg());
-  unsigned CmpOpCode = getOpCodeForPredicate(P, SrcTy, SwapOperands);
+  unsigned CmpOpCode = getCmpOpCodeForPredicate(P, *RB, SwapOperands);
 
   if (CmpOpCode == 0) {
     LLVM_DEBUG(dbgs() << "Cannot select G_ICMP for predicate " << Predicate
-                      << " and type " << SrcTy << ".\n");
+                      << " and RegBank " << *RB << ".\n");
     return false;
   }
 
@@ -347,6 +507,115 @@ bool TriCoreInstructionSelector::selectICmp(
   constrainSelectedInstRegOperands(*CmpMI, TII, TRI, RBI);
 
   I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectBrCond(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  // Check for correct type
+  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
+  if (Ty.getSizeInBits() > 32) {
+    LLVM_DEBUG(dbgs() << "G_BRCOND has type " << Ty
+                      << ", expected at most 32-bits.\n");
+    return false;
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Check if we can select a compare-and-jump
+  if (selectCmpAndJump(I, MRI, MIRBuilder))
+    return true;
+
+  // Change to JNE/JNE.A 0 depending on register bank
+  const Register &CondReg = I.getOperand(0).getReg();
+  const RegisterBank *CondRB = RBI.getRegBank(CondReg, MRI, TRI);
+
+  if (!CondRB) {
+    LLVM_DEBUG(dbgs() << "Could not determine register bank for G_BRCOND");
+    return false;
+  }
+
+  const bool isAddrRB = CondRB->getID() == TriCore::AddrRegBankID;
+  const unsigned OpCode = isAddrRB ? TriCore::JNZA_ac : TriCore::JNE_dcc;
+
+  MachineBasicBlock *MBB = I.getOperand(1).getMBB();
+  auto JumpMI = MIRBuilder.buildInstr(OpCode).addUse(CondReg);
+
+  // There is no JNEA_acc and equally no JNZ_dc instruction. We could use 16-bit
+  // variants to get rid of the immediate, however these have the downside of
+  // only having a short range and needing an implicit register. Therefore we
+  // use the 32-bit variants and need to add the 0 immediate conditionally.
+  if (!isAddrRB)
+    JumpMI = JumpMI.addImm(0);
+
+  JumpMI = JumpMI.addMBB(MBB);
+  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectBrIndirect(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
+  if (!checkType(LLT::pointer(0, 32), Ty, "G_BRINDIRECT"))
+    return false;
+
+  // Change to JI
+  I.setDesc(TII.get(TriCore::JI));
+  constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectTrunc(MachineInstr &I,
+                                             MachineRegisterInfo &MRI) const {
+  const LLT DstTy = MRI.getType(I.getOperand(0).getReg());
+  const LLT SrcTy = MRI.getType(I.getOperand(1).getReg());
+
+  // Make sure that TableGen handled our supported case
+  if (DstTy == LLT::scalar(32) && SrcTy == LLT::scalar(64))
+    llvm_unreachable("G_TRUNC from 64 to 32 bits can be handled by TableGen");
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const RegisterBank &SrcRB = *RBI.getRegBank(SrcReg, MRI, TRI);
+
+  const TargetRegisterClass *DstRC = getRegClassForTypeOnBank(DstTy, DstRB);
+  const TargetRegisterClass *SrcRC = getRegClassForTypeOnBank(SrcTy, SrcRB);
+
+  if (!DstRC || !SrcRC) {
+    LLVM_DEBUG(
+        dbgs() << "Unable to determine TargetRegisterClass for G_TRUNC\n");
+    return false;
+  }
+
+  // Try to constrain the registers to their classes
+  if (!TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, *DstRC, MRI) ||
+      !TriCoreRegisterBankInfo::constrainGenericRegister(SrcReg, *SrcRC, MRI)) {
+    LLVM_DEBUG(dbgs() << "Failed to constrain G_TRUNC\n");
+    return false;
+  }
+
+  // Change G_TRUNC to COPY, possibly using a subregister
+  if (DstRC == SrcRC) {
+    // Nothing to do
+  } else if ((DstRC == &TriCore::DataRegsRegClass &&
+              SrcRC == &TriCore::ExtDataRegsRegClass) ||
+             (DstRC == &TriCore::AddrRegsRegClass &&
+              SrcRC == &TriCore::ExtAddrRegsRegClass)) {
+    // Use subregister copy
+    const unsigned SubRegIdx = DstRB.getID() == TriCore::DataRegBankID
+                                   ? TriCore::dsub0
+                                   : TriCore::asub0;
+    I.getOperand(1).setSubReg(SubRegIdx);
+  } else {
+    LLVM_DEBUG(dbgs() << "Unhandled mismatched register classes in G_TRUNC\n");
+    return false;
+  }
+
+  I.setDesc(TII.get(TargetOpcode::COPY));
   return true;
 }
 
