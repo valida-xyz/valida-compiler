@@ -660,6 +660,16 @@ class FPO_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
                 mnemonic, "\t$d, $s1, $s2">;
 
 //===----------------------------------------------------------------------===//
+// Floating Point Conversion Instructions.
+//
+
+let s2 = 0 in
+class FPC_RR <bits<8> opc1, bits<8> opc2, string mnemonic>
+                : RR<opc1, opc2, (outs DataRegs:$d),
+                (ins DataRegs:$s1),
+                mnemonic, "\t$d, $s1">;
+
+//===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
 
@@ -2233,7 +2243,6 @@ let n = 1, Defs = [PSW] in {
                          "qseed.f" , "\t$d, $s1">;
 } // n = 1, Defs = [PSW]
 
-
 //===----------------------------------------------------------------------===//
 //  2.12 System Instructions.
 //
@@ -2318,3 +2327,68 @@ let hasSideEffects = 1 in {
   def MTCR_dc : RLC<0xCD, (outs), (ins uimm16:$const16, DataRegs:$s1),
                     "mtcr", "\t$const16, $s1">;
 } // hasSideEffects = 1
+
+//===----------------------------------------------------------------------===//
+// Floating Point Conversion Instructions.
+//
+
+let Defs = [PSW], n = 1 in {
+  // HPTOF
+  def HPTOF_dd       :  FPC_RR<0x4B, 0x24, "hptof">;
+
+  let Uses = [PSW] in {
+    // FTOHP
+    def FTOHP_dd     :  FPC_RR<0x4B, 0x25, "ftohp">;
+
+    // FTOQ31
+    def FTOQ31_ddd   :  RR<0x4B, 0x11, (outs DataRegs:$d),
+                              (ins DataRegs:$s1, DataRegs:$s2),
+                              "ftoq31", "\t$d, $s1, $s2">;
+  } // Uses = [PSW]
+
+  // FTOQ31Z
+  def FTOQ31Z_ddd    :  RR<0x4B, 0x18, (outs DataRegs:$d),
+                              (ins DataRegs:$s1, DataRegs:$s2),
+                              "ftoq31z", "\t$d, $s1, $s2">;
+
+  // FTOI
+  let Uses = [PSW] in
+  def FTOI_dd        :  FPC_RR<0x4B, 0x10, "ftoi">;
+
+  // FTOIZ
+  def FTOIZ_dd       :  FPC_RR<0x4B, 0x13, "ftoiz">;
+
+  // FTOU
+  let Uses = [PSW] in
+  def FTOU_dd        :  FPC_RR<0x4B, 0x12, "ftou">;
+
+  // FTOUZ
+  def FTOUZ_dd       :  FPC_RR<0x4B, 0x17, "ftouz">;
+
+  let Uses = [PSW] in {
+    // ITOF
+    def ITOF_dd        :  FPC_RR<0x4B, 0x14, "itof">;
+
+    // UTOF
+    def UTOF_dd        :  FPC_RR<0x4B, 0x16, "utof">;
+  } // Uses = [PSW]
+} // Defs = [PSW], n = 1
+
+let s2 = 0, n = 0 in {
+  // PACK
+  let Uses = [PSW] in
+  def PACK_ded         :  RRR<0x6B, 0x00, (outs DataRegs:$d),
+                                (ins ExtDataRegs:$s3, DataRegs:$s1),
+                                "pack", "\t$d, $s3, $s1">; 
+
+  // UNPACK
+  def UNPACK_ded       :  RR<0x4B, 0x08, (outs ExtDataRegs:$d),
+                                (ins DataRegs:$s1),
+                                "unpack", "\t$d, $s1">;
+} // s2 = 0, n = 0
+
+// Q31TOF
+let Defs = [PSW], Uses = [PSW], n = 1 in
+def Q31TOF_ddd         :  RR<0x4B, 0x15, (outs DataRegs:$d),
+                                (ins DataRegs:$s1, DataRegs:$s2),
+                                "q31tof", "\t$d, $s1, $s2">;
