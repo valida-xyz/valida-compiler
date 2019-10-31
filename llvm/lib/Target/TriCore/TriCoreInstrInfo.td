@@ -1721,22 +1721,24 @@ let n = 0, s2 = 0, isReMaterializable = 1 in {
 
 // 2.9.1 Unconditional Branch Instructions.
 
-let isBranch = 1 in {
+let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
   def J       : UBI_B<0x1D,  "j", simm24_lsb0>;
   def J_16    : UBI_SB<0x3C, "j">;
 
   def JA      : UBI_B<0x9D,  "ja", disp24_abs>;
 
-  def JI      : UBI_RR<0x03, "ji">;
-  def JI_16   : SR<0xDC, 0x00, (outs), (ins AddrRegs:$s1_d),
-                   "ji", "\t$s1_d">;
+  let isIndirectBranch = 1 in {
+    def JI      : UBI_RR<0x03, "ji">;
+    def JI_16   : SR<0xDC, 0x00, (outs), (ins AddrRegs:$s1_d),
+                    "ji", "\t$s1_d">;
+  } // isIndirectBranch = 1
 
   let Defs = [A11] in { // Return Address register
     def JL    : UBI_B<0x5D,  "jl", simm24_lsb0>;
     def JLA   : UBI_B<0xDD,  "jla", disp24_abs>;
     def JLI   : UBI_RR<0x02, "jli">;
   } // Defs = [A11]
-} // isBranch = 1
+} // isBranch = 1, isTerminator = 1, isBarrier = 1
 
 let Defs = [A11], Uses = [PSW], isCall = 1 in {
   def CALL    : UBI_B<0x6D,  "call", simm24_lsb0>;
