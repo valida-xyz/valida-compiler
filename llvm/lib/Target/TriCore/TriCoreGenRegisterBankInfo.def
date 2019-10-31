@@ -38,12 +38,23 @@ RegisterBankInfo::ValueMapping TriCoreGenRegisterBankInfo::ValMappings[]{
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
-    // 7: AddrReg 32-bit value. <-- This must match Last3OpsIdx.
+    // 7: AddrReg 32-bit value.
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
-    // TODO: Add support for 64-bit pointers.
-    //  Change Last3OpsIdx when adding support for 64-bit pointers
+    // 10: ExtAddrReg 64-bit value. <-- This must match Last3OpsIdx.
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtAddrReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtAddrReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtAddrReg - PMI_Min], 1},
+    // Truncations
+    // 13: ExtDataReg 64-bit to DataReg 32-bit. <-- This must match
+    // TruncDataRegBankIdx.
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtDataReg - PMI_Min], 1},
+    // 15: ExtAddrReg 64-bit to AddrReg 32-bit. <-- This must match
+    // TruncAddrRegBankIdx.
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtAddrReg - PMI_Min], 1},
     // TODO: Add mappings for cross register bank copies.
     //  Create FirstCrossRegCpyIdx and LastCrossRegCpyIdx.
     //  Create DistanceBetweenCrossRegCpy = <num operands>.
@@ -155,5 +166,33 @@ TriCoreGenRegisterBankInfo::getCopyMapping(unsigned DstBankID,
 
   // TODO: add support for cross register bank copies
   llvm_unreachable("Cannot handle cross register bank copies yet.");
+}
+
+const RegisterBankInfo::ValueMapping *
+TriCoreGenRegisterBankInfo::getTruncMapping(unsigned BankID, unsigned DstSize,
+                                            unsigned SrcSize) {
+  assert(
+      (BankID == TriCore::AddrRegBankID || BankID == TriCore::DataRegBankID) &&
+      "Unknown register bank ID");
+
+  // Truncations are only allowed to occur on the same register bank.
+
+  bool DstIs32 = DstSize <= 32;
+  bool DstIs64 = !DstIs32 && DstSize <= 64;
+
+  bool SrcIs32 = SrcSize <= 32;
+  bool SrcIs64 = !SrcIs32 && SrcSize <= 64;
+
+  // If the sizes are similar truncation is the same as a simple COPY
+  if ((DstIs32 && SrcIs32) || (DstIs64 && SrcIs64))
+    return getCopyMapping(BankID, BankID, SrcSize);
+
+  assert(DstIs32 && SrcIs64 && "No such mapping!");
+
+  // Otherwise we need a proper truncation mapping
+  unsigned TruncIdx = BankID == TriCore::AddrRegBankID ? TruncAddrRegBankIdx
+                                                       : TruncDataRegBankIdx;
+
+  return &ValMappings[TruncIdx];
 }
 } // namespace llvm

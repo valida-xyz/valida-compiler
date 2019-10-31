@@ -44,8 +44,10 @@ protected:
   enum ValueMappingIdx {
     InvalidIdx = 0,
     First3OpsIdx = 1,
-    Last3OpsIdx = 7,
+    Last3OpsIdx = 10,
     DistanceBetweenRegBanks = 3,
+    TruncDataRegBankIdx = 13,
+    TruncAddrRegBankIdx = 15,
   };
 
   // Helper functions to check expectations about the maps and indices.
@@ -76,6 +78,11 @@ protected:
   /// a size of \p Size.
   static const RegisterBankInfo::ValueMapping *
   getCopyMapping(unsigned DstBankID, unsigned SrcBankID, unsigned Size);
+
+  /// Get the pointer to the ValueMapping of the operands of a trunc instruction
+  /// on the \p BankID register bank from size \p SrcSize to size \p DstSize.
+  static const RegisterBankInfo::ValueMapping *
+  getTruncMapping(unsigned BankID, unsigned DstSize, unsigned SrcSize);
 
 #define GET_TARGET_REGBANK_CLASS
 #include "TriCoreGenRegisterBank.inc"

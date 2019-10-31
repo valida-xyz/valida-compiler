@@ -123,9 +123,31 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   CHECK_VALUEMAP_3OPS(PMI_DataReg, PMI_FirstDataReg, 32);
   CHECK_VALUEMAP_3OPS(PMI_ExtDataReg, PMI_FirstDataReg, 64);
   CHECK_VALUEMAP_3OPS(PMI_AddrReg, PMI_FirstAddrReg, 32);
+  CHECK_VALUEMAP_3OPS(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
 
-  // TODO: Enable this check when 64-bit pointers are supported.
-  //  CHECK_VALUEMAP_3OPS(PMI_ExtAddrReg, PMI_FirstAddrReg, 64);
+  // Check the value mapping for truncations
+#define CHECK_VALUEMAP_TRUNC(BankID, PMI_Normal, PMI_Extended)                 \
+  do {                                                                         \
+    unsigned PartialMapDstIdx = PMI_Normal - PMI_Min;                          \
+    unsigned PartialMapSrcIdx = PMI_Extended - PMI_Min;                        \
+    (void)PartialMapDstIdx;                                                    \
+    (void)PartialMapSrcIdx;                                                    \
+                                                                               \
+    const ValueMapping *Map = getTruncMapping(BankID, 32, 64);                 \
+    (void)Map;                                                                 \
+                                                                               \
+    assert(Map[0].BreakDown ==                                                 \
+               &TriCoreGenRegisterBankInfo::PartMappings[PartialMapDstIdx] &&  \
+           Map[0].NumBreakDowns == 1 &&                                        \
+           "Trunc dst for " #BankID " is incorrectly initialized");            \
+    assert(Map[1].BreakDown ==                                                 \
+               &TriCoreGenRegisterBankInfo::PartMappings[PartialMapSrcIdx] &&  \
+           Map[1].NumBreakDowns == 1 &&                                        \
+           "Trunc src for " #BankID " is incorrectly initialized");            \
+  } while (false)
+
+  CHECK_VALUEMAP_TRUNC(TriCore::DataRegBankID, PMI_DataReg, PMI_ExtDataReg);
+  CHECK_VALUEMAP_TRUNC(TriCore::AddrRegBankID, PMI_AddrReg, PMI_ExtAddrReg);
 
   // TODO: check cross register bank copy mappings once implemented
 
@@ -203,10 +225,36 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
       return Mapping;
   }
 
+  // Commonly used helpers.
   const MachineFunction &MF = *MI.getParent()->getParent();
   const MachineRegisterInfo &MRI = MF.getRegInfo();
+  const TargetSubtargetInfo &STI = MF.getSubtarget();
+  const TargetRegisterInfo &TRI = *STI.getRegisterInfo();
 
   switch (OpCode) {
+  // Truncation & Extends
+  case TargetOpcode::G_TRUNC: {
+    // Truncation happens on the same regbank on different sizes.
+    const Register DstReg = MI.getOperand(0).getReg();
+    const Register SrcReg = MI.getOperand(1).getReg();
+
+    unsigned DstSize = getSizeInBits(DstReg, MRI, TRI);
+    unsigned SrcSize = getSizeInBits(SrcReg, MRI, TRI);
+    const RegisterBank *DstRB = getRegBank(DstReg, MRI, TRI);
+    const RegisterBank *SrcRB = getRegBank(SrcReg, MRI, TRI);
+
+    if (!SrcRB)
+      SrcRB = DstRB;
+
+    assert(SrcRB && "Both register banks were null!");
+
+    // Trunc happens on the same reg-bank and therefore we could hard-code
+    // a cost, but using copyCost allows us to override the actual cost
+    // behavior in the future if needed
+    return getInstructionMapping(
+        DefaultMappingID, copyCost(*SrcRB, *SrcRB, SrcSize),
+        getTruncMapping(SrcRB->getID(), DstSize, SrcSize), MI.getNumOperands());
+  }
   // Arithmetic ops.
   case TargetOpcode::G_ADD:
   case TargetOpcode::G_SUB:
