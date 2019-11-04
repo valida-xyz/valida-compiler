@@ -60,6 +60,7 @@ private:
                           MachineRegisterInfo &MRI) const;
 
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
 };
 
 } // end anonymous namespace
@@ -81,6 +82,54 @@ TriCoreInstructionSelector::TriCoreInstructionSelector(
 #include "TriCoreGenGlobalISel.inc"
 #undef GET_GLOBALISEL_TEMPORARIES_INIT
 {
+}
+
+static bool flipCompareOperands(CmpInst::Predicate Predicate) {
+  switch (Predicate) {
+  default:
+    return false;
+    // Must flip operands because no equivalent instructions exist on TriCore.
+  case CmpInst::ICMP_SGT:
+  case CmpInst::ICMP_UGT:
+  case CmpInst::ICMP_SLE:
+  case CmpInst::ICMP_ULE:
+    return true;
+  }
+}
+
+static unsigned int getOpCodeForPredicate(CmpInst::Predicate Predicate,
+                                          LLT OpTy) {
+  if (OpTy.isPointer()) {
+    // TODO: support pointer comparisons once instructions have been implemented
+    llvm_unreachable("Pointer comparisons not supported yet!");
+  } else {
+    switch (Predicate) {
+    default:
+      llvm_unreachable("Unknown compare predicate!");
+    case CmpInst::ICMP_NE:
+      return TriCore::NE_ddd;
+    case CmpInst::ICMP_EQ:
+      return TriCore::EQ_ddd;
+    case CmpInst::ICMP_SGE:
+      return TriCore::GE_ddd;
+    case CmpInst::ICMP_UGE:
+      return TriCore::GEU_ddd;
+    case CmpInst::ICMP_SLT:
+      return TriCore::LT_ddd;
+    case CmpInst::ICMP_ULT:
+      return TriCore::LTU_ddd;
+
+      // TriCore does not have GT and LE. Use LT and GE with flipped operands.
+    case CmpInst::ICMP_SGT:
+      return TriCore::LT_ddd;
+    case CmpInst::ICMP_UGT:
+      return TriCore::LTU_ddd;
+    case CmpInst::ICMP_SLE:
+      return TriCore::GE_ddd;
+    case CmpInst::ICMP_ULE:
+      return TriCore::GEU_ddd;
+    }
+  }
 }
 
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
@@ -112,6 +161,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   switch (OpCode) {
   case TargetOpcode::G_CONSTANT:
     return selectConstant(I, MRI);
+  case TargetOpcode::G_ICMP:
+    return selectICmp(I, MRI);
   default:
     break;
   }
@@ -223,6 +274,53 @@ bool TriCoreInstructionSelector::selectConstant(
   } else {
     materialize32BitConstant(MIRBuilder, Val, I.getOperand(0).getReg(), MRI);
   }
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectICmp(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_ICMP && "Expected G_ICMP!");
+
+  // Check for the correct type
+  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
+  if (Ty != LLT::scalar(32)) {
+    LLVM_DEBUG(dbgs() << "G_ICMP has type: " << Ty << ", expected "
+                      << LLT::scalar(32) << "\n");
+    return false;
+  }
+
+  // G_ICMP has 4 operands, in order: result, predicate, lhs, rhs
+  assert(I.getNumOperands() == 4 && "Expected G_ICMP to have 4 operands.");
+
+  // Get the corresponding CmpOpCode for the Predicate and operand type and
+  // check if the operands need to be flipped.
+  MachineOperand &Predicate = I.getOperand(1);
+  auto P = (CmpInst::Predicate)Predicate.getPredicate();
+
+  assert(I.getOperand(2).isReg() && I.getOperand(3).isReg() &&
+         "Expected LHS and RHS to be registers!");
+
+  unsigned CmpOpCode =
+      getOpCodeForPredicate(P, MRI.getType(I.getOperand(2).getReg()));
+  bool FlipOperands = flipCompareOperands(P);
+
+  unsigned LHSIdx = FlipOperands ? 3 : 2;
+  unsigned RHSIdx = FlipOperands ? 2 : 3;
+
+  const Register &LHS = I.getOperand(LHSIdx).getReg();
+  const Register &RHS = I.getOperand(RHSIdx).getReg();
+
+  // Build compare instruction
+  MachineIRBuilder MIRBuilder(I);
+
+  auto CmpMI = MIRBuilder.buildInstr(CmpOpCode)
+                   .addDef(I.getOperand(0).getReg())
+                   .addUse(LHS)
+                   .addUse(RHS);
+
+  constrainSelectedInstRegOperands(*CmpMI, TII, TRI, RBI);
 
   I.removeFromParent();
   return true;

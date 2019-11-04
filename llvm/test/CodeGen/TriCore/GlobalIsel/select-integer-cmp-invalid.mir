@@ -1,0 +1,20 @@
+# RUN: (not llc -O0 -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+
+# This test should turn red and be removed once we support instruction selection for pointer comparisons.
+---
+name:            test_icmp_p0
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+  - { id: 1, class: addrregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; ERROR: Pointer comparisons not supported yet!
+    ; ERROR: UNREACHABLE executed at
+    %0(p0) = COPY $a4
+    %1(p0) = COPY $a5
+    %2(s32) = G_ICMP intpred(slt), %0(p0), %1
+    $d2 = COPY %2(s32)
+...

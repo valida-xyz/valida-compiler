@@ -1,0 +1,211 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_icmp_ne
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_ne
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = NE_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(ne), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_eq
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_eq
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = EQ_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(eq), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_sge
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_sge
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = GE_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(sge), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_uge
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_uge
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = GEU_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(uge), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_slt
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_slt
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = LT_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(slt), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_ult
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_ult
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = LTU_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(ult), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_sgt
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_sgt
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = LT_ddd [[COPY1]], [[COPY]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(sgt), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_ugt
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_ugt
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = LTU_ddd [[COPY1]], [[COPY]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(ugt), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_sle
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_sle
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = GE_ddd [[COPY1]], [[COPY]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(sle), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
+
+---
+name:            test_icmp_ule
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_icmp_ule
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregs = GEU_ddd [[COPY1]], [[COPY]]
+    ; CHECK: $d2 = COPY [[ICMP]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ICMP intpred(ule), %0(s32), %1
+    $d2 = COPY %2(s32)
+...
