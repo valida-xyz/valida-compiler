@@ -63,13 +63,79 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Extensions
 
-  // G_{ANY,S,Z}EXT is legal when the result type is s32 or s64 and the operand
-  // type is s1, s8, s16 or s32
+  // G_{ANY,S,Z}EXT must be legal for all input types produced by at least one
+  // legal instruction and all larger output types consumed by at least one
+  // legal instruction
   getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT})
-      .legalForCartesianProduct({s32, s64}, {s1, s8, s16, s32});
+      .legalForCartesianProduct({s8, s16, s32, s64}, {s1, s8, s16, s32});
 
-  // G_MERGE_VALUES and G_UNMERGE_VALUES should require the smaller type to be
-  // s32 and the bigger type to be 64 bits
+  // G_TRUNC is always legal as we can handle code-gen implications on the
+  // extension side. Also this helps us to avoid certain code-duplications
+  getActionDefinitionsBuilder(G_TRUNC).alwaysLegal();
+
+  // Load & Store
+
+  // G_LOAD is legal for 32 and 64-bit scalar and pointer types.
+  // Memory size must be a power of 2.
+  getActionDefinitionsBuilder(G_LOAD)
+      .legalForTypesWithMemDesc({
+          // Minimum alignment for all cases can be 8 bits (1 byte)
+          {s32, p0, 8, 8},
+          {s32, p0, 16, 8},
+          {s32, p0, 32, 8},
+          {s64, p0, 64, 8},
+          {p0, p0, 32, 8},
+      })
+      .lowerIfMemSizeNotPow2()
+      .clampScalar(0, s32, s64)
+      // Lower any extending loads left into G_ANYEXT and G_LOAD
+      .lowerIf([=](const LegalityQuery &Query) {
+        return Query.Types[0].getSizeInBits() != Query.MMODescrs[0].SizeInBits;
+      })
+      .widenScalarToNextPow2(0);
+
+  // G_STORE is legal for pointers and scalars if the store size is equal to the
+  // scalar type size. Different to G_LOAD, we require explicit s8 and s16
+  // value types, because this allows to match every possible store with
+  // TableGen instead of having to fall back to C++ for truncating stores.
+  getActionDefinitionsBuilder(G_STORE)
+      .legalForTypesWithMemDesc({
+          // Minimum alignment for all cases can be 8 bits (1 byte)
+          {s8, p0, 8, 8},
+          {s16, p0, 16, 8},
+          {s32, p0, 32, 8},
+          {s64, p0, 64, 8},
+          {p0, p0, 32, 8},
+      })
+      .clampScalar(0, s8, s64)
+      .lowerIfMemSizeNotPow2()
+      // Lower truncating stores into G_TRUNC and G_STORE
+      .narrowScalarIf(
+          [=](const LegalityQuery &Query) {
+            return Query.Types[0].getSizeInBits() >
+                   Query.MMODescrs[0].SizeInBits;
+          },
+          [=](const LegalityQuery &Query) {
+            // Use the memory size as size for the new type
+            const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+            return std::make_pair(0, LLT::scalar(MemSize));
+          })
+      .widenScalarToNextPow2(0);
+
+  // G_SEXTLOAD and G_ZEXTLOAD are legal for a 32-bit result type
+  getActionDefinitionsBuilder({G_SEXTLOAD, G_ZEXTLOAD})
+      .legalForTypesWithMemDesc({
+          {s32, p0, 8, 8},
+          {s32, p0, 16, 16},
+          {s32, p0, 32, 32},
+      })
+      .clampScalar(0, s32, s32)
+      .lowerIfMemSizeNotPow2()
+      // Lower anything left over to G_*EXT and G_LOAD
+      .lower();
+
+  // G_MERGE_VALUES and G_UNMERGE_VALUES should require the smaller type to
+  // be s32 and the bigger type to be 64 bits
   for (unsigned OpCode : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
     unsigned BigTyIdx = OpCode == G_MERGE_VALUES ? 0 : 1;
     unsigned SmallTyIdx = OpCode == G_MERGE_VALUES ? 1 : 0;

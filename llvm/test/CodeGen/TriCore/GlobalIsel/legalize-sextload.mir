@@ -1,0 +1,33 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_sextload
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sextload
+    ; CHECK: [[PTR:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[LOAD:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 1)
+    ; CHECK: $d2 = COPY [[LOAD]](s32)
+    ; CHECK: [[LOAD1:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 2)
+    ; CHECK: $d2 = COPY [[LOAD1]](s32)
+    ; CHECK: [[LOAD2:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 1)
+    ; CHECK: [[SEXT:%[0-9]+]]:_(s64) = G_SEXT [[LOAD2]](s32)
+    ; CHECK: $e2 = COPY [[SEXT]](s64)
+    ; CHECK: [[LOAD3:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 2)
+    ; CHECK: [[SEXT1:%[0-9]+]]:_(s64) = G_SEXT [[LOAD3]](s32)
+    ; CHECK: $e2 = COPY [[SEXT1]](s64)
+    ; CHECK: [[LOAD4:%[0-9]+]]:_(s32) = G_LOAD [[PTR]](p0) :: (load 4)
+    ; CHECK: [[SEXT2:%[0-9]+]]:_(s64) = G_SEXT [[LOAD4]](s32)
+    ; CHECK: $e2 = COPY [[SEXT2]](s64)
+    %0:_(p0) = COPY $a4
+    %1:_(s32) = G_SEXTLOAD %0(p0) :: (load 1)
+    $d2 = COPY %1(s32)
+    %2:_(s32) = G_SEXTLOAD %0(p0) :: (load 2)
+    $d2 = COPY %2(s32)
+    %3:_(s64) = G_SEXTLOAD %0(p0) :: (load 1)
+    $e2 = COPY %3(s64)
+    %4:_(s64) = G_SEXTLOAD %0(p0) :: (load 2)
+    $e2 = COPY %4(s64)
+    %5:_(s64) = G_SEXTLOAD %0(p0) :: (load 4)
+    $e2 = COPY %5(s64)
+...

@@ -1,0 +1,13 @@
+# RUN: not llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+
+---
+name:            test_store
+body:             |
+  bb.0.entry:
+    ; ERROR: LLVM ERROR: unable to legalize instruction: [[GEP:%[0-9]+]]:_(p0) = G_PTR_ADD [[PTR:%[0-9]+]]:_, [[VAL:%[0-9]+]]:_(s32) (in function: test_store)
+    %0:_(p0) = COPY $a4
+    %1:_(s64) = COPY $e4
+    %2:_(s64) = COPY $e6
+    %3:_(s128) = G_MERGE_VALUES %1(s64), %2(s64)
+    G_STORE %3(s128), %0(p0) :: (store 16)
+...

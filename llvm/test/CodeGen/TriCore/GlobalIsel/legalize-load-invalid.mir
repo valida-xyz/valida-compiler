@@ -1,0 +1,13 @@
+# RUN: not llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+
+---
+name:            test_load
+body:             |
+  bb.0.entry:
+    ; ERROR: LLVM ERROR: unable to legalize instruction: [[GEP:%[0-9]+]]:_(p0) = G_PTR_ADD [[PTR:%[0-9]+]]:_, [[VAL:%[0-9]+]]:_(s32) (in function: test_load)
+    %0:_(p0) = COPY $a4
+    %1:_(s128) = G_LOAD %0(p0) :: (load 16)
+    %2:_(s64), %3:_(s64) = G_UNMERGE_VALUES %1(s128)
+    $e2 = COPY %2(s64)
+    $e4 = COPY %3(s64)
+...
