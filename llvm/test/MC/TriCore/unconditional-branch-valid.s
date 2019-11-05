@@ -1,5 +1,7 @@
 # RUN: llvm-mc %s -triple=tricore -show-encoding \
 # RUN:     | FileCheck -check-prefixes=CHECK,CHECK-INST %s
+# RUN: llvm-mc -filetype=obj -triple=tricore < %s \
+# RUN:     | llvm-objdump -d - | FileCheck -check-prefix=CHECK-INST %s
 
 ##### J (32 bit version) #####
 

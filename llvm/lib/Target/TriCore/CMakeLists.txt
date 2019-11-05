@@ -9,6 +9,7 @@ tablegen(LLVM TriCoreGenSubtargetInfo.inc -gen-subtarget)
 tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
 tablegen(LLVM TriCoreGenRegisterBank.inc -gen-register-bank)
 tablegen(LLVM TriCoreGenCallingConv.inc -gen-callingconv)
+tablegen(LLVM TriCoreGenDisassemblerTables.inc -gen-disassembler)
 
 add_public_tablegen_target(TriCoreCommonTableGen)
 
@@ -29,6 +30,7 @@ add_llvm_target(TriCoreCodeGen
   )
 
 add_subdirectory(AsmParser)
+add_subdirectory(Disassembler)
 add_subdirectory(InstPrinter)
 add_subdirectory(MCTargetDesc)
 add_subdirectory(TargetInfo)

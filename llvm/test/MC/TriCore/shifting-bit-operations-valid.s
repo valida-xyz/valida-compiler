@@ -1,5 +1,8 @@
 # RUN: llvm-mc %s -triple=tricore -show-encoding \
 # RUN:     | FileCheck -check-prefixes=CHECK,CHECK-INST %s
+# RUN: llvm-mc -filetype=obj -triple=tricore < %s \
+# RUN:     | llvm-objdump -d - | FileCheck -check-prefix=CHECK-INST %s
+
 
 # CHECK-INST: sh.and.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x27,0x00,0x00,0x00]

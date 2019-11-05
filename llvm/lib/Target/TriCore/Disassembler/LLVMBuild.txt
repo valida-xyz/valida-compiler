@@ -1,4 +1,4 @@
-;===- ./lib/Target/TriCore/LLVMBuild.txt -----------------------*- Conf -*--===;
+;===- ./lib/Target/TriCore/Disassembler/LLVMBuild.txt ----------*- Conf -*--===;
 ;
 ; Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 ; See https://llvm.org/LICENSE.txt for license information.
@@ -14,20 +14,9 @@
 ;
 ;===------------------------------------------------------------------------===;
 
-[common]
-subdirectories = AsmParser Disassembler InstPrinter TargetInfo MCTargetDesc
-
 [component_0]
-type = TargetGroup
-name = TriCore
-parent = Target
-has_asmparser = 1
-has_asmprinter = 1
-has_disassembler = 1
-
-[component_1]
 type = Library
-name = TriCoreCodeGen
+name = TriCoreDisassembler
 parent = TriCore
-required_libraries = AsmPrinter Core CodeGen MC TriCoreAsmPrinter TriCoreDesc TriCoreInfo Support Target SelectionDAG GlobalISel
+required_libraries = MCDisassembler TriCoreInfo Support
 add_to_library_groups = TriCore

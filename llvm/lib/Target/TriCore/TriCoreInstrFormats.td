@@ -44,6 +44,7 @@ class InstTriCore<dag outs, dag ins, string mnemonic, string operands,
     let InOperandList  = ins;
     let AsmString = mnemonic # operands;
     let Pattern   = pattern;
+    field bits<32> SoftFail = 0;
 }
 
 class PseudoInst<dag outs, dag ins, list<dag> pattern = []>

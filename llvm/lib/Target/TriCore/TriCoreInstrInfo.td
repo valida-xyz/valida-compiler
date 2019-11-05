@@ -53,20 +53,24 @@ class GenericSignedImmediate<int width> : Operand<OtherVT> {
   let ParserMatchClass = SImmAsmOperand<width>;
   // FIXME: Add when it becames relevant (ex.: relocations)
   /// let EncoderMethod = "getImmOpValue";
+  let DecoderMethod = "decodeSignedImmediate<" # width # ">";
 }
 
 class GenericUnsignedImmediate<int width> : Operand<OtherVT> {
   let ParserMatchClass = UImmAsmOperand<width>;
+  let DecoderMethod = "decodeUnsignedImmediate<" # width # ">";
 }
 
 class GenericSImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
   let ParserMatchClass = SImmLsbNIsZero<width, shift>;
   let EncoderMethod = "getScaledSImmOpValue<" # shift # ">";
+  let DecoderMethod = "decodeSImmLsbNIsZero<" # width # ", " # shift # ">";
 }
 
 class GenericUImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
   let ParserMatchClass = UImmLsbNIsZero<width, shift>;
   let EncoderMethod = "getScaledSImmOpValue<" # shift # ">";
+  let DecoderMethod = "decodeUImmLsbNIsZero<" # width # ", " # shift # ">";
 }
 
 //// Operand Definitions
@@ -101,6 +105,7 @@ def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2>;
 // A 6 bit signed immediate encoded in 9 bit
 def simm9_shift : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"SImm9Shift">;
+  let DecoderMethod = "decodeSImm9Shift";
 }
 
 // A 9-bit signed immediate.
@@ -110,7 +115,8 @@ def simm9 : GenericSignedImmediate<9>;
 def uimm9 : GenericUnsignedImmediate<9>;
 
 // A 16-bit signed immediate for BOL types which has BO variant too
-// to enforce the generation of the BOL type
+// to enforce the generation of the BOL type we define this operand
+// before simm10 which used by the BO type
 def off16 : GenericSignedImmediate<16>;
 
 // A 10-bit signed immediate.
@@ -138,18 +144,21 @@ def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1>;
 def off18_abs : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"Off18Abs">;
   let EncoderMethod = "getOff18Abs";
+  let DecoderMethod = "decodeOff18Abs";
 }
 
 // A 18-bit immediate as 32 bit absolute address
 def off18_abs_v2 : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"Off18AbsV2">;
   let EncoderMethod = "getScaledSImmOpValue<14>";
+  let DecoderMethod = "decodeOff18AbsV2";
 }
 
 // A 24-bit signed immediate as 32 bit absolute address
 def disp24_abs : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"Disp24Abs">;
   let EncoderMethod = "getDisp24Abs";
+  let DecoderMethod = "decodeDisp24Abs";
 }
 
 //===----------------------------------------------------------------------===//
@@ -578,6 +587,7 @@ let isMoveReg = 1 in {
 } // isMoveReg = 1
 
 let isMoveImm = 1 in {
+  let DecoderMethod = "decode_16_d15c</*Signed*/ false, /*shift*/ 0>" in
   def MOV_16_d15c :  SC<0xDA, (outs ImplDataReg:$d15), (ins uimm8:$const8),
                         "mov", "\t$d15, $const8">;
 
@@ -615,20 +625,24 @@ let Defs = [PSW] in {
                             (ins DataRegs:$src, simm4:$const4),
                             "add", "\t$s1_d, $const4">;
 
+    let DecoderMethod = "decode_16_dd15c" in
     def ADD_16_dd15c   : SRC<0x92, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, simm4:$const4),
                             "add", "\t$s1_d, $d15, $const4">;
 
+    let DecoderMethod = "decode_16_d15dc" in
     def ADD_16_d15dc   : SRC<0x9A, (outs ImplDataReg:$d15),
                             (ins DataRegs:$s1_d, simm4:$const4),
                             "add", "\t$d15, $s1_d, $const4">;
 
     def ADD_16_dd      :  ADDSUB_SRR<0x42, "add">;
 
+    let DecoderMethod = "decode_16_dd15d" in
     def ADD_16_dd15d   : SRR<0x12, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, DataRegs:$s2),
                             "add", "\t$s1_d, $d15, $s2">;
 
+    let DecoderMethod = "decode_16_d15dd" in
     def ADD_16_d15dd   : SRR<0x1A, (outs ImplDataReg:$d15),
                             (ins DataRegs:$s1_d, DataRegs:$s2),
                             "add", "\t$d15, $s1_d, $s2">;
@@ -676,10 +690,12 @@ let Defs = [PSW] in {
   def SUB_ddd          :  ADDSUB_RR<0x0B, 0x08, "sub">;
   def SUB_16_dd        :  ADDSUB_SRR<0xA2, "sub">;
 
+  let DecoderMethod = "decode_16_dd15d" in
   def SUB_16_dd15d     : SRR<0x52, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, DataRegs:$s2),
                             "sub", "\t$s1_d, $d15, $s2">;
 
+  let DecoderMethod = "decode_16_d15dd" in
   def SUB_16_d15dd     : SRR<0x5A, (outs ImplDataReg:$d15),
                               (ins DataRegs:$s1_d, DataRegs:$s2),
                               "sub", "\t$d15, $s1_d, $s2">;
@@ -719,7 +735,7 @@ let Defs = [PSW] in {
 def AND_ddc          :  LOGIC_RC<0x8F, 0x08, "and">;
 def AND_ddd          :  LOGIC_RR<0x0F, 0x08, "and">;
 
-let Constraints = "$d15 = $src" in
+let Constraints = "$d15 = $src", DecoderMethod = "decode_16_d15d15c" in
 def AND_16_d15c      :  SC<0x16, (outs ImplDataReg:$d15),
                            (ins ImplDataReg:$src, uimm8:$const8),
                            "and", "\t$d15, $const8">;
@@ -750,7 +766,7 @@ def NOT_16_d         :  SR<0x46, 0x00, (outs DataRegs:$s1_d),
 def OR_ddc           :  LOGIC_RC<0x8F, 0x0A, "or">;
 def OR_ddd           :  LOGIC_RR<0x0F, 0x0A, "or">;
 
-let Constraints = "$d15 = $src" in
+let Constraints = "$d15 = $src", DecoderMethod = "decode_16_d15d15c" in
 def OR_16_d15c       :  SC<0x96, (outs ImplDataReg:$d15),
                            (ins ImplDataReg:$src, uimm8:$const8),
                            "or", "\t$d15, $const8">;
@@ -879,10 +895,12 @@ let isCommutable = 1 in
 def EQ_ddd           :  CMP_RR<0x0B, 0x10, "eq">;
 
 let isCompare = 1, isReMaterializable = 1 in {
+  let DecoderMethod = "decode_16_d15dc" in
   def EQ_16_d15dc    : SRC<0xBA, (outs ImplDataReg:$d15),
                            (ins DataRegs:$s1_d, simm4:$const4),
                            "eq", "\t$d15, $s1_d, $const4">;
 
+  let DecoderMethod = "decode_16_d15dd" in
   def EQ_16_d15dd    : SRR<0x3A, (outs ImplDataReg:$d15),
                            (ins DataRegs:$s1_d, DataRegs:$s2),
                            "eq", "\t$d15, $s1_d, $s2">;
@@ -899,10 +917,12 @@ def LT_ddc           :  CMP_RC<0x8B, 0x12, "lt">;
 def LT_ddd           :  CMP_RR<0x0B, 0x12, "lt">;
 
 let isCompare = 1, isReMaterializable = 1 in {
+  let DecoderMethod = "decode_16_d15dc" in
   def LT_16_d15dc    : SRC<0xFA, (outs ImplDataReg:$d15),
                            (ins DataRegs:$s1_d, simm4:$const4),
                            "lt", "\t$d15, $s1_d, $const4">;
 
+  let DecoderMethod = "decode_16_d15dd" in
   def LT_16_d15dd    : SRR<0x7A, (outs ImplDataReg:$d15),
                            (ins DataRegs:$s1_d, DataRegs:$s2),
                            "lt", "\t$d15, $s1_d, $s2">;
@@ -1117,6 +1137,7 @@ let isReMaterializable = 1 in {
                               (ins AddrRegs:$s2, DataRegs:$s1, uimm2:$n),
                               "addsc.a", "\t$d, $s2, $s1, $n">;
 
+    let DecoderMethod = "decode_16_aad15c" in
     def ADDSCA_16_aad15c : SRRS<0x10, (outs AddrRegs:$s1_d),
                                 (ins AddrRegs:$s2, ImplDataReg:$d15, uimm2:$n),
                                 "addsc.a", "\t$s1_d, $s2, $d15, $n">;
@@ -1134,7 +1155,7 @@ let isReMaterializable = 1 in {
                               (ins AddrRegs:$s1, AddrRegs:$s2),
                               "sub.a", "\t$d, $s1, $s2">;
 
-  let Constraints = "$a10 = $src" in
+  let Constraints = "$a10 = $src", DecoderMethod = "decode_16_a10a10c" in
   def SUBA_16_a10c       :  SC<0x20, (outs ImplStackPtrReg:$a10),
                               (ins ImplStackPtrReg:$src, uimm8:$const8),
                               "sub.a", "\t$a10, $const8">;
@@ -1205,10 +1226,16 @@ let Uses = [A11], isReturn = 1, isTerminator = 1, isBarrier = 1, s1_d = 0 in {
 def JEQ_dcc        : CB_BRC<0xDF, 0x00, "jeq">;
 def JEQ_ddc        : CB_BRR<0x5F, 0x00, "jeq">;
 
+let DecoderMethod = "decode_16_d15cc_uimm4_lsb0" in
 def JEQ_16_d15cc   : CB_SBC<0x1E,       "jeq">;
+
+let DecoderMethod = "decode_16_d15cc_disp4_16" in
 def JEQ_16_d15clc  : CB_SBC<0x9E,       "jeq", disp4_16>;
 
+let DecoderMethod = "decode_16_d15d_uimm4_lsb0" in
 def JEQ_16_d15dc   : CB_D15_SBR<0x3E,   "jeq">;
+
+let DecoderMethod = "decode_16_d15d_disp4_16" in
 def JEQ_16_d15dlc  : CB_D15_SBR<0xBE,   "jeq", disp4_16>;
 
 // JEQ.A
@@ -1246,17 +1273,24 @@ def JLTZ_16_dc     : CB_SBR<0x0E,       "jltz">;
 def JNE_dcc        : CB_BRC<0xDF, 0x01, "jne">;
 def JNE_ddc        : CB_BRR<0x5F, 0x01, "jne">;
 
+let DecoderMethod = "decode_16_d15cc_uimm4_lsb0" in
 def JNE_16_d15cc   : CB_SBC<0x5E,       "jne">;
+
+let DecoderMethod = "decode_16_d15cc_disp4_16" in
 def JNE_16_d15clc  : CB_SBC<0xDE,       "jne", disp4_16>;
 
+let DecoderMethod = "decode_16_d15d_uimm4_lsb0" in
 def JNE_16_d15dc   : CB_D15_SBR<0x7E,   "jne">;
+
+let DecoderMethod = "decode_16_d15d_disp4_16" in
 def JNE_16_d15dlc  : CB_D15_SBR<0xFE,   "jne", disp4_16>;
 
 // JNE.A
 def JNEA_aac       : CB_BRR<0x7D, 0x01, "jne.a", AddrRegs>;
 
 // JNZ
-let isBranch = 1, isTerminator = 1 in
+let isBranch = 1, isTerminator = 1,
+    DecoderMethod = "decode_16_d15c</*Signed*/ true, /*shift*/ 1>" in
 def JNZ_16_d15c    : SB<0xEE, (outs),
                         (ins ImplDataReg:$d15, simm8_lsb0:$disp8),
                         "jnz", "\t$d15, $disp8">;
@@ -1277,13 +1311,15 @@ let isBranch = 1, isTerminator = 1 in {
                          (ins DataRegs:$s1, uimm5:$n, simm15_lsb0:$disp15),
                          "jnz.t", "\t$s1, $n, $disp15">;
 
+  let DecoderMethod = "decode_16_d15cc_SBRN" in
   def JNZT_16_d15cc : SBRN<0xAE, (outs),
                           (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
                           "jnz.t", "\t$d15, $n, $disp4">;
 } // isBranch = 1, isTerminator = 1
 
 // JZ
-let isBranch = 1, isTerminator = 1 in
+let isBranch = 1, isTerminator = 1,
+    DecoderMethod = "decode_16_d15c</*Signed*/ true, /*shift*/ 1>" in
 def JZ_16_d15c     : SB<0x6E, (outs),
                         (ins ImplDataReg:$d15, simm8_lsb0:$disp8),
                         "jz", "\t$d15, $disp8">;
@@ -1304,6 +1340,7 @@ let isBranch = 1, isTerminator = 1 in {
                          (ins DataRegs:$s1, uimm5:$n, simm15_lsb0:$disp15),
                          "jz.t", "\t$s1, $n, $disp15">;
 
+  let DecoderMethod = "decode_16_d15cc_SBRN" in
   def JZT_16_d15cc : SBRN<0x2E, (outs),
                           (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
                           "jz.t", "\t$d15, $n, $disp4">;
@@ -1328,7 +1365,8 @@ let Constraints = "$s2 = $dest,@earlyclobber $dest" in {
 
 def LDA_aalc        : LOAD_BOL<           0x99, "ld.a", AddrRegs>;
 
-let mayLoad = 1, mayStore = 0 in
+let mayLoad = 1, mayStore = 0, 
+    DecoderMethod = "decode_16_x15a10c</*isD15*/ false>" in
 def LDA_16_a15a10c  : SC<0xD8, (outs ImplAddrReg:$a15),
                         (ins ImplStackPtrReg:$a10, uimm8_lsb00:$const8),
                         "ld.a", "\t$a15, [$a10], $const8">;
@@ -1338,7 +1376,10 @@ def LDA_16_aa       : LOAD_SLR<           0xD4, "ld.a", AddrRegs>;
 let Constraints = "$s2 = $dest,@earlyclobber $dest" in
 def LDA_16_aa_poi   : LOAD_SLR_POST<      0xC4, "ld.a", AddrRegs>;
 
+let DecoderMethod = "decode_16_aa15c" in
 def LDA_16_aa15c    : LOAD_SLRO<0xC8, "ld.a", AddrRegs,    uimm4_lsb00>;
+
+let DecoderMethod = "decode_16_x15ac</*shift*/ 2,/*isD15*/ false>" in
 def LDA_16_a15ac    : LOAD_SRO<0xCC,  "ld.a", ImplAddrReg, uimm4_lsb00>;
 
 // LD.B
@@ -1360,7 +1401,11 @@ def LDBU_dac_pri    : LOAD_BO_PRE<  0x09, 0x11, "ld.bu">;
 def LDBU_dalc       : LOAD_BOL<           0x39, "ld.bu">;
 def LDBU_16_da      : LOAD_SLR<           0x14, "ld.bu">;
 def LDBU_16_da_poi  : LOAD_SLR_POST<      0x04, "ld.bu">;
+
+let DecoderMethod = "decode_16_da15c</*shift*/ 0>" in
 def LDBU_16_da15c   : LOAD_SLRO<0x08,           "ld.bu", DataRegs,    uimm4>;
+
+let DecoderMethod = "decode_16_x15ac</*shift*/ 0, /*isD15*/ true>" in
 def LDBU_16_d15ac   : LOAD_SRO<0x0C,            "ld.bu", ImplDataReg, uimm4>;
 
 // LD.D
@@ -1389,7 +1434,11 @@ def LDH_dac_pri     : LOAD_BO_PRE<  0x09, 0x12, "ld.h">;
 def LDH_dalc        : LOAD_BOL<           0xC9, "ld.h">;
 def LDH_16_da       : LOAD_SLR<           0x94, "ld.h">;
 def LDH_16_da_poi   : LOAD_SLR_POST<      0x84, "ld.h">;
+
+let DecoderMethod = "decode_16_da15c</*shift*/ 1>" in
 def LDH_16_da15c    : LOAD_SLRO<0x88, "ld.h", DataRegs,    uimm4_lsb0>;
+
+let DecoderMethod = "decode_16_x15ac</*shift*/ 1, /*isD15*/ true>" in
 def LDH_16_d15ac    : LOAD_SRO<0x8C,  "ld.h", ImplDataReg, uimm4_lsb0>;
 
 // LD.HU
@@ -1418,14 +1467,19 @@ def LDW_dac_poi    : LOAD_BO_POST<  0x09, 0x04, "ld.w">;
 def LDW_dac_pri    : LOAD_BO_PRE<   0x09, 0x14, "ld.w">;
 def LDW_dalc       : LOAD_BOL<            0x19, "ld.w">;
 
-let mayLoad = 1, mayStore = 0 in
+let mayLoad = 1, mayStore = 0,
+    DecoderMethod = "decode_16_x15a10c</*isD15*/ true>" in
 def LDW_16_d15a10c : SC<0x58, (outs ImplDataReg:$d15),
                         (ins ImplStackPtrReg:$a10, uimm8_lsb00:$const8),
                         "ld.w", "\t$d15, [$a10], $const8">;
 
 def LDW_16_da      : LOAD_SLR<            0x54, "ld.w">;
 def LDW_16_da_poi  : LOAD_SLR_POST<       0x44, "ld.w">;
+
+let DecoderMethod = "decode_16_da15c</*shift*/ 2>" in
 def LDW_16_da15c   : LOAD_SLRO<0x48, "ld.w", DataRegs,    uimm4_lsb00>;
+
+let DecoderMethod = "decode_16_x15ac</*shift*/ 2, /*isD15*/ true>" in
 def LDW_16_d15ac   : LOAD_SRO<0x4C,  "ld.w", ImplDataReg, uimm4_lsb00>;
 
 // ST.A
@@ -1441,17 +1495,21 @@ let Constraints = "$s2 = $dest,@earlyclobber $dest" in {
 
 def STA_alca        : STORE_BOL<          0xB5, "st.a", AddrRegs>;
 
-let mayStore = 1, mayLoad = 0 in
+let mayStore = 1, mayLoad = 0,
+    DecoderMethod = "decode_16_a10cx15</*isD15*/ false>" in
 def STA_16_a10ca15  : SC<0xF8, (outs), (ins ImplStackPtrReg:$a10,
                          uimm8_lsb00:$const8, ImplAddrReg:$a15),
                          "st.a", "\t[$a10], $const8, $a15">;
 
+let DecoderMethod = "decode_16_acx15</*shift*/ 2, /*isD15*/ false>" in
 def STA_16_aca15    : STORE_SRO<0xEC,  "st.a", ImplAddrReg, uimm4_lsb00>;
+
 def STA_16_aa       : STORE_SSR<          0xF4, "st.a", AddrRegs>;
 
 let Constraints = "$s2 = $dest,@earlyclobber $dest" in
 def STA_16_aa_poi   : STORE_SSR_POST<     0xE4, "st.a", AddrRegs>;
 
+let DecoderMethod = "decode_16_a15cx</*shift*/ 2, /*isDReg*/ false>" in
 def STA_16_a15ca    : STORE_SSRO<0xE8, "st.a", AddrRegs,    uimm4_lsb00>;
 
 // ST.B
@@ -1462,9 +1520,14 @@ def STB_pcd         : STORE_BO_CR<  0xA9, 0x10, "st.b">;
 def STB_acd_poi     : STORE_BO_POST<0x89, 0x00, "st.b">;
 def STB_acd_pri     : STORE_BO_PRE< 0x89, 0x10, "st.b">;
 def STB_alcd        : STORE_BOL<          0xE9, "st.b">;
+
+let DecoderMethod = "decode_16_acx15</*shift*/ 0, /*isD15*/ true>" in
 def STB_16_acd15    : STORE_SRO<0x2C,  "st.b", ImplDataReg, uimm4>;
+
 def STB_16_ad       : STORE_SSR<          0x34, "st.b">;
 def STB_16_ad_poi   : STORE_SSR_POST<     0x24, "st.b">;
+
+let DecoderMethod = "decode_16_a15cx</*shift*/ 0, /*isDreg*/ true>" in
 def STB_16_a15cd    : STORE_SSRO<0x28, "st.b", DataRegs,    uimm4>;
 
 // ST.D
@@ -1491,9 +1554,14 @@ def STH_pcd         : STORE_BO_CR<  0xA9, 0x12, "st.h">;
 def STH_acd_poi     : STORE_BO_POST<0x89, 0x02, "st.h">;
 def STH_acd_pri     : STORE_BO_PRE< 0x89, 0x12, "st.h">;
 def STH_alcd        : STORE_BOL<          0xF9, "st.h">;
+
+let DecoderMethod = "decode_16_acx15</*shift*/ 1, /*isD15*/ true>" in
 def STH_16_acd15    : STORE_SRO<0xAC,  "st.h", ImplDataReg, uimm4_lsb0>;
+
 def STH_16_ad       : STORE_SSR<          0xB4, "st.h">;
 def STH_16_ad_poi   : STORE_SSR_POST<     0xA4, "st.h">;
+
+let DecoderMethod = "decode_16_a15cx</*shift*/ 1, /*isDReg*/ true>" in
 def STH_16_a15cd    : STORE_SSRO<0xA8, "st.h", DataRegs,    uimm4_lsb0>;
 
 // ST.Q
@@ -1513,14 +1581,19 @@ def STW_acd_poi     : STORE_BO_POST<0x89, 0x04, "st.w">;
 def STW_acd_pri     : STORE_BO_PRE< 0x89, 0x14, "st.w">;
 def STW_alcd        : STORE_BOL<          0x59, "st.w">;
 
-let mayStore = 1, mayLoad = 0 in
+let mayStore = 1, mayLoad = 0,
+    DecoderMethod = "decode_16_a10cx15</*isD15*/ true>" in
 def STW_16_a10cd15  : SC<0x78, (outs), (ins ImplStackPtrReg:$a10,
                          uimm8_lsb00:$const8, ImplDataReg:$d15),
                          "st.w", "\t[$a10], $const8, $d15">;
 
+let DecoderMethod = "decode_16_acx15</*shift*/ 2, /*isD15*/ true>" in
 def STW_16_acd15    : STORE_SRO<0x6C,  "st.w", ImplDataReg, uimm4_lsb00>;
+
 def STW_16_ad       : STORE_SSR<          0x74, "st.w">;
 def STW_16_ad_poi   : STORE_SSR_POST<     0x64, "st.w">;
+
+let DecoderMethod = "decode_16_a15cx</*shift*/ 2, /*isDReg*/ true>" in
 def STW_16_a15cd    : STORE_SSRO<0x68, "st.w", DataRegs,    uimm4_lsb00>;
 
 
