@@ -334,6 +334,25 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
+  // checking if in the range of 5 bit signed immediate
+  bool isSImm9Shift5() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = (Imm >= -16 && Imm <= 15);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
+  }
+
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
   /// getEndLoc - Gets location of the last token of this operand
@@ -513,6 +532,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm9Shift:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 5), (1 << 5) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
+  case Match_InvalidSImm9Shift5:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 4), (1 << 4) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
   case Match_InvalidSImm10:

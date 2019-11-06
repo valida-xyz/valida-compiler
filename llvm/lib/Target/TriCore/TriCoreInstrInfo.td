@@ -113,6 +113,12 @@ def simm9_shift : Operand<OtherVT> {
   let DecoderMethod = "decodeSImm9Shift";
 }
 
+// A 5 bit signed immediate encoded in 9 bit
+def simm9_shift5 : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"SImm9Shift5">;
+  let DecoderMethod = "decodeSImm9Shift5";
+}
+
 // A 9-bit signed immediate.
 def simm9 : GenericSignedImmediate<9, i32>,
             ImmLeaf<i32, [{ return Imm >= -256 && Imm < 256; }]>;
@@ -345,6 +351,20 @@ class SHIFT_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
                   (ins DataRegs:$s1, DataRegs:$s2),
                   mnemonic, "\t$d, $s1, $s2">;
 
+//===----------------------------------------------------------------------===//
+// 2.2 Packed Arithmetic
+//
+
+let n = 0 in
+class PARITH_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+            :  RR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s1, $s2">;
+
+class PARITH_RC<bits<8> opc1, bits<7> opc2, string mnemonic>
+            :  RC<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, simm9:$const9),
+                  mnemonic, "\t$d, $s1, $const9">;
 
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.
@@ -1336,6 +1356,134 @@ let isReMaterializable = 1 in {
                           "imask", "\t$d, $s2, $s3, $width">;
   } // s1 = 0
 } // isReMaterializable = 1
+
+//===----------------------------------------------------------------------===//
+// 2.2 Packed Arithmetic
+//
+
+let s1 = 0, n = 0, Defs = [PSW] in {
+  // ABS.B
+  def ABSB_dd          :  RR<0x0B, 0x5C, (outs DataRegs:$d),
+                              (ins DataRegs:$s2),
+                              "abs.b", "\t$d, $s2">;
+
+  // ABS.H
+  def ABSH_dd          :  RR<0x0B, 0x7C, (outs DataRegs:$d),
+                              (ins DataRegs:$s2),
+                              "abs.h", "\t$d, $s2">;
+} // s1 = 0, n = 0, Defs = [PSW]
+
+let Defs = [PSW] in {
+  // ABSDIF.B
+  def ABSDIFB_ddd      : PARITH_RR<0x0B, 0x4E, "absdif.b">;
+
+  // ABSDIF.H
+  def ABSDIFH_ddd      : PARITH_RR<0x0B, 0x6E, "absdif.h">;
+
+  // ABSDIFS.H
+  def ABSDIFSH_ddd     : PARITH_RR<0x0B, 0x6F, "absdifs.h">;
+
+  // ABSS.H
+  let s1 = 0, n = 0 in
+  def ABSSH_dd         :  RR<0x0B, 0x7D, (outs DataRegs:$d),
+                                (ins DataRegs:$s2),
+                                "abss.h", "\t$d, $s2">;
+
+  // ADD.B
+  def ADDB_ddd         :  PARITH_RR<0x0B, 0x40, "add.b">;
+
+  // ADD.H
+  def ADDH_ddd         :  PARITH_RR<0x0B, 0x60, "add.h">;
+
+  // ADDS.H
+  def ADDSH_ddd        :  PARITH_RR<0x0B, 0x62, "adds.h">;
+
+  // ADDS.HU
+  def ADDSHU_ddd       :  PARITH_RR<0x0B, 0x63, "adds.hu">;
+} // Defs = [PSW]
+
+let  isReMaterializable = 1 in {
+  let s2 = 0, n = 0 in {
+    // CLO.H
+    def CLOH_dd        :  RR<0x0F, 0x7D, (outs DataRegs:$d),
+                                  (ins DataRegs:$s1),
+                                  "clo.h", "\t$d, $s1">;
+
+    // CLS.H
+    def CLSH_dd        :  RR<0x0F, 0x7E, (outs DataRegs:$d),
+                                  (ins DataRegs:$s1),
+                                  "cls.h", "\t$d, $s1">;
+
+    // CLZ.H
+    def CLZH_dd        :  RR<0x0F, 0x7C, (outs DataRegs:$d),
+                                  (ins DataRegs:$s1),
+                                  "clz.h", "\t$d, $s1">;
+  } // s2 = 0, n = 0
+
+  // EQANY.B
+  def EQANYB_ddc       :  PARITH_RC<0x8B, 0x56, "eqany.b">;
+  let isCommutable = 1 in
+  def EQANYB_ddd       :  PARITH_RR<0x0B, 0x56, "eqany.b">;
+
+  // EQANY.H
+  def EQANYH_ddc       :  PARITH_RC<0x8B, 0x76, "eqany.h">;
+  let isCommutable = 1 in
+  def EQANYH_ddd       :  PARITH_RR<0x0B, 0x76, "eqany.h">;
+
+  let isCommutable = 1 in {
+    // MAX.B
+    def MAXB_ddd       :  PARITH_RR<0x0B, 0x5A, "max.b">;
+
+    // MAX.BU
+    def MAXBU_ddd      :  PARITH_RR<0x0B, 0x5B, "max.bu">;
+
+    // MAX.H
+    def MAXH_ddd       :  PARITH_RR<0x0B, 0x7A, "max.h">;
+
+    // MAX.HU
+    def MAXHU_ddd      :  PARITH_RR<0x0B, 0x7B, "max.hu">;
+
+    // MIN.B
+    def MINB_ddd       :  PARITH_RR<0x0B, 0x58, "min.b">;
+
+    // MIN.BU
+    def MINBU_ddd      :  PARITH_RR<0x0B, 0x59, "min.bu">;
+
+    // MIN.H
+    def MINH_ddd       :  PARITH_RR<0x0B, 0x78, "min.h">;
+
+    // MIN.HU
+    def MINHU_ddd      :  PARITH_RR<0x0B, 0x79, "min.hu">;
+  } // isCommutable = 1
+
+  // SH.H
+  def SHH_ddc          :  RC<0x8F, 0x40, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, simm9_shift5:$const9),
+                            "sh.h", "\t$d, $s1, $const9">;
+
+  def SHH_ddd          :  PARITH_RR<0x0F, 0x40, "sh.h">;
+
+  // SHA.H
+  def SHAH_ddc          :  RC<0x8F, 0x41, (outs DataRegs:$d),
+                            (ins DataRegs:$s1, simm9_shift5:$const9),
+                            "sha.h", "\t$d, $s1, $const9">;
+
+  def SHAH_ddd         :  PARITH_RR<0x0F, 0x41, "sha.h">;
+} // isReMaterializable = 1
+
+let Defs = [PSW] in {
+  // SUB.B
+  def SUBB_ddd           :  PARITH_RR<0x0B, 0x48, "sub.b">;
+
+  // SUB.H
+  def SUBH_ddd           :  PARITH_RR<0x0B, 0x68, "sub.h">;
+
+  // SUBS.H
+  def SUBSH_ddd          :  PARITH_RR<0x0B, 0x6A, "subs.h">;
+
+  // SUBS.HU
+  def SUBSHU_ddd         :  PARITH_RR<0x0B, 0x6B, "subs.hu">;
+} // Defs = [PSW]
 
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.

@@ -72,6 +72,9 @@ static DecodeStatus decodeUImmLsbNIsZero(MCInst &Inst, uint64_t Imm,
 static DecodeStatus decodeSImm9Shift(MCInst &Inst, uint64_t Imm,
                                      int64_t Address, const void *Decoder);
 
+static DecodeStatus decodeSImm9Shift5(MCInst &Inst, uint64_t Imm,
+                                     int64_t Address, const void *Decoder);
+
 static DecodeStatus decodeOff18Abs(MCInst &Inst, uint64_t Imm, int64_t Address,
                                    const void *Decoder);
 
@@ -260,6 +263,13 @@ static DecodeStatus decodeSImm9Shift(MCInst &Inst, uint64_t Imm,
                                      int64_t Address, const void *Decoder) {
   assert(isUInt<9>(Imm) && "Invalid signed 6 bit shift value");
   Inst.addOperand(MCOperand::createImm(SignExtend64<6>(Imm & 0x3f)));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus decodeSImm9Shift5(MCInst &Inst, uint64_t Imm,
+                                     int64_t Address, const void *Decoder) {
+  assert(isUInt<9>(Imm) && "Invalid signed 5 bit shift value");
+  Inst.addOperand(MCOperand::createImm(SignExtend64<5>(Imm & 0x1f)));
   return MCDisassembler::Success;
 }
 
