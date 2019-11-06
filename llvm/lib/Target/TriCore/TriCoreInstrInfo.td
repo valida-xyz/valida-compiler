@@ -205,6 +205,41 @@ let Defs = [PSW] in {
                     mnemonic, "\t$d, $s1, $s2">;
 } // Defs = [PSW]
 
+// 2.1.3 Multiply and multiply-add.
+
+class MULTIPLY_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
+                  Operand op_type = simm9,
+                  RegisterClass RC = DataRegs>
+               :  RC<opc1, opc2, (outs RC:$d),
+                     (ins DataRegs:$s1, op_type:$const9),
+                     mnemonic, "\t$d, $s1, $const9">;
+
+class MULTIPLY_RCR<bits<8> opc1, bits<3> opc2, string mnemonic,
+                   Operand op_type = simm9>
+                :  RCR<opc1, opc2, (outs DataRegs:$d),
+                       (ins DataRegs:$s3, DataRegs:$s1, op_type:$const9),
+                       mnemonic, "\t$d, $s3, $s1, $const9">;
+
+class MULTIPLY_RCR_E<bits<8> opc1, bits<3> opc2, string mnemonic,
+                     Operand op_type = simm9>
+                  :  RCR<opc1, opc2, (outs ExtDataRegs:$d),
+                         (ins ExtDataRegs:$s3, DataRegs:$s1, op_type:$const9),
+                         mnemonic, "\t$d, $s3, $s1, $const9">;
+
+let isCommutable = 1 in {
+  class MULTIPLY_RR2<bits<8> opc1, bits<12> opc2, string mnemonic,
+                     RegisterClass RC = DataRegs>
+                  :  RR2<opc1, opc2, (outs RC:$d),
+                         (ins DataRegs:$s1, DataRegs:$s2),
+                         mnemonic, "\t$d, $s1, $s2">;
+} // isCommutable = 1
+
+class MULTIPLY_RRR2<bits<8> opc1, bits<8> opc2, string mnemonic,
+                    RegisterClass RC = DataRegs>
+                 :  RRR2<opc1, opc2, (outs RC:$d),
+                         (ins RC:$s3, DataRegs:$s1, DataRegs:$s2),
+                         mnemonic, "\t$d, $s3, $s1, $s2">;
+
 // 2.1.8 Logical.
 
 let isReMaterializable = 1 in {
@@ -728,6 +763,75 @@ let Defs = [PSW] in {
   def RSUBSU_ddc       :  ADDSUB_RC<0x8B, 0x0B, "rsubs.u">;
 } // Defs = [PSW]
 
+// 2.1.3 Multiply and multiply-add.
+let Defs = [PSW] in {
+  // MUL
+  def MUL_ddc        :  MULTIPLY_RC<0x53,    0x01, "mul"    >;
+  def MUL_edc        :  MULTIPLY_RC<0x53,    0x03, "mul",  simm9, ExtDataRegs >;
+  def MUL_ddd        :  MULTIPLY_RR2<0x73,   0x0A, "mul"    >;
+  def MUL_edd        :  MULTIPLY_RR2<0x73,   0x6A, "mul",         ExtDataRegs >;
+
+  let Constraints = "$s1_d = $src" in
+  def MUL_16_dd      :  SRR<0xE2, (outs DataRegs:$s1_d),
+                              (ins DataRegs:$src, DataRegs:$s2),
+                              "mul", "\t$s1_d, $s2">;
+
+  // MULS
+  def MULS_ddc       :  MULTIPLY_RC<0x53,    0x05, "muls"   >;
+  def MULS_ddd       :  MULTIPLY_RR2<0x73,   0x8A, "muls"   >;
+
+  // MUL.U
+  def MULU_edc       :  MULTIPLY_RC<0x53,    0x02, "mul.u", uimm9, ExtDataRegs>;
+  def MULU_edd       :  MULTIPLY_RR2<0x73,   0x68, "mul.u", ExtDataRegs       >;
+
+  // MULS.U
+  def MULSU_ddc      :  MULTIPLY_RC<0x53 ,   0x04, "muls.u", uimm9>;
+  def MULSU_ddd      :  MULTIPLY_RR2<0x73,   0x88, "muls.u"       >;
+
+  // MADD
+  def MADD_dddc      :  MULTIPLY_RCR<0x13,   0x01, "madd"   >;
+  def MADD_eedc      :  MULTIPLY_RCR_E<0x13, 0x03, "madd"   >;
+  def MADD_dddd      :  MULTIPLY_RRR2<0x03,  0x0A, "madd"                >;
+  def MADD_eedd      :  MULTIPLY_RRR2<0x03,  0x6A, "madd", ExtDataRegs   >;
+
+  // MADDS
+  def MADDS_dddc     :  MULTIPLY_RCR<0x13,   0x05, "madds"               >;
+  def MADDS_eedc     :  MULTIPLY_RCR_E<0x13, 0x07, "madds"  >;
+  def MADDS_dddd     :  MULTIPLY_RRR2<0x03,  0x8A, "madds"  >;
+  def MADDS_eedd     :  MULTIPLY_RRR2<0x03,  0xEA, "madds", ExtDataRegs  >;
+
+  // MADD.U
+  def MADDU_eedc     :  MULTIPLY_RCR_E<0x13, 0x02, "madd.u", uimm9       >;
+  def MADDU_eedd     :  MULTIPLY_RRR2<0x03,  0x68, "madd.u", ExtDataRegs >;
+
+  // MADDS.U
+  def MADDSU_dddc    :  MULTIPLY_RCR<0x13,   0x04, "madds.u", uimm9      >;
+  def MADDSU_eedc    :  MULTIPLY_RCR_E<0x13, 0x06, "madds.u", uimm9      >;
+  def MADDSU_dddd    :  MULTIPLY_RRR2<0x03,  0x88, "madds.u">;
+  def MADDSU_eedd    :  MULTIPLY_RRR2<0x03,  0xE8, "madds.u", ExtDataRegs>;
+
+  // MSUB
+  def MSUB_dddc      :  MULTIPLY_RCR<0x33,   0x01, "msub"   >;
+  def MSUB_eedc      :  MULTIPLY_RCR_E<0x33, 0x03, "msub"   >;
+  def MSUB_dddd      :  MULTIPLY_RRR2<0x23,  0x0A, "msub"   >;
+  def MSUB_eedd      :  MULTIPLY_RRR2<0x23,  0x6A, "msub",    ExtDataRegs>;
+
+  // MSUBS
+  def MSUBS_dddc     :  MULTIPLY_RCR<0x33,   0x05, "msubs"  >;
+  def MSUBS_eedc     :  MULTIPLY_RCR_E<0x33, 0x07, "msubs"  >;
+  def MSUBS_dddd     :  MULTIPLY_RRR2<0x23,  0x8A, "msubs"               >;
+  def MSUBS_eedd     :  MULTIPLY_RRR2<0x23,  0xEA, "msubs", ExtDataRegs  >;
+
+  // MSUB.U
+  def MSUBU_eedc     :  MULTIPLY_RCR_E<0x33, 0x02, "msub.u", uimm9       >;
+  def MSUBU_eedd     :  MULTIPLY_RRR2<0x23,  0x68, "msub.u", ExtDataRegs >;
+
+  // MSUBS.U
+  def MSUBSU_dddc    :  MULTIPLY_RCR<0x33,   0x04, "msubs.u", uimm9      >;
+  def MSUBSU_eedc    :  MULTIPLY_RCR_E<0x33, 0x06, "msubs.u", uimm9      >;
+  def MSUBSU_dddd    :  MULTIPLY_RRR2<0x23,  0x88, "msubs.u"             >;
+  def MSUBSU_eedd    :  MULTIPLY_RRR2<0x23,  0xE8, "msubs.u", ExtDataRegs>;
+} // Defs = [PSW]
 
 // 2.1.8 Logical.
 
