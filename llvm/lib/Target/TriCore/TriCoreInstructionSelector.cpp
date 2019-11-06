@@ -213,9 +213,9 @@ bool TriCoreInstructionSelector::selectConstant(
     MIRBuilder.buildInstr(TriCore::REG_SEQUENCE)
         .addDef(DestReg)
         .addUse(LowerDestReg)
-        .addImm(TriCore::even)
+        .addImm(TriCore::dsub0)
         .addUse(HigherDestReg)
-        .addImm(TriCore::odd);
+        .addImm(TriCore::dsub1);
 
     TriCoreRegisterBankInfo::constrainGenericRegister(
         DestReg, TriCore::ExtDataRegsRegClass, MRI);

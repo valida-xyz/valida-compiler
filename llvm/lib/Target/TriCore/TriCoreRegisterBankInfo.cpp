@@ -137,14 +137,14 @@ const RegisterBank &TriCoreRegisterBankInfo::getRegBankFromRegClass(
   switch (RC.getID()) {
   case TriCore::AddrRegsRegClassID:
   case TriCore::ExtAddrRegsRegClassID:
-  case TriCore::ExtAddrRegs_with_even_in_ImplStackPtrRegRegClassID:
-  case TriCore::ExtAddrRegs_with_odd_in_ImplAddrRegRegClassID:
+  case TriCore::ExtAddrRegs_with_asub0_in_ImplStackPtrRegRegClassID:
+  case TriCore::ExtAddrRegs_with_asub1_in_ImplAddrRegRegClassID:
   case TriCore::ImplAddrRegRegClassID:
   case TriCore::ImplStackPtrRegRegClassID:
     return getRegBank(TriCore::AddrRegBankID);
   case TriCore::DataRegsRegClassID:
   case TriCore::ExtDataRegsRegClassID:
-  case TriCore::ExtDataRegs_with_odd_in_ImplDataRegRegClassID:
+  case TriCore::ExtDataRegs_with_dsub1_in_ImplDataRegRegClassID:
   case TriCore::ImplDataRegRegClassID:
     return getRegBank(TriCore::DataRegBankID);
   default:

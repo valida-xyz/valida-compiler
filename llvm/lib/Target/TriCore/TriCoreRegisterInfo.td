@@ -54,11 +54,13 @@ def A14 : TriCoreReg<14, "a14">, DwarfRegNum<[30]>;
 def A15 : TriCoreReg<15, "a15">, DwarfRegNum<[31]>;
 
 let Namespace = "TriCore" in {
-  def even: SubRegIndex<32>;
-  def odd : SubRegIndex<32>;
+  def dsub0: SubRegIndex<32>;
+  def dsub1 : SubRegIndex<32, 32>;
+  def asub0: SubRegIndex<32>;
+  def asub1 : SubRegIndex<32, 32>;
 }
 // Extended data registers
-let SubRegIndices = [even, odd] in {
+let SubRegIndices = [dsub0, dsub1] in {
     def E0  : TriCoreReg<0,   "e0",  [D0,D1] >, DwarfRegNum<[32]>;
     def E2  : TriCoreReg<2,   "e2",  [D2,D3] >, DwarfRegNum<[33]>;
     def E4  : TriCoreReg<4,   "e4",  [D4,D5] >, DwarfRegNum<[34]>;
@@ -70,7 +72,7 @@ let SubRegIndices = [even, odd] in {
 }
 
 // Extended address registers
-let SubRegIndices = [even, odd] in {
+let SubRegIndices = [asub0, asub1] in {
     def P0  : TriCoreReg<0,   "p0",  [A0,A1]>;
     def P2  : TriCoreReg<2,   "p2",  [A2,A3]>;
     def P4  : TriCoreReg<4,   "p4",  [A4,A5]>;
