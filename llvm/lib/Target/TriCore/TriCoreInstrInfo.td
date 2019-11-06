@@ -335,6 +335,14 @@ class SBO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
                   (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
                   mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
 
+// 2.6.2 Accumulating Bit Operations
+
+let isReMaterializable = 1 in
+class ABO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
+            : BIT<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
+                  mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
+
 // 2.6.3 Shifting Bit Operations
 
 let isReMaterializable = 1 in
@@ -1308,6 +1316,31 @@ def XORT_ddcdc       : SBO_BIT<0x07, 0x03, "xor.t" >;
 // XNOR.T
 def XNORT_ddcdc      : SBO_BIT<0x07, 0x02, "xnor.t">;
 
+// 2.6.2 Accumulating Bit Operations
+
+// AND.AND.T
+def ANDANDT_ddcdc    : ABO_BIT<0x47, 0x00, "and.and.t" >;
+
+// AND.ANDN.T
+def ANDANDNT_ddcdc   : ABO_BIT<0x47, 0x03, "and.andn.t">;
+
+// AND.NOR.T
+def ANDNORT_ddcdc    : ABO_BIT<0x47, 0x02, "and.nor.t" >;
+
+// AND.OR.T
+def ANDORT_ddcdc     : ABO_BIT<0x47, 0x01, "and.or.t"  >;
+
+// OR.AND.T
+def ORANDT_ddcdc     : ABO_BIT<0xC7, 0x00, "or.and.t"  >;
+
+// OR.ANDN.T
+def ORANDNT_ddcdc    : ABO_BIT<0xC7, 0x03, "or.andn.t" >;
+
+// OR.NOR.T
+def ORNORT_ddcdc     : ABO_BIT<0xC7, 0x02, "or.nor.t"  >;
+
+// OR.OR.T
+def ORORT_ddcdc      : ABO_BIT<0xC7, 0x01, "or.or.t"   >;
 
 // 2.6.3 Shifting Bit Operations
 
