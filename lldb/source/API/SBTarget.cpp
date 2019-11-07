@@ -36,7 +36,6 @@
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
-#include "lldb/Core/STLUtils.h"
 #include "lldb/Core/SearchFilter.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StructuredDataImpl.h"
@@ -1598,7 +1597,7 @@ lldb::SBModule SBTarget::AddModule(const SBModuleSpec &module_spec) {
   lldb::SBModule sb_module;
   TargetSP target_sp(GetSP());
   if (target_sp)
-    sb_module.SetSP(target_sp->GetOrCreateModule(*module_spec.m_opaque_up, 
+    sb_module.SetSP(target_sp->GetOrCreateModule(*module_spec.m_opaque_up,
                                                  true /* notify */));
   return LLDB_RECORD_RESULT(sb_module);
 }
@@ -1653,11 +1652,8 @@ SBSymbolContextList SBTarget::FindCompileUnits(const SBFileSpec &sb_file_spec) {
 
   SBSymbolContextList sb_sc_list;
   const TargetSP target_sp(GetSP());
-  if (target_sp && sb_file_spec.IsValid()) {
-    const bool append = true;
-    target_sp->GetImages().FindCompileUnits(*sb_file_spec,
-                                            append, *sb_sc_list);
-  }
+  if (target_sp && sb_file_spec.IsValid())
+    target_sp->GetImages().FindCompileUnits(*sb_file_spec, *sb_sc_list);
   return LLDB_RECORD_RESULT(sb_sc_list);
 }
 
@@ -1783,10 +1779,9 @@ lldb::SBSymbolContextList SBTarget::FindFunctions(const char *name,
 
   const bool symbols_ok = true;
   const bool inlines_ok = true;
-  const bool append = true;
   FunctionNameType mask = static_cast<FunctionNameType>(name_type_mask);
   target_sp->GetImages().FindFunctions(ConstString(name), mask, symbols_ok,
-                                       inlines_ok, append, *sb_sc_list);
+                                       inlines_ok, *sb_sc_list);
   return LLDB_RECORD_RESULT(sb_sc_list);
 }
 
@@ -1806,17 +1801,16 @@ lldb::SBSymbolContextList SBTarget::FindGlobalFunctions(const char *name,
       switch (matchtype) {
       case eMatchTypeRegex:
         target_sp->GetImages().FindFunctions(RegularExpression(name_ref), true,
-                                             true, true, *sb_sc_list);
+                                             true, *sb_sc_list);
         break;
       case eMatchTypeStartsWith:
         regexstr = llvm::Regex::escape(name) + ".*";
         target_sp->GetImages().FindFunctions(RegularExpression(regexstr), true,
-                                             true, true, *sb_sc_list);
+                                             true, *sb_sc_list);
         break;
       default:
-        target_sp->GetImages().FindFunctions(ConstString(name),
-                                             eFunctionNameTypeAny, true, true,
-                                             true, *sb_sc_list);
+        target_sp->GetImages().FindFunctions(
+            ConstString(name), eFunctionNameTypeAny, true, true, *sb_sc_list);
         break;
       }
     }
@@ -1933,9 +1927,9 @@ SBValueList SBTarget::FindGlobalVariables(const char *name,
   TargetSP target_sp(GetSP());
   if (name && target_sp) {
     VariableList variable_list;
-    const uint32_t match_count = target_sp->GetImages().FindGlobalVariables(
-        ConstString(name), max_matches, variable_list);
-
+    target_sp->GetImages().FindGlobalVariables(ConstString(name), max_matches,
+                                               variable_list);
+    const uint32_t match_count = variable_list.GetSize();
     if (match_count > 0) {
       ExecutionContextScope *exe_scope = target_sp->GetProcessSP().get();
       if (exe_scope == nullptr)
@@ -1970,20 +1964,20 @@ SBValueList SBTarget::FindGlobalVariables(const char *name,
     uint32_t match_count;
     switch (matchtype) {
     case eMatchTypeNormal:
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          ConstString(name), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(ConstString(name), max_matches,
+                                                 variable_list);
       break;
     case eMatchTypeRegex:
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          RegularExpression(name_ref), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(RegularExpression(name_ref),
+                                                 max_matches, variable_list);
       break;
     case eMatchTypeStartsWith:
       regexstr = llvm::Regex::escape(name) + ".*";
-      match_count = target_sp->GetImages().FindGlobalVariables(
-          RegularExpression(regexstr), max_matches, variable_list);
+      target_sp->GetImages().FindGlobalVariables(RegularExpression(regexstr),
+                                                 max_matches, variable_list);
       break;
     }
-
+    match_count = variable_list.GetSize();
     if (match_count > 0) {
       ExecutionContextScope *exe_scope = target_sp->GetProcessSP().get();
       if (exe_scope == nullptr)
@@ -2287,11 +2281,9 @@ lldb::SBSymbolContextList SBTarget::FindSymbols(const char *name,
   SBSymbolContextList sb_sc_list;
   if (name && name[0]) {
     TargetSP target_sp(GetSP());
-    if (target_sp) {
-      bool append = true;
+    if (target_sp)
       target_sp->GetImages().FindSymbolsWithNameAndType(
-          ConstString(name), symbol_type, *sb_sc_list, append);
-    }
+          ConstString(name), symbol_type, *sb_sc_list);
   }
   return LLDB_RECORD_RESULT(sb_sc_list);
 }

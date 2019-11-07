@@ -1879,6 +1879,8 @@ CCAssignFn *ARMFastISel::CCAssignFnForCall(CallingConv::ID CC,
       report_fatal_error("Can't return in GHC call convention");
     else
       return CC_ARM_APCS_GHC;
+  case CallingConv::CFGuard_Check:
+    return (Return ? RetCC_ARM_AAPCS : CC_ARM_Win32_CFGuard_Check);
   }
 }
 
@@ -2237,8 +2239,7 @@ bool ARMFastISel::ARMEmitLibcall(const Instruction *I, RTLIB::Libcall Call) {
     if (!isTypeLegal(ArgTy, ArgVT)) return false;
 
     ISD::ArgFlagsTy Flags;
-    unsigned OriginalAlignment = DL.getABITypeAlignment(ArgTy);
-    Flags.setOrigAlign(OriginalAlignment);
+    Flags.setOrigAlign(Align(DL.getABITypeAlignment(ArgTy)));
 
     Args.push_back(Op);
     ArgRegs.push_back(Arg);
@@ -2371,8 +2372,7 @@ bool ARMFastISel::SelectCall(const Instruction *I,
     if (!Arg.isValid())
       return false;
 
-    unsigned OriginalAlignment = DL.getABITypeAlignment(ArgTy);
-    Flags.setOrigAlign(OriginalAlignment);
+    Flags.setOrigAlign(Align(DL.getABITypeAlignment(ArgTy)));
 
     Args.push_back(*i);
     ArgRegs.push_back(Arg);

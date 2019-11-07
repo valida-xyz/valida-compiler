@@ -563,15 +563,26 @@ static bool hasSourceMods(const SDNode *N) {
   case ISD::FREM:
   case ISD::INLINEASM:
   case ISD::INLINEASM_BR:
-  case AMDGPUISD::INTERP_P1:
-  case AMDGPUISD::INTERP_P2:
   case AMDGPUISD::DIV_SCALE:
+  case ISD::INTRINSIC_W_CHAIN:
 
   // TODO: Should really be looking at the users of the bitcast. These are
   // problematic because bitcasts are used to legalize all stores to integer
   // types.
   case ISD::BITCAST:
     return false;
+  case ISD::INTRINSIC_WO_CHAIN: {
+    switch (cast<ConstantSDNode>(N->getOperand(0))->getZExtValue()) {
+    case Intrinsic::amdgcn_interp_p1:
+    case Intrinsic::amdgcn_interp_p2:
+    case Intrinsic::amdgcn_interp_mov:
+    case Intrinsic::amdgcn_interp_p1_f16:
+    case Intrinsic::amdgcn_interp_p2_f16:
+      return false;
+    default:
+      return true;
+    }
+  }
   default:
     return true;
   }
@@ -2828,54 +2839,6 @@ bool AMDGPUTargetLowering::shouldCombineMemoryType(EVT VT) const {
   return true;
 }
 
-// Find a load or store from corresponding pattern root.
-// Roots may be build_vector, bitconvert or their combinations.
-static MemSDNode* findMemSDNode(SDNode *N) {
-  N = AMDGPUTargetLowering::stripBitcast(SDValue(N,0)).getNode();
-  if (MemSDNode *MN = dyn_cast<MemSDNode>(N))
-    return MN;
-  assert(isa<BuildVectorSDNode>(N));
-  for (SDValue V : N->op_values())
-    if (MemSDNode *MN =
-          dyn_cast<MemSDNode>(AMDGPUTargetLowering::stripBitcast(V)))
-      return MN;
-  llvm_unreachable("cannot find MemSDNode in the pattern!");
-}
-
-bool AMDGPUTargetLowering::SelectFlatOffset(bool IsSigned,
-                                            SelectionDAG &DAG,
-                                            SDNode *N,
-                                            SDValue Addr,
-                                            SDValue &VAddr,
-                                            SDValue &Offset,
-                                            SDValue &SLC) const {
-  const GCNSubtarget &ST =
-        DAG.getMachineFunction().getSubtarget<GCNSubtarget>();
-  int64_t OffsetVal = 0;
-
-  if (ST.hasFlatInstOffsets() &&
-      (!ST.hasFlatSegmentOffsetBug() ||
-       findMemSDNode(N)->getAddressSpace() != AMDGPUAS::FLAT_ADDRESS) &&
-      DAG.isBaseWithConstantOffset(Addr)) {
-    SDValue N0 = Addr.getOperand(0);
-    SDValue N1 = Addr.getOperand(1);
-    int64_t COffsetVal = cast<ConstantSDNode>(N1)->getSExtValue();
-
-    const SIInstrInfo *TII = ST.getInstrInfo();
-    if (TII->isLegalFLATOffset(COffsetVal, findMemSDNode(N)->getAddressSpace(),
-                               IsSigned)) {
-      Addr = N0;
-      OffsetVal = COffsetVal;
-    }
-  }
-
-  VAddr = Addr;
-  Offset = DAG.getTargetConstant(OffsetVal, SDLoc(), MVT::i16);
-  SLC = DAG.getTargetConstant(0, SDLoc(), MVT::i1);
-
-  return true;
-}
-
 // Replace load of an illegal type with a store of a bitcast to a friendlier
 // type.
 SDValue AMDGPUTargetLowering::performLoadCombine(SDNode *N,
@@ -4213,7 +4176,7 @@ uint32_t AMDGPUTargetLowering::getImplicitParameterOffset(
   const AMDGPUSubtarget &ST =
       AMDGPUSubtarget::get(getTargetMachine(), MF.getFunction());
   unsigned ExplicitArgOffset = ST.getExplicitKernelArgOffset(MF.getFunction());
-  unsigned Alignment = ST.getAlignmentForImplicitArgPtr();
+  const Align Alignment = ST.getAlignmentForImplicitArgPtr();
   uint64_t ArgOffset = alignTo(MFI->getExplicitKernArgSize(), Alignment) +
                        ExplicitArgOffset;
   switch (Param) {
@@ -4331,9 +4294,6 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(KILL)
   NODE_NAME_CASE(DUMMY_CHAIN)
   case AMDGPUISD::FIRST_MEM_OPCODE_NUMBER: break;
-  NODE_NAME_CASE(INTERP_MOV)
-  NODE_NAME_CASE(INTERP_P1)
-  NODE_NAME_CASE(INTERP_P2)
   NODE_NAME_CASE(INTERP_P1LL_F16)
   NODE_NAME_CASE(INTERP_P1LV_F16)
   NODE_NAME_CASE(INTERP_P2_F16)
@@ -4383,7 +4343,6 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(BUFFER_ATOMIC_CMPSWAP)
   NODE_NAME_CASE(BUFFER_ATOMIC_FADD)
   NODE_NAME_CASE(BUFFER_ATOMIC_PK_FADD)
-  NODE_NAME_CASE(ATOMIC_FADD)
   NODE_NAME_CASE(ATOMIC_PK_FADD)
 
   case AMDGPUISD::LAST_AMDGPU_ISD_NUMBER: break;
@@ -4475,6 +4434,9 @@ void AMDGPUTargetLowering::computeKnownBitsForTargetNode(
     unsigned TrailZ = LHSKnown.countMinTrailingZeros() +
                       RHSKnown.countMinTrailingZeros();
     Known.Zero.setLowBits(std::min(TrailZ, 32u));
+    // Skip extra check if all bits are known zeros.
+    if (TrailZ >= 32)
+      break;
 
     // Truncate to 24 bits.
     LHSKnown = LHSKnown.trunc(24);

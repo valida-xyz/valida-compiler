@@ -441,10 +441,10 @@ readInputBinaries(ArrayRef<InputFile> InputFiles) {
     if (IF.ArchType && (B->isMachO() || B->isArchive())) {
       const auto S = B->isMachO() ? Slice(cast<MachOObjectFile>(B))
                                   : Slice(cast<Archive>(B));
-      const auto SpecifiedCPUType =
-          MachO::getCPUTypeFromArchitecture(
-              MachO::mapToArchitecture(Triple(*IF.ArchType)))
-              .first;
+      const auto SpecifiedCPUType = MachO::getCPUTypeFromArchitecture(
+                                        MachO::getArchitectureFromName(
+                                            Triple(*IF.ArchType).getArchName()))
+                                        .first;
       // For compatibility with cctools' lipo the comparison is relaxed just to
       // checking cputypes.
       if (S.getCPUType() != SpecifiedCPUType)
@@ -583,7 +583,7 @@ static void extractSlice(ArrayRef<OwningBinary<Binary>> InputBinaries,
   exit(EXIT_SUCCESS);
 }
 
-static void checkArchDuplicates(const ArrayRef<Slice> &Slices) {
+static void checkArchDuplicates(ArrayRef<Slice> Slices) {
   DenseMap<uint64_t, const Binary *> CPUIds;
   for (const auto &S : Slices) {
     auto Entry = CPUIds.try_emplace(S.getCPUID(), S.getBinary());
@@ -688,7 +688,8 @@ static void createUniversalBinary(SmallVectorImpl<Slice> &Slices,
     return sys::fs::can_execute(S.getBinary()->getFileName());
   });
   const uint64_t OutputFileSize =
-      FatArchList.back().offset + FatArchList.back().size;
+      static_cast<uint64_t>(FatArchList.back().offset) +
+      FatArchList.back().size;
   Expected<std::unique_ptr<FileOutputBuffer>> OutFileOrError =
       FileOutputBuffer::create(OutputFileName, OutputFileSize,
                                IsExecutable ? FileOutputBuffer::F_executable

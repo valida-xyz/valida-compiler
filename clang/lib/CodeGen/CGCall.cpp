@@ -1305,6 +1305,15 @@ static void CreateCoercedStore(llvm::Value *Src,
     DstTy = Dst.getType()->getElementType();
   }
 
+  llvm::PointerType *SrcPtrTy = llvm::dyn_cast<llvm::PointerType>(SrcTy);
+  llvm::PointerType *DstPtrTy = llvm::dyn_cast<llvm::PointerType>(DstTy);
+  if (SrcPtrTy && DstPtrTy &&
+      SrcPtrTy->getAddressSpace() != DstPtrTy->getAddressSpace()) {
+    Src = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(Src, DstTy);
+    CGF.Builder.CreateStore(Src, Dst, DstIsVolatile);
+    return;
+  }
+
   // If the source and destination are integer or pointer types, just do an
   // extension or truncation to the desired type.
   if ((isa<llvm::IntegerType>(SrcTy) || isa<llvm::PointerType>(SrcTy)) &&
@@ -1853,11 +1862,27 @@ void CodeGenModule::ConstructAttributeList(
     if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
       AddAttributesFromFunctionProtoType(
           getContext(), FuncAttrs, Fn->getType()->getAs<FunctionProtoType>());
-      // Don't use [[noreturn]] or _Noreturn for a call to a virtual function.
-      // These attributes are not inherited by overloads.
       const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Fn);
-      if (Fn->isNoReturn() && !(AttrOnCallSite && MD && MD->isVirtual()))
-        FuncAttrs.addAttribute(llvm::Attribute::NoReturn);
+      const bool IsVirtualCall = MD && MD->isVirtual();
+      // Don't use [[noreturn]], _Noreturn or [[no_builtin]] for a call to a
+      // virtual function. These attributes are not inherited by overloads.
+      if (!(AttrOnCallSite && IsVirtualCall)) {
+        if (Fn->isNoReturn())
+          FuncAttrs.addAttribute(llvm::Attribute::NoReturn);
+
+        if (const auto *NBA = TargetDecl->getAttr<NoBuiltinAttr>()) {
+          bool HasWildcard = llvm::is_contained(NBA->builtinNames(), "*");
+          if (HasWildcard)
+            FuncAttrs.addAttribute("no-builtins");
+          else
+            for (StringRef BuiltinName : NBA->builtinNames()) {
+              SmallString<32> AttributeName;
+              AttributeName += "no-builtin-";
+              AttributeName += BuiltinName;
+              FuncAttrs.addAttribute(AttributeName);
+            }
+        }
+      }
     }
 
     // 'const', 'pure' and 'noalias' attributed functions are also nounwind.
@@ -2126,8 +2151,8 @@ void CodeGenModule::ConstructAttributeList(
       if (!PTy->isIncompleteType() && PTy->isConstantSizeType()) {
         auto info = getContext().getTypeInfoInChars(PTy);
         Attrs.addDereferenceableAttr(info.first.getQuantity());
-        Attrs.addAttribute(llvm::Attribute::getWithAlignment(getLLVMContext(),
-                                                 info.second.getQuantity()));
+        Attrs.addAttribute(llvm::Attribute::getWithAlignment(
+            getLLVMContext(), info.second.getAsAlign()));
       }
       break;
     }
@@ -4569,7 +4594,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       llvm::Value *Alignment = EmitScalarExpr(AA->getAlignment());
       llvm::ConstantInt *AlignmentCI = cast<llvm::ConstantInt>(Alignment);
       EmitAlignmentAssumption(Ret.getScalarVal(), RetTy, Loc, AA->getLocation(),
-                              AlignmentCI->getZExtValue(), OffsetValue);
+                              AlignmentCI, OffsetValue);
     } else if (const auto *AA = TargetDecl->getAttr<AllocAlignAttr>()) {
       llvm::Value *AlignmentVal = CallArgs[AA->getParamIndex().getLLVMIndex()]
                                       .getRValue(*this)

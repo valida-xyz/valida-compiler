@@ -22,7 +22,7 @@ class TriCoreFrameLowering : public TargetFrameLowering {
 public:
   explicit TriCoreFrameLowering(const TriCoreSubtarget &STI)
       : TargetFrameLowering(StackGrowsDown,
-                            /*StackAlignment=*/8,
+                            /*StackAlignment=*/Align(8),
                             /*LocalAreaOffset=*/0) {}
 
   void emitPrologue(MachineFunction &MF, MachineBasicBlock &MBB) const override;

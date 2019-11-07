@@ -1189,8 +1189,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
       if (PLoc.isValid()) {
         OS << " at ";
         StringRef File = PLoc.getFilename();
-        if (Policy.RemapFilePaths)
-          OS << Policy.remapPath(File);
+        if (auto *Callbacks = Policy.Callbacks)
+          OS << Callbacks->remapPath(File);
         else
           OS << File;
         OS << ':' << PLoc.getLine() << ':' << PLoc.getColumn();
@@ -1204,7 +1204,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
   // arguments.
   if (const auto *Spec = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
     ArrayRef<TemplateArgument> Args;
-    if (TypeSourceInfo *TAW = Spec->getTypeAsWritten()) {
+    TypeSourceInfo *TAW = Spec->getTypeAsWritten();
+    if (!Policy.PrintCanonicalTypes && TAW) {
       const TemplateSpecializationType *TST =
         cast<TemplateSpecializationType>(TAW->getType());
       Args = TST->template_arguments();

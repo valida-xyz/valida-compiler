@@ -222,7 +222,8 @@ public:
 
   const GCNSubtarget *getSubtarget() const;
 
-  bool isFPExtFoldable(unsigned Opcode, EVT DestVT, EVT SrcVT) const override;
+  bool isFPExtFoldable(const SelectionDAG &DAG, unsigned Opcode, EVT DestVT,
+                       EVT SrcVT) const override;
 
   bool isShuffleMaskLegal(ArrayRef<int> /*Mask*/, EVT /*VT*/) const override;
 
@@ -260,6 +261,14 @@ public:
 
   bool isMemOpUniform(const SDNode *N) const;
   bool isMemOpHasNoClobberedMemOperand(const SDNode *N) const;
+
+  static bool isFlatGlobalAddrSpace(unsigned AS) {
+    return AS == AMDGPUAS::GLOBAL_ADDRESS ||
+           AS == AMDGPUAS::FLAT_ADDRESS ||
+           AS == AMDGPUAS::CONSTANT_ADDRESS ||
+           AS > AMDGPUAS::MAX_AMDGPU_ADDRESS;
+  }
+
   bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override;
   bool isFreeAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override;
 
@@ -341,6 +350,9 @@ public:
                          EVT VT) const override;
   MVT getScalarShiftAmountTy(const DataLayout &, EVT) const override;
   bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
+  bool isFMADLegalForFAddFSub(const SelectionDAG &DAG,
+                              const SDNode *N) const override;
+
   SDValue splitUnaryVectorOp(SDValue Op, SelectionDAG &DAG) const;
   SDValue splitBinaryVectorOp(SDValue Op, SelectionDAG &DAG) const;
   SDValue splitTernaryVectorOp(SDValue Op, SelectionDAG &DAG) const;
@@ -388,6 +400,10 @@ public:
                                     unsigned Depth = 0) const override;
   AtomicExpansionKind shouldExpandAtomicRMWInIR(AtomicRMWInst *) const override;
 
+  virtual const TargetRegisterClass *
+  getRegClassFor(MVT VT, bool isDivergent) const override;
+  virtual bool requiresUniformRegister(MachineFunction &MF,
+                                       const Value *V) const override;
   Align getPrefLoopAlignment(MachineLoop *ML) const override;
 
   void allocateHSAUserSGPRs(CCState &CCInfo,

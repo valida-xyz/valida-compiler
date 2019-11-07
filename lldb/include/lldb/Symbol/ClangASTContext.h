@@ -261,7 +261,8 @@ public:
   CompilerType CreateRecordType(clang::DeclContext *decl_ctx,
                                 lldb::AccessType access_type, const char *name,
                                 int kind, lldb::LanguageType language,
-                                ClangASTMetadata *metadata = nullptr);
+                                ClangASTMetadata *metadata = nullptr,
+                                bool exports_symbols = false);
 
   class TemplateParameterInfos {
   public:
@@ -600,8 +601,7 @@ public:
 
   bool SupportsLanguage(lldb::LanguageType language) override;
 
-  static bool GetCXXClassName(const CompilerType &type,
-                              std::string &class_name);
+  static llvm::Optional<std::string> GetCXXClassName(const CompilerType &type);
 
   // Type Completion
 
@@ -885,6 +885,14 @@ public:
 #endif
 
   void Dump(Stream &s);
+
+  /// Dump clang AST types from the symbol file.
+  ///
+  /// \param[in] s
+  ///       A stream to send the dumped AST node(s) to
+  /// \param[in] symbol_name
+  ///       The name of the symbol to dump, if it is empty dump all the symbols
+  void DumpFromSymbolFile(Stream &s, llvm::StringRef symbol_name);
 
   void DumpValue(lldb::opaque_compiler_type_t type, ExecutionContext *exe_ctx,
                  Stream *s, lldb::Format format, const DataExtractor &data,

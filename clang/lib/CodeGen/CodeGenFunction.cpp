@@ -764,6 +764,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
   Fn->addFnAttr("no-jump-tables",
                 llvm::toStringRef(CGM.getCodeGenOpts().NoUseJumpTables));
 
+  // Add no-inline-line-tables value.
+  if (CGM.getCodeGenOpts().NoInlineLineTables)
+    Fn->addFnAttr("no-inline-line-tables");
+
   // Add profile-sample-accurate value.
   if (CGM.getCodeGenOpts().ProfileSampleAccurate)
     Fn->addFnAttr("profile-sample-accurate");
@@ -888,6 +892,16 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
       else {
         Fn->addFnAttr("instrument-function-entry-inlined",
                       getTarget().getMCountName());
+      }
+      if (CGM.getCodeGenOpts().MNopMCount) {
+        if (getContext().getTargetInfo().getTriple().getArch() !=
+            llvm::Triple::systemz)
+          CGM.getDiags().Report(diag::err_opt_not_valid_on_target)
+            << "-mnop-mcount";
+        if (!CGM.getCodeGenOpts().CallFEntry)
+          CGM.getDiags().Report(diag::err_opt_not_valid_without_opt)
+            << "-mnop-mcount" << "-mfentry";
+        Fn->addFnAttr("mnop-mcount", "true");
       }
     }
   }
@@ -2057,24 +2071,9 @@ void CodeGenFunction::EmitAlignmentAssumption(llvm::Value *PtrValue,
 }
 
 void CodeGenFunction::EmitAlignmentAssumption(llvm::Value *PtrValue,
-                                              QualType Ty, SourceLocation Loc,
-                                              SourceLocation AssumptionLoc,
-                                              unsigned Alignment,
-                                              llvm::Value *OffsetValue) {
-  llvm::Value *TheCheck;
-  llvm::Instruction *Assumption = Builder.CreateAlignmentAssumption(
-      CGM.getDataLayout(), PtrValue, Alignment, OffsetValue, &TheCheck);
-  if (SanOpts.has(SanitizerKind::Alignment)) {
-    llvm::Value *AlignmentVal = llvm::ConstantInt::get(IntPtrTy, Alignment);
-    EmitAlignmentAssumptionCheck(PtrValue, Ty, Loc, AssumptionLoc, AlignmentVal,
-                                 OffsetValue, TheCheck, Assumption);
-  }
-}
-
-void CodeGenFunction::EmitAlignmentAssumption(llvm::Value *PtrValue,
                                               const Expr *E,
                                               SourceLocation AssumptionLoc,
-                                              unsigned Alignment,
+                                              llvm::Value *Alignment,
                                               llvm::Value *OffsetValue) {
   if (auto *CE = dyn_cast<CastExpr>(E))
     E = CE->getSubExprAsWritten();

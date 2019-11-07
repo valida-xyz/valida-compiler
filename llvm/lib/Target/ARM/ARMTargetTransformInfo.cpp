@@ -491,20 +491,25 @@ int ARMTTIImpl::getAddressComputationCost(Type *Ty, ScalarEvolution *SE,
   return BaseT::getAddressComputationCost(Ty, SE, Ptr);
 }
 
-bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy) {
+bool ARMTTIImpl::isLegalMaskedLoad(Type *DataTy, MaybeAlign Alignment) {
   if (!EnableMaskedLoadStores || !ST->hasMVEIntegerOps())
     return false;
 
-  if (DataTy->isVectorTy()) {
-    // We don't yet support narrowing or widening masked loads/stores. Expand
-    // them for the moment.
-    unsigned VecWidth = DataTy->getPrimitiveSizeInBits();
-    if (VecWidth != 128)
+  if (auto *VecTy = dyn_cast<VectorType>(DataTy)) {
+    // Don't support v2i1 yet.
+    if (VecTy->getNumElements() == 2)
+      return false;
+
+    // We don't support extending fp types.
+     unsigned VecWidth = DataTy->getPrimitiveSizeInBits();
+    if (VecWidth != 128 && VecTy->getElementType()->isFloatingPointTy())
       return false;
   }
 
   unsigned EltWidth = DataTy->getScalarSizeInBits();
-  return EltWidth == 32 || EltWidth == 16 || EltWidth == 8;
+  return (EltWidth == 32 && (!Alignment || Alignment >= 4)) ||
+         (EltWidth == 16 && (!Alignment || Alignment >= 2)) ||
+         (EltWidth == 8);
 }
 
 int ARMTTIImpl::getMemcpyCost(const Instruction *I) {
@@ -730,11 +735,13 @@ int ARMTTIImpl::getArithmeticInstrCost(
   return BaseCost;
 }
 
-int ARMTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src, unsigned Alignment,
-                                unsigned AddressSpace, const Instruction *I) {
+int ARMTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
+                                MaybeAlign Alignment, unsigned AddressSpace,
+                                const Instruction *I) {
   std::pair<int, MVT> LT = TLI->getTypeLegalizationCost(DL, Src);
 
-  if (ST->hasNEON() && Src->isVectorTy() && Alignment != 16 &&
+  if (ST->hasNEON() && Src->isVectorTy() &&
+      (Alignment && *Alignment != Align(16)) &&
       Src->getVectorElementType()->isDoubleTy()) {
     // Unaligned loads/stores are extremely inefficient.
     // We need 4 uops for vst.1/vld.1 vs 1uop for vldr/vstr.
@@ -992,6 +999,50 @@ bool ARMTTIImpl::isHardwareLoopProfitable(Loop *L, ScalarEvolution &SE,
   HWLoopInfo.LoopDecrement = ConstantInt::get(HWLoopInfo.CountType, 1);
   return true;
 }
+
+bool ARMTTIImpl::preferPredicateOverEpilogue(Loop *L, LoopInfo *LI,
+                                             ScalarEvolution &SE,
+                                             AssumptionCache &AC,
+                                             TargetLibraryInfo *TLI,
+                                             DominatorTree *DT,
+                                             const LoopAccessInfo *LAI) {
+  // Creating a predicated vector loop is the first step for generating a
+  // tail-predicated hardware loop, for which we need the MVE masked
+  // load/stores instructions:
+  if (!ST->hasMVEIntegerOps())
+    return false;
+
+  HardwareLoopInfo HWLoopInfo(L);
+  if (!HWLoopInfo.canAnalyze(*LI)) {
+    LLVM_DEBUG(dbgs() << "preferPredicateOverEpilogue: hardware-loop is not "
+                         "analyzable.\n");
+    return false;
+  }
+
+  // This checks if we have the low-overhead branch architecture
+  // extension, and if we will create a hardware-loop:
+  if (!isHardwareLoopProfitable(L, SE, AC, TLI, HWLoopInfo)) {
+    LLVM_DEBUG(dbgs() << "preferPredicateOverEpilogue: hardware-loop is not "
+                         "profitable.\n");
+    return false;
+  }
+
+  if (!HWLoopInfo.isHardwareLoopCandidate(SE, *LI, *DT)) {
+    LLVM_DEBUG(dbgs() << "preferPredicateOverEpilogue: hardware-loop is not "
+                         "a candidate.\n");
+    return false;
+  }
+
+  // TODO: to set up a tail-predicated loop, which works by setting up
+  // the total number of elements processed by the loop, we need to
+  // determine the element size here, and if it is uniform for all operations
+  // in the vector loop. This means we will reject narrowing/widening
+  // operations, and don't want to predicate the vector loop, which is
+  // the main prep step for tail-predicated loops.
+
+  return false;
+}
+
 
 void ARMTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                          TTI::UnrollingPreferences &UP) {

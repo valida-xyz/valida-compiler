@@ -96,14 +96,15 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       DefaultedDefaultConstructorIsConstexpr(true),
       HasConstexprDefaultConstructor(false),
       DefaultedDestructorIsConstexpr(true),
-      HasNonLiteralTypeFieldsOrBases(false), ComputedVisibleConversions(false),
+      HasNonLiteralTypeFieldsOrBases(false),
       UserProvidedDefaultConstructor(false), DeclaredSpecialMembers(0),
       ImplicitCopyConstructorCanHaveConstParamForVBase(true),
       ImplicitCopyConstructorCanHaveConstParamForNonVBase(true),
       ImplicitCopyAssignmentHasConstParam(true),
       HasDeclaredCopyConstructorWithConstParam(false),
       HasDeclaredCopyAssignmentWithConstParam(false), IsLambda(false),
-      IsParsingBaseSpecifiers(false), HasODRHash(false), Definition(D) {}
+      IsParsingBaseSpecifiers(false), ComputedVisibleConversions(false),
+      HasODRHash(false), Definition(D) {}
 
 CXXBaseSpecifier *CXXRecordDecl::DefinitionData::getBasesSlowCase() const {
   return Bases.get(Definition->getASTContext().getExternalSource());
@@ -412,7 +413,7 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       data().HasIrrelevantDestructor = false;
 
     // C++11 [class.copy]p18:
-    //   The implicitly-declared copy assignment oeprator for a class X will
+    //   The implicitly-declared copy assignment operator for a class X will
     //   have the form 'X& X::operator=(const X&)' if each direct base class B
     //   of X has a copy assignment operator whose parameter is of type 'const
     //   B&', 'const volatile B&', or 'B' [...]

@@ -48,7 +48,8 @@ static MCRegisterInfo *createTriCoreMCRegisterInfo(const Triple &TT) {
 }
 
 static MCAsmInfo *createTriCoreMCAsmInfo(const MCRegisterInfo &MRI,
-                                         const Triple &TT) {
+                                         const Triple &TT,
+                                         const MCTargetOptions &Options) {
   return new TriCoreMCAsmInfo(TT);
 }
 

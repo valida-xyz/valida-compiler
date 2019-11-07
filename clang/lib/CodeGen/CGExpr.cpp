@@ -1267,6 +1267,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   case Expr::CXXOperatorCallExprClass:
   case Expr::UserDefinedLiteralClass:
     return EmitCallExprLValue(cast<CallExpr>(E));
+  case Expr::CXXRewrittenBinaryOperatorClass:
+    return EmitLValue(cast<CXXRewrittenBinaryOperator>(E)->getSemanticForm());
   case Expr::VAArgExprClass:
     return EmitVAArgExprLValue(cast<VAArgExpr>(E));
   case Expr::DeclRefExprClass:
@@ -3436,7 +3438,8 @@ static Address emitArraySubscriptGEP(CodeGenFunction &CGF, Address addr,
     llvm::DIType *DbgInfo = nullptr;
     if (arrayType)
       DbgInfo = CGF.getDebugInfo()->getOrCreateStandaloneType(*arrayType, loc);
-    eltPtr = CGF.Builder.CreatePreserveArrayAccessIndex(addr.getPointer(),
+    eltPtr = CGF.Builder.CreatePreserveArrayAccessIndex(addr.getElementType(),
+                                                        addr.getPointer(),
                                                         indices.size() - 1,
                                                         idx, DbgInfo);
   }

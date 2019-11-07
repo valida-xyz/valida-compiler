@@ -921,7 +921,7 @@ bool Sema::CheckCXXThrowOperand(SourceLocation ThrowLoc,
       // cannot be a simple walk of the class's decls.  Instead, we must perform
       // lookup and overload resolution.
       CXXConstructorDecl *CD = LookupCopyingConstructor(Subobject, 0);
-      if (!CD)
+      if (!CD || CD->isDeleted())
         continue;
 
       // Mark the constructor referenced as it is used by this throw expression.
@@ -2323,7 +2323,7 @@ static bool resolveAllocationOverload(
           PartialDiagnosticAt(R.getNameLoc(),
                               S.PDiag(diag::err_ovl_ambiguous_call)
                                   << R.getLookupName() << Range),
-          S, OCD_ViableCandidates, Args);
+          S, OCD_AmbiguousCandidates, Args);
     }
     return true;
 
@@ -3302,7 +3302,7 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
       //        itself in this case.
       return ExprError();
 
-    QualType Pointee = Type->getAs<PointerType>()->getPointeeType();
+    QualType Pointee = Type->castAs<PointerType>()->getPointeeType();
     QualType PointeeElem = Context.getBaseElementType(Pointee);
 
     if (Pointee.getAddressSpace() != LangAS::Default &&
@@ -3513,7 +3513,7 @@ static bool resolveBuiltinNewDeleteOverload(Sema &S, CallExpr *TheCall,
         PartialDiagnosticAt(R.getNameLoc(),
                             S.PDiag(diag::err_ovl_ambiguous_call)
                                 << R.getLookupName() << Range),
-        S, OCD_ViableCandidates, Args);
+        S, OCD_AmbiguousCandidates, Args);
     return true;
 
   case OR_Deleted: {
@@ -4034,8 +4034,8 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
 
   case ICK_Complex_Promotion:
   case ICK_Complex_Conversion: {
-    QualType FromEl = From->getType()->getAs<ComplexType>()->getElementType();
-    QualType ToEl = ToType->getAs<ComplexType>()->getElementType();
+    QualType FromEl = From->getType()->castAs<ComplexType>()->getElementType();
+    QualType ToEl = ToType->castAs<ComplexType>()->getElementType();
     CastKind CK;
     if (FromEl->isRealFloatingType()) {
       if (ToEl->isRealFloatingType())
@@ -5243,7 +5243,13 @@ static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, QualType LhsT,
     Sema::ContextRAII TUContext(Self, Self.Context.getTranslationUnitDecl());
     ExprResult Result = Self.BuildBinOp(/*S=*/nullptr, KeyLoc, BO_Assign, &Lhs,
                                         &Rhs);
-    if (Result.isInvalid() || SFINAE.hasErrorOccurred())
+    if (Result.isInvalid())
+      return false;
+
+    // Treat the assignment as unused for the purpose of -Wdeprecated-volatile.
+    Self.CheckUnusedVolatileAssignment(Result.get());
+
+    if (SFINAE.hasErrorOccurred())
       return false;
 
     if (BTT == BTT_IsAssignable)
@@ -5846,20 +5852,21 @@ QualType Sema::CXXCheckConditionalOperands(ExprResult &Cond, ExprResult &LHS,
       LVK == RVK && LVK != VK_RValue) {
     // DerivedToBase was already handled by the class-specific case above.
     // FIXME: Should we allow ObjC conversions here?
-    bool DerivedToBase, ObjCConversion, ObjCLifetimeConversion;
-    if (CompareReferenceRelationship(
-            QuestionLoc, LTy, RTy, DerivedToBase,
-            ObjCConversion, ObjCLifetimeConversion) == Ref_Compatible &&
+    bool DerivedToBase, ObjCConversion, ObjCLifetimeConversion,
+        FunctionConversion;
+    if (CompareReferenceRelationship(QuestionLoc, LTy, RTy, DerivedToBase,
+                                     ObjCConversion, ObjCLifetimeConversion,
+                                     FunctionConversion) == Ref_Compatible &&
         !DerivedToBase && !ObjCConversion && !ObjCLifetimeConversion &&
         // [...] subject to the constraint that the reference must bind
         // directly [...]
-        !RHS.get()->refersToBitField() &&
-        !RHS.get()->refersToVectorElement()) {
+        !RHS.get()->refersToBitField() && !RHS.get()->refersToVectorElement()) {
       RHS = ImpCastExprToType(RHS.get(), LTy, CK_NoOp, RVK);
       RTy = RHS.get()->getType();
     } else if (CompareReferenceRelationship(
-                   QuestionLoc, RTy, LTy, DerivedToBase,
-                   ObjCConversion, ObjCLifetimeConversion) == Ref_Compatible &&
+                   QuestionLoc, RTy, LTy, DerivedToBase, ObjCConversion,
+                   ObjCLifetimeConversion,
+                   FunctionConversion) == Ref_Compatible &&
                !DerivedToBase && !ObjCConversion && !ObjCLifetimeConversion &&
                !LHS.get()->refersToBitField() &&
                !LHS.get()->refersToVectorElement()) {
@@ -7773,8 +7780,9 @@ class TransformTypos : public TreeTransform<TransformTypos> {
 
     // If we found a valid result, double check to make sure it's not ambiguous.
     if (!IsAmbiguous && !Res.isInvalid() && !AmbiguousTypoExprs.empty()) {
-      auto SavedTransformCache = std::move(TransformCache);
-      TransformCache.clear();
+      auto SavedTransformCache =
+          llvm::SmallDenseMap<TypoExpr *, ExprResult, 2>(TransformCache);
+
       // Ensure none of the TypoExprs have multiple typo correction candidates
       // with the same edit length that pass all the checks and filters.
       while (!AmbiguousTypoExprs.empty()) {

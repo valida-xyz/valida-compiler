@@ -59,6 +59,7 @@ class EnumDecl;
 class Expr;
 class FunctionTemplateDecl;
 class FunctionTemplateSpecializationInfo;
+class FunctionTypeLoc;
 class LabelStmt;
 class MemberSpecializationInfo;
 class Module;
@@ -2030,6 +2031,10 @@ public:
   ///
   /// This does not determine whether the function has been defined (e.g., in a
   /// previous definition); for that information, use isDefined.
+  ///
+  /// Note: the function declaration does not become a definition until the
+  /// parser reaches the definition, if called before, this function will return
+  /// `false`.
   bool isThisDeclarationADefinition() const {
     return isDeletedAsWritten() || isDefaulted() || Body || hasSkippedBody() ||
            isLateTemplateParsed() || willHaveBody() || hasDefiningAttr();
@@ -2361,6 +2366,12 @@ public:
   /// may be fewer than the number of function parameters, if some of the
   /// parameters have default arguments (in C++).
   unsigned getMinRequiredArguments() const;
+
+  /// Find the source location information for how the type of this function
+  /// was written. May be absent (for example if the function was declared via
+  /// a typedef) and may contain a different type from that of the function
+  /// (for example if the function type was adjusted by an attribute).
+  FunctionTypeLoc getFunctionTypeLoc() const;
 
   QualType getReturnType() const {
     return getType()->castAs<FunctionType>()->getReturnType();

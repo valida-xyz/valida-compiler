@@ -46,6 +46,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MD5.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/TimeProfiler.h"
 using namespace clang;
 using namespace clang::CodeGen;
 
@@ -235,8 +236,7 @@ PrintingPolicy CGDebugInfo::getPrintingPolicy() const {
     PP.MSVCFormatting = true;
 
   // Apply -fdebug-prefix-map.
-  PP.RemapFilePaths = true;
-  PP.remapPath = [this](StringRef Path) { return remapDIPath(Path); };
+  PP.Callbacks = &PrintCB;
   return PP;
 }
 
@@ -314,7 +314,9 @@ StringRef CGDebugInfo::getClassName(const RecordDecl *RD) {
   if (isa<ClassTemplateSpecializationDecl>(RD)) {
     SmallString<128> Name;
     llvm::raw_svector_ostream OS(Name);
-    RD->getNameForDiagnostic(OS, getPrintingPolicy(),
+    PrintingPolicy PP = getPrintingPolicy();
+    PP.PrintCanonicalTypes = true;
+    RD->getNameForDiagnostic(OS, PP,
                              /*Qualified*/ false);
 
     // Copy this name on the side and use its reference.
@@ -537,11 +539,11 @@ void CGDebugInfo::CreateCompileUnit() {
   // file to determine the real absolute path for the file.
   std::string MainFileDir;
   if (const FileEntry *MainFile = SM.getFileEntryForID(SM.getMainFileID())) {
-    MainFileDir = remapDIPath(MainFile->getDir()->getName());
-    if (MainFileDir != ".") {
+    MainFileDir = MainFile->getDir()->getName();
+    if (!llvm::sys::path::is_absolute(MainFileName)) {
       llvm::SmallString<1024> MainFileDirSS(MainFileDir);
       llvm::sys::path::append(MainFileDirSS, MainFileName);
-      MainFileName = MainFileDirSS.str();
+      MainFileName = llvm::sys::path::remove_leading_dotslash(MainFileDirSS);
     }
     // If the main file name provided is identical to the input file name, and
     // if the input file is a preprocessed source, use the module name for
@@ -1605,6 +1607,31 @@ llvm::DISubprogram *CGDebugInfo::CreateCXXMemberFunction(
     ContainingType = RecordTy;
   }
 
+  // We're checking for deleted C++ special member functions
+  // [Ctors,Dtors, Copy/Move]
+  auto checkAttrDeleted = [&](const auto *Method) {
+    if (Method->getCanonicalDecl()->isDeleted())
+      SPFlags |= llvm::DISubprogram::SPFlagDeleted;
+  };
+
+  switch (Method->getKind()) {
+
+  case Decl::CXXConstructor:
+  case Decl::CXXDestructor:
+    checkAttrDeleted(Method);
+    break;
+  case Decl::CXXMethod:
+    if (Method->isCopyAssignmentOperator() ||
+        Method->isMoveAssignmentOperator())
+      checkAttrDeleted(Method);
+    break;
+  default:
+    break;
+  }
+
+  if (Method->isNoReturn())
+    Flags |= llvm::DINode::FlagNoReturn;
+
   if (Method->isStatic())
     Flags |= llvm::DINode::FlagStaticMember;
   if (Method->isImplicit())
@@ -1791,6 +1818,7 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
               CGM.getContext().toCharUnitsFromBits((int64_t)fieldOffset);
           V = CGM.getCXXABI().EmitMemberDataPointer(MPT, chars);
         }
+        assert(V && "Failed to find template parameter pointer");
         V = V->stripPointerCasts();
       }
       TemplateParams.push_back(DBuilder.createTemplateValueParameter(
@@ -2941,6 +2969,13 @@ llvm::DIType *CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile *Unit) {
   if (Ty.isNull())
     return nullptr;
 
+  llvm::TimeTraceScope TimeScope("DebugType", [&]() {
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    Ty.print(OS, getPrintingPolicy());
+    return Name;
+  });
+
   // Unwrap the type as needed for debug information.
   Ty = UnwrapTypeForDebugInfo(Ty, CGM.getContext());
 
@@ -3327,13 +3362,13 @@ llvm::DISubprogram *CGDebugInfo::getFunctionFwdDeclOrStub(GlobalDecl GD,
   unsigned Line = getLineNumber(Loc);
   collectFunctionDeclProps(GD, Unit, Name, LinkageName, DContext, TParamsArray,
                            Flags);
-  auto *FD = dyn_cast<FunctionDecl>(GD.getDecl());
+  auto *FD = cast<FunctionDecl>(GD.getDecl());
 
   // Build function type.
   SmallVector<QualType, 16> ArgTypes;
-  if (FD)
-    for (const ParmVarDecl *Parm : FD->parameters())
-      ArgTypes.push_back(Parm->getType());
+  for (const ParmVarDecl *Parm : FD->parameters())
+    ArgTypes.push_back(Parm->getType());
+
   CallingConv CC = FD->getType()->castAs<FunctionType>()->getCallConv();
   QualType FnType = CGM.getContext().getFunctionType(
       FD->getReturnType(), ArgTypes, FunctionProtoType::ExtProtoInfo(CC));
@@ -3658,6 +3693,15 @@ void CGDebugInfo::EmitFunctionDecl(GlobalDecl GD, SourceLocation Loc,
   const Decl *D = GD.getDecl();
   if (!D)
     return;
+
+  llvm::TimeTraceScope TimeScope("DebugFunction", [&]() {
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
+      ND->getNameForDiagnostic(OS, getPrintingPolicy(),
+                               /*Qualified=*/true);
+    return Name;
+  });
 
   llvm::DINode::DIFlags Flags = llvm::DINode::FlagZero;
   llvm::DIFile *Unit = getOrCreateFile(Loc);
@@ -4379,6 +4423,14 @@ void CGDebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
   if (D->hasAttr<NoDebugAttr>())
     return;
 
+  llvm::TimeTraceScope TimeScope("DebugGlobalVariable", [&]() {
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    D->getNameForDiagnostic(OS, getPrintingPolicy(),
+                            /*Qualified=*/true);
+    return Name;
+  });
+
   // If we already created a DIGlobalVariable for this declaration, just attach
   // it to the llvm::GlobalVariable.
   auto Cached = DeclCache.find(D->getCanonicalDecl());
@@ -4439,6 +4491,14 @@ void CGDebugInfo::EmitGlobalVariable(const ValueDecl *VD, const APValue &Init) {
   assert(DebugKind >= codegenoptions::LimitedDebugInfo);
   if (VD->hasAttr<NoDebugAttr>())
     return;
+  llvm::TimeTraceScope TimeScope("DebugConstGlobalVariable", [&]() {
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    VD->getNameForDiagnostic(OS, getPrintingPolicy(),
+                             /*Qualified=*/true);
+    return Name;
+  });
+
   auto Align = getDeclAlignIfRequired(VD, CGM.getContext());
   // Create the descriptor for the variable.
   llvm::DIFile *Unit = getOrCreateFile(VD->getLocation());

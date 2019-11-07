@@ -347,6 +347,9 @@ ParsedDWARFTypeAttributes::ParsedDWARFTypeAttributes(const DWARFDIE &die) {
     case DW_AT_GNU_vector:
       is_vector = form_value.Boolean();
       break;
+    case DW_AT_export_symbols:
+      exports_symbols = form_value.Boolean();
+      break;
     }
   }
 }
@@ -1007,8 +1010,11 @@ TypeSP DWARFASTParserClang::ParseTypeFromDWARF(const SymbolContext &sc,
                               is_attr_used, attrs.is_artificial);
 
                       type_handled = cxx_method_decl != NULL;
+                      // Artificial methods are always handled even when we
+                      // don't create a new declaration for them.
+                      type_handled |= attrs.is_artificial;
 
-                      if (type_handled) {
+                      if (cxx_method_decl) {
                         LinkDeclContextToDIE(
                             ClangASTContext::GetAsDeclContext(cxx_method_decl),
                             die);
@@ -1543,7 +1549,7 @@ DWARFASTParserClang::ParseStructureLikeDIE(const DWARFDIE &die,
       clang_type_was_created = true;
       clang_type = m_ast.CreateRecordType(
           decl_ctx, attrs.accessibility, attrs.name.GetCString(), tag_decl_kind,
-          attrs.class_language, &metadata);
+          attrs.class_language, &metadata, attrs.exports_symbols);
     }
   }
 

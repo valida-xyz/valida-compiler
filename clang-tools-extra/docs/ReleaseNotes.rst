@@ -79,6 +79,15 @@ Improvements to clang-tidy
   Finds obvious infinite loops (loops where the condition variable is not
   changed at all).
 
+- New :doc:`bugprone-not-null-terminated-result
+  <clang-tidy/checks/bugprone-not-null-terminated-result>` check
+
+  Finds function calls where it is possible to cause a not null-terminated
+  result. Usually the proper length of a string is ``strlen(str) + 1`` or equal
+  length of this expression, because the null terminator needs an extra space.
+  Without the null terminator it can result in undefined behaviour when the
+  string is read.
+
 - New :doc:`cppcoreguidelines-init-variables
   <clang-tidy/checks/cppcoreguidelines-init-variables>` check.
 
@@ -93,6 +102,11 @@ Improvements to clang-tidy
 
   Finds uses of deprecated Googletest APIs with names containing ``case`` and
   replaces them with equivalent APIs with ``suite``.
+
+- Improved :doc:`hicpp-signed-bitwise
+  <clang-tidy/checks/hicpp-signed-bitwise>` check.
+
+  The check now supports the ``IgnorePositiveIntegerLiterals`` option.
 
 - New :doc:`linuxkernel-must-use-errs
   <clang-tidy/checks/linuxkernel-must-use-errs>` check.
@@ -112,6 +126,12 @@ Improvements to clang-tidy
   Finds Objective-C implementations that implement ``-isEqual:`` without also
   appropriately implementing ``-hash``.
 
+- New :doc:`performance-trivially-destructible
+  <clang-tidy/checks/performance-trivially-destructible>` check.
+
+  Finds types that could be made trivially-destructible by removing out-of-line
+  defaulted destructor declarations.
+
 - Improved :doc:`bugprone-posix-return
   <clang-tidy/checks/bugprone-posix-return>` check.
 
@@ -120,6 +140,18 @@ Improvements to clang-tidy
 
 - The 'objc-avoid-spinlock' check was renamed to :doc:`darwin-avoid-spinlock
   <clang-tidy/checks/darwin-avoid-spinlock>`
+
+- New :doc:`readability-redundant-access-specifiers
+  <clang-tidy/checks/readability-redundant-access-specifiers>` check.
+
+  Finds classes, structs, and unions that contain redundant member
+  access specifiers.
+
+- New :doc:`readability-make-member-function-const
+  <clang-tidy/checks/readability-make-member-function-const>` check.
+
+  Finds non-static member functions that can be made ``const``
+  because the functions don't use ``this`` in a non-const way.
 
 Improvements to include-fixer
 -----------------------------

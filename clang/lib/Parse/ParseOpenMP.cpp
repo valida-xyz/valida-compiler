@@ -17,6 +17,7 @@
 #include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/Scope.h"
 #include "llvm/ADT/PointerIntPair.h"
+#include "llvm/ADT/UniqueVector.h"
 
 using namespace clang;
 
@@ -43,6 +44,7 @@ enum OpenMPDirectiveKindEx {
   OMPD_target_teams_distribute_parallel,
   OMPD_mapper,
   OMPD_variant,
+  OMPD_parallel_master,
 };
 
 class DeclDirectiveListParserHelper final {
@@ -134,7 +136,13 @@ static OpenMPDirectiveKind parseOpenMPDirectiveKind(Parser &P) {
       {OMPD_target_teams_distribute_parallel, OMPD_for,
        OMPD_target_teams_distribute_parallel_for},
       {OMPD_target_teams_distribute_parallel_for, OMPD_simd,
-       OMPD_target_teams_distribute_parallel_for_simd}};
+       OMPD_target_teams_distribute_parallel_for_simd},
+      {OMPD_master, OMPD_taskloop, OMPD_master_taskloop},
+      {OMPD_master_taskloop, OMPD_simd, OMPD_master_taskloop_simd},
+      {OMPD_parallel, OMPD_master, OMPD_parallel_master},
+      {OMPD_parallel_master, OMPD_taskloop, OMPD_parallel_master_taskloop},
+      {OMPD_parallel_master_taskloop, OMPD_simd,
+       OMPD_parallel_master_taskloop_simd}};
   enum { CancellationPoint = 0, DeclareReduction = 1, TargetData = 2 };
   Token Tok = P.getCurToken();
   unsigned DKind =
@@ -792,13 +800,8 @@ static ExprResult parseContextScore(Parser &P) {
   SmallString<16> Buffer;
   StringRef SelectorName =
       P.getPreprocessor().getSpelling(P.getCurToken(), Buffer);
-  OMPDeclareVariantAttr::ScoreType ScoreKind =
-      OMPDeclareVariantAttr::ScoreUnknown;
-  (void)OMPDeclareVariantAttr::ConvertStrToScoreType(SelectorName, ScoreKind);
-  if (ScoreKind == OMPDeclareVariantAttr::ScoreUnknown)
+  if (!SelectorName.equals("score"))
     return ScoreExpr;
-  assert(ScoreKind == OMPDeclareVariantAttr::ScoreSpecified &&
-         "Expected \"score\" clause.");
   (void)P.ConsumeToken();
   SourceLocation RLoc;
   ScoreExpr = P.ParseOpenMPParensExpr(SelectorName, RLoc);
@@ -853,7 +856,7 @@ static void parseImplementationSelector(
     (void)T.expectAndConsume(diag::err_expected_lparen_after,
                              CtxSelectorName.data());
     const ExprResult Score = parseContextScore(P);
-    SmallVector<llvm::SmallString<16>, 4> Vendors;
+    llvm::UniqueVector<llvm::SmallString<16>> Vendors;
     do {
       // Parse <vendor>.
       StringRef VendorName;
@@ -862,7 +865,7 @@ static void parseImplementationSelector(
         VendorName = P.getPreprocessor().getSpelling(P.getCurToken(), Buffer);
         (void)P.ConsumeToken();
         if (!VendorName.empty())
-          Vendors.push_back(VendorName);
+          Vendors.insert(VendorName);
       } else {
         P.Diag(Tok.getLocation(), diag::err_omp_declare_variant_item_expected)
             << "vendor identifier"
@@ -878,10 +881,10 @@ static void parseImplementationSelector(
     (void)T.consumeClose();
     if (!Vendors.empty()) {
       SmallVector<StringRef, 4> ImplVendors(Vendors.size());
-      for (int I = 0, E = Vendors.size(); I < E; ++I)
-        ImplVendors[I] = Vendors[I];
+      llvm::copy(Vendors, ImplVendors.begin());
       Sema::OpenMPDeclareVariantCtsSelectorData Data(
-          OMPDeclareVariantAttr::CtxSetImplementation, CSKind, ImplVendors,
+          OMPDeclareVariantAttr::CtxSetImplementation, CSKind,
+          llvm::makeMutableArrayRef(ImplVendors.begin(), ImplVendors.size()),
           Score);
       Callback(SourceRange(Loc, Tok.getLocation()), Data);
     }
@@ -1502,6 +1505,10 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
   case OMPD_target_parallel_for:
   case OMPD_taskloop:
   case OMPD_taskloop_simd:
+  case OMPD_master_taskloop:
+  case OMPD_master_taskloop_simd:
+  case OMPD_parallel_master_taskloop:
+  case OMPD_parallel_master_taskloop_simd:
   case OMPD_distribute:
   case OMPD_end_declare_target:
   case OMPD_target_update:
@@ -1556,19 +1563,17 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
 ///         'parallel for' | 'parallel sections' | 'task' | 'taskyield' |
 ///         'barrier' | 'taskwait' | 'flush' | 'ordered' | 'atomic' |
 ///         'for simd' | 'parallel for simd' | 'target' | 'target data' |
-///         'taskgroup' | 'teams' | 'taskloop' | 'taskloop simd' |
-///         'distribute' | 'target enter data' | 'target exit data' |
-///         'target parallel' | 'target parallel for' |
-///         'target update' | 'distribute parallel for' |
-///         'distribute paralle for simd' | 'distribute simd' |
-///         'target parallel for simd' | 'target simd' |
-///         'teams distribute' | 'teams distribute simd' |
-///         'teams distribute parallel for simd' |
-///         'teams distribute parallel for' | 'target teams' |
-///         'target teams distribute' |
-///         'target teams distribute parallel for' |
-///         'target teams distribute parallel for simd' |
-///         'target teams distribute simd' {clause}
+///         'taskgroup' | 'teams' | 'taskloop' | 'taskloop simd' | 'master
+///         taskloop' | 'master taskloop simd' | 'parallel master taskloop' |
+///         'parallel master taskloop simd' | 'distribute' | 'target enter data'
+///         | 'target exit data' | 'target parallel' | 'target parallel for' |
+///         'target update' | 'distribute parallel for' | 'distribute paralle
+///         for simd' | 'distribute simd' | 'target parallel for simd' | 'target
+///         simd' | 'teams distribute' | 'teams distribute simd' | 'teams
+///         distribute parallel for simd' | 'teams distribute parallel for' |
+///         'target teams' | 'target teams distribute' | 'target teams
+///         distribute parallel for' | 'target teams distribute parallel for
+///         simd' | 'target teams distribute simd' {clause}
 ///         annot_pragma_openmp_end
 ///
 StmtResult
@@ -1744,6 +1749,10 @@ Parser::ParseOpenMPDeclarativeOrExecutableDirective(ParsedStmtContext StmtCtx) {
   case OMPD_target_parallel_for:
   case OMPD_taskloop:
   case OMPD_taskloop_simd:
+  case OMPD_master_taskloop:
+  case OMPD_master_taskloop_simd:
+  case OMPD_parallel_master_taskloop:
+  case OMPD_parallel_master_taskloop_simd:
   case OMPD_distribute:
   case OMPD_distribute_parallel_for:
   case OMPD_distribute_parallel_for_simd:

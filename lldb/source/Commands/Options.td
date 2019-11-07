@@ -268,10 +268,6 @@ let Command = "breakpoint command add" in {
     EnumArg<"None", "ScriptOptionEnum()">,
     Desc<"Specify the language for the commands - if none is specified, the "
     "lldb command interpreter will be used.">;
-  def breakpoint_add_python_function : Option<"python-function", "F">,
-    Group<2>, Arg<"PythonFunction">,
-    Desc<"Give the name of a Python function to run as command for this "
-    "breakpoint. Be sure to give a module name if appropriate.">;
   def breakpoint_add_dummy_breakpoints : Option<"dummy-breakpoints", "D">,
     Desc<"Sets Dummy breakpoints - i.e. breakpoints set before a file is "
     "provided, which prime new targets.">;
@@ -591,6 +587,9 @@ let Command = "platform process list" in {
   def platform_process_list_show_args : Option<"show-args", "A">,
     GroupRange<1, 6>,
     Desc<"Show process arguments instead of the process executable basename.">;
+  def platform_process_list_all_users: Option<"all-users", "x">,
+    GroupRange<1,6>,
+    Desc<"Show processes matching all user IDs.">;
   def platform_process_list_verbose : Option<"verbose", "v">, GroupRange<1, 6>,
     Desc<"Enable verbose output.">;
 }
@@ -904,9 +903,6 @@ let Command = "thread step scope" in {
   def thread_step_scope_step_in_target : Option<"step-in-target", "t">,
     Group<1>, Arg<"FunctionName">, Desc<"The name of the directly called "
     "function step in should stop at when stepping into.">;
-  def thread_step_scope_python_class : Option<"python-class", "C">, Group<2>,
-    Arg<"PythonClass">, Desc<"The name of the class that will manage this step "
-    "- only supported for Scripted Step.">;
 }
 
 let Command = "thread until" in {

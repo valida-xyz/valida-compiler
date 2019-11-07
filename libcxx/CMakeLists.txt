@@ -518,21 +518,18 @@ remove_flags(-Wno-pedantic -pedantic-errors -pedantic)
 
 # Required flags ==============================================================
 function(cxx_add_basic_build_flags target)
-  if (LIBCXX_HAS_MUSL_LIBC OR LIBCXX_TARGETING_CLANG_CL)
-    # musl's pthread implementations uses volatile types in their structs which is
-    # not a constexpr in C++11 but is in C++14, so we use C++14 with musl.
-    set(LIBCXX_STANDARD_VER c++14 CACHE STRING "internal option to change build dialect")
+  if(LIBCXX_HAS_MUSL_LIBC OR LIBCXX_TARGETING_CLANG_CL)
+    # musl's pthread implementations uses volatile types in their structs which
+    # is not a constexpr in C++11 but is in C++14, so we use C++14 with musl.
+    set_target_properties(${target} PROPERTIES
+      CXX_STANDARD 14
+      CXX_STANDARD_REQUIRED YES
+      CXX_EXTENSIONS NO)
   else()
-    set(LIBCXX_STANDARD_VER c++11 CACHE STRING "internal option to change build dialect")
-  endif()
-  target_add_compile_flags_if_supported(${target} PRIVATE -std=${LIBCXX_STANDARD_VER})
-  target_add_compile_flags_if_supported(${target} PRIVATE "/std:${LIBCXX_STANDARD_VER}")
-  mangle_name("LIBCXX_SUPPORTS_STD_EQ_${LIBCXX_STANDARD_VER}_FLAG" SUPPORTS_DIALECT_NAME)
-  mangle_name("LIBCXX_SUPPORTS_STD_COLON_${LIBCXX_STANDARD_VER}_FLAG" SUPPORTS_DIALECT_NAME_MSVC)
-  if(NOT ${SUPPORTS_DIALECT_NAME} AND NOT ${SUPPORTS_DIALECT_NAME_MSVC})
-    if(NOT "${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC" AND NOT "${CMAKE_CXX_SIMULATE_ID}" STREQUAL "MSVC")
-      message(FATAL_ERROR "C++11 or greater is required but the compiler does not support ${LIBCXX_STANDARD_VER}")
-    endif()
+    set_target_properties(${target} PROPERTIES
+      CXX_STANDARD 11
+      CXX_STANDARD_REQUIRED YES
+      CXX_EXTENSIONS NO)
   endif()
 
   # On all systems the system c++ standard library headers need to be excluded.
@@ -816,7 +813,7 @@ if (NOT LIBCXX_ABI_VERSION EQUAL 1)
 endif()
 if (NOT LIBCXX_ABI_NAMESPACE STREQUAL "")
   if (NOT LIBCXX_ABI_NAMESPACE MATCHES "__.*")
-    message(WARNING "LIBCXX_ABI_NAMESPACE must be a reserved identifier.")
+    message(FATAL_ERROR "LIBCXX_ABI_NAMESPACE must be a reserved identifier.")
   endif()
   if (LIBCXX_ABI_NAMESPACE MATCHES "__[0-9]+$")
     message(FATAL_ERROR "LIBCXX_ABI_NAMESPACE '${LIBCXX_ABI_NAMESPACE}' is reserved for use by libc++.")

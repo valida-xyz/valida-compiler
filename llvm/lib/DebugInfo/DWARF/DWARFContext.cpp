@@ -299,13 +299,22 @@ static void dumpLoclistsSection(raw_ostream &OS, DIDumpOptions DumpOpts,
     }
 
     Header.dump(OS, DumpOpts);
-    DataExtractor LocData(Data.getData(),
-                          Data.isLittleEndian(), Header.getAddrSize());
 
-    DWARFDebugLoclists Loclists;
     uint64_t EndOffset = Header.length() + Header.getHeaderOffset();
-    Loclists.parse(LocData, Offset, EndOffset, Header.getVersion());
-    Loclists.dump(OS, 0, MRI, DumpOffset);
+    Data.setAddressSize(Header.getAddrSize());
+    if (DumpOffset) {
+      if (DumpOffset >= Offset && DumpOffset < EndOffset) {
+        Offset = *DumpOffset;
+        DWARFDebugLoclists::dumpLocationList(Data, &Offset, Header.getVersion(),
+                                             OS, /*BaseAddr=*/0, MRI, nullptr,
+                                             DumpOpts, /*Indent=*/0);
+        OS << "\n";
+        return;
+      }
+    } else {
+      DWARFDebugLoclists::dumpRange(Data, Offset, EndOffset - Offset,
+                                    Header.getVersion(), OS, 0, MRI, DumpOpts);
+    }
     Offset = EndOffset;
   }
 }
@@ -382,7 +391,7 @@ void DWARFContext::dump(
 
   if (const auto *Off = shouldDump(Explicit, ".debug_loc", DIDT_ID_DebugLoc,
                                    DObj->getLocSection().Data)) {
-    getDebugLoc()->dump(OS, getRegisterInfo(), *Off);
+    getDebugLoc()->dump(OS, getRegisterInfo(), DumpOpts, *Off);
   }
   if (const auto *Off =
           shouldDump(Explicit, ".debug_loclists", DIDT_ID_DebugLoclists,
@@ -394,7 +403,19 @@ void DWARFContext::dump(
   if (const auto *Off =
           shouldDump(ExplicitDWO, ".debug_loc.dwo", DIDT_ID_DebugLoc,
                      DObj->getLocDWOSection().Data)) {
-    getDebugLocDWO()->dump(OS, 0, getRegisterInfo(), *Off);
+    DWARFDataExtractor Data(*DObj, DObj->getLocDWOSection(), isLittleEndian(),
+                            4);
+    if (*Off) {
+      uint64_t Offset = **Off;
+      DWARFDebugLoclists::dumpLocationList(Data, &Offset, /*Version=*/4, OS,
+                                           /*BaseAddr=*/0, getRegisterInfo(),
+                                           nullptr, DumpOpts, /*Indent=*/0);
+      OS << "\n";
+    } else {
+      DWARFDebugLoclists::dumpRange(Data, 0, Data.getData().size(),
+                                    /*Version=*/4, OS, /*BaseAddr=*/0,
+                                    getRegisterInfo(), DumpOpts);
+    }
   }
 
   if (const auto *Off = shouldDump(Explicit, ".debug_frame", DIDT_ID_DebugFrame,
@@ -723,22 +744,6 @@ const DWARFDebugLoc *DWARFContext::getDebugLoc() {
     Loc->parse(LocData);
   }
   return Loc.get();
-}
-
-const DWARFDebugLoclists *DWARFContext::getDebugLocDWO() {
-  if (LocDWO)
-    return LocDWO.get();
-
-  LocDWO.reset(new DWARFDebugLoclists());
-  // Assume all compile units have the same address byte size.
-  // FIXME: We don't need AddressSize for split DWARF since relocatable
-  // addresses cannot appear there. At the moment DWARFExpression requires it.
-  DataExtractor LocData(DObj->getLocDWOSection().Data, isLittleEndian(), 4);
-  // Use version 4. DWO does not support the DWARF v5 .debug_loclists yet and
-  // that means we are parsing the new style .debug_loc (pre-standatized version
-  // of the .debug_loclists).
-  LocDWO->parse(LocData, 0, LocData.getData().size(), 4 /* Version */);
-  return LocDWO.get();
 }
 
 const DWARFDebugAranges *DWARFContext::getDebugAranges() {
@@ -1527,10 +1532,19 @@ public:
         continue;
 
       StringRef Data;
-      section_iterator RelocatedSection = Section.getRelocatedSection();
+      Expected<section_iterator> SecOrErr = Section.getRelocatedSection();
+      if (!SecOrErr) {
+        ErrorPolicy EP = HandleError(createError(
+            "failed to get relocated section: ", SecOrErr.takeError()));
+        if (EP == ErrorPolicy::Halt)
+          return;
+        continue;
+      }
+
       // Try to obtain an already relocated version of this section.
       // Else use the unrelocated section from the object file. We'll have to
       // apply relocations ourselves later.
+      section_iterator RelocatedSection = *SecOrErr;
       if (!L || !L->getLoadedSectionContents(*RelocatedSection, Data)) {
         Expected<StringRef> E = Section.getContents();
         if (E)

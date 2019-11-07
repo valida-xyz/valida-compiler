@@ -578,6 +578,7 @@ lldb::TypeSystemSP ClangASTContext::CreateInstance(lldb::LanguageType language,
           fixed_arch.GetTriple().getOS() == llvm::Triple::UnknownOS) {
         if (fixed_arch.GetTriple().getArch() == llvm::Triple::arm ||
             fixed_arch.GetTriple().getArch() == llvm::Triple::aarch64 ||
+            fixed_arch.GetTriple().getArch() == llvm::Triple::aarch64_32 ||
             fixed_arch.GetTriple().getArch() == llvm::Triple::thumb) {
           fixed_arch.GetTriple().setOS(llvm::Triple::IOS);
         } else {
@@ -1346,11 +1347,9 @@ CompilerType ClangASTContext::GetTypeForDecl(ObjCInterfaceDecl *decl) {
 
 #pragma mark Structure, Unions, Classes
 
-CompilerType ClangASTContext::CreateRecordType(DeclContext *decl_ctx,
-                                               AccessType access_type,
-                                               const char *name, int kind,
-                                               LanguageType language,
-                                               ClangASTMetadata *metadata) {
+CompilerType ClangASTContext::CreateRecordType(
+    DeclContext *decl_ctx, AccessType access_type, const char *name, int kind,
+    LanguageType language, ClangASTMetadata *metadata, bool exports_symbols) {
   ASTContext *ast = getASTContext();
   assert(ast != nullptr);
 
@@ -1401,10 +1400,7 @@ CompilerType ClangASTContext::CreateRecordType(DeclContext *decl_ctx,
     // Anonymous classes is a GNU/MSVC extension that clang supports. It
     // requires the anonymous class be embedded within a class. So the new
     // heuristic verifies this condition.
-    //
-    // FIXME: An unnamed class within a class is also wrongly recognized as an
-    // anonymous struct.
-    if (isa<CXXRecordDecl>(decl_ctx))
+    if (isa<CXXRecordDecl>(decl_ctx) && exports_symbols)
       decl->setAnonymousStructOrUnion(true);
   }
 
@@ -3854,20 +3850,20 @@ bool ClangASTContext::SupportsLanguage(lldb::LanguageType language) {
   return ClangASTContextSupportsLanguage(language);
 }
 
-bool ClangASTContext::GetCXXClassName(const CompilerType &type,
-                                      std::string &class_name) {
-  if (type) {
-    clang::QualType qual_type(ClangUtil::GetCanonicalQualType(type));
-    if (!qual_type.isNull()) {
-      clang::CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
-      if (cxx_record_decl) {
-        class_name.assign(cxx_record_decl->getIdentifier()->getNameStart());
-        return true;
-      }
-    }
-  }
-  class_name.clear();
-  return false;
+Optional<std::string>
+ClangASTContext::GetCXXClassName(const CompilerType &type) {
+  if (!type)
+    return llvm::None;
+
+  clang::QualType qual_type(ClangUtil::GetCanonicalQualType(type));
+  if (qual_type.isNull())
+    return llvm::None;
+
+  clang::CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
+  if (!cxx_record_decl)
+    return llvm::None;
+
+  return std::string(cxx_record_decl->getIdentifier()->getNameStart());
 }
 
 bool ClangASTContext::IsCXXClassType(const CompilerType &type) {
@@ -8971,6 +8967,39 @@ ClangASTContext::dump(lldb::opaque_compiler_type_t type) const {
 void ClangASTContext::Dump(Stream &s) {
   Decl *tu = Decl::castFromDeclContext(GetTranslationUnitDecl());
   tu->dump(s.AsRawOstream());
+}
+
+void ClangASTContext::DumpFromSymbolFile(Stream &s,
+                                         llvm::StringRef symbol_name) {
+  SymbolFile *symfile = GetSymbolFile();
+
+  if (!symfile)
+    return;
+
+  lldb_private::TypeList type_list;
+  symfile->GetTypes(nullptr, eTypeClassAny, type_list);
+  size_t ntypes = type_list.GetSize();
+
+  for (size_t i = 0; i < ntypes; ++i) {
+    TypeSP type = type_list.GetTypeAtIndex(i);
+
+    if (!symbol_name.empty())
+      if (symbol_name != type->GetName().GetStringRef())
+        continue;
+
+    s << type->GetName().AsCString() << "\n";
+
+    if (clang::TagDecl *tag_decl =
+                 GetAsTagDecl(type->GetFullCompilerType()))
+      tag_decl->dump(s.AsRawOstream());
+    else if (clang::TypedefNameDecl *typedef_decl =
+                 GetAsTypedefDecl(type->GetFullCompilerType()))
+      typedef_decl->dump(s.AsRawOstream());
+    else {
+      GetCanonicalQualType(type->GetFullCompilerType().GetOpaqueQualType())
+          .dump(s.AsRawOstream());
+    }
+  }
 }
 
 void ClangASTContext::DumpValue(

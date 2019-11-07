@@ -40,34 +40,6 @@ namespace {
 struct NoTTIImpl : TargetTransformInfoImplCRTPBase<NoTTIImpl> {
   explicit NoTTIImpl(const DataLayout &DL)
       : TargetTransformInfoImplCRTPBase<NoTTIImpl>(DL) {}
-
-  unsigned getCacheLineSize() const { return 0; }
-
-  llvm::Optional<unsigned> getCacheSize(TargetTransformInfo::CacheLevel Level) const {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
-
-  llvm::Optional<unsigned> getCacheAssociativity(
-    TargetTransformInfo::CacheLevel Level) const {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
-
-  unsigned getPrefetchDistance() const { return 0; }
-  unsigned getMinPrefetchStride() const { return 1; }
-  unsigned getMaxPrefetchIterationsAhead() const { return UINT_MAX; }
 };
 }
 
@@ -222,9 +194,10 @@ int TargetTransformInfo::getIntrinsicCost(
 }
 
 unsigned
-TargetTransformInfo::getEstimatedNumberOfCaseClusters(const SwitchInst &SI,
-                                                      unsigned &JTSize) const {
-  return TTIImpl->getEstimatedNumberOfCaseClusters(SI, JTSize);
+TargetTransformInfo::getEstimatedNumberOfCaseClusters(
+    const SwitchInst &SI, unsigned &JTSize, ProfileSummaryInfo *PSI,
+    BlockFrequencyInfo *BFI) const {
+  return TTIImpl->getEstimatedNumberOfCaseClusters(SI, JTSize, PSI, BFI);
 }
 
 int TargetTransformInfo::getUserCost(const User *U,
@@ -268,6 +241,12 @@ bool TargetTransformInfo::isHardwareLoopProfitable(
   Loop *L, ScalarEvolution &SE, AssumptionCache &AC,
   TargetLibraryInfo *LibInfo, HardwareLoopInfo &HWLoopInfo) const {
   return TTIImpl->isHardwareLoopProfitable(L, SE, AC, LibInfo, HWLoopInfo);
+}
+
+bool TargetTransformInfo::preferPredicateOverEpilogue(Loop *L, LoopInfo *LI,
+    ScalarEvolution &SE, AssumptionCache &AC, TargetLibraryInfo *TLI,
+    DominatorTree *DT, const LoopAccessInfo *LAI) const {
+  return TTIImpl->preferPredicateOverEpilogue(L, LI, SE, AC, TLI, DT, LAI);
 }
 
 void TargetTransformInfo::getUnrollingPreferences(
@@ -316,12 +295,14 @@ bool TargetTransformInfo::shouldFavorBackedgeIndex(const Loop *L) const {
   return TTIImpl->shouldFavorBackedgeIndex(L);
 }
 
-bool TargetTransformInfo::isLegalMaskedStore(Type *DataType) const {
-  return TTIImpl->isLegalMaskedStore(DataType);
+bool TargetTransformInfo::isLegalMaskedStore(Type *DataType,
+                                             MaybeAlign Alignment) const {
+  return TTIImpl->isLegalMaskedStore(DataType, Alignment);
 }
 
-bool TargetTransformInfo::isLegalMaskedLoad(Type *DataType) const {
-  return TTIImpl->isLegalMaskedLoad(DataType);
+bool TargetTransformInfo::isLegalMaskedLoad(Type *DataType,
+                                            MaybeAlign Alignment) const {
+  return TTIImpl->isLegalMaskedLoad(DataType, Alignment);
 }
 
 bool TargetTransformInfo::isLegalNTStore(Type *DataType,
@@ -494,8 +475,16 @@ int TargetTransformInfo::getIntImmCost(Intrinsic::ID IID, unsigned Idx,
   return Cost;
 }
 
-unsigned TargetTransformInfo::getNumberOfRegisters(bool Vector) const {
-  return TTIImpl->getNumberOfRegisters(Vector);
+unsigned TargetTransformInfo::getNumberOfRegisters(unsigned ClassID) const {
+  return TTIImpl->getNumberOfRegisters(ClassID);
+}
+
+unsigned TargetTransformInfo::getRegisterClassForType(bool Vector, Type *Ty) const {
+  return TTIImpl->getRegisterClassForType(Vector, Ty);
+}
+
+const char* TargetTransformInfo::getRegisterClassName(unsigned ClassID) const {
+  return TTIImpl->getRegisterClassName(ClassID);
 }
 
 unsigned TargetTransformInfo::getRegisterBitWidth(bool Vector) const {
@@ -657,7 +646,7 @@ int TargetTransformInfo::getVectorInstrCost(unsigned Opcode, Type *Val,
 }
 
 int TargetTransformInfo::getMemoryOpCost(unsigned Opcode, Type *Src,
-                                         unsigned Alignment,
+                                         MaybeAlign Alignment,
                                          unsigned AddressSpace,
                                          const Instruction *I) const {
   assert ((I == nullptr || I->getOpcode() == Opcode) &&
@@ -1219,14 +1208,14 @@ int TargetTransformInfo::getInstructionThroughput(const Instruction *I) const {
     const StoreInst *SI = cast<StoreInst>(I);
     Type *ValTy = SI->getValueOperand()->getType();
     return getMemoryOpCost(I->getOpcode(), ValTy,
-                                SI->getAlignment(),
-                                SI->getPointerAddressSpace(), I);
+                           MaybeAlign(SI->getAlignment()),
+                           SI->getPointerAddressSpace(), I);
   }
   case Instruction::Load: {
     const LoadInst *LI = cast<LoadInst>(I);
     return getMemoryOpCost(I->getOpcode(), I->getType(),
-                                LI->getAlignment(),
-                                LI->getPointerAddressSpace(), I);
+                           MaybeAlign(LI->getAlignment()),
+                           LI->getPointerAddressSpace(), I);
   }
   case Instruction::ZExt:
   case Instruction::SExt:

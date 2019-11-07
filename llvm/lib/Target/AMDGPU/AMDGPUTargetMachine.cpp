@@ -885,9 +885,6 @@ bool GCNPassConfig::addInstSelector() {
   addPass(createSILowerI1CopiesPass());
   addPass(createSIFixupVectorISelPass());
   addPass(createSIAddIMGInitPass());
-  // FIXME: Remove this once the phi on CF_END is cleaned up by either removing
-  // LCSSA or other ways.
-  addPass(&UnreachableMachineBlockElimID);
   return false;
 }
 
@@ -1154,6 +1151,8 @@ bool GCNTargetMachine::parseMachineFunctionInfo(
 
   MFI->Mode.IEEE = YamlMFI.Mode.IEEE;
   MFI->Mode.DX10Clamp = YamlMFI.Mode.DX10Clamp;
+  MFI->Mode.FP32Denormals = YamlMFI.Mode.FP32Denormals;
+  MFI->Mode.FP64FP16Denormals = YamlMFI.Mode.FP64FP16Denormals;
 
   return false;
 }

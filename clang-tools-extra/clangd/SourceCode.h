@@ -232,6 +232,11 @@ llvm::Error reformatEdit(Edit &E, const format::FormatStyle &Style);
 llvm::StringMap<unsigned> collectIdentifiers(llvm::StringRef Content,
                                              const format::FormatStyle &Style);
 
+/// Collects all ranges of the given identifier in the source code.
+std::vector<Range> collectIdentifierRanges(llvm::StringRef Identifier,
+                                           llvm::StringRef Content,
+                                           const LangOptions &LangOpts);
+
 /// Collects words from the source code.
 /// Unlike collectIdentifiers:
 /// - also finds text in comments:
@@ -261,6 +266,27 @@ llvm::StringSet<> collectWords(llvm::StringRef Content);
 /// visibleNamespaces are {"foo::", "", "a::", "b::", "foo::b::"}, not "a::b::".
 std::vector<std::string> visibleNamespaces(llvm::StringRef Code,
                                            const format::FormatStyle &Style);
+
+/// Represents locations that can accept a definition.
+struct EligibleRegion {
+  /// Namespace that owns all of the EligiblePoints, e.g.
+  /// namespace a{ namespace b {^ void foo();^} }
+  /// It will be “a::b” for both carrot locations.
+  std::string EnclosingNamespace;
+  /// Offsets into the code marking eligible points to insert a function
+  /// definition.
+  std::vector<Position> EligiblePoints;
+};
+
+/// Returns most eligible region to insert a definition for \p
+/// FullyQualifiedName in the \p Code.
+/// Pseudo parses \pCode under the hood to determine namespace decls and
+/// possible insertion points. Choses the region that matches the longest prefix
+/// of \p FullyQualifiedName. Returns EOF if there are no shared namespaces.
+/// \p FullyQualifiedName should not contain anonymous namespaces.
+EligibleRegion getEligiblePoints(llvm::StringRef Code,
+                                 llvm::StringRef FullyQualifiedName,
+                                 const format::FormatStyle &Style);
 
 struct DefinedMacro {
   llvm::StringRef Name;

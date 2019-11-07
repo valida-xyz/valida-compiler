@@ -40,8 +40,9 @@ using namespace llvm::COFF;
 using namespace llvm::object;
 using namespace llvm::support;
 using namespace llvm::support::endian;
-using namespace lld;
-using namespace lld::coff;
+
+namespace lld {
+namespace coff {
 
 /* To re-generate DOSProgram:
 $ cat > /tmp/DOSProgram.asm
@@ -285,9 +286,6 @@ private:
 };
 } // anonymous namespace
 
-namespace lld {
-namespace coff {
-
 static Timer codeLayoutTimer("Code Layout", Timer::root());
 static Timer diskCommitTimer("Commit Output File", Timer::root());
 
@@ -332,9 +330,6 @@ void OutputSection::writeHeaderTo(uint8_t *buf) {
 void OutputSection::addContributingPartialSection(PartialSection *sec) {
   contribSections.push_back(sec);
 }
-
-} // namespace coff
-} // namespace lld
 
 // Check whether the target address S is in range from a relocation
 // of type relType at address P.
@@ -1153,6 +1148,11 @@ void Writer::createSymbolAndStringTable() {
       continue;
     if ((sec->header.Characteristics & IMAGE_SCN_MEM_DISCARDABLE) == 0)
       continue;
+    if (config->warnLongSectionNames) {
+      warn("section name " + sec->name +
+           " is longer than 8 characters and will use a non-standard string "
+           "table");
+    }
     sec->setStringTableOff(addEntryToStringTable(sec->name));
   }
 
@@ -1945,3 +1945,6 @@ PartialSection *Writer::findPartialSection(StringRef name, uint32_t outChars) {
     return it->second;
   return nullptr;
 }
+
+} // namespace coff
+} // namespace lld

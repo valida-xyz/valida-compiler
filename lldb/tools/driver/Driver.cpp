@@ -19,8 +19,8 @@
 #include "lldb/API/SBStringList.h"
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Process.h"
@@ -807,23 +807,9 @@ llvm::Optional<int> InitializeReproducer(opt::InputArgList &input_args) {
   return llvm::None;
 }
 
-int
-#ifdef _MSC_VER
-wmain(int argc, wchar_t const *wargv[])
-#else
-main(int argc, char const *argv[])
-#endif
+int main(int argc, char const *argv[])
 {
-#ifdef _MSC_VER
-  // Convert wide arguments to UTF-8
-  std::vector<std::string> argvStrings(argc);
-  std::vector<const char *> argvPointers(argc);
-  for (int i = 0; i != argc; ++i) {
-    llvm::convertWideToUTF8(wargv[i], argvStrings[i]);
-    argvPointers[i] = argvStrings[i].c_str();
-  }
-  const char **argv = argvPointers.data();
-#endif
+  llvm::InitLLVM IL(argc, argv);
 
   // Print stack trace on crash.
   llvm::StringRef ToolName = llvm::sys::path::filename(argv[0]);
@@ -858,6 +844,25 @@ main(int argc, char const *argv[])
     return 1;
   }
   SBHostOS::ThreadCreated("<lldb.driver.main-thread>");
+
+  // Install llvm's signal handlers up front to prevent lldb's handlers from
+  // being ignored. This is (hopefully) a stopgap workaround.
+  //
+  // When lldb invokes an llvm API that installs signal handlers (e.g.
+  // llvm::sys::RemoveFileOnSignal, possibly via a compiler embedded within
+  // lldb), lldb's signal handlers are overriden if llvm is installing its
+  // handlers for the first time.
+  //
+  // To work around llvm's behavior, force it to install its handlers up front,
+  // and *then* install lldb's handlers. In practice this is used to prevent
+  // lldb test processes from exiting due to IO_ERR when SIGPIPE is received.
+  //
+  // Note that when llvm installs its handlers, it 1) records the old handlers
+  // it replaces and 2) re-installs the old handlers when its new handler is
+  // invoked. That means that a signal not explicitly handled by lldb can fall
+  // back to being handled by llvm's handler the first time it is received,
+  // and then by the default handler the second time it is received.
+  llvm::sys::AddSignalHandler([](void *) -> void {}, nullptr);
 
   signal(SIGINT, sigint_handler);
 #if !defined(_MSC_VER)

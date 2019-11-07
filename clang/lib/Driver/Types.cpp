@@ -212,6 +212,16 @@ bool types::isHIP(ID Id) {
   }
 }
 
+bool types::isFortran(ID Id) {
+  switch (Id) {
+  default:
+    return false;
+
+  case TY_Fortran: case TY_PP_Fortran:
+    return true;
+  }
+}
+
 bool types::isSrcFile(ID Id) {
   return Id != TY_Object && getPreprocessedType(Id) != TY_INVALID;
 }
@@ -321,7 +331,7 @@ void types::getCompilationPhases(const clang::driver::Driver &Driver,
                   [](phases::ID Phase) { return Phase <= phases::Precompile; });
 
   // Treat Interface Stubs like its own compilation mode.
-  else if (DAL.getLastArg(options::OPT_emit_iterface_stubs)) {
+  else if (DAL.getLastArg(options::OPT_emit_interface_stubs)) {
     llvm::SmallVector<phases::ID, phases::MaxNumberOfPhases> IfsModePhaseList;
     llvm::SmallVector<phases::ID, phases::MaxNumberOfPhases> &PL = PhaseList;
     phases::ID LastPhase = phases::IfsMerge;

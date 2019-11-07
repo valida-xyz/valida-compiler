@@ -2198,6 +2198,18 @@ bool AArch64InstrInfo::getMemOpInfo(unsigned Opcode, unsigned &Scale,
     MinOffset = -256;
     MaxOffset = 255;
     break;
+  case AArch64::LDR_PXI:
+  case AArch64::STR_PXI:
+    Scale = Width = 2;
+    MinOffset = -256;
+    MaxOffset = 255;
+    break;
+  case AArch64::LDR_ZXI:
+  case AArch64::STR_ZXI:
+    Scale = Width = 16;
+    MinOffset = -256;
+    MaxOffset = 255;
+    break;
   case AArch64::ST2GOffset:
   case AArch64::STZ2GOffset:
     Scale = 16;
@@ -3340,11 +3352,23 @@ MachineInstr *AArch64InstrInfo::foldMemoryOperandImpl(
   return nullptr;
 }
 
+static bool isSVEScaledImmInstruction(unsigned Opcode) {
+  switch (Opcode) {
+  case AArch64::LDR_ZXI:
+  case AArch64::STR_ZXI:
+  case AArch64::LDR_PXI:
+  case AArch64::STR_PXI:
+    return true;
+  default:
+    return false;
+  }
+}
+
 int llvm::isAArch64FrameOffsetLegal(const MachineInstr &MI,
                                     StackOffset &SOffset,
                                     bool *OutUseUnscaledOp,
                                     unsigned *OutUnscaledOp,
-                                    int *EmittableOffset) {
+                                    int64_t *EmittableOffset) {
   // Set output values in case of early exit.
   if (EmittableOffset)
     *EmittableOffset = 0;
@@ -3383,9 +3407,13 @@ int llvm::isAArch64FrameOffsetLegal(const MachineInstr &MI,
     llvm_unreachable("unhandled opcode in isAArch64FrameOffsetLegal");
 
   // Construct the complete offset.
+  bool IsMulVL = isSVEScaledImmInstruction(MI.getOpcode());
+  int64_t Offset =
+      IsMulVL ? (SOffset.getScalableBytes()) : (SOffset.getBytes());
+
   const MachineOperand &ImmOpnd =
       MI.getOperand(AArch64InstrInfo::getLoadStoreImmIdx(MI.getOpcode()));
-  int Offset = SOffset.getBytes() + ImmOpnd.getImm() * Scale;
+  Offset += ImmOpnd.getImm() * Scale;
 
   // If the offset doesn't match the scale, we rewrite the instruction to
   // use the unscaled instruction instead. Likewise, if we have a negative
@@ -3402,7 +3430,7 @@ int llvm::isAArch64FrameOffsetLegal(const MachineInstr &MI,
          "Cannot have remainder when using unscaled op");
 
   assert(MinOff < MaxOff && "Unexpected Min/Max offsets");
-  int NewOffset = Offset / Scale;
+  int64_t NewOffset = Offset / Scale;
   if (MinOff <= NewOffset && NewOffset <= MaxOff)
     Offset = Remainder;
   else {
@@ -3417,9 +3445,14 @@ int llvm::isAArch64FrameOffsetLegal(const MachineInstr &MI,
   if (OutUnscaledOp && UnscaledOp)
     *OutUnscaledOp = *UnscaledOp;
 
-  SOffset = StackOffset(Offset, MVT::i8);
+  if (IsMulVL)
+    SOffset = StackOffset(Offset, MVT::nxv1i8) +
+              StackOffset(SOffset.getBytes(), MVT::i8);
+  else
+    SOffset = StackOffset(Offset, MVT::i8) +
+              StackOffset(SOffset.getScalableBytes(), MVT::nxv1i8);
   return AArch64FrameOffsetCanUpdate |
-         (Offset == 0 ? AArch64FrameOffsetIsLegal : 0);
+         (SOffset ? 0 : AArch64FrameOffsetIsLegal);
 }
 
 bool llvm::rewriteAArch64FrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
@@ -3438,7 +3471,7 @@ bool llvm::rewriteAArch64FrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
     return true;
   }
 
-  int NewOffset;
+  int64_t NewOffset;
   unsigned UnscaledOp;
   bool UseUnscaledOp;
   int Status = isAArch64FrameOffsetLegal(MI, Offset, &UseUnscaledOp,
@@ -5692,6 +5725,54 @@ bool AArch64InstrInfo::isCopyInstrImpl(
   }
 
   return false;
+}
+
+bool AArch64InstrInfo::isAddImmediate(const MachineInstr &MI,
+                                      const MachineOperand *&Destination,
+                                      const MachineOperand *&Source,
+                                      int64_t &Offset) const {
+  int Sign = 1;
+  switch (MI.getOpcode()) {
+  default:
+    return false;
+  case AArch64::SUBWri:
+  case AArch64::SUBXri:
+  case AArch64::SUBSWri:
+  case AArch64::SUBSXri:
+    Sign *= -1;
+    LLVM_FALLTHROUGH;
+  case AArch64::ADDSWri:
+  case AArch64::ADDSXri:
+  case AArch64::ADDWri:
+  case AArch64::ADDXri: {
+    // TODO: Third operand can be global address (usually some string).
+    if (!MI.getOperand(0).isReg() || !MI.getOperand(1).isReg() ||
+        !MI.getOperand(2).isImm())
+      return false;
+    Source = &MI.getOperand(1);
+    Offset = MI.getOperand(2).getImm() * Sign;
+    int Shift = MI.getOperand(3).getImm();
+    assert((Shift == 0 || Shift == 12) && "Shift can be either 0 or 12");
+    Offset = Offset << Shift;
+  }
+  }
+  Destination = &MI.getOperand(0);
+  return true;
+}
+
+Optional<ParamLoadedValue>
+AArch64InstrInfo::describeLoadedValue(const MachineInstr &MI) const {
+  switch (MI.getOpcode()) {
+  case AArch64::MOVZWi:
+  case AArch64::MOVZXi:
+    if (!MI.getOperand(1).isImm())
+      return None;
+    int Immediate = MI.getOperand(1).getImm();
+    int Shift = MI.getOperand(2).getImm();
+    return ParamLoadedValue(MachineOperand::CreateImm(Immediate << Shift),
+                            nullptr);
+  }
+  return TargetInstrInfo::describeLoadedValue(MI);
 }
 
 #define GET_INSTRINFO_HELPERS

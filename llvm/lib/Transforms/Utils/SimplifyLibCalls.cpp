@@ -177,7 +177,8 @@ static bool canTransformToMemCmp(CallInst *CI, Value *Str, uint64_t Len,
   if (!isOnlyUsedInComparisonWithZero(CI))
     return false;
 
-  if (!isDereferenceableAndAlignedPointer(Str, 1, APInt(64, Len), DL))
+  if (!isDereferenceableAndAlignedPointer(Str, Align::None(), APInt(64, Len),
+                                          DL))
     return false;
 
   if (CI->getFunction()->hasFnAttribute(Attribute::SanitizeMemory))
@@ -1915,9 +1916,7 @@ Value *LibCallSimplifier::optimizeLog(CallInst *Log, IRBuilder<> &B) {
   IRBuilder<>::FastMathFlagGuard Guard(B);
   B.setFastMathFlags(FastMathFlags::getFast());
 
-  Function *ArgFn = Arg->getCalledFunction();
-  Intrinsic::ID ArgID =
-      ArgFn ? ArgFn->getIntrinsicID() : Intrinsic::not_intrinsic;
+  Intrinsic::ID ArgID = Arg->getIntrinsicID();
   LibFunc ArgLb = NotLibFunc;
   TLI->getLibFunc(Arg, ArgLb);
 

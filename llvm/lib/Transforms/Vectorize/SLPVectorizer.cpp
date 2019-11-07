@@ -618,6 +618,15 @@ public:
   /// vectorizable. We do not vectorize such trees.
   bool isTreeTinyAndNotFullyVectorizable() const;
 
+  /// Assume that a legal-sized 'or'-reduction of shifted/zexted loaded values
+  /// can be load combined in the backend. Load combining may not be allowed in
+  /// the IR optimizer, so we do not want to alter the pattern. For example,
+  /// partially transforming a scalar bswap() pattern into vector code is
+  /// effectively impossible for the backend to undo.
+  /// TODO: If load combining is allowed in the IR optimizer, this analysis
+  ///       may not be necessary.
+  bool isLoadCombineReductionCandidate(unsigned ReductionOpcode) const;
+
   OptimizationRemarkEmitter *getORE() { return ORE; }
 
   /// This structure holds any data we need about the edges being traversed
@@ -1345,14 +1354,21 @@ private:
       for (Value *V : Scalars)
         dbgs().indent(2) << *V << "\n";
       dbgs() << "NeedToGather: " << NeedToGather << "\n";
-      dbgs() << "MainOp: " << *MainOp << "\n";
-      dbgs() << "AltOp: " << *AltOp << "\n";
+      dbgs() << "MainOp: ";
+      if (MainOp)
+        dbgs() << *MainOp << "\n";
+      else
+        dbgs() << "NULL\n";
+      dbgs() << "AltOp: ";
+      if (AltOp)
+        dbgs() << *AltOp << "\n";
+      else
+        dbgs() << "NULL\n";
       dbgs() << "VectorizedValue: ";
       if (VectorizedValue)
-        dbgs() << *VectorizedValue;
+        dbgs() << *VectorizedValue << "\n";
       else
-        dbgs() << "NULL";
-      dbgs() << "\n";
+        dbgs() << "NULL\n";
       dbgs() << "ReuseShuffleIndices: ";
       if (ReuseShuffleIndices.empty())
         dbgs() << "Emtpy";
@@ -2439,7 +2455,7 @@ void BoUpSLP::buildTree_rec(ArrayRef<Value *> VL, unsigned Depth,
             dyn_cast<SCEVConstant>(SE->getMinusSCEV(ScevN, Scev0));
         uint64_t Size = DL->getTypeAllocSize(ScalarTy);
         // Check that the sorted loads are consecutive.
-        if (Diff && Diff->getAPInt().getZExtValue() == (VL.size() - 1) * Size) {
+        if (Diff && Diff->getAPInt() == (VL.size() - 1) * Size) {
           if (CurrentOrder.empty()) {
             // Original loads are consecutive and does not require reordering.
             ++NumOpsWantToKeepOriginalOrder;
@@ -2628,9 +2644,14 @@ void BoUpSLP::buildTree_rec(ArrayRef<Value *> VL, unsigned Depth,
       }
 
       // We don't combine GEPs with non-constant indexes.
+      Type *Ty1 = VL0->getOperand(1)->getType();
       for (Value *V : VL) {
         auto Op = cast<Instruction>(V)->getOperand(1);
-        if (!isa<ConstantInt>(Op)) {
+        if (!isa<ConstantInt>(Op) ||
+            (Op->getType() != Ty1 &&
+             Op->getType()->getScalarSizeInBits() >
+                 DL->getIndexSizeInBits(
+                     V->getType()->getPointerAddressSpace()))) {
           LLVM_DEBUG(dbgs()
                      << "SLP: not-vectorizable GEP (non-constant indexes).\n");
           BS.cancelScheduling(VL, VL0);
@@ -3153,7 +3174,7 @@ int BoUpSLP::getEntryCost(TreeEntry *E) {
     }
     case Instruction::Load: {
       // Cost of wide load - cost of scalar loads.
-      unsigned alignment = cast<LoadInst>(VL0)->getAlignment();
+      MaybeAlign alignment(cast<LoadInst>(VL0)->getAlignment());
       int ScalarEltCost =
           TTI->getMemoryOpCost(Instruction::Load, ScalarTy, alignment, 0, VL0);
       if (NeedToShuffleReuses) {
@@ -3171,7 +3192,7 @@ int BoUpSLP::getEntryCost(TreeEntry *E) {
     }
     case Instruction::Store: {
       // We know that we can merge the stores. Calculate the cost.
-      unsigned alignment = cast<StoreInst>(VL0)->getAlignment();
+      MaybeAlign alignment(cast<StoreInst>(VL0)->getAlignment());
       int ScalarEltCost =
           TTI->getMemoryOpCost(Instruction::Store, ScalarTy, alignment, 0, VL0);
       if (NeedToShuffleReuses) {
@@ -3284,6 +3305,43 @@ bool BoUpSLP::isFullyVectorizableTinyTree() const {
   return true;
 }
 
+bool BoUpSLP::isLoadCombineReductionCandidate(unsigned RdxOpcode) const {
+  if (RdxOpcode != Instruction::Or)
+    return false;
+
+  unsigned NumElts = VectorizableTree[0]->Scalars.size();
+  Value *FirstReduced = VectorizableTree[0]->Scalars[0];
+
+  // Look past the reduction to find a source value. Arbitrarily follow the
+  // path through operand 0 of any 'or'. Also, peek through optional
+  // shift-left-by-constant.
+  Value *ZextLoad = FirstReduced;
+  while (match(ZextLoad, m_Or(m_Value(), m_Value())) ||
+         match(ZextLoad, m_Shl(m_Value(), m_Constant())))
+    ZextLoad = cast<BinaryOperator>(ZextLoad)->getOperand(0);
+
+  // Check if the input to the reduction is an extended load.
+  Value *LoadPtr;
+  if (!match(ZextLoad, m_ZExt(m_Load(m_Value(LoadPtr)))))
+    return false;
+
+  // Require that the total load bit width is a legal integer type.
+  // For example, <8 x i8> --> i64 is a legal integer on a 64-bit target.
+  // But <16 x i8> --> i128 is not, so the backend probably can't reduce it.
+  Type *SrcTy = LoadPtr->getType()->getPointerElementType();
+  unsigned LoadBitWidth = SrcTy->getIntegerBitWidth() * NumElts;
+  LLVMContext &Context = FirstReduced->getContext();
+  if (!TTI->isTypeLegal(IntegerType::get(Context, LoadBitWidth)))
+    return false;
+
+  // Everything matched - assume that we can fold the whole sequence using
+  // load combining.
+  LLVM_DEBUG(dbgs() << "SLP: Assume load combining for scalar reduction of "
+             << *(cast<Instruction>(FirstReduced)) << "\n");
+
+  return true;
+}
+
 bool BoUpSLP::isTreeTinyAndNotFullyVectorizable() const {
   // We can vectorize the tree if its size is greater than or equal to the
   // minimum size specified by the MinTreeSize command line option.
@@ -3351,7 +3409,7 @@ int BoUpSLP::getSpillCost() const {
         continue;
       }
 
-      // Debug informations don't impact spill cost.
+      // Debug information does not impact spill cost.
       if ((isa<CallInst>(&*PrevInstIt) &&
            !isa<DbgInfoIntrinsic>(&*PrevInstIt)) &&
           &*PrevInstIt != PrevInst)
@@ -4042,7 +4100,22 @@ Value *BoUpSLP::vectorizeTree(TreeEntry *E) {
       std::vector<Value *> OpVecs;
       for (int j = 1, e = cast<GetElementPtrInst>(VL0)->getNumOperands(); j < e;
            ++j) {
-        Value *OpVec = vectorizeTree(E->getOperand(j));
+        ValueList &VL = E->getOperand(j);
+        // Need to cast all elements to the same type before vectorization to
+        // avoid crash.
+        Type *VL0Ty = VL0->getOperand(j)->getType();
+        Type *Ty = llvm::all_of(
+                       VL, [VL0Ty](Value *V) { return VL0Ty == V->getType(); })
+                       ? VL0Ty
+                       : DL->getIndexType(cast<GetElementPtrInst>(VL0)
+                                              ->getPointerOperandType()
+                                              ->getScalarType());
+        for (Value *&V : VL) {
+          auto *CI = cast<ConstantInt>(V);
+          V = ConstantExpr::getIntegerCast(CI, Ty,
+                                           CI->getValue().isSignBitSet());
+        }
+        Value *OpVec = vectorizeTree(VL);
         OpVecs.push_back(OpVec);
       }
 
@@ -5237,7 +5310,7 @@ bool SLPVectorizerPass::runImpl(Function &F, ScalarEvolution *SE_,
 
   // If the target claims to have no vector registers don't attempt
   // vectorization.
-  if (!TTI->getNumberOfRegisters(true))
+  if (!TTI->getNumberOfRegisters(TTI->getRegisterClassForType(true)))
     return false;
 
   // Don't vectorize when the attribute NoImplicitFloat is used.
@@ -6324,7 +6397,7 @@ public:
 
   /// Attempt to vectorize the tree found by
   /// matchAssociativeReduction.
-  bool tryToReduce(BoUpSLP &V, TargetTransformInfo *TTI) {
+  bool tryToReduce(BoUpSLP &V, TargetTransformInfo *TTI, bool Try2WayRdx) {
     if (ReducedVals.empty())
       return false;
 
@@ -6332,11 +6405,14 @@ public:
     // to a nearby power-of-2. Can safely generate oversized
     // vectors and rely on the backend to split them to legal sizes.
     unsigned NumReducedVals = ReducedVals.size();
-    if (NumReducedVals < 4)
+    if (Try2WayRdx && NumReducedVals != 2)
+      return false;
+    unsigned MinRdxVals = Try2WayRdx ? 2 : 4;
+    if (NumReducedVals < MinRdxVals)
       return false;
 
     unsigned ReduxWidth = PowerOf2Floor(NumReducedVals);
-
+    unsigned MinRdxWidth = Log2_32(MinRdxVals);
     Value *VectorizedTree = nullptr;
 
     // FIXME: Fast-math-flags should be set based on the instructions in the
@@ -6360,7 +6436,7 @@ public:
     SmallVector<Value *, 16> IgnoreList;
     for (auto &V : ReductionOps)
       IgnoreList.append(V.begin(), V.end());
-    while (i < NumReducedVals - ReduxWidth + 1 && ReduxWidth > 2) {
+    while (i < NumReducedVals - ReduxWidth + 1 && ReduxWidth > MinRdxWidth) {
       auto VL = makeArrayRef(&ReducedVals[i], ReduxWidth);
       V.buildTree(VL, ExternallyUsedValues, IgnoreList);
       Optional<ArrayRef<unsigned>> Order = V.bestOrder();
@@ -6373,6 +6449,8 @@ public:
         V.buildTree(ReorderedOps, ExternallyUsedValues, IgnoreList);
       }
       if (V.isTreeTinyAndNotFullyVectorizable())
+        break;
+      if (V.isLoadCombineReductionCandidate(ReductionData.getOpcode()))
         break;
 
       V.computeMinimumValueSizes();
@@ -6684,7 +6762,7 @@ static Value *getReductionValue(const DominatorTree *DT, PHINode *P,
 /// performed.
 static bool tryToVectorizeHorReductionOrInstOperands(
     PHINode *P, Instruction *Root, BasicBlock *BB, BoUpSLP &R,
-    TargetTransformInfo *TTI,
+    TargetTransformInfo *TTI, bool Try2WayRdx,
     const function_ref<bool(Instruction *, BoUpSLP &)> Vectorize) {
   if (!ShouldVectorizeHor)
     return false;
@@ -6715,7 +6793,7 @@ static bool tryToVectorizeHorReductionOrInstOperands(
     if (BI || SI) {
       HorizontalReduction HorRdx;
       if (HorRdx.matchAssociativeReduction(P, Inst)) {
-        if (HorRdx.tryToReduce(R, TTI)) {
+        if (HorRdx.tryToReduce(R, TTI, Try2WayRdx)) {
           Res = true;
           // Set P to nullptr to avoid re-analysis of phi node in
           // matchAssociativeReduction function unless this is the root node.
@@ -6758,7 +6836,8 @@ static bool tryToVectorizeHorReductionOrInstOperands(
 
 bool SLPVectorizerPass::vectorizeRootInstruction(PHINode *P, Value *V,
                                                  BasicBlock *BB, BoUpSLP &R,
-                                                 TargetTransformInfo *TTI) {
+                                                 TargetTransformInfo *TTI,
+                                                 bool Try2WayRdx) {
   if (!V)
     return false;
   auto *I = dyn_cast<Instruction>(V);
@@ -6771,7 +6850,7 @@ bool SLPVectorizerPass::vectorizeRootInstruction(PHINode *P, Value *V,
   auto &&ExtraVectorization = [this](Instruction *I, BoUpSLP &R) -> bool {
     return tryToVectorize(I, R);
   };
-  return tryToVectorizeHorReductionOrInstOperands(P, I, BB, R, TTI,
+  return tryToVectorizeHorReductionOrInstOperands(P, I, BB, R, TTI, Try2WayRdx,
                                                   ExtraVectorization);
 }
 
@@ -6965,6 +7044,23 @@ bool SLPVectorizerPass::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
     if (isa<InsertElementInst>(it) || isa<CmpInst>(it) ||
         isa<InsertValueInst>(it))
       PostProcessInstructions.push_back(&*it);
+  }
+
+  // Make a final attempt to match a 2-way reduction if nothing else worked.
+  // We do not try this above because it may interfere with other vectorization
+  // attempts.
+  // TODO: The constraints are copied from the above call to
+  //       vectorizeRootInstruction(), but that might be too restrictive?
+  BasicBlock::iterator LastInst = --BB->end();
+  if (!Changed && LastInst->use_empty() &&
+      (LastInst->getType()->isVoidTy() || isa<CallInst>(LastInst) ||
+       isa<InvokeInst>(LastInst))) {
+    if (ShouldStartVectorizeHorAtStore || !isa<StoreInst>(LastInst)) {
+      for (auto *V : LastInst->operand_values()) {
+        Changed |= vectorizeRootInstruction(nullptr, V, BB, R, TTI,
+                                            /* Try2WayRdx */ true);
+      }
+    }
   }
 
   return Changed;

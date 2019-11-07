@@ -845,7 +845,6 @@ private:
       break;
     case tok::kw_if:
     case tok::kw_while:
-      assert(!Line.startsWith(tok::hash));
       if (Tok->is(tok::kw_if) && CurrentToken &&
           CurrentToken->isOneOf(tok::kw_constexpr, tok::identifier))
         next();
@@ -1351,6 +1350,70 @@ private:
     }
   }
 
+  static FormatToken *untilMatchingParen(FormatToken *Current) {
+    // Used when `MatchingParen` is not yet established.
+    int ParenLevel = 0;
+    while (Current) {
+      if (Current->is(tok::l_paren))
+        ParenLevel++;
+      if (Current->is(tok::r_paren))
+        ParenLevel--;
+      if (ParenLevel < 1)
+        break;
+      Current = Current->Next;
+    }
+    return Current;
+  }
+
+  static bool isDeductionGuide(FormatToken &Current) {
+    // Look for a deduction guide template<T> A(...) -> A<...>;
+    if (Current.Previous && Current.Previous->is(tok::r_paren) &&
+        Current.startsSequence(tok::arrow, tok::identifier, tok::less)) {
+      // Find the TemplateCloser.
+      FormatToken *TemplateCloser = Current.Next->Next;
+      int NestingLevel = 0;
+      while (TemplateCloser) {
+        // Skip over an expressions in parens  A<(3 < 2)>;
+        if (TemplateCloser->is(tok::l_paren)) {
+          // No Matching Paren yet so skip to matching paren
+          TemplateCloser = untilMatchingParen(TemplateCloser);
+        }
+        if (TemplateCloser->is(tok::less))
+          NestingLevel++;
+        if (TemplateCloser->is(tok::greater))
+          NestingLevel--;
+        if (NestingLevel < 1)
+          break;
+        TemplateCloser = TemplateCloser->Next;
+      }
+      // Assuming we have found the end of the template ensure its followed
+      // with a semi-colon.
+      if (TemplateCloser && TemplateCloser->Next &&
+          TemplateCloser->Next->is(tok::semi) &&
+          Current.Previous->MatchingParen) {
+        // Determine if the identifier `A` prior to the A<..>; is the same as
+        // prior to the A(..)
+        FormatToken *LeadingIdentifier =
+            Current.Previous->MatchingParen->Previous;
+
+        // Differentiate a deduction guide by seeing the
+        // > of the template prior to the leading identifier.
+        if (LeadingIdentifier) {
+          FormatToken *PriorLeadingIdentifier = LeadingIdentifier->Previous;
+          // Skip back past explicit decoration
+          if (PriorLeadingIdentifier &&
+              PriorLeadingIdentifier->is(tok::kw_explicit))
+            PriorLeadingIdentifier = PriorLeadingIdentifier->Previous;
+
+          return (PriorLeadingIdentifier &&
+                  PriorLeadingIdentifier->is(TT_TemplateCloser) &&
+                  LeadingIdentifier->TokenText == Current.Next->TokenText);
+        }
+      }
+    }
+    return false;
+  }
+
   void determineTokenType(FormatToken &Current) {
     if (!Current.is(TT_Unknown))
       // The token type is already known.
@@ -1397,6 +1460,10 @@ private:
                Current.NestingLevel == 0 &&
                !Current.Previous->is(tok::kw_operator)) {
       // not auto operator->() -> xxx;
+      Current.Type = TT_TrailingReturnArrow;
+
+    } else if (isDeductionGuide(Current)) {
+      // Deduction guides trailing arrow " A(...) -> A<T>;".
       Current.Type = TT_TrailingReturnArrow;
     } else if (Current.isOneOf(tok::star, tok::amp, tok::ampamp)) {
       Current.Type = determineStarAmpUsage(Current,
@@ -1608,8 +1675,9 @@ private:
     // Functions which end with decorations like volatile, noexcept are unlikely
     // to be casts.
     if (Tok.Next->isOneOf(tok::kw_noexcept, tok::kw_volatile, tok::kw_const,
-                          tok::kw_throw, tok::l_square, tok::arrow,
-                          Keywords.kw_override, Keywords.kw_final))
+                          tok::kw_throw, tok::arrow, Keywords.kw_override,
+                          Keywords.kw_final) ||
+        isCpp11AttributeSpecifier(*Tok.Next))
       return false;
 
     // As Java has no function types, a "(" after the ")" likely means that this
@@ -1757,7 +1825,7 @@ private:
     // Use heuristics to recognize unary operators.
     if (PrevToken->isOneOf(tok::equal, tok::l_paren, tok::comma, tok::l_square,
                            tok::question, tok::colon, tok::kw_return,
-                           tok::kw_case, tok::at, tok::l_brace))
+                           tok::kw_case, tok::at, tok::l_brace, tok::kw_throw))
       return TT_UnaryOperator;
 
     // There can't be two consecutive binary operators.
@@ -2567,7 +2635,7 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     return Left.Tok.isLiteral() || (Left.is(tok::identifier) && Left.Previous &&
                                     Left.Previous->is(tok::kw_case));
   if (Left.is(tok::l_square) && Right.is(tok::amp))
-    return false;
+    return Style.SpacesInSquareBrackets;
   if (Right.is(TT_PointerOrReference)) {
     if (Left.is(tok::r_paren) && Line.MightBeFunctionDecl) {
       if (!Left.MatchingParen)
