@@ -1,0 +1,24 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_sextload
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sextload
+    ; CHECK: [[PTR:%[0-9]+]]:addrregs = COPY $a4
+    ; CHECK: [[LOAD:%[0-9]+]]:dataregs = LDB_dalc [[PTR]], 0 :: (load 1)
+    ; CHECK: $d2 = COPY [[LOAD]]
+    ; CHECK: [[LOAD1:%[0-9]+]]:dataregs = LDH_dalc [[PTR]], 0 :: (load 2)
+    ; CHECK: $d2 = COPY [[LOAD1]]
+    %0(p0) = COPY $a4
+    %1(s32) = G_SEXTLOAD %0(p0) :: (load 1)
+    $d2 = COPY %1(s32)
+    %2(s32) = G_SEXTLOAD %0(p0) :: (load 2)
+    $d2 = COPY %2(s32)
+...

@@ -65,6 +65,7 @@ private:
   bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
                         MachineIRBuilder &MIRBuilder) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
@@ -225,6 +226,23 @@ static unsigned getBranchOpCodeForPredicate(CmpInst::Predicate Predicate,
   return getOpCodeForPredicate(Predicate, RB, SwapOperands, OpcTable);
 }
 
+static unsigned getLoadStoreOpCode(const unsigned Opc,
+                                   const unsigned MemorySizeInBits) {
+  if (Opc == TargetOpcode::G_LOAD) {
+    if (MemorySizeInBits == 32)
+      return TriCore::LDA_aalc;
+
+    if (MemorySizeInBits == 64)
+      return TriCore::LDDA_pac;
+  } else if (Opc == TargetOpcode::G_STORE) {
+    if (MemorySizeInBits == 32)
+      return TriCore::STA_alca;
+  }
+
+  llvm_unreachable("Unknown Opc or Opc/MemSize combination should have been "
+                   "handled by TableGen!");
+}
+
 static const TargetRegisterClass *
 getRegClassForTypeOnBank(const LLT Ty, const RegisterBank &RB) {
   if (RB.getID() == TriCore::DataRegBankID) {
@@ -279,6 +297,9 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectConstant(I, MRI);
   case TargetOpcode::G_ICMP:
     return selectICmp(I, MRI);
+  case TargetOpcode::G_LOAD:
+  case TargetOpcode::G_STORE:
+    return selectLoadStore(I, MRI);
   case TargetOpcode::G_BRCOND:
     return selectBrCond(I, MRI);
   case TargetOpcode::G_BRINDIRECT:
@@ -562,6 +583,62 @@ bool TriCoreInstructionSelector::selectICmp(
                    .addUse(RHS);
 
   constrainSelectedInstRegOperands(*CmpMI, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectLoadStore(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  // Make sure that TableGen caught our supported cases
+  const Register &ValReg = I.getOperand(0).getReg();
+  const Register &PtrReg = I.getOperand(1).getReg();
+
+  const RegisterBank &DstRB = *RBI.getRegBank(ValReg, MRI, TRI);
+
+  if (DstRB.getID() != TriCore::AddrRegBankID)
+    llvm_unreachable(
+        "G_LOAD/G_STORE on DataRegBank can be handled by TableGen.");
+
+  // Make sure that we have the correct memory size
+  auto &MemOp = **I.memoperands_begin();
+  const unsigned MemSizeInBits = MemOp.getSize() * 8;
+
+  const bool IsLoad = I.getOpcode() == TargetOpcode::G_LOAD;
+  const bool IsNot32Bit = MemSizeInBits != 32;
+  const bool IsNot64Bit = MemSizeInBits != 64;
+
+  // G_LOAD needs to be handled for both 32 and 64 bits
+  if ((!IsLoad && IsNot32Bit) || (IsNot32Bit && IsNot64Bit)) {
+    LLVM_DEBUG(dbgs() << "G_LOAD/G_STORE has memory size: " << MemSizeInBits
+                      << "-bit, expected 32-bit load/store or 64-bit load.\n");
+    return false;
+  }
+
+#ifndef NDEBUG
+  // Sanity check that we have a pointer as address
+  const RegisterBank &PtrRB = *RBI.getRegBank(PtrReg, MRI, TRI);
+  assert(PtrRB.getID() == TriCore::AddrRegBankID &&
+         "Load/Store pointer operand is not on AddrRegBank");
+  assert(MRI.getType(PtrReg).isPointer() &&
+         "Load/Store pointer operand is not a pointer");
+#endif
+
+  const unsigned NewOpc = getLoadStoreOpCode(I.getOpcode(), MemSizeInBits);
+
+  // Build load/store
+  MachineIRBuilder MIRBuilder(I);
+  auto MemMI = MIRBuilder.buildInstr(NewOpc);
+
+  if (IsLoad)
+    MemMI = MemMI.addDef(ValReg);
+
+  MemMI = MemMI.addUse(PtrReg).addImm(0);
+  if (!IsLoad)
+    MemMI = MemMI.addUse(ValReg);
+
+  MemMI = MemMI.addMemOperand(&MemOp);
+  constrainSelectedInstRegOperands(*MemMI, TII, TRI, RBI);
 
   I.removeFromParent();
   return true;
