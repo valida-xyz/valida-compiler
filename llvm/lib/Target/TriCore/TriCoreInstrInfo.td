@@ -240,6 +240,36 @@ class MULTIPLY_RRR2<bits<8> opc1, bits<8> opc2, string mnemonic,
                          (ins RC:$s3, DataRegs:$s1, DataRegs:$s2),
                          mnemonic, "\t$d, $s3, $s1, $s2">;
 
+// 2.1.6 Min, Max, Saturate
+
+let isReMaterializable = 1 in {
+  class MMS_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
+               Operand op_type = simm9>
+            :  RC<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, op_type:$const9),
+                  mnemonic, "\t$d, $s1, $const9">;
+
+  let n = 0 in {
+    let isCommutable = 1 in
+    class MMS_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+              :  RR<opc1, opc2, (outs DataRegs:$d),
+                    (ins DataRegs:$s1, DataRegs:$s2),
+                    mnemonic, "\t$d, $s1, $s2">;
+
+    let s2 = 0 in 
+    class MMS_RR_NOS2<bits<8> opc1, bits<8> opc2, string mnemonic>
+                   :  RR<opc1, opc2, (outs DataRegs:$d),
+                         (ins DataRegs:$s1),
+                         mnemonic, "\t$d, $s1">;
+  } // n = 0
+
+  let Constraints = "$s1_d = $src" in
+  class MMS_SR<bits<8> opc1, bits<4> opc2, string mnemonic>
+            :  SR<opc1, opc2, (outs DataRegs:$s1_d),
+                  (ins DataRegs:$src),
+                  mnemonic, "\t$s1_d">;
+} // isReMaterializable = 1
+
 // 2.1.8 Logical.
 
 let isReMaterializable = 1 in {
@@ -870,6 +900,40 @@ let Defs = [PSW] in {
   def MSUBSU_dddd    :  MULTIPLY_RRR2<0x23,  0x88, "msubs.u"             >;
   def MSUBSU_eedd    :  MULTIPLY_RRR2<0x23,  0xE8, "msubs.u", ExtDataRegs>;
 } // Defs = [PSW]
+
+// 2.1.6 Min, Max, Saturate
+
+// MAX
+def MAX_ddc          :   MMS_RC<0x8B, 0x1A, "max"         >;
+def MAX_ddd          :   MMS_RR<0x0B, 0x1A, "max"         >;
+
+// MAX.U
+def MAXU_ddc         :   MMS_RC<0x8B, 0x1B, "max.u", uimm9>;
+def MAXU_ddd         :   MMS_RR<0x0B, 0x1B, "max.u"       >;
+
+// MIN
+def MIN_ddc          :   MMS_RC<0x8B, 0x18, "min"         >;
+def MIN_ddd          :   MMS_RR<0x0B, 0x18, "min"         >;
+
+// MIN.U
+def MINU_ddc         :   MMS_RC<0x8B, 0x19, "min.u", uimm9>;
+def MINU_ddd         :   MMS_RR<0x0B, 0x19, "min.u"       >;
+
+// SAT.B
+def SATB_dd          :   MMS_RR_NOS2<0x0B, 0x5E, "sat.b"  >;
+def SATB_16_d        :   MMS_SR<0x32,      0x00, "sat.b"  >;
+
+// SAT.BU
+def SATBU_dd         :   MMS_RR_NOS2<0x0B, 0x5F, "sat.bu" >;
+def SATBU_16_d       :   MMS_SR<0x32,      0x01, "sat.bu" >;
+
+// SAT.H
+def SATH_dd          :   MMS_RR_NOS2<0x0B, 0x7E, "sat.h"  >;
+def SATH_16_d        :   MMS_SR<0x32,      0x02, "sat.h"  >;
+
+// SAT.HU
+def SATHU_dd         :   MMS_RR_NOS2<0x0B, 0x7F, "sat.hu" >;
+def SATHU_16_d       :   MMS_SR<0x32,      0x03, "sat.hu" >;
 
 // 2.1.8 Logical.
 
