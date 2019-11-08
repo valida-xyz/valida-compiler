@@ -2198,3 +2198,89 @@ let n = 1, Defs = [PSW] in {
                          (ins DataRegs:$s1),
                          "qseed.f" , "\t$d, $s1">;
 } // n = 1, Defs = [PSW]
+
+
+//===----------------------------------------------------------------------===//
+//  2.12 System Instructions.
+//
+
+let hasSideEffects = 1 in {
+  // SYSCALL
+  let s1 = 0, d = 0, Uses = [PSW], isCall = 1, isTrap = 1, isTerminator = 1 in
+  def SYSCALL_c : RC<0xAD, 0x04, (outs), (ins uimm9:$const9),
+                     "syscall", "\t$const9">;
+
+  let s1_d = 0 in {
+    // DSYNC
+    def DSYNC : SYS<0x0D, 0x12, (outs), (ins), "dsync", "">;
+
+    // ISYNC
+    def ISYNC : SYS<0x0D, 0x13, (outs), (ins), "isync", "">;
+
+    // DISABLE
+    let Defs = [ICR] in
+    def DISABLE : SYS<0x0D, 0x0D, (outs), (ins), "disable", "">;
+  } // s1_d = 0
+
+  let Defs = [ICR], Uses = [ICR] in
+  def DISABLE_d : SYS<0x0D, 0x0F, (outs DataRegs:$s1_d), (ins),
+                      "disable", "\t$s1_d">;
+
+  let s1_d = 0 in {
+    // ENABLE
+    let Defs = [ICR] in
+    def ENABLE : SYS<0x0D, 0x0C, (outs), (ins), "enable", "">;
+
+    let isTrap = 1, Uses = [PSW] in {
+      // TRAPSV
+      def TRAPSV : SYS<0x0D, 0x15, (outs), (ins), "trapsv", "">;
+
+      // TRAPV
+      def TRAPV : SYS<0x0D, 0x14, (outs), (ins), "trapv", "">;
+    } // isTrap = 1, Uses = [PSW]
+
+    // NOP
+    def NOP_16 : SR<0x00, 0x00, (outs), (ins), "nop", "">;
+
+    def NOP : SYS<0x0D, 0x00, (outs), (ins), "nop", "">;
+  } // s1_d = 0
+
+  // RESTORE
+  let Defs = [ICR] in
+  def RESTORE_d : SYS<0x0D, 0x0E, (outs), (ins DataRegs:$s1_d),
+                      "restore", "\t$s1_d">;
+
+  let s1_d = 0 in {
+    // WAIT
+    def WAIT : SYS<0x0D, 0x16, (outs), (ins), "wait", "">;
+
+    // DEBUG
+    def DEBUG_16 : SR<0x00, 0x0A, (outs), (ins), "debug", "">;
+
+    def DEBUG : SYS<0x0D, 0x04, (outs), (ins), "debug", "">;
+
+    // RFM
+    let isReturn = 1, Defs = [A10, A11, PSW, PCXI, ICR],
+                      Uses = [A11, PSW, PCXI] in
+    def RFM : SYS<0x0D, 0x05, (outs), (ins), "rfm", "">;
+
+    // RSTV
+    let Defs = [PSW] in
+    def RSTV : SYS<0x2F, 0x00, (outs), (ins), "rstv", "">;
+  } // s1_d = 0
+
+  // UPDFL
+  let n = 1, d = 0, s2 = 0, Defs = [PSW] in
+  def UPDFL_d : RR<0x4B, 0x0C, (outs), (ins DataRegs:$s1),
+                   "updfl", "\t$s1">;
+
+  // MFCR
+  let s1 = 0, Uses = [PSW] in
+  def MFCR_dc : RLC<0x4D, (outs DataRegs:$d), (ins uimm16:$const16),
+                    "mfcr", "\t$d, $const16">;
+
+  // MTCR
+  let d = 0, Defs = [PSW] in
+  def MTCR_dc : RLC<0xCD, (outs), (ins uimm16:$const16, DataRegs:$s1),
+                    "mtcr", "\t$const16, $s1">;
+} // hasSideEffects = 1
