@@ -375,6 +375,14 @@ let isReMaterializable = 1 in {
                   mnemonic, "\t$d, $s1, $s2">;
 } // isReMaterializable = 1
 
+// 2.5.4 Packed Compare
+
+let n = 0, isReMaterializable = 1, isCompare = 1 in
+class PCMP_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+             : RR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s1, $s2">;
+
 // 2.6.1 Simple Bit Operations
 
 let isReMaterializable = 1 in
@@ -1475,6 +1483,36 @@ def SHNE_ddc         : CWH_RC<0x8B, 0x38, "sh.ne"  >;
 let isCommutable = 1 in
 def SHNE_ddd         : CWH_RR<0x0B, 0x38, "sh.ne"  >;
 
+// 2.5.4 Packed Compare
+
+let isCommutable = 1 in {
+  // EQ.B
+  def EQB_ddd      :  PCMP_RR<0x0B, 0x50, "eq.b">;
+
+  // EQ.H
+  def EQH_ddd      :  PCMP_RR<0x0B, 0x70, "eq.h">;
+
+  // EQ.W
+  def EQW_ddd      :  PCMP_RR<0x0B, 0x90, "eq.w">;
+} // isCommutable = 1
+
+// LT.B
+def LTB_ddd        :  PCMP_RR<0x0B, 0x52, "lt.b">;
+
+// LT.BU
+def LTBU_ddd       :  PCMP_RR<0x0B, 0x53, "lt.bu">;
+
+// LT.H
+def LTH_ddd        :  PCMP_RR<0x0B, 0x72, "lt.h">;
+
+// LT.HU
+def LTHU_ddd       :  PCMP_RR<0x0B, 0x73, "lt.hu">;
+
+// LT.W
+def LTW_ddd        :  PCMP_RR<0x0B, 0x92, "lt.w">;
+
+// LT.WU
+def LTWU_ddd       :  PCMP_RR<0x0B, 0x93, "lt.wu">;
 
 // 2.6.1 Simple Bit Operations
 
