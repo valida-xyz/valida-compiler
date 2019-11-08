@@ -14,6 +14,10 @@
 // Helper
 //===----------------------------------------------------------------------===//
 
+// Simple binary op pattern
+class SimpleBinOpPat<SDPatternOperator op, Instruction INSTR>
+    : Pat<(op DataRegs:$s1, DataRegs:$s2), (INSTR DataRegs:$s1, DataRegs:$s2)>;
+
 // Get 32-bit subregister
 def subreg_i32 : OutPatFrag<(ops node:$R, node:$SubIdx),
                             (i32 (EXTRACT_SUBREG $R, $SubIdx))>;
@@ -21,6 +25,38 @@ def subreg_i32 : OutPatFrag<(ops node:$R, node:$SubIdx),
 // Truncate to 32-bit
 def trunc_i32_data : OutPatFrag<(ops node:$R), (subreg_i32 $R, dsub0)>;
 def trunc_i32_addr : OutPatFrag<(ops node:$R), (subreg_i32 $R, asub0)>;
+
+// Common load patterns: load any, load 32 bit
+class LoadPat<ValueType ty, SDPatternOperator loadOp, Instruction INSTR,
+                ValueType immTy = i32>
+    : Pat<(ty (loadOp AddrRegs:$addr)), (ty (INSTR AddrRegs:$addr, (immTy 0)))>;
+
+class Load32Pat<SDPatternOperator loadOp, Instruction INSTR>
+    : LoadPat<i32, loadOp, INSTR, i16>;
+
+// Common store patterns
+// Emit common store fragment
+class emit_store<Instruction INSTR, ValueType immTy = i16>
+    : OutPatFrag<(ops node:$addr, node:$val), (INSTR $addr, (immTy 0), $val)>;
+
+// Match truncating store fragment
+class match_truncstore<ValueType ty, DAGOperand ValClass>
+    : PatFrag<(ops), (store (ty (trunc ValClass:$val)), AddrRegs:$addr)>;
+
+// Pattern to select store of any type
+class StorePat<DAGOperand ValClass, Instruction INSTR, ValueType immTy = i16>
+    : Pat<(store ValClass:$val, AddrRegs:$addr),
+          (emit_store<INSTR, immTy> AddrRegs:$addr, ValClass:$val)>;
+
+// Pattern to select truncating store from 32-bit
+class TruncStorePat<ValueType ty, Instruction INSTR>
+    : Pat<(match_truncstore<ty, DataRegs>),
+          (emit_store<INSTR> AddrRegs:$addr, DataRegs:$val)>;
+
+// Pattern to select truncating store from 64-bit
+class Trunc64StorePat<ValueType ty, Instruction INSTR>
+    : Pat<(match_truncstore<ty, ExtDataRegs>),
+        (emit_store<INSTR> AddrRegs:$addr, (trunc_i32_data ExtDataRegs:$val))>;
 
 //===----------------------------------------------------------------------===//
 // Truncations & Extensions
@@ -36,18 +72,14 @@ def : Pat<(i32 (trunc ExtAddrRegs:$src)), (trunc_i32_addr ExtAddrRegs:$src)>;
 
 // 2.1.2 Addition and Subtraction
 
-def : Pat<(add DataRegs:$s1, DataRegs:$s2),
-          (ADD_ddd DataRegs:$s1, DataRegs:$s2)>;
-def : Pat<(sub DataRegs:$s1, DataRegs:$s2),
-          (SUB_ddd DataRegs:$s1, DataRegs:$s2)>;
+def : SimpleBinOpPat<add, ADD_ddd>;
+def : SimpleBinOpPat<sub, SUB_ddd>;
 
 // 2.1.8 Logical
 
-def : Pat<(and DataRegs:$s1, DataRegs:$s2),
-          (AND_ddd DataRegs:$s1, DataRegs:$s2)>;
-def : Pat<(or DataRegs:$s1, DataRegs:$s2), (OR_ddd DataRegs:$s1, DataRegs:$s2)>;
-def : Pat<(xor DataRegs:$s1, DataRegs:$s2),
-          (XOR_ddd DataRegs:$s1, DataRegs:$s2)>;
+def : SimpleBinOpPat<and, AND_ddd>;
+def : SimpleBinOpPat<or,  OR_ddd>;
+def : SimpleBinOpPat<xor, XOR_ddd>;
 
 //===----------------------------------------------------------------------===//
 // 2.9 Branch Instructions
@@ -64,46 +96,32 @@ def : Pat<(br bb:$disp24), (J bb:$disp24)>;
 // 2.10.1 Load/Store Basic Data Types
 
 // 32 and 64-bit loads
-def : Pat<(i32 (load AddrRegs:$addr)), (i32 (LDW_dalc AddrRegs:$addr, (i16 0)))>;
-def : Pat<(i64 (load AddrRegs:$addr)), (i64 (LDD_eac AddrRegs:$addr, (i32 0)))>;
+def : Load32Pat<    load,   LDW_dalc>;
+def : LoadPat<i64,  load,   LDD_eac>;
 
 // Any-extending loads
-def : Pat<(i32 (extloadi8 AddrRegs:$addr)),
-          (i32 (LDB_dalc AddrRegs:$addr, (i16 0)))>;
-def : Pat<(i32 (extloadi16 AddrRegs:$addr)),
-          (i32 (LDH_dalc AddrRegs:$addr, (i16 0)))>;
+def : Load32Pat<extloadi8,  LDB_dalc>;
+def : Load32Pat<extloadi16, LDH_dalc>;
 
 // Sign-extending loads
-def : Pat<(i32 (sextloadi8 AddrRegs:$addr)),
-          (i32 (LDB_dalc AddrRegs:$addr, (i16 0)))>;
-def : Pat<(i32 (sextloadi16 AddrRegs:$addr)),
-          (i32 (LDH_dalc AddrRegs:$addr, (i16 0)))>;
+def : Load32Pat<sextloadi8,     LDB_dalc>;
+def : Load32Pat<sextloadi16,    LDH_dalc>;
 
 // Zero-extending loads
-def : Pat<(i32 (zextloadi8 AddrRegs:$addr)),
-          (i32 (LDBU_dalc AddrRegs:$addr, (i16 0)))>;
-def : Pat<(i32 (zextloadi16 AddrRegs:$addr)),
-          (i32 (LDHU_dalc AddrRegs:$addr, (i16 0)))>;
+def : Load32Pat<zextloadi8,     LDBU_dalc>;
+def : Load32Pat<zextloadi16,    LDHU_dalc>;
 
 // 32 and 64-bit stores
-def : Pat<(store DataRegs:$val, AddrRegs:$addr),
-          (STW_alcd AddrRegs:$addr, (i16 0), DataRegs:$val)>;
-def : Pat<(store ExtDataRegs:$val, AddrRegs:$addr),
-          (STD_ace AddrRegs:$addr, (i32 0), ExtDataRegs:$val)>;
-def : Pat<(store AddrRegs:$val, AddrRegs:$addr),
-          (STA_alca AddrRegs:$addr, (i16 0), AddrRegs:$val)>;
-def : Pat<(store ExtAddrRegs:$val, AddrRegs:$addr),
-          (STDA_acp AddrRegs:$addr, (i32 0), ExtAddrRegs:$val)>;
+def : StorePat<DataRegs,    STW_alcd>;
+def : StorePat<ExtDataRegs, STD_ace,    i32>;
+def : StorePat<AddrRegs,    STA_alca>;
+def : StorePat<ExtAddrRegs, STDA_acp,   i32>;
 
 // Byte and half-word stores with trunc
 // 32-bit
-def : Pat<(store (i8 (trunc DataRegs:$val)), AddrRegs:$addr),
-          (STB_alcd AddrRegs:$addr, (i16 0), DataRegs:$val)>;
-def : Pat<(store (i16 (trunc DataRegs:$val)), AddrRegs:$addr),
-          (STH_alcd AddrRegs:$addr, (i16 0), DataRegs:$val)>;
+def : TruncStorePat<i8,     STB_alcd>;
+def : TruncStorePat<i16,    STH_alcd>;
 
 // 64-bit
-def : Pat<(store (i8 (trunc ExtDataRegs:$val)), AddrRegs:$addr),
-          (STB_alcd AddrRegs:$addr, (i16 0), (trunc_i32_data ExtDataRegs:$val))>;
-def : Pat<(store (i16 (trunc ExtDataRegs:$val)), AddrRegs:$addr),
-          (STH_alcd AddrRegs:$addr, (i16 0), (trunc_i32_data ExtDataRegs:$val))>;
+def : Trunc64StorePat<i8,   STB_alcd>;
+def : Trunc64StorePat<i16,  STH_alcd>;
