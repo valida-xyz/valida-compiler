@@ -2206,6 +2206,33 @@ let n = 0, isReMaterializable = 1 in {
   def IXMINU_eed      : CHECK_RRR<0x6B, 0x09, "ixmin.u">;
 } // n = 0, isReMaterializable = 1
 
+// 2.11.1 Lower Context Saving and Restoring
+
+let s1_d = 0 in {
+  // SVLCX
+  let Defs = [FCX, PCXI], Uses = [A2, A3, A4, A5, A6, A7, A11, D0, D1, D2, D3,
+              D4, D5, D6, D7, FCX, ICR, LCX, PCXI], mayStore = 1 in
+  def SVLCX         : SYS<0x0D, 0x08, (outs), (ins), "svlcx" , "">;
+
+  // RSLCX
+  let Defs = [A2, A3, A4, A5, A6, A7, A11, D0, D1, D2, D3, D4, D5, D6, D7,
+              PCXI], Uses = [FCX, PCXI], mayLoad = 1 in
+  def RSLCX         : SYS<0x0D, 0x09, (outs), (ins), "rslcx" , "">;
+
+} // s1_d = 0
+
+// BISR
+let Defs = [FCX, ICR, PCXI], Uses = [A2, A3, A4, A5, A6, A7, A11, D0, D1, D2,
+            D3, D4, D5, D6, D7, FCX, ICR, LCX, PCXI], mayStore = 1 in {
+  let d = 0, s1 = 0 in
+  def BISR_c         : RC<0xAD, 0x00, (outs), (ins uimm9:$const9),
+                          "bisr" , "\t$const9">;
+
+  def BISR_16_c      : SC<0xE0, (outs), (ins uimm8:$const8),
+                          "bisr" , "\t$const8">;
+} // Defs = [FCX, ICR, PCXI], Uses = [A2, A3, A4, A5, A6, A7, A11, D0, D1, D2,
+  // D3, D4, D5, D6, D7, FCX, ICR, LCX, PCXI], mayStore = 1
+
 // 2.11.2 Context Loading and Storing
 
 let mayLoad = 1, mayStore = 0 in {
