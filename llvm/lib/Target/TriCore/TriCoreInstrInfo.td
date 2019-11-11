@@ -398,6 +398,14 @@ class SHBO_BIT<bits<8> opc1, bits<2> opc2, string mnemonic>
              : BIT<opc1, opc2, (outs DataRegs:$d), 
                    (ins DataRegs:$s1, uimm5:$pos1, DataRegs:$s2, uimm5:$pos2),
                    mnemonic, "\t$d, $s1, $pos1, $s2, $pos2">;
+                   
+// 2.8 Address Comparison
+
+let n = 0, isReMaterializable = 1 in
+class ADDRESSC_RR<bits<8> op1, bits<8> op2, string mnemonic>
+                : RR<op1, op2, (outs DataRegs:$d), 
+                     (ins AddrRegs:$s1, AddrRegs:$s2),
+                     mnemonic , "\t$d, $s1, $s2">;
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
@@ -1632,6 +1640,32 @@ let isReMaterializable = 1 in {
                               "lha", "\t$s1_d, $off18">;
 } // isReMaterializable = 1
 
+// 2.8 Address Comparison
+
+let isCommutable = 1 in {
+  // EQ.A  
+  def EQA_daa        : ADDRESSC_RR<0x01, 0x40, "eq.a">;
+
+  // NE.A
+  def NEA_daa        : ADDRESSC_RR<0x01, 0x41, "ne.a">;
+} // isCommutable = 1
+
+// LT.A
+def LTA_daa          : ADDRESSC_RR<0x01, 0x42, "lt.a">;
+
+// GE.A
+def GEA_daa          : ADDRESSC_RR<0x01, 0x43, "ge.a">;
+
+let n = 0, s2 = 0, isReMaterializable = 1 in {
+  // EQZ.A
+  def EQZA_da        : RR<0x01, 0x48, (outs DataRegs:$d),
+                          (ins AddrRegs:$s1),
+                          "eqz.a" , "\t$d, $s1">;
+  // NEZ.A
+  def NEZA_da        : RR<0x01, 0x49, (outs DataRegs:$d),
+                          (ins AddrRegs:$s1),
+                          "nez.a" , "\t$d, $s1">;
+} // n = 0, s2 = 0, isReMaterializable = 1
 
 //===----------------------------------------------------------------------===//
 //  2.9 Branch Instructions.
