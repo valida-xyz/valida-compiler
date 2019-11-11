@@ -968,6 +968,40 @@ let n = 0 in {
   } // s1 = 0
 } // n = 0
 
+// 2.1.5 Absolute Value, Absolute Difference
+
+let Defs = [PSW] in {
+  let s1 = 0, n = 0 in{
+    // ABS
+    def ABS_dd       :  RR<0x0B, 0x1C, (outs DataRegs:$d),
+                           (ins DataRegs:$s2),
+                           "abs", "\t$d, $s2">;
+
+    // ABSS
+    def ABSS_dd      :  RR<0x0B, 0x1D, (outs DataRegs:$d),
+                           (ins DataRegs:$s2),
+                           "abss", "\t$d, $s2">;
+  } // s1 = 0, n = 0
+
+  // ABSDIF
+  def ABSDIF_ddc     :  RC<0x8B, 0x0E,  (outs DataRegs:$d),
+                           (ins DataRegs:$s1, simm9:$const9),
+                           "absdif", "\t$d, $s1, $const9">;
+  let n = 0, isCommutable = 1 in
+  def ABSDIF_ddd     :  RR<0x0B, 0x0E, (outs DataRegs:$d),
+                           (ins DataRegs:$s1, DataRegs:$s2),
+                           "absdif", "\t$d, $s1, $s2">;
+
+  // ABSDIFS
+  def ABSDIFS_ddc    :  RC<0x8B, 0x0F, (outs DataRegs:$d),
+                           (ins DataRegs:$s1, simm9:$const9),
+                           "absdifs", "\t$d, $s1, $const9">;
+  let n = 0, isCommutable = 1 in
+  def ABSDIFS_ddd    :  RR<0x0B, 0x0F, (outs DataRegs:$d),
+                           (ins DataRegs:$s1, DataRegs:$s2),
+                           "absdifs", "\t$d, $s1, $s2">;
+} // Defs = [PSW]
+
 // 2.1.6 Min, Max, Saturate
 
 // MAX
