@@ -196,15 +196,6 @@ class ADDSUB_SRR<bits<8> opc1, string mnemonic>
                   (ins DataRegs:$src, DataRegs:$s2),
                   mnemonic, "\t$s1_d, $s2">;
 
-// 2.1.2 Division.
-
-let Defs = [PSW] in {
-  class DIV_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
-                :  RR<opc1, opc2, (outs ExtDataRegs:$d),
-                    (ins DataRegs:$s1, DataRegs:$s2),
-                    mnemonic, "\t$d, $s1, $s2">;
-} // Defs = [PSW]
-
 // 2.1.3 Multiply and multiply-add.
 
 class MULTIPLY_RC<bits<8> opc1, bits<7> opc2, string mnemonic,
@@ -239,6 +230,15 @@ class MULTIPLY_RRR2<bits<8> opc1, bits<8> opc2, string mnemonic,
                  :  RRR2<opc1, opc2, (outs RC:$d),
                          (ins RC:$s3, DataRegs:$s1, DataRegs:$s2),
                          mnemonic, "\t$d, $s3, $s1, $s2">;
+
+// 2.1.4 Division.
+
+let Defs = [PSW] in {
+  class DIV_RR<bits<8> opc1, bits<8> opc2, string mnemonic>
+                :  RR<opc1, opc2, (outs ExtDataRegs:$d),
+                    (ins DataRegs:$s1, DataRegs:$s2),
+                    mnemonic, "\t$d, $s1, $s2">;
+} // Defs = [PSW]
 
 // 2.1.6 Min, Max, Saturate
 
@@ -901,6 +901,55 @@ let Defs = [PSW] in {
   def MSUBSU_eedd    :  MULTIPLY_RRR2<0x23,  0xE8, "msubs.u", ExtDataRegs>;
 } // Defs = [PSW]
 
+// 2.1.4 Division.
+
+let n = 0, s1 = 0 in {
+  // DVADJ
+  def DVADJ_eed          :  RRR<0x6B, 0x0D, (outs ExtDataRegs:$d),
+                                      (ins ExtDataRegs:$s3, DataRegs:$s2),
+                                      "dvadj", "\t$d, $s3, $s2">;
+} // n = 0, s1 = 0
+
+let n = 1 in {
+  // DIV
+  def DIV_edd              :  DIV_RR<0x4B, 0x20, "div">;
+
+  // DIV.U
+  def DIVU_edd             :  DIV_RR<0x4B, 0x21, "div.u">;
+} // n = 1
+
+let n = 0 in {
+  // DVINIT
+  def DVINIT_edd           :  DIV_RR<0x4B, 0x1A, "dvinit">;
+
+  // DVINIT.U
+  def DVINITU_edd          :  DIV_RR<0x4B, 0x0A, "dvinit.u">;
+
+  // DVINIT.B
+  def DVINITB_edd          :  DIV_RR<0x4B, 0x5A, "dvinit.b">;
+
+  // DVINIT.BU
+  def DVINITBU_edd         :  DIV_RR<0x4B, 0x4A, "dvinit.bu">;
+
+  // DVINIT.H
+  def DVINITH_edd          :  DIV_RR<0x4B, 0x3A, "dvinit.h">;
+
+  // DVINIT.HU
+  def DVINITHU_edd         :  DIV_RR<0x4B, 0x2A, "dvinit.hu">;
+
+  let s1 = 0 in {
+    // DVSTEP
+    def DVSTEP_eed         :  RRR<0x6B, 0x0F, (outs ExtDataRegs:$d),
+                                        (ins ExtDataRegs:$s3, DataRegs:$s2),
+                                        "dvstep", "\t$d, $s3, $s2">;
+
+    // DVSTEP.U
+    def DVSTEPU_eed        :  RRR<0x6B, 0x0E, (outs ExtDataRegs:$d),
+                                        (ins ExtDataRegs:$s3, DataRegs:$s2),
+                                        "dvstep.u", "\t$d, $s3, $s2">;
+  } // s1 = 0
+} // n = 0
+
 // 2.1.6 Min, Max, Saturate
 
 // MAX
@@ -993,55 +1042,6 @@ def XNOR_ddd         :  LOGIC_RR<0x0F, 0x0D, "xnor">;
 def XOR_ddc          :  LOGIC_RC<0x8F, 0x0C, "xor">;
 def XOR_ddd          :  LOGIC_RR<0x0F, 0x0C, "xor">;
 def XOR_16_dd        :  LOGIC_SRR<0xC6,      "xor">;
-
-// 2.1.2 Division.
-
-let n = 0, s1 = 0 in {
-  // DVADJ
-  def DVADJ_eed          :  RRR<0x6B, 0x0D, (outs ExtDataRegs:$d),
-                                      (ins ExtDataRegs:$s3, DataRegs:$s2),
-                                      "dvadj", "\t$d, $s3, $s2">;
-} // n = 0, s1 = 0
-
-let n = 1 in {
-  // DIV
-  def DIV_edd              :  DIV_RR<0x4B, 0x20, "div">;
-
-  // DIV.U
-  def DIVU_edd             :  DIV_RR<0x4B, 0x21, "div.u">;
-} // n = 1
-
-let n = 0 in {
-  // DVINIT
-  def DVINIT_edd           :  DIV_RR<0x4B, 0x1A, "dvinit">;
-
-  // DVINIT.U
-  def DVINITU_edd          :  DIV_RR<0x4B, 0x0A, "dvinit.u">;
-
-  // DVINIT.B
-  def DVINITB_edd          :  DIV_RR<0x4B, 0x5A, "dvinit.b">;
-
-  // DVINIT.BU
-  def DVINITBU_edd         :  DIV_RR<0x4B, 0x4A, "dvinit.bu">;
-
-  // DVINIT.H
-  def DVINITH_edd          :  DIV_RR<0x4B, 0x3A, "dvinit.h">;
-
-  // DVINIT.HU
-  def DVINITHU_edd         :  DIV_RR<0x4B, 0x2A, "dvinit.hu">;
-
-  let s1 = 0 in {
-    // DVSTEP
-    def DVSTEP_eed         :  RRR<0x6B, 0x0F, (outs ExtDataRegs:$d),
-                                        (ins ExtDataRegs:$s3, DataRegs:$s2),
-                                        "dvstep", "\t$d, $s3, $s2">;
-
-    // DVSTEP.U
-    def DVSTEPU_eed        :  RRR<0x6B, 0x0E, (outs ExtDataRegs:$d),
-                                        (ins ExtDataRegs:$s3, DataRegs:$s2),
-                                        "dvstep.u", "\t$d, $s3, $s2">;
-  } // s1 = 0
-} // n = 0
 
 // 2.1.9 Count Leading Zeros, Ones and Signs
 
