@@ -270,6 +270,24 @@ let isReMaterializable = 1 in {
                   mnemonic, "\t$s1_d">;
 } // isReMaterializable = 1
 
+// 2.1.7 Conditional Arithmetic Instructions.
+
+class CARI_RCR<bits<8> opc1, bits<3> opc2, string mnemonic>
+            :  RCR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s3, DataRegs:$s1, simm9:$const9),
+                  mnemonic, "\t$d, $s3, $s1, $const9">;
+
+let n = 0 in
+class CARI_RRR<bits<8> opc1, bits<4> opc2, string mnemonic>
+            :  RRR<opc1, opc2, (outs DataRegs:$d),
+                  (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2),
+                  mnemonic, "\t$d, $s3, $s1, $s2">;
+
+class CARI_SRC<bits<8> opc1, string mnemonic>
+            :  SRC<opc1, (outs DataRegs:$s1_d),
+                  (ins ImplDataReg:$d15, simm4:$const4),
+                  mnemonic, "\t$s1_d, $d15, $const4">;
+
 // 2.1.8 Logical.
 
 let isReMaterializable = 1 in {
@@ -983,6 +1001,52 @@ def SATH_16_d        :   MMS_SR<0x32,      0x02, "sat.h"  >;
 // SAT.HU
 def SATHU_dd         :   MMS_RR_NOS2<0x0B, 0x7F, "sat.hu" >;
 def SATHU_16_d       :   MMS_SR<0x32,      0x03, "sat.hu" >;
+
+// 2.1.7. Conditional Arithmetic Instructions.
+
+let Defs = [PSW] in {
+  // CADD
+  def CADD_dddc        :  CARI_RCR<0xAB, 0x00, "cadd">;
+  def CADD_dddd        :  CARI_RRR<0x2B, 0x00, "cadd">;
+  def CADD_16_dd15c    :  CARI_SRC<0x8A, "cadd">;
+
+  // CADDN
+  def CADDN_dddc       :  CARI_RCR<0xAB, 0x01, "caddn">;
+  def CADDN_dddd       :  CARI_RRR<0x2B, 0x01, "caddn">;
+  def CADDN_16_dd15c   :  CARI_SRC<0xCA, "caddn">;
+
+  // CSUB
+  def CSUB_dddd        :  CARI_RRR<0x2B, 0x02, "csub">;
+
+  // CSUBN
+  def CSUBN_dddd       :  CARI_RRR<0x2B, 0x03, "csubn">;
+} // Defs = [PSW]
+
+let isReMaterializable = 1 in {
+  let isSelect = 1 in {
+    // SEL
+    def SEL_dddc       :  CARI_RCR<0xAB, 0x04, "sel">;
+    def SEL_dddd       :  CARI_RRR<0x2B, 0x04, "sel">;
+
+    // SELN
+    def SELN_dddc      :  CARI_RCR<0xAB, 0x05, "seln">;
+    def SELN_dddd      :  CARI_RRR<0x2B, 0x05, "seln">;
+
+    // CMOV
+    def CMOV_16_dd15c  :  CARI_SRC<0xAA, "cmov">;
+
+    def CMOV_16_dd15d  :  SRR<0x2A, (outs DataRegs:$s1_d),
+                            (ins ImplDataReg:$d15, DataRegs:$s2),
+                            "cmov", "\t$s1_d, $d15, $s2">;
+  } // isSelect = 1
+
+  // CMOVN
+  def CMOVN_16_dd15c   :  CARI_SRC<0xEA, "cmovn">;
+
+  def CMOVN_16_dd15d   :  SRR<0x6A, (outs DataRegs:$s1_d),
+                          (ins ImplDataReg:$d15, DataRegs:$s2),
+                          "cmovn", "\t$s1_d, $d15, $s2">;
+} // isReMaterializable = 1
 
 // 2.1.8 Logical.
 
