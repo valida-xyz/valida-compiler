@@ -2457,3 +2457,28 @@ let Defs = [PSW], Uses = [PSW], n = 1 in
 def Q31TOF_ddd         :  RR<0x4B, 0x15, (outs DataRegs:$d),
                                 (ins DataRegs:$s1, DataRegs:$s2),
                                 "q31tof", "\t$d, $s1, $s2">;
+
+// Fast Call Instructions
+
+let Defs = [A10, A11], Uses = [A10, A11] in {
+  // FCALL
+  let isCall = 1 in {
+    def FCALL_c         : B<0x61, (outs), (ins simm24_lsb0:$disp24),
+                            "fcall", "\t$disp24">;
+
+    // FCALLA
+    def FCALLA_c        : B<0xE1, (outs), (ins disp24_abs:$disp24),
+                            "fcalla", "\t$disp24">;
+
+    // FCALLI
+    let d = 0, n = 0, s2 = 0 in
+    def FCALLI_a        : RR<0x2D, 0x01, (outs), (ins AddrRegs:$s1),
+                             "fcalli", "\t$s1">;
+  } // isCall = 1
+
+  // FRET
+  let s1_d = 0,  isReturn = 1, isTerminator = 1, isBarrier = 1 in {
+    def FRET_16       : SR<0x00,  0x07, (outs), (ins), "fret", "">;
+    def FRET          : SYS<0x0D, 0x03, (outs), (ins), "fret", "">;
+  } // s1_d = 0,  isReturn = 1, isTerminator = 1, isBarrier = 1
+} // Defs = [A10, A11], Uses = [A10, A11]
