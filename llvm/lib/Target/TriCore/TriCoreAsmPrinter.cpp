@@ -13,7 +13,7 @@
 
 #include "InstPrinter/TriCoreInstPrinter.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
-#include "TriCore.h"
+#include "TriCoreMCInstLower.h"
 #include "TriCoreTargetMachine.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -23,7 +23,6 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
@@ -32,6 +31,8 @@ using namespace llvm;
 
 namespace {
 class TriCoreAsmPrinter : public AsmPrinter {
+  TriCoreMCInstLower MCInstLowering;
+
 public:
   explicit TriCoreAsmPrinter(TargetMachine &TM,
                              std::unique_ptr<MCStreamer> Streamer)
@@ -50,7 +51,7 @@ void TriCoreAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   }
 
   MCInst TmpInst;
-  LowerTriCoreMachineInstrToMCInst(MI, TmpInst);
+  MCInstLowering.Lower(MI, TmpInst);
   EmitToStreamer(*OutStreamer, TmpInst);
 }
 

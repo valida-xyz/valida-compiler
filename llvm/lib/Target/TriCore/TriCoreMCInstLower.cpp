@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TriCore.h"
+#include "TriCoreMCInstLower.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -21,8 +21,7 @@
 
 using namespace llvm;
 
-void llvm::LowerTriCoreMachineInstrToMCInst(const MachineInstr *MI,
-                                            MCInst &OutMI) {
+void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
 
   for (const MachineOperand &MO : MI->operands()) {
@@ -31,7 +30,6 @@ void llvm::LowerTriCoreMachineInstrToMCInst(const MachineInstr *MI,
     default:
       report_fatal_error(
           "LowerTriCoreMachineInstrToMCInst: unknown operand type");
-      return;
     case MachineOperand::MO_Register:
       // Ignore all implicit register operands.
       if (MO.isImplicit())

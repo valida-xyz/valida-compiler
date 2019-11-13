@@ -22,10 +22,6 @@ class TriCoreRegisterBankInfo;
 class TriCoreSubtarget;
 class TriCoreTargetMachine;
 class InstructionSelector;
-class MCInst;
-class MachineInstr;
-
-void LowerTriCoreMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI);
 
 InstructionSelector *
 createTriCoreInstructionSelector(const TriCoreTargetMachine &,
