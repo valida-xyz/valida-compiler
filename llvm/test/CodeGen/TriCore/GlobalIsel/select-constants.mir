@@ -1,5 +1,45 @@
 # RUN: llc -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
 
+--- |
+  define void @test_constant_s32() {
+  entry:
+    ret void
+  }
+  define void @test_constant_small_s32() {
+  entry:
+    ret void
+  }
+  define void @test_constant_negative_s32() {
+  entry:
+    ret void
+  }
+  define void @test_constant_s64() {
+  entry:
+    ret void
+  }
+  define void @test_constant_small_s64() {
+  entry:
+    ret void
+  }
+  define void @test_constant_negative_s64() {
+  entry:
+    ret void
+  }
+  define void @test_constant_nullptr_p0() {
+  entry:
+    ret void
+  }
+  define void @test_constant_p0() {
+  entry:
+    ret void
+  }
+  @var = global i8 0
+  define i8* @test_global() {
+  entry:
+    ret i8* undef
+  }
+...
+
 ---
 name:            test_constant_s32
 legalized:       true
@@ -141,5 +181,22 @@ body:             |
     ; CHECK: [[LOWER:%[0-9]+]]:addrregs = LEA_aac [[HIGHER]], 43690
     ; CHECK: $a2 = COPY [[LOWER]]
     %0(p0) = G_CONSTANT i32 2863311530
+    $a2 = COPY %0(p0)
+...
+
+---
+name:            test_global
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+body:             |
+  bb.0:
+
+    ; CHECK-LABEL: name: test_global
+    ; CHECK: [[MOV:%[0-9]+]]:addrregs = MOVHA_ac target-flags(tricore-hi) @var
+    ; CHECK: [[LEA:%[0-9]+]]:addrregs = LEA_aac [[MOV]], target-flags(tricore-lo) @var
+    ; CHECK: $a2 = COPY [[LEA]]
+    %0(p0) = G_GLOBAL_VALUE @var
     $a2 = COPY %0(p0)
 ...
