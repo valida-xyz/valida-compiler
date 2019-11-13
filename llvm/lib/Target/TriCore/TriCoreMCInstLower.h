@@ -17,14 +17,28 @@
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
+class AsmPrinter;
 class MachineInstr;
+class MachineOperand;
+class MCContext;
 class MCInst;
+class MCOperand;
+class MCSymbol;
 
 /// TriCoreMCInstLower - This class is used to lower an MachineInstr into an
 /// MCInst.
 class LLVM_LIBRARY_VISIBILITY TriCoreMCInstLower {
+  MCContext &Ctx;
+  AsmPrinter &Printer;
+
 public:
+  TriCoreMCInstLower(MCContext &Ctx, AsmPrinter &Printer);
+
   void Lower(const MachineInstr *MI, MCInst &OutMI) const;
+
+  MCOperand LowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym) const;
+
+  MCSymbol *GetGlobalAddressSymbol(const MachineOperand &MO) const;
 };
 } // namespace llvm
 

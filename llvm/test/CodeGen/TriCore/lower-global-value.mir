@@ -1,0 +1,87 @@
+# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
+
+# CHECK-LABEL:               	.text
+# CHECK:                    	.file	"lower-global-value.mir"
+# CHECK-LABEL:               	.globl	test_global             # -- Begin function test_global
+# CHECK:                    	.type	test_global,@function
+# CHECK:                    test_global:                      # @test_global
+# CHECK:                    # %bb.0:
+# CHECK:                    	movh.a	%a15, hi:var            # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# CHECK-NEXT:                                                 #   fixup A - offset: 0, value: hi:var, kind: fixup_hi
+# CHECK-NEXT:               	lea	%a2, [%a15], lo:var         # encoding: [0xd9,0xf2,A,A]
+# CHECK-NEXT:                                                 #   fixup A - offset: 0, value: lo:var, kind: fixup_lo2
+# CHECK-NEXT:                	ret                             # encoding: [0x0d,0x00,0x80,0x01]
+# CHECK:                    .Lfunc_end0:
+# CHECK:                    	.size	test_global, .Lfunc_end0-test_global
+# CHECK:                                                      # -- End function
+# CHECK-LABEL:               	.globl	test_global_offset      # -- Begin function test_global_offset
+# CHECK:                    	.type	test_global_offset,@function
+# CHECK:                    test_global_offset:               # @test_global_offset
+# CHECK:                    # %bb.0:
+# CHECK:                    	movh.a	%a15, hi:var+1          # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# CHECK-NEXT:                                                 #   fixup A - offset: 0, value: hi:var+1, kind: fixup_hi
+# CHECK-NEXT:               	lea	%a2, [%a15], lo:var+1       # encoding: [0xd9,0xf2,A,A]
+# CHECK-NEXT:                                                 #   fixup A - offset: 0, value: lo:var+1, kind: fixup_lo2
+# CHECK-NEXT:               	ret                             # encoding: [0x0d,0x00,0x80,0x01]
+# CHECK:                    .Lfunc_end1:
+# CHECK:                    	.size	test_global_offset, .Lfunc_end1-test_global_offset
+# CHECK:                                                      # -- End function
+# CHECK-LABEL:               	.type	var,@object               # @var
+# CHECK:                    	.section	.bss,"aw",@nobits
+# CHECK:                    	.globl	var
+# CHECK:                    var:
+# CHECK:                    	.byte	0                         # 0x0
+# CHECK:                    	.size	var, 1
+# CHECK:                    	.section	".note.GNU-stack","",@progbits
+
+
+
+--- |
+  @var = global i8 0
+  define i8* @test_global() {
+  entry:
+    ret i8* undef
+  }
+  define i8* @test_global_offset() {
+  entry:
+    ret i8* undef
+  }
+...
+
+---
+name:            test_global
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: addrregs, preferred-register: '' }
+  - { id: 1, class: addrregs, preferred-register: '' }
+liveins:         []
+body:             |
+  bb.0:
+    %1:addrregs = MOVHA_ac target-flags(tricore-hi) @var
+    %0:addrregs = LEA_aac %1, target-flags(tricore-lo) @var
+    $a2 = COPY %0
+    RET implicit $a11, implicit $a2
+...
+
+---
+name:            test_global_offset
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: addrregs, preferred-register: '' }
+  - { id: 1, class: addrregs, preferred-register: '' }
+liveins:         []
+body:             |
+  bb.0:
+    %1:addrregs = MOVHA_ac target-flags(tricore-hi) @var + 1
+    %0:addrregs = LEA_aac %1, target-flags(tricore-lo) @var + 1
+    $a2 = COPY %0
+    RET implicit $a11, implicit $a2
+...

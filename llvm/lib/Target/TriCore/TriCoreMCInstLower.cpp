@@ -12,6 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreMCInstLower.h"
+#include "MCTargetDesc/TriCoreBaseInfo.h"
+#include "MCTargetDesc/TriCoreMCExpr.h"
+#include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -20,6 +23,41 @@
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
+
+TriCoreMCInstLower::TriCoreMCInstLower(MCContext &Ctx, AsmPrinter &Printer)
+    : Ctx(Ctx), Printer(Printer) {}
+
+MCSymbol *
+TriCoreMCInstLower::GetGlobalAddressSymbol(const MachineOperand &MO) const {
+  const GlobalValue *GV = MO.getGlobal();
+  return Printer.getSymbol(GV);
+}
+
+MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
+                                                 MCSymbol *Sym) const {
+  assert(Printer.TM.getTargetTriple().isOSBinFormatELF() &&
+         "Invalid target for TriCore");
+
+  uint32_t RefFlags = 0;
+  const unsigned TargetFlags = MO.getTargetFlags();
+
+  if ((MO.getTargetFlags() & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_HI)
+    RefFlags |= TriCoreMCExpr::VK_TRICORE_HI;
+  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_LO)
+    RefFlags |= TriCoreMCExpr::VK_TRICORE_LO;
+
+  const MCExpr *Expr =
+      MCSymbolRefExpr::create(Sym, MCSymbolRefExpr::VK_None, Ctx);
+
+  if (!MO.isJTI() && MO.getOffset())
+    Expr = MCBinaryExpr::createAdd(
+        Expr, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
+
+  auto RefKind = static_cast<TriCoreMCExpr::VariantKind>(RefFlags);
+  Expr = TriCoreMCExpr::create(Expr, RefKind, Ctx);
+
+  return MCOperand::createExpr(Expr);
+}
 
 void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
@@ -38,6 +76,9 @@ void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       break;
     case MachineOperand::MO_Immediate:
       MCOp = MCOperand::createImm(MO.getImm());
+      break;
+    case MachineOperand::MO_GlobalAddress:
+      MCOp = LowerSymbolOperand(MO, GetGlobalAddressSymbol(MO));
       break;
     }
 

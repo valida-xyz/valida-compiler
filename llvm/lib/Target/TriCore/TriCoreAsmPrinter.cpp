@@ -36,7 +36,8 @@ class TriCoreAsmPrinter : public AsmPrinter {
 public:
   explicit TriCoreAsmPrinter(TargetMachine &TM,
                              std::unique_ptr<MCStreamer> Streamer)
-      : AsmPrinter(TM, std::move(Streamer)) {}
+      : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(OutContext, *this) {
+  }
 
   StringRef getPassName() const override { return "TriCore Assembly Printer"; }
 
