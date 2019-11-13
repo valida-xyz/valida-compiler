@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreInstrInfo.h"
-
+#include "MCTargetDesc/TriCoreBaseInfo.h"
 #include "TriCore.h"
 #include "TriCoreSubtarget.h"
 #include "TriCoreTargetMachine.h"
@@ -30,3 +30,21 @@
 using namespace llvm;
 
 TriCoreInstrInfo::TriCoreInstrInfo() : TriCoreGenInstrInfo() {}
+
+std::pair<unsigned int, unsigned int>
+TriCoreInstrInfo::decomposeMachineOperandsTargetFlags(unsigned int TF) const {
+  const unsigned Mask = TriCoreII::MO_FRAGMENT;
+  return std::make_pair(TF & Mask, TF & ~Mask);
+}
+
+ArrayRef<std::pair<unsigned int, const char *>>
+TriCoreInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
+  using namespace TriCoreII;
+
+  static const std::pair<unsigned, const char *> TargetFlags[] = {
+      {MO_HI, "tricore-hi"},
+      {MO_LO, "tricore-lo"},
+  };
+
+  return makeArrayRef(TargetFlags);
+}

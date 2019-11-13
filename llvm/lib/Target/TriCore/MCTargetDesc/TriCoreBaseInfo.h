@@ -64,6 +64,23 @@ enum {
   InstrFormatMask = 0x3f
 };
 
+/// Target Operand Flag enum
+enum TOF {
+  //===------------------------------------------------------------------===//
+  // TriCore Specific MachineOperand flags.
+  MO_NO_FLAG,
+
+  // Flags fragment that holds MO_HI to MO_LO (2-bits)
+  MO_FRAGMENT = 0x3,
+
+  /// MO_HI - A symbol operand with this flag represents the high 16-bits of a
+  /// 32-bit address, used in a MOVH.A instruction
+  MO_HI = 1,
+
+  /// MO_LO - A symbol operand with this flag represents the low 16-bits of a
+  /// 32-bit address, used in a LEA instruction
+  MO_LO = 2,
+};
 } // namespace TriCoreII
 
 } // namespace llvm

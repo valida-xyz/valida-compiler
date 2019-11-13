@@ -25,6 +25,12 @@ class TriCoreInstrInfo : public TriCoreGenInstrInfo {
 
 public:
   TriCoreInstrInfo();
+
+  std::pair<unsigned int, unsigned int>
+  decomposeMachineOperandsTargetFlags(unsigned int TF) const override;
+
+  ArrayRef<std::pair<unsigned int, const char *>>
+  getSerializableDirectMachineOperandTargetFlags() const override;
 };
 } // namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREINSTRINFO_H
