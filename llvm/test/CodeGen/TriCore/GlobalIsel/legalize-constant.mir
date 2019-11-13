@@ -1,4 +1,17 @@
 # RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+
+--- |
+  define void @test_constant() {
+  entry:
+    ret void
+  }
+  @var = global i8 0
+  define i8* @test_global() {
+  entry:
+    ret i8* undef
+  }
+...
+
 ---
 name:            test_constant
 body:             |
@@ -34,4 +47,15 @@ body:             |
     $e2 = COPY %4(s64)
     %5:_(p0) = G_CONSTANT i32 0
     $a2 = COPY %5(p0)
+...
+
+---
+name:            test_global
+body:             |
+  bb.1.entry:
+    ; CHECK-LABEL: name: test_global
+    ; CHECK: [[C:%[0-9]+]]:_(p0) = G_GLOBAL_VALUE @var
+    ; CHECK: $a2 = COPY [[C]](p0)
+    %0:_(p0) = G_GLOBAL_VALUE @var
+    $a2 = COPY %0(p0)
 ...

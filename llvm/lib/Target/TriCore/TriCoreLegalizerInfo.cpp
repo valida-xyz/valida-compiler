@@ -32,6 +32,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s1, s64)
       .widenScalarToNextPow2(0, 32);
 
+  // Pointers
+
+  // G_GLOBAL_VALUE is only valid for pointers
+  getActionDefinitionsBuilder(G_GLOBAL_VALUE).legalFor({p0});
+
   // Constants
 
   // G_CONSTANT is only legal for types that match our register size
