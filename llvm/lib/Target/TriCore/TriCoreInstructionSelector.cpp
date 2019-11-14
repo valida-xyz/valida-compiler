@@ -60,6 +60,7 @@ private:
                           const Register &DestReg,
                           MachineRegisterInfo &MRI) const;
 
+  bool constrainCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectBrIndirect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
@@ -246,6 +247,28 @@ static unsigned getLoadStoreOpCode(const unsigned Opc,
 }
 
 static const TargetRegisterClass *
+getRegClassForRegBank(const RegisterBank &RB, const unsigned SizeInBits) {
+  unsigned RegBankID = RB.getID();
+
+  // Return the minimum register class for the given RegisterBank and SizeInBits
+  if (RegBankID == TriCore::AddrRegBankID) {
+    if (SizeInBits <= 32)
+      return &TriCore::AddrRegsRegClass;
+    if (SizeInBits <= 64)
+      return &TriCore::ExtAddrRegsRegClass;
+    return nullptr;
+  }
+  if (RegBankID == TriCore::DataRegBankID) {
+    if (SizeInBits <= 32)
+      return &TriCore::DataRegsRegClass;
+    if (SizeInBits <= 64)
+      return &TriCore::ExtDataRegsRegClass;
+    return nullptr;
+  }
+  return nullptr;
+}
+
+static const TargetRegisterClass *
 getRegClassForTypeOnBank(const LLT Ty, const RegisterBank &RB) {
   if (RB.getID() == TriCore::DataRegBankID) {
     if (Ty.getSizeInBits() <= 32)
@@ -275,7 +298,21 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   MachineRegisterInfo &MRI = MF.getRegInfo();
 
   if (!isPreISelGenericOpcode(I.getOpcode())) {
-    // TODO: Do we need special handling for non-generic instructions?
+    // We can run into the following problem with COPYs:
+    //
+    // %0 = G_FOO ...
+    // %1 = COPY %0
+    // %2 = COPY %1
+    // %3 = G_FOO %2, ...
+    //
+    // This will result in %1 not being constrained to a register class: while
+    // %0, %2 and %3 are being constrained through the selection of G_FOO, %1 is
+    // not being restrained anywhere.
+    // Therefore we need to handle COPYs here and constrain the destination
+    // register by explicitly.
+    if (I.isCopy())
+      return constrainCopy(I, MRI);
+
     return true;
   }
 
@@ -361,6 +398,66 @@ void TriCoreInstructionSelector::materializePointer(
 
   constrainSelectedInstRegOperands(*MovMI, TII, TRI, RBI);
   constrainSelectedInstRegOperands(*LeaMI, TII, TRI, RBI);
+}
+
+bool TriCoreInstructionSelector::constrainCopy(MachineInstr &I,
+                                               MachineRegisterInfo &MRI) const {
+  // COPY requires SrcReg and DstReg to have matching types:
+  //    if the type is still available:
+  //      types must match
+  //    if one of the operands has a register class set:
+  //      other operand must have the same size as the register class
+  //
+  // Therefore we can only have the following COPYs:
+  //    %1:*regbank(s*) = COPY %0:*regbank(s*)
+  //
+  //    %1:*regbank(s32) = COPY %0:{addr,data}regs
+  //
+  //    %1:{addr,data}regs = COPY %0:*regbank(s32)
+  //
+  //    %1:{addr,data}regs = COPY %0:{addr,data}regs
+  //
+  //    %1:ext{addr,data}regs = COPY %0:ext{addr,data}regs
+  //
+  // The following COPYs are not possible (given different register banks for
+  // the 2nd example)
+  //    %1:ext{addr,data}regs = COPY %0:*regbank(s32)
+  // Because s32 has 32-bits but the destination is 64 bits and
+  //
+  //    %1:*regbank(s32) = COPY %0:ext{addr,data}regs.SubRegIdx
+  // Because we are the only one who can emit a subregister copy and in that
+  // case we make sure that the register banks are the same
+  //
+  // Therefore we can be sure that SrcSize and DstSize are the same
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+  unsigned DstSize = RBI.getSizeInBits(DstReg, MRI, TRI);
+  unsigned SrcSize = RBI.getSizeInBits(SrcReg, MRI, TRI);
+
+  assert(DstSize == SrcSize && "Unexpected illegal subregister copy");
+
+  // Find the correct register classes for the source and destination registers.
+  const RegisterBank &DstRegBank = *RBI.getRegBank(DstReg, MRI, TRI);
+  const TargetRegisterClass *DstRC = getRegClassForRegBank(DstRegBank, DstSize);
+
+  if (!DstRC) {
+    LLVM_DEBUG(dbgs() << "Unexpected register size " << DstSize << '\n');
+    return false;
+  }
+
+  // Nothing to do if DstReg is a physical register
+  if (Register::isPhysicalRegister(DstReg))
+    return true;
+
+  // And constrain the destination. No need to constrain the source register
+  // as it will be constrained once we reach another of its uses or defs.
+  if (!TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, *DstRC, MRI)) {
+    LLVM_DEBUG(dbgs() << "Failed to constrain COPY destination operand\n");
+    return false;
+  }
+
+  return true;
 }
 
 bool TriCoreInstructionSelector::selectBrCond(

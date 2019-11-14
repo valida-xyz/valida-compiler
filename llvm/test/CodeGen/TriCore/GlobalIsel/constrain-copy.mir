@@ -1,0 +1,51 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_constrain_copy
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: addrregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: addrregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_constrain_copy
+    ; CHECK: [[CP1:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[CP2:%[0-9]+]]:addrregs = COPY $a4
+    ; CHECK: $d2 = COPY [[CP1]]
+    ; CHECK: $a2 = COPY [[CP2]]
+    %0(s32) = COPY $d4
+    %1(p0) = COPY $a4
+    %2(s32) = COPY %0
+    %3(p0) = COPY %1
+    $d2 = COPY %2(s32)
+    $a2 = COPY %3(p0)
+...
+
+---
+name:            test_constrain_cross_bank_copy
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: addrregbank }
+  - { id: 2, class: addrregbank }
+  - { id: 3, class: dataregbank }
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_constrain_cross_bank_copy
+    ; CHECK: [[CP1:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[CP2:%[0-9]+]]:addrregs = COPY $a4
+    ; CHECK: [[CP3:%[0-9]+]]:addrregs = COPY [[CP1]]
+    ; CHECK: [[CP4:%[0-9]+]]:dataregs = COPY [[CP2]]
+    ; CHECK: $a2 = COPY [[CP3]]
+    ; CHECK: $d2 = COPY [[CP4]]
+    %0(s32) = COPY $d4
+    %1(p0) = COPY $a4
+    %2(s32) = COPY %0
+    %3(p0) = COPY %1
+    $a2 = COPY %2(s32)
+    $d2 = COPY %3(p0)
+...
