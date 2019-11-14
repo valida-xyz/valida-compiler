@@ -84,52 +84,70 @@ TriCoreInstructionSelector::TriCoreInstructionSelector(
 {
 }
 
-static bool flipCompareOperands(CmpInst::Predicate Predicate) {
+static unsigned int getOpCodeForPredicate(CmpInst::Predicate Predicate,
+                                          LLT OpTy, bool &SwapOperands) {
+  static const unsigned OpcTable[] = {
+      // Table structure: scalar compares, pointer compares
+      TriCore::NE_ddd,
+      TriCore::EQ_ddd,
+      TriCore::GE_ddd,
+      TriCore::GEU_ddd,
+      TriCore::LT_ddd,
+      TriCore::LTU_ddd,
+      TriCore::NEA_daa,
+      TriCore::EQA_daa,
+      /* signed pointer compare is invalid */ 0,
+      TriCore::GEA_daa,
+      /* signed pointer compare is invalid */ 0,
+      TriCore::LTA_daa,
+  };
+  static const unsigned OpcTableSize = sizeof(OpcTable) / sizeof(OpcTable[0]);
+
+  // Number of different opcodes per type in the above table
+  static const unsigned NumCmpOpc = 6;
+
+  unsigned PredicateIdx;
   switch (Predicate) {
   default:
-    return false;
-    // Must flip operands because no equivalent instructions exist on TriCore.
-  case CmpInst::ICMP_SGT:
-  case CmpInst::ICMP_UGT:
+    llvm_unreachable("Unknown compare predicate!");
+  // TriCore does not have GT and LE. Use LT and GE with flipped operands.
+  case CmpInst::ICMP_NE:
+    PredicateIdx = 0;
+    break;
+  case CmpInst::ICMP_EQ:
+    PredicateIdx = 1;
+    break;
   case CmpInst::ICMP_SLE:
+    SwapOperands = true;
+    LLVM_FALLTHROUGH;
+  case CmpInst::ICMP_SGE:
+    PredicateIdx = 2;
+    break;
   case CmpInst::ICMP_ULE:
-    return true;
+    SwapOperands = true;
+    LLVM_FALLTHROUGH;
+  case CmpInst::ICMP_UGE:
+    PredicateIdx = 3;
+    break;
+  case CmpInst::ICMP_SGT:
+    SwapOperands = true;
+    LLVM_FALLTHROUGH;
+  case CmpInst::ICMP_SLT:
+    PredicateIdx = 4;
+    break;
+  case CmpInst::ICMP_UGT:
+    SwapOperands = true;
+    LLVM_FALLTHROUGH;
+  case CmpInst::ICMP_ULT:
+    PredicateIdx = 5;
+    break;
   }
-}
 
-static unsigned int getOpCodeForPredicate(CmpInst::Predicate Predicate,
-                                          LLT OpTy) {
-  if (OpTy.isPointer()) {
-    // TODO: support pointer comparisons once instructions have been implemented
-    llvm_unreachable("Pointer comparisons not supported yet!");
-  } else {
-    switch (Predicate) {
-    default:
-      llvm_unreachable("Unknown compare predicate!");
-    case CmpInst::ICMP_NE:
-      return TriCore::NE_ddd;
-    case CmpInst::ICMP_EQ:
-      return TriCore::EQ_ddd;
-    case CmpInst::ICMP_SGE:
-      return TriCore::GE_ddd;
-    case CmpInst::ICMP_UGE:
-      return TriCore::GEU_ddd;
-    case CmpInst::ICMP_SLT:
-      return TriCore::LT_ddd;
-    case CmpInst::ICMP_ULT:
-      return TriCore::LTU_ddd;
+  const unsigned Offset = OpTy.isPointer() ? 1 : 0;
+  const unsigned OpcTableIdx = PredicateIdx + Offset * NumCmpOpc;
+  assert(OpcTableIdx < OpcTableSize && "OpcTableIdx out of bounds");
 
-      // TriCore does not have GT and LE. Use LT and GE with flipped operands.
-    case CmpInst::ICMP_SGT:
-      return TriCore::LT_ddd;
-    case CmpInst::ICMP_UGT:
-      return TriCore::LTU_ddd;
-    case CmpInst::ICMP_SLE:
-      return TriCore::GE_ddd;
-    case CmpInst::ICMP_ULE:
-      return TriCore::GEU_ddd;
-    }
-  }
+  return OpcTable[OpcTableIdx];
 }
 
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
@@ -302,12 +320,18 @@ bool TriCoreInstructionSelector::selectICmp(
   assert(I.getOperand(2).isReg() && I.getOperand(3).isReg() &&
          "Expected LHS and RHS to be registers!");
 
-  unsigned CmpOpCode =
-      getOpCodeForPredicate(P, MRI.getType(I.getOperand(2).getReg()));
-  bool FlipOperands = flipCompareOperands(P);
+  bool SwapOperands = false;
+  const LLT &SrcTy = MRI.getType(I.getOperand(2).getReg());
+  unsigned CmpOpCode = getOpCodeForPredicate(P, SrcTy, SwapOperands);
 
-  unsigned LHSIdx = FlipOperands ? 3 : 2;
-  unsigned RHSIdx = FlipOperands ? 2 : 3;
+  if (CmpOpCode == 0) {
+    LLVM_DEBUG(dbgs() << "Cannot select G_ICMP for predicate " << Predicate
+                      << " and type " << SrcTy << ".\n");
+    return false;
+  }
+
+  unsigned LHSIdx = SwapOperands ? 3 : 2;
+  unsigned RHSIdx = SwapOperands ? 2 : 3;
 
   const Register &LHS = I.getOperand(LHSIdx).getReg();
   const Register &RHS = I.getOperand(RHSIdx).getReg();

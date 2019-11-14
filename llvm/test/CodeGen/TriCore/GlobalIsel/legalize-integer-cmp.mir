@@ -8,14 +8,14 @@ body:             |
     ; CHECK-LABEL: name: test_icmp_p0
     ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
     ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
-    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[COPY]](p0), [[COPY1]]
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(ult), [[COPY]](p0), [[COPY1]]
     ; CHECK: [[CONST:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
     ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]]
     ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[CONST]]
     ; CHECK: $d2 = COPY [[AND]]
     %0:_(p0) = COPY $a4
     %1:_(p0) = COPY $a5
-    %2:_(s1) = G_ICMP intpred(slt), %0(p0), %1
+    %2:_(s1) = G_ICMP intpred(ult), %0(p0), %1
     %3:_(s32) = G_ZEXT %2(s1)
     $d2 = COPY %3(s32)
 ...

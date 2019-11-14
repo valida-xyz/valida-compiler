@@ -14,13 +14,13 @@ body:             |
     ; CHECK-LABEL: name: test_icmp_p0
     ; CHECK: [[COPY:%[0-9]+]]:addrregbank(p0) = COPY $a4
     ; CHECK: [[COPY1:%[0-9]+]]:addrregbank(p0) = COPY $a5
-    ; CHECK: [[ICMP:%[0-9]+]]:dataregbank(s32) = G_ICMP intpred(slt), [[COPY]](p0), [[COPY1]]
+    ; CHECK: [[ICMP:%[0-9]+]]:dataregbank(s32) = G_ICMP intpred(ult), [[COPY]](p0), [[COPY1]]
     ; CHECK: [[TRUNC:%[0-9]+]]:dataregbank(s1) = G_TRUNC [[ICMP]](s32)
     ; CHECK: [[ZEXT:%[0-9]+]]:dataregbank(s32) = G_ZEXT [[TRUNC]](s1)
     ; CHECK: $d2 = COPY [[ZEXT]]
     %0(p0) = COPY $a4
     %1(p0) = COPY $a5
-    %2(s32) = G_ICMP intpred(slt), %0(p0), %1
+    %2(s32) = G_ICMP intpred(ult), %0(p0), %1
     %3(s1) = G_TRUNC %2(s32)
     %4(s32) = G_ZEXT %3(s1)
     $d2 = COPY %4(s32)
