@@ -338,6 +338,63 @@ void TriCoreInstructionSelector::materializePointer(
   constrainSelectedInstRegOperands(*LeaMI, TII, TRI, RBI);
 }
 
+bool TriCoreInstructionSelector::selectBrCond(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  // Check for correct type
+  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
+  if (Ty.getSizeInBits() > 32) {
+    LLVM_DEBUG(dbgs() << "G_BRCOND has type " << Ty
+                      << ", expected at most 32-bits.\n");
+    return false;
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Check if we can select a compare-and-jump
+  if (selectCmpAndJump(I, MRI, MIRBuilder))
+    return true;
+
+  // Change to JNE/JNE.A 0 depending on register bank
+  const Register &CondReg = I.getOperand(0).getReg();
+  const RegisterBank *CondRB = RBI.getRegBank(CondReg, MRI, TRI);
+
+  if (!CondRB) {
+    LLVM_DEBUG(dbgs() << "Could not determine register bank for G_BRCOND");
+    return false;
+  }
+
+  const bool isAddrRB = CondRB->getID() == TriCore::AddrRegBankID;
+  const unsigned OpCode = isAddrRB ? TriCore::JNZA_ac : TriCore::JNE_dcc;
+
+  MachineBasicBlock *MBB = I.getOperand(1).getMBB();
+  auto JumpMI = MIRBuilder.buildInstr(OpCode).addUse(CondReg);
+
+  // There is no JNEA_acc and equally no JNZ_dc instruction. We could use 16-bit
+  // variants to get rid of the immediate, however these have the downside of
+  // only having a short range and needing an implicit register. Therefore we
+  // use the 32-bit variants and need to add the 0 immediate conditionally.
+  if (!isAddrRB)
+    JumpMI = JumpMI.addImm(0);
+
+  JumpMI = JumpMI.addMBB(MBB);
+  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectBrIndirect(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
+  if (!checkType(LLT::pointer(0, 32), Ty, "G_BRINDIRECT"))
+    return false;
+
+  // Change to JI
+  I.setDesc(TII.get(TriCore::JI));
+  constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
 bool TriCoreInstructionSelector::selectConstant(
     MachineInstr &I, MachineRegisterInfo &MRI) const {
 
@@ -507,63 +564,6 @@ bool TriCoreInstructionSelector::selectICmp(
   constrainSelectedInstRegOperands(*CmpMI, TII, TRI, RBI);
 
   I.removeFromParent();
-  return true;
-}
-
-bool TriCoreInstructionSelector::selectBrCond(
-    MachineInstr &I, const MachineRegisterInfo &MRI) const {
-  // Check for correct type
-  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
-  if (Ty.getSizeInBits() > 32) {
-    LLVM_DEBUG(dbgs() << "G_BRCOND has type " << Ty
-                      << ", expected at most 32-bits.\n");
-    return false;
-  }
-
-  MachineIRBuilder MIRBuilder(I);
-
-  // Check if we can select a compare-and-jump
-  if (selectCmpAndJump(I, MRI, MIRBuilder))
-    return true;
-
-  // Change to JNE/JNE.A 0 depending on register bank
-  const Register &CondReg = I.getOperand(0).getReg();
-  const RegisterBank *CondRB = RBI.getRegBank(CondReg, MRI, TRI);
-
-  if (!CondRB) {
-    LLVM_DEBUG(dbgs() << "Could not determine register bank for G_BRCOND");
-    return false;
-  }
-
-  const bool isAddrRB = CondRB->getID() == TriCore::AddrRegBankID;
-  const unsigned OpCode = isAddrRB ? TriCore::JNZA_ac : TriCore::JNE_dcc;
-
-  MachineBasicBlock *MBB = I.getOperand(1).getMBB();
-  auto JumpMI = MIRBuilder.buildInstr(OpCode).addUse(CondReg);
-
-  // There is no JNEA_acc and equally no JNZ_dc instruction. We could use 16-bit
-  // variants to get rid of the immediate, however these have the downside of
-  // only having a short range and needing an implicit register. Therefore we
-  // use the 32-bit variants and need to add the 0 immediate conditionally.
-  if (!isAddrRB)
-    JumpMI = JumpMI.addImm(0);
-
-  JumpMI = JumpMI.addMBB(MBB);
-  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
-
-  I.removeFromParent();
-  return true;
-}
-
-bool TriCoreInstructionSelector::selectBrIndirect(
-    MachineInstr &I, const MachineRegisterInfo &MRI) const {
-  const LLT &Ty = MRI.getType(I.getOperand(0).getReg());
-  if (!checkType(LLT::pointer(0, 32), Ty, "G_BRINDIRECT"))
-    return false;
-
-  // Change to JI
-  I.setDesc(TII.get(TriCore::JI));
-  constrainSelectedInstRegOperands(I, TII, TRI, RBI);
   return true;
 }
 
