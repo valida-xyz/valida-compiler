@@ -130,3 +130,61 @@ body:             |
     %2(s32) = G_XOR %0, %1
     $d4 = COPY %2(s32)
 ...
+
+---
+# Same as add_s32, for G_PTR_ADD operations.
+name:            ptr_add_addrregbank
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: addrregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: addrregbank }
+  - { id: 3, class: addrregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: ptr_add_addrregbank
+    ; CHECK: [[A4:%[0-9]+]]:addrregs = COPY $a4
+    ; CHECK: [[D4:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[D4_ADDR:%[0-9]+]]:addrregs = COPY [[D4]]
+    ; CHECK: [[PTR_ADD:%[0-9]+]]:addrregs = ADDA_aaa [[A4]], [[D4_ADDR]]
+    ; CHECK: $a4 = COPY [[PTR_ADD]]
+    %0(p0) = COPY $a4
+    %1(s32) = COPY $d4
+    %2(s32) = COPY %1(s32)
+    %3(p0) = G_PTR_ADD %0, %2
+    $a4 = COPY %3(p0)
+...
+
+---
+# Same as add_s32, for G_PTR_ADD operations.
+name:            ptr_add_dataregbank
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: addrregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: ptr_add_dataregbank
+    ; CHECK: [[A4:%[0-9]+]]:addrregs = COPY $a4
+    ; CHECK: [[D4:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[A4_DATA:%[0-9]+]]:dataregs = COPY [[A4]]
+    ; CHECK: [[PTR_ADD:%[0-9]+]]:dataregs = ADD_ddd [[A4_DATA]], [[D4]]
+    ; CHECK: $d4 = COPY [[PTR_ADD]]
+    %0(p0) = COPY $a4
+    %1(s32) = COPY $d4
+    %2(p0) = COPY %0(p0)
+    %3(p0) = G_PTR_ADD %2, %1
+    $d4 = COPY %3(p0)
+...

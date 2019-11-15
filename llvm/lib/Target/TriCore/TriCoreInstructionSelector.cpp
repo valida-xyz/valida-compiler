@@ -69,6 +69,7 @@ private:
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
@@ -343,6 +344,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_LOAD:
   case TargetOpcode::G_STORE:
     return selectLoadStore(I, MRI);
+  case TargetOpcode::G_PTR_ADD:
+    return selectPtrAdd(I, MRI);
   case TargetOpcode::G_TRUNC:
     return selectTrunc(I, MRI);
   default:
@@ -770,6 +773,42 @@ bool TriCoreInstructionSelector::selectLoadStore(
   constrainSelectedInstRegOperands(*MemMI, TII, TRI, RBI);
 
   I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectPtrAdd(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  const Register &DstReg = I.getOperand(0).getReg();
+  const Register &Src1Reg = I.getOperand(1).getReg();
+  const Register &Src2Reg = I.getOperand(2).getReg();
+
+  const LLT &PtrTy = MRI.getType(DstReg);
+  const LLT &ScalarTy = MRI.getType(Src2Reg);
+
+  // Check for correct types
+  if (!checkType(LLT::pointer(0, 32), PtrTy, "G_PTR_ADD") ||
+      !checkType(LLT::scalar(32), ScalarTy, "G_PTR_ADD"))
+    return false;
+
+  // Emit an add depending on which register bank we're on
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const RegisterBank &Src1RB = *RBI.getRegBank(Src1Reg, MRI, TRI);
+  const RegisterBank &Src2RB = *RBI.getRegBank(Src2Reg, MRI, TRI);
+
+  // Make sure that this G_PTR_ADD happens on the same register bank
+  if (DstRB.getID() != Src1RB.getID() || DstRB.getID() != Src2RB.getID()) {
+    LLVM_DEBUG(dbgs() << "Unexpected regbank for G_PTR_ADD. DstRB: " << DstRB
+                      << ", Src1RB: " << Src1RB << ", Src2RB: " << Src2RB
+                      << '\n');
+    return false;
+  }
+
+  const unsigned AddOpc = DstRB.getID() == TriCore::AddrRegBankID
+                              ? TriCore::ADDA_aaa
+                              : TriCore::ADD_ddd;
+
+  I.setDesc(TII.get(AddOpc));
+  constrainSelectedInstRegOperands(I, TII, TRI, RBI);
   return true;
 }
 
