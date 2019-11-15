@@ -129,3 +129,23 @@ body: |
     %0(s32) = COPY $d4
     %1(s32) = G_XOR %0, %0
 ...
+
+---
+
+name:            test_ptr_add
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+  - { id: 2, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_ptr_add
+    ; CHECK: [[A4:%[0-9]+]]:addrregbank(p0) = COPY $a4
+    ; CHECK: [[D4:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[D4_COPY:%[0-9]+]]:addrregbank(s32) = COPY [[D4]](s32)
+    ; CHECK: [[PTR_ADD:%[0-9]+]]:addrregbank(p0) = G_PTR_ADD [[A4]], [[D4_COPY]]
+    %0(p0) = COPY $a4
+    %1(s32) = COPY $d4
+    %2(p0) = G_PTR_ADD %0, %1
+...

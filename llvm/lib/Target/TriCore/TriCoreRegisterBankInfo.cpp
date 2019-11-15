@@ -291,8 +291,14 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
 
   unsigned Cost = 1;
 
-  // TODO: fine-tune the mapping guessed above if there are mixed-register
-  //  instructions
+  // Some instructions have mixed types but require the same bank. Fine-tune the
+  // computed mapping.
+  // TODO: change to switch-case once this becomes more than one instruction
+  if (OpCode == TargetOpcode::G_PTR_ADD) {
+    // G_PTR_ADD operands must all be one the same regbank
+    assert(NumOperands == 3 && "Expected G_PTR_ADD to have 3 operands.");
+    OpRegBankIdx = {PMI_FirstAddrReg, PMI_FirstAddrReg, PMI_FirstAddrReg};
+  }
 
   // Construct the computed mapping
   SmallVector<const ValueMapping *, 8> OpdsMapping(NumOperands);
