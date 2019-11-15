@@ -45,11 +45,21 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
+  // Binary Ops
+
   // G_ADD, G_SUB, G_AND, G_OR and G_XOR are only legal for 32bit types
   getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR})
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
+  // G_PTR_ADD must take a p0 and s32 operand
+  getActionDefinitionsBuilder(G_PTR_ADD)
+      .legalFor({{p0, s32}})
+      .clampScalar(1, s32, s32);
+
+  // Overflow Ops
+
+  // All variants of add/sub /w carry must produce an s32 result and an s1 carry
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
 
