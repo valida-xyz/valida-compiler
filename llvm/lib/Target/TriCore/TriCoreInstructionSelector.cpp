@@ -330,21 +330,21 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   const unsigned OpCode = I.getOpcode();
 
   switch (OpCode) {
-  case TargetOpcode::G_TRUNC:
-    return selectTrunc(I, MRI);
-  case TargetOpcode::G_GLOBAL_VALUE:
-    return selectGlobalValue(I, MRI);
+  case TargetOpcode::G_BRCOND:
+    return selectBrCond(I, MRI);
+  case TargetOpcode::G_BRINDIRECT:
+    return selectBrIndirect(I, MRI);
   case TargetOpcode::G_CONSTANT:
     return selectConstant(I, MRI);
+  case TargetOpcode::G_GLOBAL_VALUE:
+    return selectGlobalValue(I, MRI);
   case TargetOpcode::G_ICMP:
     return selectICmp(I, MRI);
   case TargetOpcode::G_LOAD:
   case TargetOpcode::G_STORE:
     return selectLoadStore(I, MRI);
-  case TargetOpcode::G_BRCOND:
-    return selectBrCond(I, MRI);
-  case TargetOpcode::G_BRINDIRECT:
-    return selectBrIndirect(I, MRI);
+  case TargetOpcode::G_TRUNC:
+    return selectTrunc(I, MRI);
   default:
     break;
   }
