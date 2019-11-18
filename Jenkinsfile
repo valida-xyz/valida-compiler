@@ -1,5 +1,9 @@
+// Build master nightly between 2:00 and 3:59 am
+String cron_string = BRANCH_NAME == "htc/master" ? "H H(2-3) * * *" : ""
+
 pipeline {
   agent none
+  triggers { cron(cron_string) }
   options {
     disableConcurrentBuilds()
   }
@@ -9,15 +13,16 @@ pipeline {
         docker {
           image 'harbor.software.htc/toolchain/toolchain_build_linux:2.0'
           label 'llvm-project'
-          args '-v /etc/passwd:/etc/passwd'
+          args "-v /etc/passwd:/etc/passwd -e JENKINS_NUM_CORES=" + System.getenv("JENKINS_NUM_CORES") ?: "20"
           registryUrl 'https://harbor.software.htc'
           registryCredentialsId 'jenkins'
         }
       }
 
       steps {
-        mattermostSend channel: "#llvm-dev", color: "good", message: "Build started - ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)"
+        mattermostSend channel: "#llvm-dev", color: "good", message: "Build started using ${env.JENKINS_NUM_CORES} cores - ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)"
         sh '''
+          echo "Using ${JENKINS_NUM_CORES} jobs"
           mkdir -p build;
           cd build;
           rm -f testresults.xunit.xml;
@@ -32,9 +37,9 @@ pipeline {
                 -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64"\
                 -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="TriCore"\
                 -DLLVM_INCLUDE_TESTS=ON\
-                -DLLVM_LIT_ARGS="-j48 --xunit-xml-output=testresults.xunit.xml -v"\
+                -DLLVM_LIT_ARGS="-j${JENKINS_NUM_CORES} --xunit-xml-output=testresults.xunit.xml -v"\
             ../llvm;
-          make check-all -j48;
+          make check-all -j${JENKINS_NUM_CORES};
           cd ..;
         '''
       }
