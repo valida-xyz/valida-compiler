@@ -79,6 +79,12 @@ class GenericUImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
 def uimm2 : GenericUnsignedImmediate<2, i32>,
             ImmLeaf<i32, [{ return Imm >= 0 && Imm < 4; }]>;
 
+// A 2 bit unsigned immediate encoded in 1 bit
+def uimm2_l : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"UImm2_l">;
+  let DecoderMethod = "decodeUImm2_l";
+}
+
 // A 4-bit signed immediate.
 def simm4 : GenericSignedImmediate<4, i32>,
             ImmLeaf<i32, [{ return Imm >= -8 && Imm < 8; }]>;
@@ -378,6 +384,34 @@ class PARITH_RC<bits<8> opc1, bits<7> opc2, string mnemonic>
             :  RC<opc1, opc2, (outs DataRegs:$d),
                   (ins DataRegs:$s1, simm9:$const9),
                   mnemonic, "\t$d, $s1, $const9">;
+
+// 2.4.8 Add support for Packed Multiply and MAC Q-Format
+
+let Defs = [PSW] in {
+  class PMMQ_RRR1_DD<bits<8> opc1, bits<6> opc2, string mnemonic, string pos="">
+                   : RRR1<opc1, opc2, (outs DataRegs:$d),
+                          (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2,
+                               uimm2_l:$n),
+                          mnemonic , "\t$d, $s3, $s1, ${s2}" # pos # ", $n">;
+
+  class PMMQ_RRR1_DE<bits<8> opc1, bits<6> opc2, string mnemonic, string pos>
+                   : RRR1<opc1, opc2, (outs DataRegs:$d),
+                          (ins ExtDataRegs:$s3, DataRegs:$s1, DataRegs:$s2,
+                               uimm2_l:$n),
+                          mnemonic , "\t$d, $s3, $s1, ${s2}" # pos # ", $n">;
+
+  class PMMQ_RRR1_ED<bits<8> opc1, bits<6> opc2, string mnemonic, string pos="">
+                   : RRR1<opc1, opc2, (outs ExtDataRegs:$d),
+                          (ins ExtDataRegs:$s3, DataRegs:$s1, DataRegs:$s2,
+                               uimm2_l:$n),
+                          mnemonic , "\t$d, $s3, $s1, ${s2}" # pos # ", $n">;
+
+  class PMMQ_RR1<bits<8> opc1, bits<10> opc2, string mnemonic,
+                 string pos, RegisterClass RC = ExtDataRegs>
+               : RR1<opc1, opc2, (outs RC:$d),
+                     (ins DataRegs:$s1, DataRegs:$s2, uimm2_l:$n),
+                     mnemonic , "\t$d, $s1, ${s2}" # pos # ", $n">;
+} // Defs = [PSW]
 
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.
@@ -1369,6 +1403,174 @@ let isReMaterializable = 1 in {
                           "imask", "\t$d, $s2, $s3, $width">;
   } // s1 = 0
 } // isReMaterializable = 1
+
+// 2.4.8 Add support for Packed Multiply and MAC Q-Format
+
+// MADD.H
+def MADDH_eeddc_ll    : PMMQ_RRR1_ED<0x83, 0x1A, "madd.h",     "ll">;
+def MADDH_eeddc_lu    : PMMQ_RRR1_ED<0x83, 0x19, "madd.h",     "lu">;
+def MADDH_eeddc_ul    : PMMQ_RRR1_ED<0x83, 0x18, "madd.h",     "ul">;
+def MADDH_eeddc_uu    : PMMQ_RRR1_ED<0x83, 0x1B, "madd.h",     "uu">;
+
+// MADDS.H
+def MADDSH_eeddc_ll   : PMMQ_RRR1_ED<0x83, 0x3A, "madds.h",    "ll">;
+def MADDSH_eeddc_lu   : PMMQ_RRR1_ED<0x83, 0x39, "madds.h",    "lu">;
+def MADDSH_eeddc_ul   : PMMQ_RRR1_ED<0x83, 0x38, "madds.h",    "ul">;
+def MADDSH_eeddc_uu   : PMMQ_RRR1_ED<0x83, 0x3B, "madds.h",    "uu">;
+
+// MADDM.H
+def MADDMH_eeddc_ll   : PMMQ_RRR1_ED<0x83, 0x1E, "maddm.h",    "ll">;
+def MADDMH_eeddc_lu   : PMMQ_RRR1_ED<0x83, 0x1D, "maddm.h",    "lu">;
+def MADDMH_eeddc_ul   : PMMQ_RRR1_ED<0x83, 0x1C, "maddm.h",    "ul">;
+def MADDMH_eeddc_uu   : PMMQ_RRR1_ED<0x83, 0x1F, "maddm.h",    "uu">;
+
+// MADDMS.H
+def MADDMSH_eeddc_ll  : PMMQ_RRR1_ED<0x83, 0x3E, "maddms.h",   "ll">;
+def MADDMSH_eeddc_lu  : PMMQ_RRR1_ED<0x83, 0x3D, "maddms.h",   "lu">;
+def MADDMSH_eeddc_ul  : PMMQ_RRR1_ED<0x83, 0x3C, "maddms.h",   "ul">;
+def MADDMSH_eeddc_uu  : PMMQ_RRR1_ED<0x83, 0x3F, "maddms.h",   "uu">;
+
+// MADDR.H
+def MADDRH_ddddc_ll   : PMMQ_RRR1_DD<0x83, 0x0E, "maddr.h",    "ll">;
+def MADDRH_ddddc_lu   : PMMQ_RRR1_DD<0x83, 0x0D, "maddr.h",    "lu">;
+def MADDRH_ddddc_ul   : PMMQ_RRR1_DD<0x83, 0x0C, "maddr.h",    "ul">;
+def MADDRH_deddc_ul   : PMMQ_RRR1_DE<0x43, 0x1E, "maddr.h",    "ul">;
+def MADDRH_ddddc_uu   : PMMQ_RRR1_DD<0x83, 0x0F, "maddr.h",    "uu">;
+
+// MADDRS.H
+def MADDRSH_ddddc_ll  : PMMQ_RRR1_DD<0x83, 0x2E, "maddrs.h",   "ll">;
+def MADDRSH_ddddc_lu  : PMMQ_RRR1_DD<0x83, 0x2D, "maddrs.h",   "lu">;
+def MADDRSH_ddddc_ul  : PMMQ_RRR1_DD<0x83, 0x2C, "maddrs.h",   "ul">;
+def MADDRSH_deddc_ul  : PMMQ_RRR1_DE<0x43, 0x3E, "maddrs.h",   "ul">;
+def MADDRSH_ddddc_uu  : PMMQ_RRR1_DD<0x83, 0x2F, "maddrs.h",   "uu">;
+
+// MADDSU.H
+def MADDSUH_eeddc_ll  : PMMQ_RRR1_ED<0xC3, 0x1A, "maddsu.h",   "ll">;
+def MADDSUH_eeddc_lu  : PMMQ_RRR1_ED<0xC3, 0x19, "maddsu.h",   "lu">;
+def MADDSUH_eeddc_ul  : PMMQ_RRR1_ED<0xC3, 0x18, "maddsu.h",   "ul">;
+def MADDSUH_eeddc_uu  : PMMQ_RRR1_ED<0xC3, 0x1B, "maddsu.h",   "uu">;
+
+// MADDSUS.H
+def MADDSUSH_eeddc_ll : PMMQ_RRR1_ED<0xC3, 0x3A, "maddsus.h",  "ll">;
+def MADDSUSH_eeddc_lu : PMMQ_RRR1_ED<0xC3, 0x39, "maddsus.h",  "lu">;
+def MADDSUSH_eeddc_ul : PMMQ_RRR1_ED<0xC3, 0x38, "maddsus.h",  "ul">;
+def MADDSUSH_eeddc_uu : PMMQ_RRR1_ED<0xC3, 0x3B, "maddsus.h",  "uu">;
+
+// MADDSUM.H
+def MADDSUMH_eeddc_ll : PMMQ_RRR1_ED<0xC3, 0x1E, "maddsum.h",  "ll">;
+def MADDSUMH_eeddc_lu : PMMQ_RRR1_ED<0xC3, 0x1D, "maddsum.h",  "lu">;
+def MADDSUMH_eeddc_ul : PMMQ_RRR1_ED<0xC3, 0x1C, "maddsum.h",  "ul">;
+def MADDSUMH_eeddc_uu : PMMQ_RRR1_ED<0xC3, 0x1F, "maddsum.h",  "uu">;
+
+// MADDSUMS.H
+def MADDSUMSH_eeddc_ll: PMMQ_RRR1_ED<0xC3, 0x3E, "maddsums.h", "ll">;
+def MADDSUMSH_eeddc_lu: PMMQ_RRR1_ED<0xC3, 0x3D, "maddsums.h", "lu">;
+def MADDSUMSH_eeddc_ul: PMMQ_RRR1_ED<0xC3, 0x3C, "maddsums.h", "ul">;
+def MADDSUMSH_eeddc_uu: PMMQ_RRR1_ED<0xC3, 0x3F, "maddsums.h", "uu">;
+
+// MADDSUR.H
+def MADDSURH_ddddc_ll : PMMQ_RRR1_DD<0xC3, 0x0E, "maddsur.h",  "ll">;
+def MADDSURH_ddddc_lu : PMMQ_RRR1_DD<0xC3, 0x0D, "maddsur.h",  "lu">;
+def MADDSURH_ddddc_ul : PMMQ_RRR1_DD<0xC3, 0x0C, "maddsur.h",  "ul">;
+def MADDSURH_ddddc_uu : PMMQ_RRR1_DD<0xC3, 0x0F, "maddsur.h",  "uu">;
+
+// MADDSURS.H
+def MADDSURSH_ddddc_ll: PMMQ_RRR1_DD<0xC3, 0x2E, "maddsurs.h", "ll">;
+def MADDSURSH_ddddc_lu: PMMQ_RRR1_DD<0xC3, 0x2D, "maddsurs.h", "lu">;
+def MADDSURSH_ddddc_ul: PMMQ_RRR1_DD<0xC3, 0x2C, "maddsurs.h", "ul">;
+def MADDSURSH_ddddc_uu: PMMQ_RRR1_DD<0xC3, 0x2F, "maddsurs.h", "uu">;
+
+// MSUB.H
+def MSUBH_eeddc_ll    : PMMQ_RRR1_ED<0xA3, 0x1A, "msub.h",     "ll">;
+def MSUBH_eeddc_lu    : PMMQ_RRR1_ED<0xA3, 0x19, "msub.h",     "lu">;
+def MSUBH_eeddc_ul    : PMMQ_RRR1_ED<0xA3, 0x18, "msub.h",     "ul">;
+def MSUBH_eeddc_uu    : PMMQ_RRR1_ED<0xA3, 0x1B, "msub.h",     "uu">;
+
+// MSUBS.H
+def MSUBSH_eeddc_ll   : PMMQ_RRR1_ED<0xA3, 0x3A, "msubs.h",    "ll">;
+def MSUBSH_eeddc_lu   : PMMQ_RRR1_ED<0xA3, 0x39, "msubs.h",    "lu">;
+def MSUBSH_eeddc_ul   : PMMQ_RRR1_ED<0xA3, 0x38, "msubs.h",    "ul">;
+def MSUBSH_eeddc_uu   : PMMQ_RRR1_ED<0xA3, 0x3B, "msubs.h",    "uu">;
+
+// MSUBAD.H
+def MSUBADH_eeddc_ll  : PMMQ_RRR1_ED<0xE3, 0x1A, "msubad.h",   "ll">;
+def MSUBADH_eeddc_lu  : PMMQ_RRR1_ED<0xE3, 0x19, "msubad.h",   "lu">;
+def MSUBADH_eeddc_ul  : PMMQ_RRR1_ED<0xE3, 0x18, "msubad.h",   "ul">;
+def MSUBADH_eeddc_uu  : PMMQ_RRR1_ED<0xE3, 0x1B, "msubad.h",   "uu">;
+
+// MSUBADS.H
+def MSUBADSH_eeddc_ll : PMMQ_RRR1_ED<0xE3, 0x3A, "msubads.h",  "ll">;
+def MSUBADSH_eeddc_lu : PMMQ_RRR1_ED<0xE3, 0x39, "msubads.h",  "lu">;
+def MSUBADSH_eeddc_ul : PMMQ_RRR1_ED<0xE3, 0x38, "msubads.h",  "ul">;
+def MSUBADSH_eeddc_uu : PMMQ_RRR1_ED<0xE3, 0x3B, "msubads.h",  "uu">;
+
+// MSUBADM.H
+def MSUBADMH_eeddc_ll : PMMQ_RRR1_ED<0xE3, 0x1E, "msubadm.h",  "ll">;
+def MSUBADMH_eeddc_lu : PMMQ_RRR1_ED<0xE3, 0x1D, "msubadm.h",  "lu">;
+def MSUBADMH_eeddc_ul : PMMQ_RRR1_ED<0xE3, 0x1C, "msubadm.h",  "ul">;
+def MSUBADMH_eeddc_uu : PMMQ_RRR1_ED<0xE3, 0x1F, "msubadm.h",  "uu">;
+
+// MSUBADMS.H
+def MSUBADMSH_eeddc_ll: PMMQ_RRR1_ED<0xE3, 0x3E, "msubadms.h", "ll">;
+def MSUBADMSH_eeddc_lu: PMMQ_RRR1_ED<0xE3, 0x3D, "msubadms.h", "lu">;
+def MSUBADMSH_eeddc_ul: PMMQ_RRR1_ED<0xE3, 0x3C, "msubadms.h", "ul">;
+def MSUBADMSH_eeddc_uu: PMMQ_RRR1_ED<0xE3, 0x3F, "msubadms.h", "uu">;
+
+// MSUBADR.H
+def MSUBADRH_ddddc_ll : PMMQ_RRR1_DD<0xE3, 0x0E, "msubadr.h",  "ll">;
+def MSUBADRH_ddddc_lu : PMMQ_RRR1_DD<0xE3, 0x0D, "msubadr.h",  "lu">;
+def MSUBADRH_ddddc_ul : PMMQ_RRR1_DD<0xE3, 0x0C, "msubadr.h",  "ul">;
+def MSUBADRH_ddddc_uu : PMMQ_RRR1_DD<0xE3, 0x0F, "msubadr.h",  "uu">;
+
+// MSUBADRS.H
+def MSUBADRSH_ddddc_ll: PMMQ_RRR1_DD<0xE3, 0x2E, "msubadrs.h", "ll">;
+def MSUBADRSH_ddddc_lu: PMMQ_RRR1_DD<0xE3, 0x2D, "msubadrs.h", "lu">;
+def MSUBADRSH_ddddc_ul: PMMQ_RRR1_DD<0xE3, 0x2C, "msubadrs.h", "ul">;
+def MSUBADRSH_ddddc_uu: PMMQ_RRR1_DD<0xE3, 0x2F, "msubadrs.h", "uu">;
+
+// MSUBM.H
+def MSUBMH_eeddc_ll   : PMMQ_RRR1_ED<0xA3, 0x1E, "msubm.h",    "ll">;
+def MSUBMH_eeddc_lu   : PMMQ_RRR1_ED<0xA3, 0x1D, "msubm.h",    "lu">;
+def MSUBMH_eeddc_ul   : PMMQ_RRR1_ED<0xA3, 0x1C, "msubm.h",    "ul">;
+def MSUBMH_eeddc_uu   : PMMQ_RRR1_ED<0xA3, 0x1F, "msubm.h",    "uu">;
+
+// MSUBMS.H
+def MSUBMSH_eeddc_ll  : PMMQ_RRR1_ED<0xA3, 0x3E, "msubms.h",   "ll">;
+def MSUBMSH_eeddc_lu  : PMMQ_RRR1_ED<0xA3, 0x3D, "msubms.h",   "lu">;
+def MSUBMSH_eeddc_ul  : PMMQ_RRR1_ED<0xA3, 0x3C, "msubms.h",   "ul">;
+def MSUBMSH_eeddc_uu  : PMMQ_RRR1_ED<0xA3, 0x3F, "msubms.h",   "uu">;
+
+// MSUBR.H
+def MSUBRH_ddddc_ll   : PMMQ_RRR1_DD<0xA3, 0x0E, "msubr.h",    "ll">;
+def MSUBRH_ddddc_lu   : PMMQ_RRR1_DD<0xA3, 0x0D, "msubr.h",    "lu">;
+def MSUBRH_ddddc_ul   : PMMQ_RRR1_DD<0xA3, 0x0C, "msubr.h",    "ul">;
+def MSUBRH_deddc_ul   : PMMQ_RRR1_DE<0x63, 0x1E, "msubr.h",    "ul">;
+def MSUBRH_ddddc_uu   : PMMQ_RRR1_DD<0xA3, 0x0F, "msubr.h",    "uu">;
+
+// MSUBRS.H
+def MSUBRSH_ddddc_ll  : PMMQ_RRR1_DD<0xA3, 0x2E, "msubrs.h",   "ll">;
+def MSUBRSH_ddddc_lu  : PMMQ_RRR1_DD<0xA3, 0x2D, "msubrs.h",   "lu">;
+def MSUBRSH_ddddc_ul  : PMMQ_RRR1_DD<0xA3, 0x2C, "msubrs.h",   "ul">;
+def MSUBRSH_deddc_ul  : PMMQ_RRR1_DE<0x63, 0x3E, "msubrs.h",   "ul">;
+def MSUBRSH_ddddc_uu  : PMMQ_RRR1_DD<0xA3, 0x2F, "msubrs.h",   "uu">;
+
+// MUL.H
+def MULH_eddc_ll      : PMMQ_RR1<0xB3,  0x1A, "mul.h",         "ll">;
+def MULH_eddc_lu      : PMMQ_RR1<0xB3,  0x19, "mul.h",         "lu">;
+def MULH_eddc_ul      : PMMQ_RR1<0xB3,  0x18, "mul.h",         "ul">;
+def MULH_eddc_uu      : PMMQ_RR1<0xB3,  0x1B, "mul.h",         "uu">;
+
+// MULM.H
+def MULMH_eddc_ll     : PMMQ_RR1<0xB3, 0x1E, "mulm.h",         "ll">;
+def MULMH_eddc_lu     : PMMQ_RR1<0xB3, 0x1D, "mulm.h",         "lu">;
+def MULMH_eddc_ul     : PMMQ_RR1<0xB3, 0x1C, "mulm.h",         "ul">;
+def MULMH_eddc_uu     : PMMQ_RR1<0xB3, 0x1F, "mulm.h",         "uu">;
+
+// MULR.H
+def MULRH_dddc_ll     : PMMQ_RR1<0xB3, 0x0E, "mulr.h",         "ll", DataRegs>;
+def MULRH_dddc_lu     : PMMQ_RR1<0xB3, 0x0D, "mulr.h",         "lu", DataRegs>;
+def MULRH_dddc_ul     : PMMQ_RR1<0xB3, 0x0C, "mulr.h",         "ul", DataRegs>;
+def MULRH_dddc_uu     : PMMQ_RR1<0xB3, 0x0F, "mulr.h",         "uu", DataRegs>;
 
 //===----------------------------------------------------------------------===//
 // 2.2 Packed Arithmetic

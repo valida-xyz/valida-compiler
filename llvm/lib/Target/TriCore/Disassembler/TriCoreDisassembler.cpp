@@ -72,6 +72,9 @@ template <unsigned N, unsigned SHIFT>
 static DecodeStatus decodeUImmLsbNIsZero(MCInst &Inst, uint64_t Imm,
                                          int64_t Address, const void *Decoder);
 
+static DecodeStatus decodeUImm2_l(MCInst &Inst, uint64_t Imm,
+                                     int64_t Address, const void *Decoder);
+
 static DecodeStatus decodeSImm9Shift(MCInst &Inst, uint64_t Imm,
                                      int64_t Address, const void *Decoder);
 
@@ -266,6 +269,13 @@ static DecodeStatus decodeUImmLsbNIsZero(MCInst &Inst, uint64_t Imm,
                                          int64_t Address, const void *Decoder) {
   assert(isUInt<N>(Imm) && "Invalid immediate");
   Inst.addOperand(MCOperand::createImm(Imm << SHIFT));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus decodeUImm2_l(MCInst &Inst, uint64_t Imm,
+                                     int64_t Address, const void *Decoder) {
+  assert(isUInt<1>(Imm) && "Invalid unsigned 1 bit value");
+  Inst.addOperand(MCOperand::createImm(Imm));
   return MCDisassembler::Success;
 }
 

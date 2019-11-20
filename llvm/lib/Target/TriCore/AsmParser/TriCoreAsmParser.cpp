@@ -372,6 +372,25 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
+  // checking if in the range of 2 bit unsigned immediate
+  bool isUImm2_l() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = (Imm >= 0 && Imm <= 1);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
+  }
+
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
   /// getEndLoc - Gets location of the last token of this operand
@@ -518,6 +537,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         Operands, ErrorInfo, 0, (1 << 2) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
+  case Match_InvalidUImm2_l:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidSImm4:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 3), (1 << 3) - 1,
@@ -655,29 +679,52 @@ bool TriCoreAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
 }
 
 OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
+  bool isSuffixFound = false;
   SMLoc S = getLoc();
   SMLoc E = SMLoc::getFromPointer(S.getPointer() - 1);
 
-  switch (getLexer().getKind()) {
-  default:
-    return MatchOperand_NoMatch;
-  case AsmToken::Percent:
-  case AsmToken::Identifier:
-    if (getLexer().is(AsmToken::Percent))
-      getLexer().Lex();
-    else
-      return MatchOperand_NoMatch;
-
-    StringRef Name = getLexer().getTok().getIdentifier();
-    unsigned RegNo = MatchRegisterName(Name);
-    if (RegNo == 0) {
-      RegNo = MatchRegisterAltName(Name);
-      if (RegNo == 0)
-        return MatchOperand_NoMatch;
-    }
+  if (getLexer().is(AsmToken::Percent))
     getLexer().Lex();
-    Operands.push_back(TriCoreOperand::createReg(RegNo, S, E));
+  else
+    return MatchOperand_NoMatch;
+
+  if (getLexer().isNot(AsmToken::Identifier))
+    return MatchOperand_ParseFail;
+
+  StringRef Name = getLexer().getTok().getIdentifier();
+
+  bool hasLLSuffix = Name.endswith_lower("ll");
+  bool hasLUSuffix = Name.endswith_lower("lu");
+  bool hasULSuffix = Name.endswith_lower("ul");
+  bool hasUUSuffix = Name.endswith_lower("uu");
+
+  // remove suffix upper/lower/mixed cases'll','lu','ul','uu'
+  if (hasLLSuffix || hasLUSuffix || hasULSuffix || hasUUSuffix) {
+    Name = Name.drop_back(2);
+    isSuffixFound = true;
   }
+
+  // this will try to match with a register name
+  unsigned RegNo = MatchRegisterName(Name);
+  if (RegNo == 0) {
+    RegNo = MatchRegisterAltName(Name);
+    if (RegNo == 0)
+      return MatchOperand_NoMatch;
+  }
+
+  // eat register (possibly with suffix)
+  getLexer().Lex();
+
+  // creating the register operand
+  Operands.push_back(TriCoreOperand::createReg(RegNo, S, E));
+
+  // creating the suffix operand if needed
+  if (isSuffixFound) {
+    StringRef Suffix =
+        hasLLSuffix ? "ll" : hasLUSuffix ? "lu" : hasULSuffix ? "ul" : "uu";
+    Operands.push_back(TriCoreOperand::createToken(Suffix, getLoc()));
+  }
+
   return MatchOperand_Success;
 }
 
