@@ -2497,3 +2497,124 @@ let Defs = [A10, A11], Uses = [A10, A11] in {
     def FRET          : SYS<0x0D, 0x03, (outs), (ins), "fret", "">;
   } // s1_d = 0,  isReturn = 1, isTerminator = 1, isBarrier = 1
 } // Defs = [A10, A11], Uses = [A10, A11]
+
+
+//===----------------------------------------------------------------------===//
+//  Cache Instructions.
+//
+
+let s1_d = 0, hasSideEffects = 1 in {
+  // CACHEA.I
+  def CACHEAI_ac : BO<0x89, 0x2E, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                      "cachea.i", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $dst", off10 = 0 in
+    def CACHEAI_p : BO<0xA9, 0x0E, (outs ExtAddrRegs:$dst),
+                       (ins ExtAddrRegs:$s2),
+                       "cachea.i", "\t[${s2} + r]">;
+
+  let Constraints = "$s2 = $dst" in
+    def CACHEAI_pc : BO<0xA9, 0x1E, (outs ExtAddrRegs:$dst),
+                        (ins ExtAddrRegs:$s2, simm10:$off10),
+                        "cachea.i", "\t[${s2} + c], $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEAI_ac_poi : BO<0x89, 0x0E, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachea.i", "\t[${s2}+], $off10">;
+
+    def CACHEAI_ac_pri : BO<0x89, 0x1E, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachea.i", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+
+  // CACHEA.W
+  def CACHEAW_ac : BO<0x89, 0x2C, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                      "cachea.w", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $dst", off10 = 0 in
+    def CACHEAW_p : BO<0xA9, 0x0C, (outs ExtAddrRegs:$dst),
+                       (ins ExtAddrRegs:$s2),
+                       "cachea.w", "\t[${s2} + r]">;
+
+  let Constraints = "$s2 = $dst" in
+    def CACHEAW_pc : BO<0xA9, 0x1C, (outs ExtAddrRegs:$dst),
+                        (ins ExtAddrRegs:$s2, simm10:$off10),
+                        "cachea.w", "\t[${s2} + c], $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEAW_ac_poi : BO<0x89, 0x0C, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachea.w", "\t[${s2}+], $off10">;
+
+    def CACHEAW_ac_pri : BO<0x89, 0x1C, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachea.w", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+
+  // CACHEA.WI
+  def CACHEAWI_ac : BO<0x89, 0x2D, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                       "cachea.wi", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $dst", off10 = 0 in
+    def CACHEAWI_p : BO<0xA9, 0x0D, (outs ExtAddrRegs:$dst),
+                        (ins ExtAddrRegs:$s2),
+                        "cachea.wi", "\t[${s2} + r]">;
+
+  let Constraints = "$s2 = $dst" in
+    def CACHEAWI_pc : BO<0xA9, 0x1D, (outs ExtAddrRegs:$dst),
+                         (ins ExtAddrRegs:$s2, simm10:$off10),
+                         "cachea.wi", "\t[${s2} + c], $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEAWI_ac_poi : BO<0x89, 0x0D, (outs AddrRegs:$s2),
+                             (ins AddrRegs:$src, simm10:$off10),
+                             "cachea.wi", "\t[${s2}+], $off10">;
+
+    def CACHEAWI_ac_pri : BO<0x89, 0x1D, (outs AddrRegs:$s2),
+                             (ins AddrRegs:$src, simm10:$off10),
+                             "cachea.wi", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+
+  // CACHEI.I
+  def CACHEII_ac : BO<0x89, 0x2A, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                      "cachei.i", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEII_ac_poi : BO<0x89, 0x0A, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachei.i", "\t[${s2}+], $off10">;
+
+    def CACHEII_ac_pri : BO<0x89, 0x1A, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachei.i", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+
+  // CACHEI.W
+  def CACHEIW_ac : BO<0x89, 0x2B, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                      "cachei.w", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEIW_ac_poi : BO<0x89, 0x0B, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachei.w", "\t[${s2}+], $off10">;
+
+    def CACHEIW_ac_pri : BO<0x89, 0x1B, (outs AddrRegs:$s2),
+                            (ins AddrRegs:$src, simm10:$off10),
+                            "cachei.w", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+
+  // CACHEI.WI
+  def CACHEIWI_ac : BO<0x89, 0x2F, (outs), (ins AddrRegs:$s2, simm10:$off10),
+                       "cachei.wi", "\t$s2, $off10">;
+
+  let Constraints = "$s2 = $src" in {
+    def CACHEIWI_ac_poi : BO<0x89, 0x0F, (outs AddrRegs:$s2),
+                             (ins AddrRegs:$src, simm10:$off10),
+                             "cachei.wi", "\t[${s2}+], $off10">;
+
+    def CACHEIWI_ac_pri : BO<0x89, 0x1F, (outs AddrRegs:$s2),
+                             (ins AddrRegs:$src, simm10:$off10),
+                             "cachei.wi", "\t[+${s2}], $off10">;
+  } // "$s2 = $src"
+} // s1_d = 0, hasSideEffects = 1
