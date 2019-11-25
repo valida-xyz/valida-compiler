@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstPrinter/TriCoreInstPrinter.h"
+#include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
@@ -53,6 +54,7 @@ class TriCoreAsmParser : public MCTargetAsmParser {
   OperandMatchResultTy parseImmediate(OperandVector &Operands);
   OperandMatchResultTy parseRegister(OperandVector &Operands);
   OperandMatchResultTy parseMemOpBaseReg(OperandVector &Operands);
+  OperandMatchResultTy parseOperandWithModifier(OperandVector &Operands);
 
   bool parseOperand(OperandVector &Operands);
 
@@ -79,6 +81,10 @@ public:
 #include "TriCoreGenAsmMatcher.inc"
 #undef GET_OPERAND_DIAGNOSTIC_TYPES
   };
+
+  static bool classifySymbolRef(const MCExpr *Expr,
+                                TriCoreMCExpr::VariantKind &Kind,
+                                int64_t &Addend);
 
   TriCoreAsmParser(const MCSubtargetInfo &STI, MCAsmParser &Parser,
                    const MCInstrInfo &MII, const MCTargetOptions &Options)
@@ -137,72 +143,195 @@ public:
   bool isImm() const override { return Kind == Immediate; }
   bool isMem() const override { return false; }
 
-  bool isConstantImm() const {
-    return isImm() && dyn_cast<MCConstantExpr>(getImm());
-  }
-
-  int64_t getConstantImm() const {
+  bool evaluateConstantImm(int64_t &Imm, TriCoreMCExpr::VariantKind &VK) const {
     const MCExpr *Val = getImm();
-    return static_cast<const MCConstantExpr *>(Val)->getValue();
+    bool Ret = false;
+
+    if (auto *RE = dyn_cast<TriCoreMCExpr>(Val)) {
+      Ret = RE->evaluateAsConstant(Imm);
+      VK = RE->getKind();
+    } else if (auto CE = dyn_cast<MCConstantExpr>(Val)) {
+      Ret = true;
+      VK = TriCoreMCExpr::VK_TRICORE_None;
+      Imm = CE->getValue();
+    }
+    return Ret;
   }
 
-  template <int N> bool isSImmN() const {
-    return (isConstantImm() && isInt<N>(getConstantImm()));
+  template <int N> bool isSImmN() const { return isImmN<N, true>(); }
+
+  template <int N> bool isUImmN() const { return isImmN<N, false>(); }
+
+  template <int N, bool SIGNED> bool isImmN() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = SIGNED ? isInt<N>(Imm) : isUInt<N>(Imm);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
-  template <int N> bool isUImmN() const {
-    return (isConstantImm() && isUInt<N>(getConstantImm()));
+  bool isSImm16_BOL() const { return isImm16<true, false>(); }
+
+  bool isSImm16_RLC() const { return isImm16<true, true>(); }
+
+  bool isUImm16_RLC() const { return isImm16<false, true>(); }
+
+  // templated function for RLC and BOL format, they need special handling
+  // since some of the modifiers can only be used with one of the formats
+  // but not with the other one e.g.: HI is only for RLC, SM is only for BOL
+  template <bool SIGNED, bool isRLC> bool isImm16() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+    bool isVKCorrect = false;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
+    else
+      IsValid = SIGNED ? isInt<16>(Imm) : isUInt<16>(Imm);
+
+    isVKCorrect = (VK == TriCoreMCExpr::VK_TRICORE_None) ||
+                  (VK == TriCoreMCExpr::VK_TRICORE_LO);
+
+    if (isRLC)
+      isVKCorrect = isVKCorrect || (VK == TriCoreMCExpr::VK_TRICORE_HI);
+    else
+      isVKCorrect = isVKCorrect || (VK == TriCoreMCExpr::VK_TRICORE_SM);
+
+    return IsValid && isVKCorrect;
   }
 
   template <int WIDTH, int SHIFT, bool SIGNED> bool isScaledImm() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    bool valid = SIGNED ? isShiftedInt<WIDTH, SHIFT>(getConstantImm())
-                        : isShiftedUInt<WIDTH, SHIFT>(getConstantImm());
-    return valid;
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    // only allow symbols when the operand is: simm15_lsb0 or simm24_lsb0
+    // which are corresponds to _15REL and _24REL relocations
+    if (!IsConstantImm)
+      IsValid = (WIDTH == 15 || WIDTH == 24) && SIGNED
+                    ? TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm)
+                    : false;
+    else
+      IsValid = SIGNED ? isShiftedInt<WIDTH, SHIFT>(Imm)
+                       : isShiftedUInt<WIDTH, SHIFT>(Imm);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   // checking against {off18[17:14], 14'b0, off18[13:0]} form
   bool isOff18Abs() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    return (getConstantImm() & ~0xf0003fff) == 0;
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
+    else
+      IsValid = (Imm & ~0xf0003fff) == 0;
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   // checking against {off18[17:0], 14'b0} form
   bool isOff18AbsV2() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    return (getConstantImm() & ~0xffffc000) == 0;
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = (Imm & ~0xffffc000) == 0;
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   // checking against zero_ext(disp4 + 16) * 2 form
   bool isDisp4_16() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    int64_t Val = getConstantImm();
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
 
-    return Val >= 32 && Val <= 62 && (Val % 2 == 0);
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = Imm >= 32 && Imm <= 62 && (Imm % 2 == 0);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   // checking against {disp24[23:20], 7'b0, disp24[19:0], 1'b0} form
   bool isDisp24Abs() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    return (getConstantImm() & ~0xf01ffffe) == 0;
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
+    else
+      IsValid = (Imm & ~0xf01ffffe) == 0;
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   // checking if in the range of 6 bit signed immediate
   bool isSImm9Shift() const {
-    if (!isConstantImm())
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
       return false;
 
-    return (getConstantImm() >= -32 && getConstantImm() <= 31);
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = (Imm >= -32 && Imm <= 31);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
   /// getStartLoc - Gets location of the first token of this operand
@@ -268,8 +397,22 @@ public:
 
   void addExpr(MCInst &Inst, const MCExpr *Expr) const {
     assert(Expr && "Expr shouldn't be null!");
-    if (auto *CE = dyn_cast<MCConstantExpr>(Expr))
-      Inst.addOperand(MCOperand::createImm(CE->getValue()));
+    int64_t Imm = 0;
+    bool IsConstant = false;
+
+    // if the expression is a TriCoreMCExpr type then evaluate it with
+    // custom function
+    if (auto *RE = dyn_cast<TriCoreMCExpr>(Expr)) {
+      IsConstant = RE->evaluateAsConstant(Imm);
+      // if plain constant expression evaluate it the usual way
+    } else if (auto *CE = dyn_cast<MCConstantExpr>(Expr)) {
+      IsConstant = true;
+      Imm = CE->getValue();
+    }
+
+    // create the operand depending on if it is a constant or not
+    if (IsConstant)
+      Inst.addOperand(MCOperand::createImm(Imm));
     else
       Inst.addOperand(MCOperand::createExpr(Expr));
   }
@@ -333,71 +476,113 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     }
     return Error(ErrorLoc, "invalid operand for instruction");
   case Match_InvalidUImm2:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 2) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 2) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidSImm4:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 3),
-                                      (1 << 3) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 3), (1 << 3) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidUImm4:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 4) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 4) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidUImm5:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 5) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 5) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidUImm8:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 8) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 8) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidSImm9:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 8),
-                                      (1 << 8) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 8), (1 << 8) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidUImm9:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 9) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 9) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidSImm9Shift:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 5),
-                                      (1 << 5) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 5), (1 << 5) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidSImm10:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 9),
-                                      (1 << 9) - 1);
-  case Match_InvalidSImm16:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, -(1 << 15),
-                                      (1 << 15) - 1);
-  case Match_InvalidUImm16:
-    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 16) - 1);
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 9), (1 << 9) - 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
+  case Match_InvalidSImm16_BOL:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 15), (1 << 15) - 1,
+        "Operand must be a valid symbol with optional operand prefix lo or sm "
+        "OR it must be an the integer in the range");
+  case Match_InvalidSImm16_RLC:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -(1 << 15), (1 << 15) - 1,
+        "Operand must be a valid symbol with optional operand prefix lo or hi "
+        "OR it must be an the integer in the range");
+  case Match_InvalidUImm16_RLC:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 16) - 1,
+        "Operand must be a valid symbol with optional operand prefix lo or hi "
+        "OR it must be an the integer in the range");
   case Match_InvalidUImm4_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 2,
-        "value must be even integer and in the range");
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be even number in the integer range");
   case Match_InvalidUImm4_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 4,
-        "value must be divisible by 4 and in the range");
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be divisible by 4 and in the integer range");
   case Match_InvalidSImm8_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
-        "value must be even integer and in the range");
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be even number in the integer range");
   case Match_InvalidUImm8_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 8) - 1) * 4,
-        "value must be divisible by 4 and in the range");
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be divisible by 4 and in the integer range");
   case Match_InvalidSImm15_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 2,
-        "value must be even integer and in the range");
+        "Operand must be a valid symbol expression or an even integer and "
+        "in the range");
   case Match_InvalidSImm24_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 24), (1 << 24) - 2,
-        "value must be even integer and in the range");
+        "Operand must be a valid symbol expression or an even integer and "
+        "in the range");
   case Match_InvalidOff18Abs:
     return Error(((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
-                 "value must be a 32 bit address & bit 27-15, 0 must be 0");
+                 "Operand must be a valid symbol expression or a 32 bit "
+                 "address with bit 27-14 set to 0");
   case Match_InvalidOff18AbsV2:
-    return Error(
-        ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
-        "value must be a 32 bit address with the low 14 bits are set to 0");
+    return Error(((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc(),
+                 "Operand must be a valid symbol expression or a 32 bit "
+                 "address with bit 13-0 set to 0");
   case Match_InvalidDisp4_16:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 16 * 2, (15 + 16) * 2,
-        "value must be even integer and in the range");
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be even number in the integer range");
   case Match_InvalidDisp24Abs:
     ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
     return Error(ErrorLoc,
-                 "value must be a 32 bit address & bit 27-21, 0 must be 0");
+                 "Operand must be a valid symbol expression or a 32 bit "
+                 "address with bit 27-21 and 0 set to 0");
   }
 
   llvm_unreachable("Unknown match type detected!");
@@ -449,6 +634,10 @@ OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
 }
 
 OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
+  const MCExpr *IdVal;
+  SMLoc S = getLoc();
+  SMLoc E = SMLoc::getFromPointer(S.getPointer() - 1);
+
   switch (getLexer().getKind()) {
   default:
     return MatchOperand_NoMatch;
@@ -458,14 +647,15 @@ OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
   case AsmToken::Integer:
   case AsmToken::String:
     break;
+  case AsmToken::Identifier:
+    if (!parseOperandWithModifier(Operands))
+      return MatchOperand_Success;
+    break;
   }
 
-  const MCExpr *IdVal;
-  SMLoc S = getLoc();
   if (getParser().parseExpression(IdVal))
     return MatchOperand_ParseFail;
 
-  SMLoc E = SMLoc::getFromPointer(S.getPointer() - 1);
   Operands.push_back(TriCoreOperand::createImm(IdVal, S, E));
   return MatchOperand_Success;
 }
@@ -523,6 +713,53 @@ TriCoreAsmParser::parseMemOpBaseReg(OperandVector &Operands) {
   // creating ']' token operand
   Operands.push_back(TriCoreOperand::createToken("]", getLoc()));
   getParser().Lex(); // eat ']'
+
+  return MatchOperand_Success;
+}
+
+// Parsing operand in the forms:
+// <modifier>:<constant>, <modifier>:<symbol>
+// <modifier>:<symbol><+|-><constant>
+// where modifers: sm, lo, hi (case insensitive)
+OperandMatchResultTy
+TriCoreAsmParser::parseOperandWithModifier(OperandVector &Operands) {
+  SMLoc S = getLoc();
+  SMLoc E = SMLoc::getFromPointer(S.getPointer() - 1);
+
+  // check for the ':' which should follow the modifier ex.: lo:foo
+  if (getLexer().peekTok().getKind() != AsmToken::Colon)
+    return MatchOperand_NoMatch;
+
+  // parse the identifier and determine the variantkind based on it
+  StringRef Identifier = getParser().getTok().getIdentifier();
+  TriCoreMCExpr::VariantKind VK =
+      TriCoreMCExpr::getVariantKindForName(Identifier);
+
+  // only proceed further if the kind is not invalid
+  if (VK == TriCoreMCExpr::VK_TRICORE_Invalid)
+    return MatchOperand_NoMatch;
+
+  // only parse the indentifier if colon also found, this way letting hi, lo, sm
+  // to be usable as symbol names also
+  getParser().Lex(); // Eat the identifier
+  getParser().Lex(); // Eat ':'
+
+  // sm modifier can not be applied to constant expressions
+  if (VK == TriCoreMCExpr::VK_TRICORE_SM &&
+      (getLexer().getKind() != AsmToken::Identifier &&
+       getLexer().getKind() != AsmToken::String)) {
+    Error(getLexer().getLoc(), "Illegal prefix for constant expression");
+    return MatchOperand_ParseFail;
+  }
+
+  // parse the expression ex.: lo:foo -> foo
+  const MCExpr *SubExpr;
+  if (getParser().parseExpression(SubExpr))
+    return MatchOperand_ParseFail;
+
+  // create the operand
+  const MCExpr *ModExpr = TriCoreMCExpr::create(SubExpr, VK, getContext());
+  Operands.push_back(TriCoreOperand::createImm(ModExpr, S, E));
 
   return MatchOperand_Success;
 }
@@ -603,6 +840,53 @@ bool TriCoreAsmParser::ParseDirective(AsmToken DirectiveID) {
     return false;
   }
   return true;
+}
+
+// classifying the expression, determining it's VK_TRICORE_* kind,
+// also checks if it is a valid expression like foo, foo+<constant> etc.
+bool TriCoreAsmParser::classifySymbolRef(const MCExpr *Expr,
+                                         TriCoreMCExpr::VariantKind &Kind,
+                                         int64_t &Addend) {
+  Kind = TriCoreMCExpr::VK_TRICORE_None;
+  Addend = 0;
+
+  if (const TriCoreMCExpr *RE = dyn_cast<TriCoreMCExpr>(Expr)) {
+    Kind = RE->getKind();
+    Expr = RE->getSubExpr();
+  }
+
+  // It's a simple symbol reference or constant with no addend.
+  if (isa<MCConstantExpr>(Expr) || isa<MCSymbolRefExpr>(Expr))
+    return true;
+
+  const MCBinaryExpr *BE = dyn_cast<MCBinaryExpr>(Expr);
+  if (!BE)
+    return false;
+
+  // TODO: adding support for <constant>+<symbolref>
+  if (!isa<MCSymbolRefExpr>(BE->getLHS()))
+    return false;
+
+  if (BE->getOpcode() != MCBinaryExpr::Add &&
+      BE->getOpcode() != MCBinaryExpr::Sub)
+    return false;
+
+  // not letting the right hand side of the bin op to be a symbol
+  if (isa<MCSymbolRefExpr>(BE->getRHS()))
+    return true;
+
+  // See if the addend is is a constant, otherwise there's more going
+  // on here than we can deal with.
+  auto AddendExpr = dyn_cast<MCConstantExpr>(BE->getRHS());
+  if (!AddendExpr)
+    return false;
+
+  Addend = AddendExpr->getValue();
+  if (BE->getOpcode() == MCBinaryExpr::Sub)
+    Addend = -Addend;
+
+  // It's some symbol reference + a constant addend
+  return Kind != TriCoreMCExpr::VK_TRICORE_Invalid;
 }
 
 extern "C" void LLVMInitializeTriCoreAsmParser() {

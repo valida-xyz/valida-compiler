@@ -51,14 +51,14 @@ class UImmLsbNIsZero<int M, int N> : ImmLsbNIsZero<M, N, "U"> {
 //// Operand Classes
 class GenericSignedImmediate<int width> : Operand<OtherVT> {
   let ParserMatchClass = SImmAsmOperand<width>;
-  // FIXME: Add when it becames relevant (ex.: relocations)
-  /// let EncoderMethod = "getImmOpValue";
   let DecoderMethod = "decodeSignedImmediate<" # width # ">";
+  let EncoderMethod = "getImmOpValue";
 }
 
 class GenericUnsignedImmediate<int width> : Operand<OtherVT> {
   let ParserMatchClass = UImmAsmOperand<width>;
   let DecoderMethod = "decodeUnsignedImmediate<" # width # ">";
+  let EncoderMethod = "getImmOpValue";
 }
 
 class GenericSImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
@@ -114,19 +114,31 @@ def simm9 : GenericSignedImmediate<9>;
 // A 9-bit unsigned immediate.
 def uimm9 : GenericUnsignedImmediate<9>;
 
-// A 16-bit signed immediate for BOL types which has BO variant too
-// to enforce the generation of the BOL type we define this operand
-// before simm10 which used by the BO type
-def off16 : GenericSignedImmediate<16>;
+// A 16-bit signed immediate of BOL format
+// It is defined earlier than simm10 to enfore generating BOL versions
+// of an instruction rather then BO
+def simm16_BOL : Operand<OtherVT>{
+  let ParserMatchClass = GenericImmOperand<"SImm16_BOL">;
+  let DecoderMethod = "decodeSignedImmediate<16>";
+  let EncoderMethod = "getImmOpValue";
+}
 
 // A 10-bit signed immediate.
 def simm10 : GenericSignedImmediate<10>;
 
-// A 16-bit signed immediate.
-def simm16 : GenericSignedImmediate<16>;
+// A 16-bit signed immediate of RLC format
+def simm16_RLC : Operand<OtherVT>{
+  let ParserMatchClass = GenericImmOperand<"SImm16_RLC">;
+  let DecoderMethod = "decodeSignedImmediate<16>";
+  let EncoderMethod = "getImmOpValue";
+}
 
-// A 16-bit unsigned immediate.
-def uimm16 : GenericUnsignedImmediate<16>;
+// A 16-bit unsigned immediate of RLC format
+def uimm16_RLC : Operand<OtherVT>{
+  let ParserMatchClass = GenericImmOperand<"UImm16_RLC">;
+  let DecoderMethod = "decodeUnsignedImmediate<16>";
+  let EncoderMethod = "getImmOpValue";
+}
 
 // A an unsigned 4 bit N value which comply: (N + 16) * 2
 def disp4_16 : Operand<OtherVT> {
@@ -172,7 +184,7 @@ def disp24_abs : Operand<OtherVT> {
 // 2.1.1 Move.
 
 let s1 = 0 in
-class MOVE_RLC<bits<8> opc1, string mnemonic, Operand op_type = uimm16,
+class MOVE_RLC<bits<8> opc1, string mnemonic, Operand op_type = uimm16_RLC,
                RegisterClass RC = DataRegs>
               :  RLC<opc1, (outs RC:$d), (ins op_type:$const16),
                      mnemonic, "\t$d, $const16">;
@@ -519,7 +531,7 @@ let mayLoad = 1, mayStore = 0 in {
 
   class LOAD_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
                   :  BOL<opc1, (outs RC:$s1_d),
-                        (ins AddrRegs:$s2, off16:$off16),
+                        (ins AddrRegs:$s2, simm16_BOL:$off16),
                         mnemonic, "\t$s1_d, [$s2], $off16">;
 
   class LOAD_SLR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
@@ -594,7 +606,7 @@ let mayLoad = 0, mayStore = 1 in {
 
   class STORE_BOL<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
                   :  BOL<opc1, (outs),
-                        (ins AddrRegs:$s2, off16:$off16, RC:$s1_d),
+                        (ins AddrRegs:$s2, simm16_BOL:$off16, RC:$s1_d),
                         mnemonic, "\t[$s2], $off16, $s1_d">;
 
   class STORE_SSR<bits<8> opc1, string mnemonic, RegisterClass RC = DataRegs>
@@ -714,8 +726,8 @@ class FPC_RR <bits<8> opc1, bits<8> opc2, string mnemonic>
 
 // MOV
 let isMoveImm = 1 in {
-  def MOV_dc      : MOVE_RLC<0x3B, "mov", simm16>;
-  def MOV_ec      : MOVE_RLC<0xFB, "mov", simm16, ExtDataRegs>;
+  def MOV_dc      : MOVE_RLC<0x3B, "mov", simm16_RLC>;
+  def MOV_ec      : MOVE_RLC<0xFB, "mov", simm16_RLC, ExtDataRegs>;
 } // isMoveImm = 1
 
 let isMoveReg = 1 in {
@@ -804,12 +816,12 @@ let Defs = [PSW] in {
 
     // ADDI
     def ADDI_ddc       : RLC<0x1B, (outs DataRegs:$d),
-                            (ins DataRegs:$s1, simm16:$const16),
+                            (ins DataRegs:$s1, simm16_RLC:$const16),
                             "addi", "\t$d, $s1, $const16">;
 
     // ADDIH
     def ADDIH_ddc      : RLC<0x9B, (outs DataRegs:$d),
-                            (ins DataRegs:$s1, uimm16:$const16),
+                            (ins DataRegs:$s1, uimm16_RLC:$const16),
                             "addih", "\t$d, $s1, $const16">;
 
     // ADDS
@@ -1639,7 +1651,7 @@ let isReMaterializable = 1 in {
 
     // ADDIH.A
     def ADDIHA_aac      :  RLC<0x11, (outs AddrRegs:$d),
-                              (ins AddrRegs:$s1, uimm16:$const16),
+                              (ins AddrRegs:$s1, uimm16_RLC:$const16),
                               "addih.a", "\t$d, $s1, $const16">;
 
     // ADDSC.A
@@ -1679,7 +1691,7 @@ let isReMaterializable = 1 in {
                               "lea", "\t$s1_d, [$s2], $off10">;
 
   def LEA_aac            : BOL<0xD9, (outs AddrRegs:$s1_d),
-                              (ins AddrRegs:$s2, off16:$off16),
+                              (ins AddrRegs:$s2, simm16_BOL:$off16),
                               "lea", "\t$s1_d, [$s2], $off16">;
 
   // LHA
@@ -2156,8 +2168,9 @@ def MOVD_16_da      : M2ADDR_SRR<0x80,      "mov.d", DataRegs ,AddrRegs>;
 
 // MOVH.A
 let s1 = 0, isMoveImm = 1 in
-def MOVHA_ac        : RLC<0x91, (outs AddrRegs:$d), (ins uimm16:$const16),
-                                            "movh.a", "\t$d, $const16">;
+def MOVHA_ac        : RLC<0x91, (outs AddrRegs:$d), 
+                          (ins uimm16_RLC:$const16),
+                          "movh.a", "\t$d, $const16">;
 //===----------------------------------------------------------------------===//
 //  Check Instructions.
 //
@@ -2386,12 +2399,12 @@ let hasSideEffects = 1 in {
 
   // MFCR
   let s1 = 0, Uses = [PSW] in
-  def MFCR_dc : RLC<0x4D, (outs DataRegs:$d), (ins uimm16:$const16),
+  def MFCR_dc : RLC<0x4D, (outs DataRegs:$d), (ins uimm16_RLC:$const16),
                     "mfcr", "\t$d, $const16">;
 
   // MTCR
   let d = 0, Defs = [PSW] in
-  def MTCR_dc : RLC<0xCD, (outs), (ins uimm16:$const16, DataRegs:$s1),
+  def MTCR_dc : RLC<0xCD, (outs), (ins uimm16_RLC:$const16, DataRegs:$s1),
                     "mtcr", "\t$const16, $s1">;
 } // hasSideEffects = 1
 

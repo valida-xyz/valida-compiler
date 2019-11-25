@@ -10,6 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/TriCoreBaseInfo.h"
+#include "MCTargetDesc/TriCoreFixupKinds.h"
+#include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -28,6 +31,7 @@ using namespace llvm;
 #define DEBUG_TYPE "mccodeemitter"
 
 STATISTIC(MCNumEmitted, "Number of MC instructions emitted");
+STATISTIC(MCNumFixups, "Number of MC fixups created");
 
 namespace {
 class TriCoreMCCodeEmitter : public MCCodeEmitter {
@@ -57,6 +61,14 @@ public:
   unsigned getMachineOpValue(const MCInst &MI, const MCOperand &MO,
                              SmallVectorImpl<MCFixup> &Fixups,
                              const MCSubtargetInfo &STI) const;
+
+  void createFixups(const MCInst &MI, unsigned OpNo,
+                    SmallVectorImpl<MCFixup> &Fixups,
+                    const MCSubtargetInfo &STI) const;
+
+  unsigned getImmOpValue(const MCInst &MI, unsigned OpNo,
+                         SmallVectorImpl<MCFixup> &Fixups,
+                         const MCSubtargetInfo &STI) const;
 
   // Right shift the value by N
   template <int N>
@@ -123,55 +135,197 @@ TriCoreMCCodeEmitter::getMachineOpValue(const MCInst &MI, const MCOperand &MO,
   return 0;
 }
 
+// determine which kind of fixup should be generated for a given operand
+void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
+                                        SmallVectorImpl<MCFixup> &Fixups,
+                                        const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+
+  MCInstrDesc const &Desc = MCII.get(MI.getOpcode());
+  unsigned MIFrm = Desc.TSFlags & TriCoreII::InstrFormatMask;
+  unsigned OpCode = Desc.getOpcode();
+
+  const MCExpr *Expr = MO.getExpr();
+  MCExpr::ExprKind Kind = Expr->getKind();
+  TriCore::Fixups FixupKind = TriCore::fixup_invalid;
+
+  // if it is a target specific type like VK_TRICORE_* ones specified in
+  // TriCoreMCExpr.h. e.g.: sm:foo -> Kind == MCExpr::Target
+  if (Kind == MCExpr::Target) {
+    const TriCoreMCExpr *TCExpr = cast<TriCoreMCExpr>(Expr);
+
+    // depending on the VK_TRICORE_* type, generate the right fixup
+    switch (TCExpr->getKind()) {
+    case TriCoreMCExpr::VK_TRICORE_None:
+    case TriCoreMCExpr::VK_TRICORE_Invalid:
+      llvm_unreachable("Unhandled fixup kind!");
+
+    case TriCoreMCExpr::VK_TRICORE_HI:
+      if (MIFrm == TriCoreII::RLCFrm)
+        FixupKind = TriCore::fixup_hi;
+      break;
+
+    case TriCoreMCExpr::VK_TRICORE_LO:
+      // generating different fixup depending on the instruction format
+      switch (MIFrm) {
+      default:
+        llvm_unreachable("Unhandled format for VK_TRICORE_LO type");
+
+      case TriCoreII::BOLFrm:
+        FixupKind = TriCore::fixup_lo2;
+        break;
+
+      case TriCoreII::RLCFrm:
+        FixupKind = TriCore::fixup_lo;
+        break;
+      }
+      break;
+
+    case TriCoreMCExpr::VK_TRICORE_SM:
+      if (MIFrm == TriCoreII::BOLFrm)
+        FixupKind = TriCore::fixup_16sm;
+      break;
+    }
+  }
+  // If it is a plain symbolref like "foo" OR  if its a binary expression
+  // with LHS is a symbol AND RHS is constant AND the binary op is '+' OR '-'
+  else if ((Kind == MCExpr::SymbolRef &&
+            cast<MCSymbolRefExpr>(Expr)->getKind() ==
+                MCSymbolRefExpr::VK_None) ||
+
+           (Kind == MCExpr::Binary &&
+
+            (cast<MCSymbolRefExpr>(cast<MCBinaryExpr>(Expr)->getLHS())
+                 ->getKind() == MCSymbolRefExpr::VK_None) &&
+
+            (cast<MCConstantExpr>(cast<MCBinaryExpr>(Expr)->getRHS())) &&
+
+            (cast<MCBinaryExpr>(Expr)->getOpcode() == MCBinaryExpr::Add ||
+             cast<MCBinaryExpr>(Expr)->getOpcode() == MCBinaryExpr::Sub))) {
+    // Based on the instruction format the fixup will be set
+    switch (MIFrm) {
+    default:
+      llvm_unreachable("Unhandled format case");
+      break;
+
+    case TriCoreII::ABSFrm:
+      switch (OpCode) {
+      default:
+        FixupKind = TriCore::fixup_18abs;
+        break;
+      case TriCore::LHA_ac:
+        break;
+      }
+      break;
+
+    case TriCoreII::ABSBFrm:
+      if (OpNo == 0)
+        FixupKind = TriCore::fixup_18abs;
+      break;
+
+    case TriCoreII::BFrm:
+      switch (OpCode) {
+      default:
+        FixupKind = TriCore::fixup_24rel;
+        break;
+      case TriCore::CALLA:
+      case TriCore::JA:
+      case TriCore::JLA:
+        FixupKind = TriCore::fixup_24abs;
+        break;
+      }
+      break;
+
+    case TriCoreII::BRCFrm:
+    case TriCoreII::BRNFrm:
+    case TriCoreII::BRRFrm:
+      FixupKind = TriCore::fixup_15rel;
+      break;
+    }
+  }
+  assert(FixupKind != TriCore::fixup_invalid && "Unhandled expression!");
+
+  Fixups.push_back(
+      MCFixup::create(0, Expr, MCFixupKind(FixupKind), MI.getLoc()));
+  ++MCNumFixups;
+}
+
+unsigned TriCoreMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
+                                             SmallVectorImpl<MCFixup> &Fixups,
+                                             const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (MO.isImm()) {
+    unsigned Value = MO.getImm();
+    return Value;
+  }
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
+}
+
 template <int N>
 unsigned
 TriCoreMCCodeEmitter::getScaledSImmOpValue(const MCInst &MI, unsigned OpNo,
                                            SmallVectorImpl<MCFixup> &Fixups,
                                            const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
-  assert(MO.isImm() && "Operand must be an immediate.");
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
     return (Value >> N);
   }
-  return 0; // to silence warnigns, later relocation will be generated here
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
 }
 
 unsigned TriCoreMCCodeEmitter::getOff18Abs(const MCInst &MI, unsigned OpNo,
                                            SmallVectorImpl<MCFixup> &Fixups,
                                            const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
-  assert(MO.isImm() && "Operand must be an immediate.");
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
     return ((Value & 0xf0000000) >> 14) | ((Value & 0x3fff));
   }
-  return 0; // to silence warnigns, later relocation will be generated here
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
 }
 
 unsigned TriCoreMCCodeEmitter::getDisp4_16(const MCInst &MI, unsigned OpNo,
                                            SmallVectorImpl<MCFixup> &Fixups,
                                            const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
-  assert(MO.isImm() && "Operand must be an immediate.");
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
 
     return (Value / 2) - 16;
   }
-  return 0; // to silence warnigns, later relocation will be generated here
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
 }
 
 unsigned TriCoreMCCodeEmitter::getDisp24Abs(const MCInst &MI, unsigned OpNo,
                                             SmallVectorImpl<MCFixup> &Fixups,
                                             const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
-  assert(MO.isImm() && "Operand must be an immediate.");
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
     return ((Value & 0xf0000000) >> 8) | ((Value & 0x1fffff) >> 1);
   }
-  return 0; // to silence warnigns, later relocation will be generated here
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
 }
 
 #include "TriCoreGenMCCodeEmitter.inc"

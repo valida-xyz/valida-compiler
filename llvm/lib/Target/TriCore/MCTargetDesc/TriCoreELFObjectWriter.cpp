@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/TriCoreFixupKinds.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCFixup.h"
@@ -37,7 +38,30 @@ unsigned TriCoreELFObjectWriter::getRelocType(MCContext &Ctx,
                                               const MCValue &Target,
                                               const MCFixup &Fixup,
                                               bool IsPCRel) const {
-  report_fatal_error("invalid fixup kind!");
+  // Determine the type of the relocation
+  unsigned Kind = Fixup.getTargetKind();
+  switch (Kind) {
+  default:
+    llvm_unreachable("invalid fixup kind!");
+  case FK_Data_4:
+    return ELF::R_TRICORE_32ABS;
+  case TriCore::fixup_24rel:
+    return ELF::R_TRICORE_24REL;
+  case TriCore::fixup_24abs:
+    return ELF::R_TRICORE_24ABS;
+  case TriCore::fixup_16sm:
+    return ELF::R_TRICORE_16SM;
+  case TriCore::fixup_hi:
+    return ELF::R_TRICORE_HI;
+  case TriCore::fixup_lo:
+    return ELF::R_TRICORE_LO;
+  case TriCore::fixup_lo2:
+    return ELF::R_TRICORE_LO2;
+  case TriCore::fixup_18abs:
+    return ELF::R_TRICORE_18ABS;
+  case TriCore::fixup_15rel:
+    return ELF::R_TRICORE_15REL;
+  }
 }
 
 std::unique_ptr<MCObjectTargetWriter>

@@ -33,10 +33,65 @@ def Is32BitAllowed : Predicate<"Subtarget->isAllow32BitInst()">,
                      AssemblerPredicate<"Allow32BitInstructions", "32bit">;
 
 //===----------------------------------------------------------------------===//
+// Describe TriCore instructions formats
+//===----------------------------------------------------------------------===//
+
+// Format specifies the encoding format used by the instruction. These
+// definitions must be kept in-sync with TriCoreBaseInfo.h.
+class Format<bits<6> val> {
+  bits<6> Value = val;
+}
+
+def Pseudo         : Format<0>;
+
+// 16 bit formats
+def SBFrm          : Format<1>;
+def SBCFrm         : Format<2>;
+def SBRFrm         : Format<3>;
+def SBRNFrm        : Format<4>;
+def SCFrm          : Format<5>;
+def SLRFrm         : Format<6>;
+def SLROFrm        : Format<7>;
+def SRFrm          : Format<8>;
+def SRCFrm         : Format<9>;
+def SROFrm         : Format<10>;
+def SRRFrm         : Format<11>;
+def SRRSFrm        : Format<12>;
+def SSRFrm         : Format<13>;
+def SSROFrm        : Format<14>;
+
+// 32 bit formats
+def ABSFrm         : Format<15>;
+def ABSBFrm        : Format<16>;
+def BFrm           : Format<17>;
+def BITFrm         : Format<18>;
+def BOFrm          : Format<19>;
+def BOLFrm         : Format<20>;
+def BRCFrm         : Format<21>;
+def BRNFrm         : Format<22>;
+def BRRFrm         : Format<23>;
+def RCFrm          : Format<24>;
+def RCPWFrm        : Format<25>;
+def RCRFrm         : Format<26>;
+def RCRRFrm        : Format<27>;
+def RCRWFrm        : Format<28>;
+def RLCFrm         : Format<29>;
+def RRFrm          : Format<30>;
+def RR1Frm         : Format<31>;
+def RR2Frm         : Format<32>;
+def RRPWFrm        : Format<33>;
+def RRRFrm         : Format<34>;
+def RRR1Frm        : Format<35>;
+def RRR2Frm        : Format<36>;
+def RRRRFrm        : Format<37>;
+def RRRWFrm        : Format<38>;
+def SYSFrm         : Format<39>;
+
+//===----------------------------------------------------------------------===//
 // Generic Instruction Formats
 //===----------------------------------------------------------------------===//
-class InstTriCore<dag outs, dag ins, string mnemonic, string operands,
-                  list<dag> pattern>
+class InstTriCore<Format fmt, dag outs, dag ins, string mnemonic,
+                  string operands, list<dag> pattern>
     : Instruction
 {
     let Namespace = "TriCore";
@@ -45,19 +100,23 @@ class InstTriCore<dag outs, dag ins, string mnemonic, string operands,
     let AsmString = mnemonic # operands;
     let Pattern   = pattern;
     field bits<32> SoftFail = 0;
+
+    // The layout of TSFlags should be kept in sync with TriCoreBaseInfo.h.
+    // Used to determine the instruction format.
+    let TSFlags{5-0} = fmt.Value;
 }
 
 class PseudoInst<dag outs, dag ins, list<dag> pattern = []>
-    : InstTriCore<outs, ins, "", "", pattern > {
+    : InstTriCore<Pseudo, outs, ins, "", "", pattern > {
     let isPseudo = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // Generic 16-bit Instruction Format
 //===----------------------------------------------------------------------===//
-class T16<dag outs, dag ins, string mnemonic, string operands,
+class T16<Format fmt, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern>
-    : InstTriCore<outs, ins, mnemonic, operands, pattern>
+    : InstTriCore<fmt, outs, ins, mnemonic, operands, pattern>
 {
     field bits<16> Inst;
     let Size = 2;
@@ -68,9 +127,9 @@ class T16<dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 // Generic 32-bit Instruction Format
 //===----------------------------------------------------------------------===//
-class T32<dag outs, dag ins, string mnemonic, string operands,
+class T32<Format fmt, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern>
-    : InstTriCore<outs, ins, mnemonic, operands, pattern>
+    : InstTriCore<fmt, outs, ins, mnemonic, operands, pattern>
 {
     field bits<32> Inst;
     let Size = 4;
@@ -83,7 +142,7 @@ class T32<dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SB<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SBFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<8> disp8;
 
@@ -97,7 +156,7 @@ class SB<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SBC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SBCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> disp4;
     bits<4> const4;
@@ -113,7 +172,7 @@ class SBC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SBR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SBRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> disp4;
     bits<4> s2;
@@ -129,7 +188,7 @@ class SBR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SBRN<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SBRNFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> disp4;
     bits<4> n;
@@ -145,7 +204,7 @@ class SBRN<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<8> const8;
 
@@ -159,7 +218,7 @@ class SC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SLR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SLRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> d;
     bits<4> s2;
@@ -175,7 +234,7 @@ class SLR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SLRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SLROFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> d;
     bits<4> off4;
@@ -190,9 +249,8 @@ class SLRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 // 16-bit SR Instruction Format: <opc2|s1_d|opc1>
 //===----------------------------------------------------------------------===//
 class SR<bits<8> opc1, bits<4> opc2, dag outs, dag ins, string mnemonic,
-         string operands,
-          list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+         string operands,list<dag> pattern = []>
+    : T16<SRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1_d;
 
@@ -207,7 +265,7 @@ class SR<bits<8> opc1, bits<4> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class SRC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SRCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1_d;
     bits<4> const4;
@@ -223,7 +281,7 @@ class SRC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SROFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> off4;
     bits<4> s2;
@@ -239,7 +297,7 @@ class SRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SRR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SRRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1_d;
     bits<4> s2;
@@ -255,7 +313,7 @@ class SRR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SRRS<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SRRSFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<2> n;
     bits<4> s1_d;
@@ -273,7 +331,7 @@ class SRRS<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SSR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SSRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -289,7 +347,7 @@ class SSR<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class SSRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T16<outs, ins, mnemonic, operands, pattern>
+    : T16<SSROFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> off4;
@@ -306,7 +364,7 @@ class SSRO<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class ABS<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<ABSFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1_d;
     bits<18> off18;
@@ -327,7 +385,7 @@ class ABS<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class ABSB<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<ABSBFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<3>  bpos3;
     bit      b;
@@ -349,7 +407,7 @@ class ABSB<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class B<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<24> disp24;
 
@@ -364,7 +422,7 @@ class B<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class BIT<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BITFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -387,7 +445,7 @@ class BIT<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class BO<bits<8> opc1, bits<6> opc2, dag outs, dag ins, string mnemonic,
         string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BOFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1_d;
     bits<4>  s2;
@@ -408,7 +466,7 @@ class BO<bits<8> opc1, bits<6> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class BOL<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BOLFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1_d;
     bits<4>  s2;
@@ -428,7 +486,7 @@ class BOL<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class BRC<bits<8> opc1, bit opc2, dag outs, dag ins, string mnemonic,
         string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BRCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1;
     bits<4>  const4;
@@ -447,7 +505,7 @@ class BRC<bits<8> opc1, bit opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class BRN<bits<7> opc1, bit opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BRNFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<5>  n;
     bits<4>  s1;
@@ -467,7 +525,7 @@ class BRN<bits<7> opc1, bit opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class BRR<bits<8> opc1, bit opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<BRRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1;
     bits<4>  s2;
@@ -486,7 +544,7 @@ class BRR<bits<8> opc1, bit opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RC<bits<8> opc1, bits<7> opc2, dag outs, dag ins, string mnemonic,
         string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<9> const9;
@@ -505,7 +563,7 @@ class RC<bits<8> opc1, bits<7> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RCPW<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RCPWFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
 	bits<4> const4;
@@ -528,7 +586,7 @@ class RCPW<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RCR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RCRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<9> const9;
@@ -549,7 +607,7 @@ class RCR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RCRR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RCRRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> const4;
@@ -571,7 +629,7 @@ class RCRR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RCRW<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RCRWFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> const4;
@@ -594,7 +652,7 @@ class RCRW<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RLC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
           list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RLCFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4>  s1;
     bits<16> const16;
@@ -612,7 +670,7 @@ class RLC<bits<8> opc1, dag outs, dag ins, string mnemonic, string operands,
 //===----------------------------------------------------------------------===//
 class RR<bits<8> opc1, bits<8> opc2, dag outs, dag ins, string mnemonic,
         string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -634,7 +692,7 @@ class RR<bits<8> opc1, bits<8> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RR1<bits<8> opc1, bits<10> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RR1Frm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -655,7 +713,7 @@ class RR1<bits<8> opc1, bits<10> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RR2<bits<8> opc1, bits<12> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RR2Frm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -674,7 +732,7 @@ class RR2<bits<8> opc1, bits<12> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRPW<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRPWFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
 	bits<4> s2;
@@ -697,7 +755,7 @@ class RRPW<bits<8> opc1, bits<2> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRR<bits<8> opc1, bits<4> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -721,7 +779,7 @@ class RRR<bits<8> opc1, bits<4> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRR1<bits<8> opc1, bits<6> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRR1Frm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -744,7 +802,7 @@ class RRR1<bits<8> opc1, bits<6> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRR2<bits<8> opc1, bits<8> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRR2Frm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -765,7 +823,7 @@ class RRR2<bits<8> opc1, bits<8> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRRR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRRRFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -787,7 +845,7 @@ class RRRR<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class RRRW<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
           string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<RRRWFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1;
     bits<4> s2;
@@ -810,7 +868,7 @@ class RRRW<bits<8> opc1, bits<3> opc2, dag outs, dag ins, string mnemonic,
 //===----------------------------------------------------------------------===//
 class SYS<bits<8> opc1, bits<6> opc2, dag outs, dag ins, string mnemonic,
          string operands, list<dag> pattern = []>
-    : T32<outs, ins, mnemonic, operands, pattern>
+    : T32<SYSFrm, outs, ins, mnemonic, operands, pattern>
 {
     bits<4> s1_d;
 
