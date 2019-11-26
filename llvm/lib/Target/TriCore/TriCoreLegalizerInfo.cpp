@@ -63,6 +63,16 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
 
+  // Shifts
+
+  // G_SHL, G_LSHR and G_ASHR always produce the same type as their src type
+  // (type idx 0, 32-bit). Additionally, only 32-bit shift amounts (type idx 1)
+  // are allowed.
+  getActionDefinitionsBuilder({G_SHL, G_LSHR, G_ASHR})
+      .legalFor({{s32, s32}})
+      .clampScalar(1, s32, s32)
+      .clampScalar(0, s32, s32);
+
   // Comparisons & Select
 
   // G_ICMP is only legal for scalar 32-bit and pointer types. Result is s32.
