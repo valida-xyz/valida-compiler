@@ -262,6 +262,10 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   case TargetOpcode::G_AND:
   case TargetOpcode::G_OR:
   case TargetOpcode::G_XOR:
+  // Shifts.
+  case TargetOpcode::G_SHL:
+  case TargetOpcode::G_LSHR:
+  case TargetOpcode::G_ASHR:
     return getSameKindOfOperandsMapping(MI);
   default:
     break;

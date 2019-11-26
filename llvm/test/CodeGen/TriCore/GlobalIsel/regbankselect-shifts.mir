@@ -1,0 +1,53 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=regbankselect -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            test_shl
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_shl
+    ; CHECK: [[D4:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[D5:%[0-9]+]]:dataregbank(s32) = COPY $d5
+    ; CHECK: [[SHL:%[0-9]+]]:dataregbank(s32) = G_SHL [[D4]], [[D5]]
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_SHL %0, %1
+    $d2 = COPY %2(s32)
+...
+---
+name:            test_lshr
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_lshr
+    ; CHECK: [[D4:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[D5:%[0-9]+]]:dataregbank(s32) = COPY $d5
+    ; CHECK: [[SHL:%[0-9]+]]:dataregbank(s32) = G_LSHR [[D4]], [[D5]]
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_LSHR %0, %1
+    $d2 = COPY %2(s32)
+...
+---
+name:            test_ashr
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_ashr
+    ; CHECK: [[D4:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[D5:%[0-9]+]]:dataregbank(s32) = COPY $d5
+    ; CHECK: [[SHL:%[0-9]+]]:dataregbank(s32) = G_ASHR [[D4]], [[D5]]
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_ASHR %0, %1
+    $d2 = COPY %2(s32)
+...
