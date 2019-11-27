@@ -218,7 +218,7 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   unsigned OpCode = MI.getOpcode();
 
   // try the default logic. if this fails, map manually
-  if (!isPreISelGenericOpcode(OpCode)) {
+  if (!isPreISelGenericOpcode(OpCode) || OpCode == TargetOpcode::G_PHI) {
     const RegisterBankInfo::InstructionMapping &Mapping =
         getInstrMappingImpl(MI);
     if (Mapping.isValid())
