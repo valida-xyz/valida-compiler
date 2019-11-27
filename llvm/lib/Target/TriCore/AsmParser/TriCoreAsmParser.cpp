@@ -239,6 +239,25 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
+  // checking against "PC + {27b’111111111111111111111111111, disp4, 0}"
+  bool isSImm4_1() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = Imm >= -32 && Imm <= -2 && (Imm % 2 == 0);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
+  }
+
   // checking against {off18[17:14], 14'b0, off18[13:0]} form
   bool isOff18Abs() const {
     int64_t Imm;
@@ -504,6 +523,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         Operands, ErrorInfo, -(1 << 3), (1 << 3) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
+  case Match_InvalidSImm4_1:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, -32, -2,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be even number in the integer range");
   case Match_InvalidUImm4:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 4) - 1,

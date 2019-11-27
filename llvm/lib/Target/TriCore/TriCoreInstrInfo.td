@@ -83,6 +83,13 @@ def uimm2 : GenericUnsignedImmediate<2, i32>,
 def simm4 : GenericSignedImmediate<4, i32>,
             ImmLeaf<i32, [{ return Imm >= -8 && Imm < 8; }]>;
 
+// A 4 bit value which comply: {27b’111111111111111111111111111, disp4, 0}.
+def simm4_1 : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"SImm4_1">;
+  let EncoderMethod = "getSImm4_1";
+  let DecoderMethod = "decodeSImm4_1";
+}
+
 // A 4-bit unsigned immediate.
 def uimm4 : GenericUnsignedImmediate<4, i32>,
             ImmLeaf<i32, [{ return Imm >= 0 && Imm < 16; }]>;
@@ -2053,6 +2060,52 @@ let isBranch = 1, isTerminator = 1 in {
   def JZT_16_d15cc : SBRN<0x2E, (outs),
                           (ins ImplDataReg:$d15, uimm4:$n, uimm4_lsb0:$disp4),
                           "jz.t", "\t$d15, $n, $disp4">;
+} // isBranch = 1, isTerminator = 1
+
+// 2.9.3 Loop Instructions
+
+let isBranch = 1, isTerminator = 1 in {
+  let Constraints = "$s2 = $src" in {
+    // LOOP
+    let s1 = 0 in
+    def LOOP_ac      : BRR<0xFD, 0x00, (outs AddrRegs:$s2),
+                           (ins AddrRegs:$src, simm15_lsb0:$disp15),
+                           "loop" , "\t$s2, $disp15">;
+
+    def LOOP_16_ac  : SBR<0xFC, (outs AddrRegs:$s2),
+                          (ins AddrRegs:$src, simm4_1:$disp4),
+                          "loop" , "\t$s2, $disp4">;
+  } // Constraints = "$s2 = $src"
+
+  // LOOPU
+  let s1 = 0, s2 = 0 in
+  def LOOPU_c      : BRR<0xFD, 0x01, (outs),
+                         (ins simm15_lsb0:$disp15),
+                         "loopu" , "\t$disp15">;
+
+  let Constraints = "$s1 = $src" in {
+    // JNED
+    def JNED_dcc     : BRC<0x9F, 0x01, (outs DataRegs:$s1),
+                           (ins DataRegs:$src, simm4:$const4,
+                                simm15_lsb0:$disp15),
+                           "jned" , "\t$s1, $const4, $disp15">;
+
+    def JNED_ddc     : BRR<0x1F, 0x01, (outs DataRegs:$s1),
+                           (ins DataRegs:$src, DataRegs:$s2,
+                                simm15_lsb0:$disp15),
+                           "jned" , "\t$s1, $s2, $disp15">;
+
+    // JNEI
+    def JNEI_dcc     : BRC<0x9F, 0x00, (outs DataRegs:$s1),
+                           (ins DataRegs:$src, simm4:$const4,
+                                simm15_lsb0:$disp15),
+                           "jnei" , "\t$s1, $const4, $disp15">;
+
+    def JNEI_ddc     : BRR<0x1F, 0x00, (outs DataRegs:$s1),
+                           (ins DataRegs:$src, DataRegs:$s2,
+                                simm15_lsb0:$disp15),
+                           "jnei" , "\t$s1, $s2, $disp15">;
+  } // Constraints = "$s1 = $src"
 } // isBranch = 1, isTerminator = 1
 
 //===----------------------------------------------------------------------===//

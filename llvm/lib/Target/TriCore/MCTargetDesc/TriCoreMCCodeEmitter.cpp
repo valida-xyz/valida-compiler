@@ -76,6 +76,10 @@ public:
                                 SmallVectorImpl<MCFixup> &Fixups,
                                 const MCSubtargetInfo &STI) const;
 
+  unsigned getSImm4_1(const MCInst &MI, unsigned OpNo,
+                      SmallVectorImpl<MCFixup> &Fixups,
+                      const MCSubtargetInfo &STI) const;
+
   unsigned getOff18Abs(const MCInst &MI, unsigned OpNo,
                        SmallVectorImpl<MCFixup> &Fixups,
                        const MCSubtargetInfo &STI) const;
@@ -274,6 +278,21 @@ TriCoreMCCodeEmitter::getScaledSImmOpValue(const MCInst &MI, unsigned OpNo,
   if (MO.isImm()) {
     unsigned Value = MO.getImm();
     return (Value >> N);
+  }
+  assert(MO.isExpr() && "Operand must be an expression.");
+
+  createFixups(MI, OpNo, Fixups, STI);
+
+  return 0;
+}
+
+unsigned TriCoreMCCodeEmitter::getSImm4_1(const MCInst &MI, unsigned OpNo,
+                                          SmallVectorImpl<MCFixup> &Fixups,
+                                          const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (MO.isImm()) {
+    unsigned Value = MO.getImm();
+    return (Value >> 1) & 0xf;
   }
   assert(MO.isExpr() && "Operand must be an expression.");
 
