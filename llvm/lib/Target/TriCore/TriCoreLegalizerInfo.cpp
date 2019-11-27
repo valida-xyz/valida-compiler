@@ -32,6 +32,13 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s1, s64)
       .widenScalarToNextPow2(0, 32);
 
+  // G_PHI should be legal for all consumed types to avoid unnecessary
+  // truncations and extensions
+  getActionDefinitionsBuilder(G_PHI)
+      .legalFor({p0, s8, s16, s32, s64})
+      .clampScalar(0, s8, s64)
+      .widenScalarToNextPow2(0);
+
   // Pointers
 
   // G_GLOBAL_VALUE is only valid for pointers
