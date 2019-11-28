@@ -60,7 +60,7 @@ private:
                           const Register &DestReg,
                           MachineRegisterInfo &MRI) const;
 
-  bool constrainCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool constrainDstRegister(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectBrIndirect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
@@ -298,7 +298,9 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   MachineFunction &MF = *MBB.getParent();
   MachineRegisterInfo &MRI = MF.getRegInfo();
 
-  if (!isPreISelGenericOpcode(I.getOpcode())) {
+  const unsigned OpCode = I.getOpcode();
+
+  if (!isPreISelGenericOpcode(OpCode) || I.isPHI()) {
     // We can run into the following problem with COPYs:
     //
     // %0 = G_FOO ...
@@ -311,8 +313,10 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     // not being restrained anywhere.
     // Therefore we need to handle COPYs here and constrain the destination
     // register by explicitly.
-    if (I.isCopy())
-      return constrainCopy(I, MRI);
+
+    // Constrain destination register for COPYs and PHIs
+    if (I.isCopy() || I.isPHI())
+      return constrainDstRegister(I, MRI);
 
     return true;
   }
@@ -327,8 +331,6 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   // Try the TableGen'ed implementation first
   if (selectImpl(I, *CoverageInfo))
     return true;
-
-  const unsigned OpCode = I.getOpcode();
 
   switch (OpCode) {
   case TargetOpcode::G_BRCOND:
@@ -403,8 +405,10 @@ void TriCoreInstructionSelector::materializePointer(
   constrainSelectedInstRegOperands(*LeaMI, TII, TRI, RBI);
 }
 
-bool TriCoreInstructionSelector::constrainCopy(MachineInstr &I,
-                                               MachineRegisterInfo &MRI) const {
+bool TriCoreInstructionSelector::constrainDstRegister(
+    MachineInstr &I, MachineRegisterInfo &MRI) const {
+  // Constrain the destination register for COPY, G_PHI and PHI
+
   // COPY requires SrcReg and DstReg to have matching types:
   //    if the type is still available:
   //      types must match
@@ -431,6 +435,8 @@ bool TriCoreInstructionSelector::constrainCopy(MachineInstr &I,
   // Because we are the only one who can emit a subregister copy and in that
   // case we make sure that the register banks are the same
   //
+  // The same holds true for G_PHI/PHI
+  //
   // Therefore we can be sure that SrcSize and DstSize are the same
 
   const Register DstReg = I.getOperand(0).getReg();
@@ -449,6 +455,10 @@ bool TriCoreInstructionSelector::constrainCopy(MachineInstr &I,
     return false;
   }
 
+  // In case of G_PHI, we need to set the OpCode to PHI
+  if (I.isPHI())
+    I.setDesc(TII.get(TargetOpcode::PHI));
+
   // Nothing to do if DstReg is a physical register
   if (Register::isPhysicalRegister(DstReg))
     return true;
@@ -456,7 +466,8 @@ bool TriCoreInstructionSelector::constrainCopy(MachineInstr &I,
   // And constrain the destination. No need to constrain the source register
   // as it will be constrained once we reach another of its uses or defs.
   if (!TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, *DstRC, MRI)) {
-    LLVM_DEBUG(dbgs() << "Failed to constrain COPY destination operand\n");
+    LLVM_DEBUG(
+        dbgs() << "Failed to constrain COPY/G_PHI/PHI destination operand\n");
     return false;
   }
 
