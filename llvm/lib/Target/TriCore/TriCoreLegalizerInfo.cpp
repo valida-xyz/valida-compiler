@@ -44,6 +44,16 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_GLOBAL_VALUE is only valid for pointers
   getActionDefinitionsBuilder(G_GLOBAL_VALUE).legalFor({p0});
 
+  // G_INTTOPTR requires the scalar to have the same number of bits as the
+  // pointer. It is not legal to narrow/widen the scalar as the extended/lost
+  // bits change the address.
+  getActionDefinitionsBuilder(G_INTTOPTR).legalFor({{p0, s32}});
+
+  // G_PTRTOINT goes from a 32-bit pointer to a 32-bit scalar.
+  getActionDefinitionsBuilder(G_PTRTOINT)
+      .legalFor({{s32, p0}})
+      .clampScalar(0, s32, s32);
+
   // Constants
 
   // G_CONSTANT is only legal for types that match our register size

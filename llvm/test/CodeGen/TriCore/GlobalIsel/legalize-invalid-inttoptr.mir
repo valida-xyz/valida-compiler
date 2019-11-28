@@ -1,0 +1,11 @@
+# RUN: not llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+
+---
+name:            test_invalid
+body:             |
+  bb.0.entry:
+    ; ERROR: LLVM ERROR: unable to legalize instruction: %1:_(p0) = G_INTTOPTR %0:_(s64) (in function: test_invalid)
+    %0:_(s64) = COPY $e4
+    %1:_(p0) = G_INTTOPTR %0(s64)
+    $a2 = COPY %1(p0)
+...
