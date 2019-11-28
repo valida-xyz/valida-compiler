@@ -81,6 +81,14 @@ def : SimpleBinOpPat<and, AND_ddd>;
 def : SimpleBinOpPat<or,  OR_ddd>;
 def : SimpleBinOpPat<xor, XOR_ddd>;
 
+// 2.1.10 Shift.
+
+def : SimpleBinOpPat<shl, SH_ddd>;
+def : Pat<(srl DataRegs:$src, DataRegs:$amt), (SH_ddd DataRegs:$src, 
+    (RSUB_ddc DataRegs:$amt, (i32 0)))>;
+def : Pat<(sra DataRegs:$src, DataRegs:$amt), (SHAS_ddd DataRegs:$src, 
+    (RSUB_ddc DataRegs:$amt, (i32 0)))>;
+
 //===----------------------------------------------------------------------===//
 // 2.9 Branch Instructions
 //===----------------------------------------------------------------------===//

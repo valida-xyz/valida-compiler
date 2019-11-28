@@ -1,0 +1,76 @@
+# RUN: llc -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - | FileCheck %s
+
+---
+name:            shl_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: shl_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[SHL:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d4 = COPY [[SHL]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_SHL %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            lshr_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: lshr_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[RSUB:%[0-9]+]]:dataregs = RSUB_ddc [[COPY1]], 0, implicit-def $psw
+    ; CHECK: [[LSHR:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[RSUB]]
+    ; CHECK: $d4 = COPY [[LSHR]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_LSHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            ashr_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: ashr_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[RSUB:%[0-9]+]]:dataregs = RSUB_ddc [[COPY1]], 0, implicit-def $psw
+    ; CHECK: [[ASHR:%[0-9]+]]:dataregs = SHAS_ddd [[COPY]], [[RSUB]]
+    ; CHECK: $d4 = COPY [[ASHR]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_ASHR %0, %1
+    $d4 = COPY %2(s32)
+...
