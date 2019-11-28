@@ -297,11 +297,26 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
 
   // Some instructions have mixed types but require the same bank. Fine-tune the
   // computed mapping.
-  // TODO: change to switch-case once this becomes more than one instruction
-  if (OpCode == TargetOpcode::G_PTR_ADD) {
+  switch (OpCode) {
+  case TargetOpcode::G_INTTOPTR:
+  case TargetOpcode::G_PTRTOINT: {
+    // G_INTTOPTR as well as G_PTRTOINT are allowed to be same-bank or
+    // cross-bank. As a default we use the less costly same-bank variant.
+    // The RegBank of the src register is preferred to try to avoid a redundant
+    // cross-bank copy
+    assert(NumOperands == 2 &&
+           "Expected G_INTTOPTR/G_PTRTOINT to have 2 operands");
+    OpRegBankIdx[0] = OpRegBankIdx[1];
+    break;
+  }
+  case TargetOpcode::G_PTR_ADD: {
     // G_PTR_ADD operands must all be one the same regbank
     assert(NumOperands == 3 && "Expected G_PTR_ADD to have 3 operands.");
     OpRegBankIdx = {PMI_FirstAddrReg, PMI_FirstAddrReg, PMI_FirstAddrReg};
+    break;
+  }
+  default:
+    break;
   }
 
   // Construct the computed mapping
