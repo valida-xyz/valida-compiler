@@ -22,6 +22,8 @@
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#define DEBUG_TYPE "tricore-reg-info"
+
 #define GET_REGINFO_TARGET_DESC
 #include "TriCoreGenRegisterInfo.inc"
 
@@ -59,10 +61,88 @@ TriCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   return Reserved;
 }
 
+bool TriCoreRegisterInfo::requiresRegisterScavenging(
+    const MachineFunction &MF) const {
+  // We might introduce virtual registers and therefore require scavenging
+  return true;
+}
+
+bool TriCoreRegisterInfo::requiresFrameIndexScavenging(
+    const MachineFunction &MF) const {
+  // We might introduce virtual registers and therefore require scavenging
+  return true;
+}
+
 void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                                               int SPAdj, unsigned FIOperandNum,
                                               RegScavenger *RS) const {
-  report_fatal_error("Subroutines not supported yet");
+  assert(SPAdj == 0 && "Unexpected SPAdj");
+
+  // Common helpers
+  MachineInstr &MI = *II;
+  MachineFunction &MF = *MI.getParent()->getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  const TriCoreInstrInfo *TII =
+      MF.getSubtarget<TriCoreSubtarget>().getInstrInfo();
+
+  // Calculate the offset of the frame index and the frame register
+  const int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
+  unsigned FrameReg;
+
+  assert(MI.getOperand(FIOperandNum + 1).getImm() == 0 &&
+         "Unexpected offset operand");
+
+  int Offset =
+      getFrameLowering(MF)->getFrameIndexReference(MF, FrameIndex, FrameReg);
+
+  // Make sure that the Offset is within supported bounds
+  if (!isInt<32>(Offset)) {
+    LLVM_DEBUG(dbgs() << "Offset not within 32-bits: " << Offset << '\n');
+    report_fatal_error(
+        "Frame offsets outside of the signed 32-bit range not supported.");
+  }
+
+  MachineBasicBlock &MBB = *MI.getParent();
+  bool FrameRegIsKill = false;
+
+  // Check if the offset can fit into an 16-bit immediate
+  if (!isInt<16>(Offset)) {
+    // Materialize the offset in a register, then use ADD.A with frame register
+    // Calculation taken from chapter 2.7 Address Arithmetic
+    const uint64_t OffsetUnsigned = (static_cast<uint64_t>(Offset));
+    uint64_t Low16 = OffsetUnsigned & 0xFFFFu;
+    uint64_t High16 = ((OffsetUnsigned + 0x8000u) >> 16u) & 0xFFFFu;
+
+    const Register ScratchReg =
+        MRI.createVirtualRegister(&TriCore::AddrRegsRegClass);
+
+    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::MOVHA_ac), ScratchReg)
+        .addImm(High16);
+
+    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::LEA_aac), ScratchReg)
+        .addUse(ScratchReg)
+        .addImm(Low16);
+
+    // Build an explicit ADD.A instruction. This might create a situation like
+    // this:
+    // %frame_addr = ADD.A %frame_reg, %offset
+    // %foo = LEA %frame_addr, 0
+    //
+    // TODO: delete possibly redundant LEA instruction
+    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::ADDA_aaa), ScratchReg)
+        .addUse(FrameReg)
+        .addUse(ScratchReg);
+
+    // Update FrameReg, Offset and kill status
+    FrameReg = ScratchReg;
+    Offset = 0;
+    FrameRegIsKill = true;
+  }
+
+  // We can use the instruction directly
+  MI.getOperand(FIOperandNum)
+      .ChangeToRegister(FrameReg, false, false, FrameRegIsKill);
+  MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
 }
 
 Register

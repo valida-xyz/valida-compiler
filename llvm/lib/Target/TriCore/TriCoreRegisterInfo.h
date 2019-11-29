@@ -32,6 +32,9 @@ struct TriCoreRegisterInfo : public TriCoreGenRegisterInfo {
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
 
+  bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
+  bool requiresRegisterScavenging(const MachineFunction &MF) const override;
+
   void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
                            unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
