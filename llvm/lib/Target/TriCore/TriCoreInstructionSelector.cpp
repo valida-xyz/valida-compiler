@@ -66,6 +66,7 @@ private:
   bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
                         MachineIRBuilder &MIRBuilder) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -339,6 +340,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectBrIndirect(I, MRI);
   case TargetOpcode::G_CONSTANT:
     return selectConstant(I, MRI);
+  case TargetOpcode::G_FRAME_INDEX:
+    return selectFrameIndex(I, MRI);
   case TargetOpcode::G_GLOBAL_VALUE:
     return selectGlobalValue(I, MRI);
   case TargetOpcode::G_ICMP:
@@ -649,6 +652,28 @@ bool TriCoreInstructionSelector::selectCopy(MachineInstr &I,
     return false;
   }
 
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectFrameIndex(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  // G_FRAME_INDEX is only valid for p0 types and on address regbank
+  const Register &DstReg = I.getOperand(0).getReg();
+  const LLT Ty = MRI.getType(DstReg);
+
+  if (!checkType(LLT::pointer(0, 32), Ty, "G_FRAME_INDEX"))
+    return false;
+
+  const RegisterBank *RB = RBI.getRegBank(DstReg, MRI, TRI);
+  assert(RB && RB->getID() == TriCore::AddrRegBankID &&
+         "Expected G_FRAME_INDEX to be on the address regbank");
+  (void)RB; // silence unused variable warning in non-assert builds
+
+  // Lower to LEA_aac 0. This will later be lowered again to the actual
+  // stack-pointer computation.
+  I.setDesc(TII.get(TriCore::LEA_aac));
+  I.addOperand(MachineOperand::CreateImm(0));
+  constrainSelectedInstRegOperands(I, TII, TRI, RBI);
   return true;
 }
 
