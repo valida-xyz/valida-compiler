@@ -41,8 +41,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Pointers
 
-  // G_GLOBAL_VALUE is only valid for pointers
-  getActionDefinitionsBuilder(G_GLOBAL_VALUE).legalFor({p0});
+  // G_GLOBAL_VALUE and G_FRAME_INDEX are only valid for pointers
+  getActionDefinitionsBuilder({G_FRAME_INDEX, G_GLOBAL_VALUE}).legalFor({p0});
 
   // G_INTTOPTR requires the scalar to have the same number of bits as the
   // pointer. It is not legal to narrow/widen the scalar as the extended/lost
