@@ -12,6 +12,18 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// TriCore special operands.
+//
+// NOTE: Immediate operands should be defined in ascending bit width. This
+//       ensures that the shorter encodings will be preferred by TableGen
+
+// A 16 bit unsigned immediate left-shifted by 3
+def uimm16_shift3 : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"UImm16Shift3">;
+  let DecoderMethod = "decodeUImm16Shift3";
+}
+
+//===----------------------------------------------------------------------===//
 // Instruction Class Templates
 //===----------------------------------------------------------------------===//
 
@@ -266,3 +278,40 @@ def FTOIN_dd : RR<0x4B, 0x37, (outs DataRegs:$d), (ins DataRegs:$s1),
 
 // DFTOIN
 def DFTOIN_de : FPU_CONVERSION_RR<0x37, "dftoin", DataRegs, ExtDataRegs>;
+//  Other Instructions.
+//
+
+// CALLI
+let Defs = [A11], Uses = [PSW], isCall = 1 in
+def CALLI_16_a      :  SR<0xDC, 0x01, (outs),
+                          (ins AddrRegs:$s1_d),
+                          "calli", "\t$s1_d">;
+
+// HVCALL
+let s1 = 0, d = 0, Uses = [PSW], hasSideEffects = 1 in
+def HVCALL_c        :  RC<0xAD, 0x02, (outs),
+                          (ins uimm9:$const9),
+                          "hvcall", "\t$const9">;
+
+// RFH
+let s1_d = 0, isReturn = 1, Defs = [PSW, PCXI], Uses = [PSW, PCXI] in
+def RFH             :  SYS<0x0D, 0x17, (outs), (ins),
+                          "rfh", "">;
+
+// MFDCR
+let isMoveReg = 1, s1 = 0, Uses = [PSW] in
+def MFDCR_ec        :  RLC<0x4F, (outs ExtDataRegs:$d),
+                          (ins uimm16_shift3:$const16),
+                          "mfdcr", "\t$d, $const16">;
+
+// MTDCR
+let isMoveReg = 1, d = 0, Defs = [PSW] in
+def MTDCR_ce        :  RLC<0xCF, (outs),
+                          (ins uimm16_shift3:$const16, ExtDataRegs:$s1),
+                          "mtdcr", "\t$const16, $s1">;
+
+// MULP.B
+let Defs = [PSW], isCommutable = 1, n = 0 in
+def MULPB_edd       :  RR<0x4B, 0x2B, (outs ExtDataRegs:$d),
+                          (ins DataRegs:$s1, DataRegs:$s2), 
+                          "mulp.b", "\t$d, $s1, $s2">;

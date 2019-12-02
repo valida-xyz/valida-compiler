@@ -372,6 +372,25 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
+  // checking if in the range of 16 bit unsigned immediate
+  bool isUImm16Shift3() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = false; // symbols for this operand type is not allowed yet
+    else
+      IsValid = isShiftedUInt<13, 3>(Imm);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
+  }
+
   // checking if in the range of 2 bit unsigned immediate
   bool isUImm2_l() const {
     int64_t Imm;
@@ -587,6 +606,10 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         Operands, ErrorInfo, -(1 << 4), (1 << 4) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
+  case Match_InvalidUImm16Shift3:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 16) - 8,
+        "Operand must be an 8-aligned integer and in the range");
   case Match_InvalidSImm10:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 9), (1 << 9) - 1,
