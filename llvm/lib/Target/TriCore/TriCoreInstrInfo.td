@@ -75,6 +75,9 @@ class GenericUImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
 
 //// Operand Definitions
 
+// A 1-bit unsigned immediate.
+def uimm1 : GenericUnsignedImmediate<1>;
+
 // A 2-bit unsigned immediate.
 def uimm2 : GenericUnsignedImmediate<2, i32>,
             ImmLeaf<i32, [{ return Imm >= 0 && Imm < 4; }]>;
@@ -84,6 +87,9 @@ def uimm2_l : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"UImm2_l">;
   let DecoderMethod = "decodeUImm2_l";
 }
+
+// A 3-bit unsigned immediate.
+def uimm3 : GenericUnsignedImmediate<3>;
 
 // A 4-bit signed immediate.
 def simm4 : GenericSignedImmediate<4, i32>,
@@ -2566,6 +2572,132 @@ def STW_16_ad_poi   : STORE_SSR_POST<     0x64, "st.w">;
 let DecoderMethod = "decode_16_a15cx</*shift*/ 2, /*isDReg*/ true>" in
 def STW_16_a15cd    : STORE_SSRO<0x68, "st.w", DataRegs,    uimm4_lsb00>;
 
+// 2.10.3 Store Bit and Bit Field.
+
+// ST.T
+let mayStore = 1 in
+def STT_ccc : ABSB<0xD5, 0x00, (outs),
+                   (ins off18_abs:$off18, uimm3:$bpos3, uimm1:$b),
+                   "st.t", "\t$off18, $bpos3, $b">;
+
+// LDMST
+let mayLoad = 1, mayStore = 1 in {
+  def LDMST_ce : ABS<0xE5, 0x01, (outs),
+                     (ins off18_abs:$off18, ExtDataRegs:$s1_d),
+                     "ldmst", "\t$off18, $s1_d">;
+
+  def LDMST_ace : BO<0x49, 0x21, (outs),
+                     (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                     "ldmst", "\t[$s2], $off10, $s1_d">;
+
+  let Constraints = "$s2 = $dst" in {
+    let off10 = 0 in
+    def LDMST_pe : BO<0x69, 0x01, (outs ExtAddrRegs:$dst),
+                      (ins ExtAddrRegs:$s2, ExtDataRegs:$s1_d),
+                      "ldmst", "\t[${s2} + r], $s1_d">;
+
+    def LDMST_pce : BO<0x69, 0x11, (outs ExtAddrRegs:$dst),
+                       (ins ExtAddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                       "ldmst", "\t[${s2} + c], $off10, $s1_d">;
+
+    def LDMST_ace_poi : BO<0x49, 0x01, (outs AddrRegs:$dst),
+                           (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                           "ldmst", "\t[${s2}+], $off10, $s1_d">;
+
+    def LDMST_ace_pri : BO<0x49, 0x11, (outs AddrRegs:$dst),
+                           (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                           "ldmst", "\t[+${s2}], $off10, $s1_d">;
+  } // Constraints = "$s2 = $dst"
+} // mayLoad = 1, mayStore = 1
+
+// SWAPMSK.W
+let Constraints = "$s1_d = $dst1", mayLoad = 1, mayStore = 1 in {
+  def SWAPMSKW_ace : BO<0x49, 0x22, (outs ExtDataRegs:$dst1),
+                        (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                        "swapmsk.w", "\t[$s2], $off10, $s1_d">;
+
+  let Constraints = "$s1_d = $dst1, $s2 = $dst2" in {
+    let off10 = 0 in
+    def SWAPMSKW_pe : BO<0x69, 0x02,
+                         (outs ExtAddrRegs:$dst2, ExtDataRegs:$dst1),
+                         (ins ExtAddrRegs:$s2, ExtDataRegs:$s1_d),
+                         "swapmsk.w", "\t[${s2} + r], $s1_d">;
+
+    def SWAPMSKW_pce : BO<0x69, 0x12,
+                        (outs ExtAddrRegs:$dst2, ExtDataRegs:$dst1),
+                        (ins ExtAddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                        "swapmsk.w", "\t[${s2} + c], $off10, $s1_d">;
+
+    def SWAPMSKW_ace_poi : BO<0x49, 0x02,
+                          (outs AddrRegs:$dst2, ExtDataRegs:$dst1),
+                          (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                          "swapmsk.w", "\t[${s2}+], $off10, $s1_d">;
+
+    def SWAPMSKW_ace_pri : BO<0x49, 0x12,
+                           (outs AddrRegs:$dst2, ExtDataRegs:$dst1),
+                           (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                           "swapmsk.w", "\t[+${s2}], $off10, $s1_d">;
+  } // Constraints = "$s1_d = $dst1, $s2 = $dst2"
+} // Constraints = "$s1_d = $dst1", mayLoad = 1, mayStore = 1
+
+// SWAP.W
+let mayLoad = 1, mayStore = 1 in {
+  let Constraints = "$s1_d = $dst" in
+    def SWAPW_cd : ABS<0xE5, 0x00, (outs DataRegs:$dst),
+                       (ins off18_abs:$off18, DataRegs:$s1_d),
+                       "swap.w", "\t$off18, $s1_d">;
+
+  let Constraints = "$s1_d = $dst1" in
+  def SWAPW_acd : BO<0x49, 0x20, (outs DataRegs:$dst1),
+                     (ins AddrRegs:$s2, simm10:$off10, DataRegs:$s1_d),
+                     "swap.w", "\t[$s2], $off10, $s1_d">;
+
+  let Constraints = "$s1_d = $dst1, $s2 = $dst2" in {
+    let off10 = 0 in
+    def SWAPW_pd : BO<0x69, 0x00, (outs ExtAddrRegs:$dst2, DataRegs:$dst1),
+                      (ins ExtAddrRegs:$s2, DataRegs:$s1_d),
+                      "swap.w", "\t[${s2} + r], $s1_d">;
+
+    def SWAPW_pcd : BO<0x69, 0x10, (outs ExtAddrRegs:$dst2, DataRegs:$dst1),
+                       (ins ExtAddrRegs:$s2, simm10:$off10, DataRegs:$s1_d),
+                       "swap.w", "\t[${s2} + c], $off10, $s1_d">;
+
+    def SWAPW_acd_poi : BO<0x49, 0x00, (outs AddrRegs:$dst2, DataRegs:$dst1),
+                           (ins AddrRegs:$s2, simm10:$off10, DataRegs:$s1_d),
+                           "swap.w", "\t[${s2}+], $off10, $s1_d">;
+
+    def SWAPW_acd_pri : BO<0x49, 0x10, (outs AddrRegs:$dst2, DataRegs:$dst1),
+                           (ins AddrRegs:$s2, simm10:$off10, DataRegs:$s1_d),
+                           "swap.w", "\t[+${s2}], $off10, $s1_d">;
+  } // Constraints = "$s1_d = $dst1, $s2 = $dst2"
+} // mayLoad = 1, mayStore = 1
+
+// CMPSWAP.W
+let Constraints = "$s1_d = $dst1", mayLoad = 1, mayStore = 1 in {
+  def CMPSWAPW_ace : BO<0x49, 0x23, (outs DataRegs:$dst1),
+                        (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                        "cmpswap.w", "\t[$s2], $off10, $s1_d">;
+
+  let Constraints = "$s1_d = $dst1, $s2 = $dst2" in {
+    let off10 = 0 in
+    def CMPSWAPW_pe : BO<0x69, 0x03, (outs ExtAddrRegs:$dst2, ExtDataRegs:$dst1),
+                         (ins ExtAddrRegs:$s2, ExtDataRegs:$s1_d),
+                         "cmpswap.w", "\t[${s2} + r], $s1_d">;
+
+    def CMPSWAPW_pce : BO<0x69, 0x13,
+                       (outs ExtAddrRegs:$dst2, ExtDataRegs:$dst1),
+                       (ins  ExtAddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                       "cmpswap.w", "\t[${s2} + c], $off10, $s1_d">;
+
+    def CMPSWAPW_ace_poi : BO<0x49, 0x03, (outs AddrRegs:$dst2, DataRegs:$dst1),
+                           (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                           "cmpswap.w", "\t[${s2}+], $off10, $s1_d">;
+
+    def CMPSWAPW_ace_pri : BO<0x49, 0x13, (outs AddrRegs:$dst2, DataRegs:$dst1),
+                           (ins AddrRegs:$s2, simm10:$off10, ExtDataRegs:$s1_d),
+                           "cmpswap.w", "\t[+${s2}], $off10, $s1_d">;
+  } // Constraints = "$s1_d = $dst1, $s2 = $dst2"
+} // Constraints = "$s1_d = $dst1, mayLoad = 1, mayStore = 1"
 
 // 2.10.4 Move to Address
 
