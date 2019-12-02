@@ -693,15 +693,19 @@ OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
 
   StringRef Name = getLexer().getTok().getIdentifier();
 
-  bool hasLLSuffix = Name.endswith_lower("ll");
-  bool hasLUSuffix = Name.endswith_lower("lu");
-  bool hasULSuffix = Name.endswith_lower("ul");
-  bool hasUUSuffix = Name.endswith_lower("uu");
+  // initial (illegal) index of suffix
+  int suffixIdx = -1;
 
-  // remove suffix upper/lower/mixed cases'll','lu','ul','uu'
-  if (hasLLSuffix || hasLUSuffix || hasULSuffix || hasUUSuffix) {
-    Name = Name.drop_back(2);
-    isSuffixFound = true;
+  // list all suffixes, make sure that 'l' and 'u' is tested last
+  StringRef suffixes[] = {"ll", "lu", "ul", "uu", "l", "u"};
+
+  // cut the suffixes
+  for (int i = 0; i < 6; i++) {
+    if (Name.endswith_lower(suffixes[i])) {
+      suffixIdx = i;
+      Name = Name.drop_back(suffixes[i].size());
+      break;
+    }
   }
 
   // this will try to match with a register name
@@ -719,10 +723,9 @@ OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
   Operands.push_back(TriCoreOperand::createReg(RegNo, S, E));
 
   // creating the suffix operand if needed
-  if (isSuffixFound) {
-    StringRef Suffix =
-        hasLLSuffix ? "ll" : hasLUSuffix ? "lu" : hasULSuffix ? "ul" : "uu";
-    Operands.push_back(TriCoreOperand::createToken(Suffix, getLoc()));
+  if (suffixIdx != -1) {
+    Operands.push_back(
+        TriCoreOperand::createToken(suffixes[suffixIdx], getLoc()));
   }
 
   return MatchOperand_Success;

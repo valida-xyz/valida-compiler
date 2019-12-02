@@ -419,6 +419,40 @@ let Defs = [PSW] in {
                      mnemonic , "\t$d, $s1, ${s2}" # pos # ", $n">;
 } // Defs = [PSW]
 
+// 2.4.x Add support for Q-Format Multiply-Add-Subtract
+
+let Defs = [PSW] in {
+  class QFMAS_RRR1_DD<bits<8> opc1, bits<6> opc2, string mnemonic,
+                      string pos1="", string pos2="">
+                    : RRR1<opc1, opc2, (outs DataRegs:$d),
+                           (ins DataRegs:$s3, DataRegs:$s1, DataRegs:$s2,
+                                uimm2_l:$n),
+                           mnemonic , "\t$d, $s3, ${s1}" # pos1 # ", ${s2}"
+                                      # pos2 # ", $n">;
+
+  class QFMAS_RRR1_ED<bits<8> opc1, bits<6> opc2, string mnemonic,
+                      string pos1="", string pos2="">
+                    : RRR1<opc1, opc2, (outs ExtDataRegs:$d),
+                           (ins ExtDataRegs:$s3, DataRegs:$s1, DataRegs:$s2,
+                                uimm2_l:$n),
+                           mnemonic , "\t$d, $s3, ${s1}" # pos1 # ", ${s2}"
+                                      # pos2 # ", $n">;
+
+  class QFMAS_RR1_DD<bits<8> opc1, bits<10> opc2, string mnemonic,
+                     string pos1="", string pos2="">
+                   : RR1<opc1, opc2, (outs DataRegs:$d),
+                         (ins DataRegs:$s1, DataRegs:$s2, uimm2_l:$n),
+                         mnemonic , "\t$d, ${s1}" # pos1 # ", ${s2}"
+                                    # pos2 # ", $n">;
+
+  class QFMAS_RR1_ED<bits<8> opc1, bits<10> opc2, string mnemonic,
+                     string pos1="", string pos2="">
+                   : RR1<opc1, opc2, (outs ExtDataRegs:$d),
+                         (ins DataRegs:$s1, DataRegs:$s2, uimm2_l:$n),
+                         mnemonic , "\t$d, ${s1}" # pos1 # ", ${s2}"
+                                    # pos2 # ", $n">;
+} // Defs = [PSW]
+
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.
 //
@@ -1705,6 +1739,92 @@ let Defs = [PSW] in {
   // SUBS.HU
   def SUBSHU_ddd         :  PARITH_RR<0x0B, 0x6B, "subs.hu">;
 } // Defs = [PSW]
+
+// 2.4.x Add support for Q-Format Multiply-Add-Subtract
+
+// MADD.Q
+def MADDQ_ddddc       : QFMAS_RRR1_DD<0x43, 0x02, "madd.q",   "",  "" >;
+def MADDQ_eeddc       : QFMAS_RRR1_ED<0x43, 0x1B, "madd.q",   "",  "" >;
+def MADDQ_ddddc_l     : QFMAS_RRR1_DD<0x43, 0x01, "madd.q",   "",  "l">;
+def MADDQ_eeddc_l     : QFMAS_RRR1_ED<0x43, 0x19, "madd.q",   "",  "l">;
+def MADDQ_ddddc_u     : QFMAS_RRR1_DD<0x43, 0x00, "madd.q",   "",  "u">;
+def MADDQ_eeddc_u     : QFMAS_RRR1_ED<0x43, 0x18, "madd.q",   "",  "u">;
+def MADDQ_ddddc_ll    : QFMAS_RRR1_DD<0x43, 0x05, "madd.q",   "l", "l">;
+def MADDQ_eeddc_ll    : QFMAS_RRR1_ED<0x43, 0x1D, "madd.q",   "l", "l">;
+def MADDQ_ddddc_uu    : QFMAS_RRR1_DD<0x43, 0x04, "madd.q",   "u", "u">;
+def MADDQ_eeddc_uu    : QFMAS_RRR1_ED<0x43, 0x1C, "madd.q",   "u", "u">;
+
+// MADDS.Q
+def MADDSQ_ddddc      : QFMAS_RRR1_DD<0x43, 0x22, "madds.q",  "",  "" >;
+def MADDSQ_eeddc      : QFMAS_RRR1_ED<0x43, 0x3B, "madds.q",  "",  "" >;
+def MADDSQ_ddddc_l    : QFMAS_RRR1_DD<0x43, 0x21, "madds.q",  "",  "l">;
+def MADDSQ_eeddc_l    : QFMAS_RRR1_ED<0x43, 0x39, "madds.q",  "",  "l">;
+def MADDSQ_ddddc_u    : QFMAS_RRR1_DD<0x43, 0x20, "madds.q",  "",  "u">;
+def MADDSQ_eeddc_u    : QFMAS_RRR1_ED<0x43, 0x38, "madds.q",  "",  "u">;
+def MADDSQ_ddddc_ll   : QFMAS_RRR1_DD<0x43, 0x25, "madds.q",  "l", "l">;
+def MADDSQ_eeddc_ll   : QFMAS_RRR1_ED<0x43, 0x3D, "madds.q",  "l", "l">;
+def MADDSQ_ddddc_uu   : QFMAS_RRR1_DD<0x43, 0x24, "madds.q",  "u", "u">;
+def MADDSQ_eeddc_uu   : QFMAS_RRR1_ED<0x43, 0x3C, "madds.q",  "u", "u">;
+
+// MADDR.Q
+def MADDRQ_ddddc_ll   : QFMAS_RRR1_DD<0x43, 0x07, "maddr.q",  "l", "l">;
+def MADDRQ_ddddc_uu   : QFMAS_RRR1_DD<0x43, 0x06, "maddr.q",  "u", "u">;
+
+// MADDRS.Q
+def MADDRSQ_ddddc_ll  : QFMAS_RRR1_DD<0x43, 0x27, "maddrs.q", "l", "l">;
+def MADDRSQ_ddddc_uu  : QFMAS_RRR1_DD<0x43, 0x26, "maddrs.q", "u", "u">;
+
+// MSUB.Q
+def MSUBQ_ddddc       : QFMAS_RRR1_DD<0x63, 0x02, "msub.q",   "",  "" >;
+def MSUBQ_eeddc       : QFMAS_RRR1_ED<0x63, 0x1B, "msub.q",   "",  "" >;
+def MSUBQ_ddddc_l     : QFMAS_RRR1_DD<0x63, 0x01, "msub.q",   "",  "l">;
+def MSUBQ_eeddc_l     : QFMAS_RRR1_ED<0x63, 0x19, "msub.q",   "",  "l">;
+def MSUBQ_ddddc_u     : QFMAS_RRR1_DD<0x63, 0x00, "msub.q",   "",  "u">;
+def MSUBQ_eeddc_u     : QFMAS_RRR1_ED<0x63, 0x18, "msub.q",   "",  "u">;
+def MSUBQ_ddddc_ll    : QFMAS_RRR1_DD<0x63, 0x05, "msub.q",   "l", "l">;
+def MSUBQ_eeddc_ll    : QFMAS_RRR1_ED<0x63, 0x1D, "msub.q",   "l", "l">;
+def MSUBQ_ddddc_uu    : QFMAS_RRR1_DD<0x63, 0x04, "msub.q",   "u", "u">;
+def MSUBQ_eeddc_uu    : QFMAS_RRR1_ED<0x63, 0x1C, "msub.q",   "u", "u">;
+
+// MSUBS.Q
+def MSUBSQ_ddddc      : QFMAS_RRR1_DD<0x63, 0x22, "msubs.q",  "",  "" >;
+def MSUBSQ_eeddc      : QFMAS_RRR1_ED<0x63, 0x3B, "msubs.q",  "",  "" >;
+def MSUBSQ_ddddc_l    : QFMAS_RRR1_DD<0x63, 0x21, "msubs.q",  "",  "l">;
+def MSUBSQ_eeddc_l    : QFMAS_RRR1_ED<0x63, 0x39, "msubs.q",  "",  "l">;
+def MSUBSQ_ddddc_u    : QFMAS_RRR1_DD<0x63, 0x20, "msubs.q",  "",  "u">;
+def MSUBSQ_eeddc_u    : QFMAS_RRR1_ED<0x63, 0x38, "msubs.q",  "",  "u">;
+def MSUBSQ_ddddc_ll   : QFMAS_RRR1_DD<0x63, 0x25, "msubs.q",  "l", "l">;
+def MSUBSQ_eeddc_ll   : QFMAS_RRR1_ED<0x63, 0x3D, "msubs.q",  "l", "l">;
+def MSUBSQ_ddddc_uu   : QFMAS_RRR1_DD<0x63, 0x24, "msubs.q",  "u", "u">;
+def MSUBSQ_eeddc_uu   : QFMAS_RRR1_ED<0x63, 0x3C, "msubs.q",  "u", "u">;
+
+// MSUBR.Q
+def MSUBRQ_ddddc_ll   : QFMAS_RRR1_DD<0x63, 0x07, "msubr.q",  "l", "l">;
+def MSUBRQ_ddddc_uu   : QFMAS_RRR1_DD<0x63, 0x06, "msubr.q",  "u", "u">;
+
+// MSUBRS.Q
+def MSUBRSQ_ddddc_ll  : QFMAS_RRR1_DD<0x63, 0x27, "msubrs.q", "l", "l">;
+def MSUBRSQ_ddddc_uu  : QFMAS_RRR1_DD<0x63, 0x26, "msubrs.q", "u", "u">;
+
+// MUL.Q
+let isCommutable = 1 in {
+  def MULQ_dddc       : QFMAS_RR1_DD<0x93,  0x02, "mul.q",    "",  "" >;
+  def MULQ_eddc       : QFMAS_RR1_ED<0x93,  0x1B, "mul.q",    "",  "" >;
+} // let isCommutable = 1
+
+def MULQ_dddc_l       : QFMAS_RR1_DD<0x93,  0x01, "mul.q",    "",  "l">;
+def MULQ_eddc_l       : QFMAS_RR1_ED<0x93,  0x19, "mul.q",    "",  "l">;
+def MULQ_dddc_u       : QFMAS_RR1_DD<0x93,  0x00, "mul.q",    "",  "u">;
+def MULQ_eddc_u       : QFMAS_RR1_ED<0x93,  0x18, "mul.q",    "",  "u">;
+
+let isCommutable = 1 in {
+  def MULQ_dddc_ll    : QFMAS_RR1_DD<0x93,  0x05, "mul.q",    "l", "l">;
+  def MULQ_dddc_uu    : QFMAS_RR1_DD<0x93,  0x04, "mul.q",    "u", "u">;
+
+  // MULR.Q
+  def MULRQ_dddc_ll   : QFMAS_RR1_DD<0x93,  0x07, "mulr.q",   "l", "l">;
+  def MULRQ_dddc_uu   : QFMAS_RR1_DD<0x93,  0x06, "mulr.q",   "u", "u">;
+} // let isCommutable = 1
 
 //===----------------------------------------------------------------------===//
 //  2.5 Compare Instructions.
