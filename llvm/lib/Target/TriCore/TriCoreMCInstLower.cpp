@@ -74,6 +74,9 @@ void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
         continue;
       MCOp = MCOperand::createReg(MO.getReg());
       break;
+    case MachineOperand::MO_RegisterMask:
+      // Regmasks are like implicit defs.
+      continue;
     case MachineOperand::MO_Immediate:
       MCOp = MCOperand::createImm(MO.getImm());
       break;

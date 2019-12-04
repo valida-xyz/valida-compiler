@@ -1,0 +1,27 @@
+# RUN: llc -mtriple=tricore -O0 -start-after=regallocfast -verify-machineinstrs %s -o - | FileCheck %s
+
+--- |
+  ; Function Attrs: nounwind
+  define dso_local i32 @test_regmask(i32 returned %x) local_unnamed_addr #0 {
+  entry:
+    unreachable
+  }
+  
+  declare dso_local void @dummy(i32) local_unnamed_addr
+
+...
+---
+name:            test_regmask
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+body:             |
+  bb.1.entry:
+    ; Make sure we can handle csr_tricore_uppercontext 
+    ; (MachineOperandType MO_RegisterMask)
+    ; CHECK: call    dummy
+    CALL @dummy, csr_tricore_uppercontext, implicit-def $a11, implicit $psw
+    RET implicit $a11
+...
