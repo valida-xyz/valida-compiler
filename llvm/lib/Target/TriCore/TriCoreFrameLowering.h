@@ -29,6 +29,20 @@ public:
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
 
   bool hasFP(const MachineFunction &MF) const override;
+  bool hasReservedCallFrame(const MachineFunction &MF) const override;
+
+  int getFrameIndexReference(const MachineFunction &MF, int FI,
+                             unsigned &FrameReg) const override;
+
+  void determineFrameLayout(MachineFunction &MF) const;
+  static void adjustStackPointer(MachineBasicBlock &MBB,
+                                 MachineBasicBlock::iterator MBBI,
+                                 const DebugLoc &DL, Register SPReg,
+                                 int64_t Val, MachineInstr::MIFlag Flag);
+
+  MachineBasicBlock::iterator
+  eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
+                                MachineBasicBlock::iterator MI) const override;
 };
 } // namespace llvm
 #endif

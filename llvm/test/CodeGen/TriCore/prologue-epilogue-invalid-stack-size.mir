@@ -1,0 +1,35 @@
+# RUN: (llc -mtriple=tricore -run-pass=prologepilog -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+
+--- |  
+  define dso_local void @varsize() #0 {
+  entry:
+    %arr1 = alloca [4294967295 x i8], align 1
+    ret void
+  }
+  
+  attributes #0 = { nounwind "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "min-legal-vector-width"="0" "no-infs-fp-math"="false" "no-jump-tables"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
+  
+  !llvm.module.flags = !{!0}
+  !llvm.ident = !{!1}
+  
+  !0 = !{i32 1, !"wchar_size", i32 4}
+  !1 = !{!"clang version 10.0.0 (ssh://git@bitbucket-server.software.htc:7999/toolchain/llvm-project.git 7af75e9cbd917f21d7747d5a75f684d929a137ea)"}
+
+...
+---
+name:            varsize
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+stack:
+  - { id: 0, name: arr1, type: default, offset: 0, size: 4294967295, alignment: 1, 
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true, 
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+body:             |
+  bb.0.entry:
+    ; ERROR: in function varsize void (): Total size of local objects too large. Must be within 2**32 bytes.
+    $a2 = LEA_aac %stack.0.arr1, 0
+    RET implicit $a11, implicit $a2
+
+...

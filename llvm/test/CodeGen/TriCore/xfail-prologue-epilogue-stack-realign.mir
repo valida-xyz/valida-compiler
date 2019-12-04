@@ -1,0 +1,41 @@
+# RUN: llc -mtriple=tricore -run-pass=prologepilog -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+--- |  
+  define dso_local i32 @realign() local_unnamed_addr #0 {
+  entry:
+    %a = alloca [10 x i32], align 64
+    ret i32 0
+  }
+  
+  declare dso_local void @func(i32*, i32, i32, i32, i32, i32, i32, i32) local_unnamed_addr #1
+  
+  attributes #0 = { nounwind "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "min-legal-vector-width"="0" "no-infs-fp-math"="false" "no-jump-tables"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
+  attributes #1 = { "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
+  
+  !llvm.module.flags = !{!0}
+  !llvm.ident = !{!1}
+  
+  !0 = !{i32 1, !"wchar_size", i32 4}
+  !1 = !{!"clang version 10.0.0 (ssh://git@bitbucket-server.software.htc:7999/toolchain/llvm-project.git 7af75e9cbd917f21d7747d5a75f684d929a137ea)"}
+
+...
+---
+name:            realign
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+frameInfo:
+  maxAlignment:    64
+  hasCalls:        true
+  maxCallFrameSize: 4294967295
+stack:
+  - { id: 0, name: a, type: default, offset: 0, size: 40, alignment: 64, 
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true, 
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+body:             |
+  bb.0.entry:
+    $a4 = LEA_aac %stack.0.a, 0
+
+...

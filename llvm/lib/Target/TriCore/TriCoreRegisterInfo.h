@@ -39,6 +39,8 @@ struct TriCoreRegisterInfo : public TriCoreGenRegisterInfo {
                            unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
 
+  bool canRealignStack(const MachineFunction &MF) const override;
+
   Register getFrameRegister(const MachineFunction &MF) const override;
   Register getStackRegister() const;
 };

@@ -1,0 +1,57 @@
+# RUN: llc -mtriple=tricore -run-pass=prologepilog -pass-remarks-output=%t -pass-remarks-analysis=prologepilog -o /dev/null %s 2>&1
+# RUN: cat %t | FileCheck %s
+...
+---
+name:            fun0
+stack:
+  - { id: 0, type: default, offset: 0, size: 4, alignment: 4 }
+# CHECK: --- !Analysis
+# CHECK-NEXT: Pass:            prologepilog
+# CHECK-NEXT: Name:            StackSize
+# CHECK-NEXT: Function:        fun0
+# CHECK-NEXT: Args:
+# CHECK-NEXT:   - NumStackBytes:   '8'
+# CHECK-NEXT:   - String:          ' stack bytes in function'
+# CHECK-NEXT: ...
+constants:
+body:             |
+  bb.0:
+    RET implicit $a11
+
+...
+---
+name:            fun1
+stack:
+  - { id: 0, type: default, offset: 0, size: 13, alignment: 4 }
+# CHECK: --- !Analysis
+# CHECK-NEXT: Pass:            prologepilog
+# CHECK-NEXT: Name:            StackSize
+# CHECK-NEXT: Function:        fun1
+# CHECK-NEXT: Args:
+# CHECK-NEXT:   - NumStackBytes:   '16'
+# CHECK-NEXT:   - String:          ' stack bytes in function'
+# CHECK-NEXT: ...
+constants:
+body:             |
+  bb.0:
+    RET implicit $a11
+
+...
+---
+name:            fun2
+stack:
+  - { id: 0, type: default, offset: 0, size: 1024, alignment: 4 }
+# --- !Analysis
+# CHECK: Pass:            prologepilog
+# CHECK-NEXT: Name:            StackSize
+# CHECK-NEXT: Function:        fun2
+# CHECK-NEXT: Args:
+# CHECK-NEXT:   - NumStackBytes:   '1024'
+# CHECK-NEXT:   - String:          ' stack bytes in function'
+# CHECK-NEXT: ...
+constants:
+body:             |
+  bb.0:
+    RET implicit $a11
+
+...

@@ -134,6 +134,12 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
 }
 
+bool TriCoreRegisterInfo::canRealignStack(const MachineFunction &MF) const {
+  // At the moment we do not support stack realignment
+  // TODO: support stack realignment
+  return false;
+}
+
 Register
 TriCoreRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   // TODO: check if the function has a frame pointer
