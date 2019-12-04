@@ -83,6 +83,10 @@ void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     case MachineOperand::MO_GlobalAddress:
       MCOp = LowerSymbolOperand(MO, GetGlobalAddressSymbol(MO));
       break;
+    case MachineOperand::MO_MachineBasicBlock:
+      MCOp = MCOperand::createExpr(
+          MCSymbolRefExpr::create(MO.getMBB()->getSymbol(), Ctx));
+      break;
     }
 
     OutMI.addOperand(MCOp);

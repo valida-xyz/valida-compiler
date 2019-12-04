@@ -1,0 +1,96 @@
+# RUN: llc -mtriple=tricore -O0 -start-after=prologepilog -verify-machineinstrs %s -o - | FileCheck %s
+
+--- |
+  
+  define dso_local i32 @test_mbb(i32 %x) {
+  entry:
+    %retval = alloca i32, align 4
+    %x.addr = alloca i32, align 4
+    store i32 %x, i32* %x.addr, align 4
+    %0 = load i32, i32* %x.addr, align 4
+    %tobool = icmp ne i32 %0, 0
+    br i1 %tobool, label %if.then, label %if.else
+  
+  if.then:                                          ; preds = %entry
+    store i32 0, i32* %retval, align 4
+    br label %return
+  
+  if.else:                                          ; preds = %entry
+    store i32 1, i32* %retval, align 4
+    br label %return
+  
+  return:                                           ; preds = %if.else, %if.then
+    %1 = load i32, i32* %retval, align 4
+    ret i32 %1
+  }
+
+...
+---
+name:            test_mbb
+alignment:       1
+exposesReturnsTwice: false
+legalized:       true
+regBankSelected: true
+selected:        true
+failedISel:      false
+tracksRegLiveness: true
+hasWinCFI:       false
+registers:       []
+stack:
+  - { id: 0, name: retval, type: default, offset: -4, size: 4, alignment: 4, 
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true, 
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 1, name: x.addr, type: default, offset: -8, size: 4, alignment: 4, 
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true, 
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+callSites:       []
+constants:       []
+machineFunctionInfo: {}
+body:             |
+  bb.0.entry:
+    successors: %bb.1(0x40000000), %bb.2(0x40000000)
+    liveins: $d4, $a14
+
+    ; Make sure we can handle MachineOperandType MO_MachineBasicBlock
+  
+    $d15 = MOVU_dc 0
+    $d15 = ADDIH_ddc killed $d15, 0, implicit-def $psw
+    $d0 = MOVU_dc 1
+    $d0 = ADDIH_ddc killed $d0, 0, implicit-def $psw
+    $a15 = LEA_aac $a14, 4
+    $a2 = LEA_aac $a14, 0
+    STW_alcd $a2, 0, killed $d4 :: (store 4 into %ir.x.addr)
+    $d1 = LDW_dalc killed $a2, 0 :: (load 4 from %ir.x.addr)
+    
+    ; CHECK: jne %d1, %d15, .LBB0_1
+    ; CHECK: j .LBB0_2
+
+    JNE_ddc killed $d1, $d15, %bb.1
+    J %bb.2
+  
+    ; CHECK-LABEL .LBB0_1:
+    ; CHECK: j .LBB0_3
+
+  bb.1.if.then:
+    successors: %bb.3(0x80000000)
+    liveins: $a15, $d15
+  
+    STW_alcd $a15, 0, killed $d15 :: (store 4 into %ir.retval)
+    J %bb.3
+
+    ; CHECK-LABEL: .LBB0_2:
+  
+  bb.2.if.else:
+    successors: %bb.3(0x80000000)
+    liveins: $a15, $d0
+  
+    STW_alcd $a15, 0, killed $d0 :: (store 4 into %ir.retval)
+  
+    ; CHECK-LABEL: .LBB0_3
+  bb.3.return:
+    liveins: $a15
+  
+    $d2 = LDW_dalc killed $a15, 0 :: (load 4 from %ir.retval)
+    RET implicit $a11, implicit $d2
+
+...
