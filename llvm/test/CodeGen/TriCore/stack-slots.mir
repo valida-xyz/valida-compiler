@@ -1,0 +1,152 @@
+# RUN: llc -O0 -mtriple=tricore -run-pass=regallocfast -verify-machineinstrs %s \
+# RUN:   -o - | FileCheck %s
+
+--- |
+  declare dso_local void @dummy_s32(i32) local_unnamed_addr
+  define dso_local i32 @copyDataRegToStackSlot(i32 returned %x) local_unnamed_addr {
+  entry:
+    tail call void @dummy_s32(i32 %x)
+    ret i32 %x
+  }
+
+  declare dso_local void @dummy_s64(i64) local_unnamed_addr
+  define dso_local i64 @copyExtDataRegToStackSlot(i64 returned %x) local_unnamed_addr {
+  entry:
+    tail call void @dummy_s64(i64 %x)
+    ret i64 %x
+  }
+
+  declare dso_local void @dummy_p0(i32*) local_unnamed_addr
+  define dso_local i32* @copyAddrRegToStackSlot(i32* returned %x) local_unnamed_addr {
+  entry:
+    tail call void @dummy_p0(i32* %x)
+    ret i32* %x
+  }
+
+  declare dso_local void @dummy_p64(i64) local_unnamed_addr
+  define dso_local i64 @copyExtAddrRegToStackSlot(i64 returned %x) local_unnamed_addr {
+  entry:
+    tail call void @dummy_p64(i64 %x)
+    ret i64 %x
+  }
+
+...
+---
+name:            copyDataRegToStackSlot
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: dataregs, preferred-register: '' }
+liveins:
+  - { reg: '$d4', virtual-reg: '' }
+
+# CHECK-LABEL: stack:
+# CHECK: - { id: [[FRAMEINDEX:[0-9]+]], name: '', type: spill-slot, offset: 0, size: 4, alignment: 4,
+
+body:             |
+  bb.1.entry:
+    liveins: $d4
+
+    ; CHECK: STW_alcd %stack.[[FRAMEINDEX]], 0, $d4 :: (store 4 into %stack.[[FRAMEINDEX]])
+    ; CHECK-NEXT: CALL @dummy
+    ; CHECK-NEXT: $d2 = LDW_dalc %stack.[[FRAMEINDEX]], 0 :: (load 4 from %stack.[[FRAMEINDEX]])
+  
+    %0:dataregs = COPY $d4
+    $d4 = COPY %0
+    CALL @dummy_s32, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4
+    $d2 = COPY %0
+    RET implicit $a11, implicit $d2
+...
+
+---
+name:            copyExtDataRegToStackSlot
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: extdataregs, preferred-register: '' }
+liveins:
+  - { reg: '$e4', virtual-reg: '' }
+
+# CHECK-LABEL: stack:
+# CHECK: - { id: [[FRAMEINDEX:[0-9]+]], name: '', type: spill-slot, offset: 0, size: 8, alignment: 4,
+
+body:             |
+  bb.1.entry:
+    liveins: $e4
+
+    ; CHECK: STD_ace %stack.[[FRAMEINDEX]], 0, $e4 :: (store 8 into %stack.[[FRAMEINDEX]], align 4)
+    ; CHECK-NEXT: CALL @dummy
+    ; CHECK-NEXT: $e2 = LDD_eac %stack.[[FRAMEINDEX]], 0 :: (load 8 from %stack.[[FRAMEINDEX]], align 4)
+  
+    %0:extdataregs = COPY $e4
+    $e4 = COPY %0
+    CALL @dummy_s64, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4
+    $e2 = COPY %0
+    RET implicit $a11, implicit $e2
+...
+
+---
+name:            copyAddrRegToStackSlot
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: addrregs, preferred-register: '' }
+liveins:
+  - { reg: '$a4', virtual-reg: '' }
+
+# CHECK-LABEL: stack:
+# CHECK: - { id: [[FRAMEINDEX:[0-9]+]], name: '', type: spill-slot, offset: 0, size: 4, alignment: 4,
+
+body:             |
+  bb.1.entry:
+    liveins: $a4
+
+    ; CHECK: STA_alca %stack.[[FRAMEINDEX]], 0, $a4 :: (store 4 into %stack.[[FRAMEINDEX]])
+    ; CHECK-NEXT: CALL @dummy
+    ; CHECK-NEXT: $a2 = LDA_aalc %stack.[[FRAMEINDEX]], 0 :: (load 4 from %stack.[[FRAMEINDEX]])
+  
+    %0:addrregs = COPY $a4
+    $a4 = COPY %0
+    CALL @dummy_p0, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4
+    $a2 = COPY %0
+    RET implicit $a11, implicit $a2
+...
+
+---
+name:            copyExtAddrRegToStackSlot
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: extaddrregs, preferred-register: '' }
+liveins:
+  - { reg: '$e4', virtual-reg: '' }
+
+# CHECK-LABEL: stack:
+# CHECK: - { id: [[FRAMEINDEX:[0-9]+]], name: '', type: spill-slot, offset: 0, size: 8, alignment: 4,
+
+body:             |
+  bb.1.entry:
+    liveins: $p4
+
+    ; CHECK: STDA_acp %stack.[[FRAMEINDEX]], 0, $p4 :: (store 8 into %stack.[[FRAMEINDEX]], align 4)
+    ; CHECK-NEXT: CALL @dummy
+    ; CHECK-NEXT: $p2 = LDDA_pac %stack.[[FRAMEINDEX]], 0 :: (load 8 from %stack.[[FRAMEINDEX]], align 4)
+  
+    %0:extaddrregs = COPY $p4
+    $p4 = COPY %0
+    CALL @dummy_p64, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $p4
+    $p2 = COPY %0
+    RET implicit $a11, implicit $p2
+...

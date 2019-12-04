@@ -167,3 +167,89 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
   llvm_unreachable("unimplemented reg-to-reg copy");
 }
+
+static unsigned getLoadStoreOpcode(unsigned SpillSize,
+                                   const TargetRegisterClass *RC, bool IsLoad) {
+
+  std::pair<unsigned, unsigned> Opc = {0, 0};
+
+  switch (SpillSize) {
+  case 4:
+    // If the source / destination is a 32-bit D register, choose LDW/STW
+    // If it is a 32-bit A register, choose LDA, STA
+    if (TriCore::DataRegsRegClass.hasSubClassEq(RC)) {
+      Opc = {TriCore::LDW_dalc, TriCore::STW_alcd};
+    } else if (TriCore::AddrRegsRegClass.hasSubClassEq(RC))
+      Opc = {TriCore::LDA_aalc, TriCore::STA_alca};
+    break;
+  case 8:
+    // If the source / destination is a 64-bit E register, choose LDD/STD
+    // If it is a 64-bit P register, choose LDDA/STDA
+    if (TriCore::ExtDataRegsRegClass.hasSubClassEq(RC)) {
+      Opc = {TriCore::LDD_eac, TriCore::STD_ace};
+    } else if (TriCore::ExtAddrRegsRegClass.hasSubClassEq(RC))
+      Opc = {TriCore::LDDA_pac, TriCore::STDA_acp};
+    break;
+  default:
+    llvm_unreachable("Unhandled register class!");
+  }
+
+  return IsLoad ? Opc.first : Opc.second;
+}
+
+void TriCoreInstrInfo::storeRegToStackSlot(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, unsigned SrcReg,
+    bool isKill, int FrameIndex, const TargetRegisterClass *RC,
+    const TargetRegisterInfo *TRI) const {
+  MachineFunction &MF = *MBB.getParent();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  unsigned Align = MFI.getObjectAlignment(FrameIndex);
+
+  MachinePointerInfo PtrInfo =
+      MachinePointerInfo::getFixedStack(MF, FrameIndex);
+  MachineMemOperand *MMO =
+      MF.getMachineMemOperand(PtrInfo, MachineMemOperand::MOStore,
+                              MFI.getObjectSize(FrameIndex), Align);
+
+  assert(!Register::isVirtualRegister(SrcReg) &&
+         "expected a physical register");
+  unsigned Opc =
+      getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ false);
+  assert(Opc && "Unknown register class");
+
+  // Create the instruction in the expected form (immediate offset == 0)
+  // This is asserted in TriCoreRegisterInfo::eliminateFrameIndex
+  BuildMI(MBB, MI, DebugLoc(), get(Opc))
+      .addFrameIndex(FrameIndex)
+      .addImm(0)
+      .addReg(SrcReg, getKillRegState(isKill))
+      .addMemOperand(MMO);
+}
+
+void TriCoreInstrInfo::loadRegFromStackSlot(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI, unsigned DestReg,
+    int FrameIndex, const TargetRegisterClass *RC,
+    const TargetRegisterInfo *TRI) const {
+  MachineFunction &MF = *MBB.getParent();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  unsigned Align = MFI.getObjectAlignment(FrameIndex);
+
+  MachinePointerInfo PtrInfo =
+      MachinePointerInfo::getFixedStack(MF, FrameIndex);
+  MachineMemOperand *MMO = MF.getMachineMemOperand(
+      PtrInfo, MachineMemOperand::MOLoad, MFI.getObjectSize(FrameIndex), Align);
+
+  assert(!Register::isVirtualRegister(DestReg) &&
+         "expected a physical register");
+  unsigned Opc =
+      getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ true);
+  assert(Opc && "Unknown register class");
+
+  // Create the instruction in the expected form (immediate offset == 0)
+  // This is asserted in TriCoreRegisterInfo::eliminateFrameIndex
+  BuildMI(MBB, MI, DebugLoc(), get(Opc))
+      .addDef(DestReg)
+      .addFrameIndex(FrameIndex)
+      .addImm(0)
+      .addMemOperand(MMO);
+};
