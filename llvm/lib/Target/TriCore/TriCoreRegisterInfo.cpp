@@ -149,3 +149,5 @@ Register
 TriCoreRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return TriCore::A14;
 }
+
+Register TriCoreRegisterInfo::getStackRegister() const { return TriCore::A10; }

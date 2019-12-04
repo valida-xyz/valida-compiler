@@ -40,6 +40,7 @@ struct TriCoreRegisterInfo : public TriCoreGenRegisterInfo {
                            RegScavenger *RS = nullptr) const override;
 
   Register getFrameRegister(const MachineFunction &MF) const override;
+  Register getStackRegister() const;
 };
 } // namespace llvm
 
