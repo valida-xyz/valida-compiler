@@ -47,6 +47,11 @@ public:
                             MachineBasicBlock::iterator MI, unsigned DestReg,
                             int FrameIndex, const TargetRegisterClass *RC,
                             const TargetRegisterInfo *TRI) const override;
+
+  void emitFrameOffset(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+                       const DebugLoc &DL, Register DstReg, Register SrcReg,
+                       uint64_t Val,
+                       MachineInstr::MIFlag Flag = MachineInstr::NoFlags) const;
 };
 } // namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREINSTRINFO_H

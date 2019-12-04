@@ -32,21 +32,18 @@ body:             |
     ; CHECK:      id: 1, name: ptr1, type: default, offset: -524288, size: 262144
     ; CHECK:      id: 2, name: ptr2, type: default, offset: -524296, size: 8
     ; CHECK:      liveins: $a14, $d4
-    ; CHECK:      $a15 = MOVHA_ac 4
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 8
-    ; CHECK-NEXT: $a15 = ADDA_aaa $a14, $a15
+    ; CHECK:      $a15 = LEA_aac $a14, 8
+    ; CHECK-NEXT: $a15 = ADDIHA_aac $a15, 4
     ; CHECK-NEXT: $a2 = LEA_aac killed $a15, 0
     ; CHECK:      $a3 = LEA_aac $a14, 8
     ; CHECK:      $a4 = LEA_aac $a14, 0
-    ; CHECK:      $a15 = MOVHA_ac 4
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 8
-    ; CHECK-NEXT: $a15 = ADDA_aaa $a14, $a15
+    ; CHECK:      $a15 = LEA_aac $a14, 8
+    ; CHECK-NEXT: $a15 = ADDIHA_aac $a15, 4
     ; CHECK-NEXT: STW_alcd killed $a15, 0, $d4 :: (store 4)
     ; CHECK:      STW_alcd $a14, 8, $d4 :: (store 4)
     ; CHECK:      STW_alcd $a14, 0, killed $d4 :: (store 4)
-    ; CHECK:      $a15 = MOVHA_ac 4
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 8
-    ; CHECK-NEXT: $a15 = ADDA_aaa $a14, $a15
+    ; CHECK:      $a15 = LEA_aac $a14, 8
+    ; CHECK-NEXT: $a15 = ADDIHA_aac $a15, 4
     ; CHECK-NEXT: $d2 = LDW_dalc killed $a15, 0 :: (load 4)
     ; CHECK:      $d3 = LDW_dalc $a14, 8 :: (load 4)
     ; CHECK:      $d4 = LDW_dalc $a14, 0 :: (load 4)

@@ -250,4 +250,42 @@ void TriCoreInstrInfo::loadRegFromStackSlot(
       .addFrameIndex(FrameIndex)
       .addImm(0)
       .addMemOperand(MMO);
-};
+}
+
+void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
+                                       MachineBasicBlock::iterator MBBI,
+                                       const DebugLoc &DL, Register DstReg,
+                                       Register SrcReg, uint64_t Val,
+                                       MachineInstr::MIFlag Flag) const {
+  // Materialize a 32-bit immediate to an address register
+  assert(isInt<32>(Val) && "Expected a 32-bit value");
+  assert(((DstReg.isPhysical() && TriCore::AddrRegsRegClass.contains(DstReg)) ||
+          MBB.getParent()->getRegInfo().getRegClass(DstReg)->getID() ==
+              TriCore::AddrRegsRegClass.getID()) &&
+         "Expected DstReg to be an address register");
+  assert(((SrcReg.isPhysical() && TriCore::AddrRegsRegClass.contains(SrcReg)) ||
+          MBB.getParent()->getRegInfo().getRegClass(SrcReg)->getID() ==
+              TriCore::AddrRegsRegClass.getID()) &&
+         "Expected SrcReg to be an address register");
+
+  // Materialize the value using MOVHA_ac and LEA_aac
+  // Calculation taken from chapter 2.7 Address Arithmetic
+  const uint64_t Low16 = Val & 0xFFFFu;
+  const uint64_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
+
+  // Skip the LEA if Low16 is 0
+  if (Low16) {
+    BuildMI(MBB, MBBI, DL, get(TriCore::LEA_aac), DstReg)
+        .addUse(SrcReg)
+        .addImm(Low16)
+        .setMIFlag(Flag);
+
+    SrcReg = DstReg;
+  }
+
+  assert(High16 && "Expected High16 to be non-zero");
+  BuildMI(MBB, MBBI, DL, get(TriCore::ADDIHA_aac), DstReg)
+      .addUse(SrcReg)
+      .addImm(High16)
+      .setMIFlag(Flag);
+}

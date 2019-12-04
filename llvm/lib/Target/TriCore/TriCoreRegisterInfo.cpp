@@ -107,31 +107,12 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   // Check if the offset can fit into an 16-bit immediate
   if (!isInt<16>(Offset)) {
-    // Materialize the offset in a register, then use ADD.A with frame register
-    // Calculation taken from chapter 2.7 Address Arithmetic
-    const uint64_t OffsetUnsigned = (static_cast<uint64_t>(Offset));
-    uint64_t Low16 = OffsetUnsigned & 0xFFFFu;
-    uint64_t High16 = ((OffsetUnsigned + 0x8000u) >> 16u) & 0xFFFFu;
-
+    // Emit a 32-bit frame offset
     const Register ScratchReg =
         MRI.createVirtualRegister(&TriCore::AddrRegsRegClass);
 
-    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::MOVHA_ac), ScratchReg)
-        .addImm(High16);
-
-    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::LEA_aac), ScratchReg)
-        .addUse(ScratchReg)
-        .addImm(Low16);
-
-    // Build an explicit ADD.A instruction. This might create a situation like
-    // this:
-    // %frame_addr = ADD.A %frame_reg, %offset
-    // %foo = LEA %frame_addr, 0
-    //
-    // TODO: delete possibly redundant LEA instruction
-    BuildMI(MBB, II, MI.getDebugLoc(), TII->get(TriCore::ADDA_aaa), ScratchReg)
-        .addUse(FrameReg)
-        .addUse(ScratchReg);
+    TII->emitFrameOffset(MBB, II, MI.getDebugLoc(), ScratchReg, FrameReg,
+                         Offset);
 
     // Update FrameReg, Offset and kill status
     FrameReg = ScratchReg;
