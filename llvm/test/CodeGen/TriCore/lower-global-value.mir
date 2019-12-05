@@ -26,6 +26,16 @@
 # CHECK:                    .Lfunc_end1:
 # CHECK:                    	.size	test_global_offset, .Lfunc_end1-test_global_offset
 # CHECK:                                                      # -- End function
+# CHECK-LABEL:   	            .globl	test_call               # -- Begin function test_call
+# CHECK:   	                  .type	test_call,@function
+# CHECK:                    test_call:                        # @test_call
+# CHECK:                    # %bb.0:
+# CHECK:                    	call	foo                       # encoding: [0x6d,A,A,A]
+# CHECK-NEXT:                                                 #   fixup A - offset: 0, value: foo, kind: fixup_24rel
+# CHECK:   	                  ret                             # encoding: [0x0d,0x00,0x80,0x01]
+# CHECK:                    .Lfunc_end2:
+# CHECK:                    	.size	test_call, .Lfunc_end2-test_call
+# CHECK:                                                      # -- End function
 # CHECK-LABEL:               	.type	var,@object               # @var
 # CHECK:                    	.section	.bss,"aw",@nobits
 # CHECK:                    	.globl	var
@@ -37,6 +47,7 @@
 
 
 --- |
+  declare void @foo()
   @var = global i8 0
   define i8* @test_global() {
   entry:
@@ -45,6 +56,10 @@
   define i8* @test_global_offset() {
   entry:
     ret i8* undef
+  }
+  define void @test_call() {
+  entry:
+    ret void
   }
 ...
 
@@ -84,4 +99,18 @@ body:             |
     %0:addrregs = LEA_aac %1, target-flags(tricore-lo) @var + 1
     $a2 = COPY %0
     RET implicit $a11, implicit $a2
+...
+
+---
+name:            test_call
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+liveins:         []
+body:             |
+  bb.0:
+    CALL @foo, csr_tricore_uppercontext, implicit-def $a11, implicit $psw
+    RET implicit $a11
 ...

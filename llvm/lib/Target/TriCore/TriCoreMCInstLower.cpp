@@ -41,7 +41,9 @@ MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   uint32_t RefFlags = 0;
   const unsigned TargetFlags = MO.getTargetFlags();
 
-  if ((MO.getTargetFlags() & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_HI)
+  if (TargetFlags == TriCoreII::MO_NO_FLAG)
+    RefFlags = TriCoreMCExpr::VK_TRICORE_None;
+  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_HI)
     RefFlags |= TriCoreMCExpr::VK_TRICORE_HI;
   else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_LO)
     RefFlags |= TriCoreMCExpr::VK_TRICORE_LO;
@@ -53,8 +55,10 @@ MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
     Expr = MCBinaryExpr::createAdd(
         Expr, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
 
-  auto RefKind = static_cast<TriCoreMCExpr::VariantKind>(RefFlags);
-  Expr = TriCoreMCExpr::create(Expr, RefKind, Ctx);
+  if (RefFlags != TriCoreMCExpr::VK_TRICORE_None) {
+    auto RefKind = static_cast<TriCoreMCExpr::VariantKind>(RefFlags);
+    Expr = TriCoreMCExpr::create(Expr, RefKind, Ctx);
+  }
 
   return MCOperand::createExpr(Expr);
 }
