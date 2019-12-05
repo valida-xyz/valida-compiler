@@ -22,6 +22,7 @@
 using namespace llvm;
 
 bool TriCoreFrameLowering::hasFP(const MachineFunction &MF) const {
+  // TODO: check if this function has a frame pointer
   return true;
 }
 

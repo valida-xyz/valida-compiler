@@ -46,6 +46,9 @@ TriCoreRegisterInfo::getCallPreservedMask(const MachineFunction &MF,
 
 BitVector
 TriCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
+  const TargetFrameLowering *TFI = getFrameLowering(MF);
+  assert(TFI && "TFI is null");
+
   BitVector Reserved(getNumRegs());
 
   // Use markSuperRegs to ensure any register aliases are also reserved
@@ -57,6 +60,11 @@ TriCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   markSuperRegs(Reserved, TriCore::A11); // return address
   markSuperRegs(Reserved, TriCore::PC);  // program counter
   markSuperRegs(Reserved, TriCore::PSW); // program status word register
+
+  // Mark frame pointer if available
+  if (TFI->hasFP(MF))
+    markSuperRegs(Reserved, TriCore::A14); // frame pointer
+
   assert(checkAllSuperRegsMarked(Reserved));
   return Reserved;
 }
@@ -128,6 +136,7 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
 Register
 TriCoreRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
+  // TODO: check if the function has a frame pointer
   return TriCore::A14;
 }
 
