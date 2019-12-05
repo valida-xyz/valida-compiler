@@ -2,6 +2,10 @@
 
 // RUN: %clang %s -### -no-canonical-prefixes -target tricore 2>&1 | FileCheck -check-prefix=CC1 %s
 // CC1: clang{{.*}} "-cc1" "-triple" "tricore"
+// CC1: "tricore-ld"
+
+// RUN: %clang -x assembler %s -### -no-canonical-prefixes -target tricore 2>&1 | FileCheck -check-prefix=CC1AS %s
+// CC1AS: clang{{.*}} "-cc1as" "-triple" "tricore" "-filetype" "obj"
 
 
 // RUN: %clang -target tricore %s -emit-llvm -S -o - | FileCheck %s

@@ -26,6 +26,7 @@
 #include "ToolChains/HIP.h"
 #include "ToolChains/Haiku.h"
 #include "ToolChains/Hexagon.h"
+#include "ToolChains/HighTec.h"
 #include "ToolChains/Hurd.h"
 #include "ToolChains/Lanai.h"
 #include "ToolChains/Linux.h"
@@ -4838,6 +4839,9 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
       case llvm::Triple::riscv32:
       case llvm::Triple::riscv64:
         TC = std::make_unique<toolchains::RISCVToolChain>(*this, Target, Args);
+        break;
+      case llvm::Triple::tricore:
+        TC = std::make_unique<toolchains::HighTec>(*this, Target, Args);
         break;
       default:
         if (Target.getVendor() == llvm::Triple::Myriad)
