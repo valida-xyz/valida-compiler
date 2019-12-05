@@ -211,8 +211,6 @@ void TriCoreInstrInfo::storeRegToStackSlot(
       MF.getMachineMemOperand(PtrInfo, MachineMemOperand::MOStore,
                               MFI.getObjectSize(FrameIndex), Align);
 
-  assert(!Register::isVirtualRegister(SrcReg) &&
-         "expected a physical register");
   unsigned Opc =
       getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ false);
   assert(Opc && "Unknown register class");
@@ -239,8 +237,6 @@ void TriCoreInstrInfo::loadRegFromStackSlot(
   MachineMemOperand *MMO = MF.getMachineMemOperand(
       PtrInfo, MachineMemOperand::MOLoad, MFI.getObjectSize(FrameIndex), Align);
 
-  assert(!Register::isVirtualRegister(DestReg) &&
-         "expected a physical register");
   unsigned Opc =
       getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ true);
   assert(Opc && "Unknown register class");
