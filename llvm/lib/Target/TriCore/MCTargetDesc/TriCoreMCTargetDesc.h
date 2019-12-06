@@ -25,7 +25,9 @@ class MCContext;
 class MCInstrInfo;
 class MCObjectTargetWriter;
 class MCRegisterInfo;
+class MCStreamer;
 class MCSubtargetInfo;
+class MCTargetStreamer;
 class StringRef;
 class Target;
 class Triple;
@@ -43,6 +45,10 @@ MCAsmBackend *createTriCoreAsmBackend(const Target &T,
 
 std::unique_ptr<MCObjectTargetWriter>
 createTriCoreELFObjectWriter(uint8_t OSABI);
+
+MCTargetStreamer *createTriCoreObjectTargetStreamer(MCStreamer &S,
+                                                    const MCSubtargetInfo &STI);
+
 } // namespace llvm
 
 // Defines symbolic names for TriCore registers.

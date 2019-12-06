@@ -1,8 +1,10 @@
 add_llvm_library(LLVMTriCoreDesc
   TriCoreAsmBackend.cpp
+  TriCoreELFStreamer.cpp
   TriCoreMCAsmInfo.cpp
   TriCoreMCCodeEmitter.cpp
   TriCoreELFObjectWriter.cpp
   TriCoreMCExpr.cpp
   TriCoreMCTargetDesc.cpp
+  TriCoreTargetStreamer.cpp
 )

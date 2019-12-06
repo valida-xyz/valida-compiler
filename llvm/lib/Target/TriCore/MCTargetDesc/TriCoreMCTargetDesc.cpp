@@ -78,4 +78,8 @@ extern "C" void LLVMInitializeTriCoreTargetMC() {
   TargetRegistry::RegisterMCCodeEmitter(*T, createTriCoreMCCodeEmitter);
   TargetRegistry::RegisterMCInstPrinter(*T, createTriCoreMCInstPrinter);
   TargetRegistry::RegisterMCSubtargetInfo(*T, createTriCoreMCSubtargetInfo);
+
+  // Register the obj target streamer.
+  TargetRegistry::RegisterObjectTargetStreamer(
+      *T, createTriCoreObjectTargetStreamer);
 }
