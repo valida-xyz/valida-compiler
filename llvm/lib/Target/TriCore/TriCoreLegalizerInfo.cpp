@@ -64,8 +64,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Binary Ops
 
-  // G_ADD, G_SUB, G_AND, G_OR and G_XOR are only legal for 32bit types
-  getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR})
+  // Simple binary operators are only legal for s32 types.
+  getActionDefinitionsBuilder(
+      {G_ADD, G_SUB, G_AND, G_OR, G_XOR, G_MUL, G_UMULH})
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 

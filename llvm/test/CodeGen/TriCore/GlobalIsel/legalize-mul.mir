@@ -1,0 +1,66 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+---
+name:            test_mul_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_mul_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[MUL:%[0-9]+]]:_(s32) = G_MUL [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[MUL]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_MUL %0, %1
+    $d2 = COPY %2(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_mul_small_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_mul_small_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[MUL:%[0-9]+]]:_(s32) = G_MUL [[COPY2]], [[COPY3]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[MUL]](s32)
+    ; CHECK: $d2 = COPY [[COPY4]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s8) = G_TRUNC %0:_(s32)
+    %3:_(s8) = G_TRUNC %1:_(s32)
+    %4:_(s8) = G_MUL %2, %3
+    %5:_(s32) = G_ANYEXT %4:_(s8)
+    $d2 = COPY %5(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_mul_big_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_mul_big_scalar
+    ; CHECK: [[E4:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[E6:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[D4:%[0-9]+]]:_(s32), [[D5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E4]](s64)
+    ; CHECK: [[D6:%[0-9]+]]:_(s32), [[D7:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E6]](s64)
+    ; CHECK: [[D4D6:%[0-9]+]]:_(s32) = G_MUL [[D4]], [[D6]]
+    ; CHECK: [[D5D6:%[0-9]+]]:_(s32) = G_MUL [[D5]], [[D6]]
+    ; CHECK: [[D4D7:%[0-9]+]]:_(s32) = G_MUL [[D4]], [[D7]]
+    ; CHECK: [[D4D6HI:%[0-9]+]]:_(s32) = G_UMULH [[D4]], [[D6]]
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[D5D6]], [[D4D7]]
+    ; CHECK: [[ADD1:%[0-9]+]]:_(s32) = G_ADD [[ADD]], [[D4D6HI]]
+    ; CHECK: [[MERGE:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[D4D6]](s32), [[ADD1]](s32)
+    ; CHECK: $e2 = COPY [[MERGE]](s64)
+    ; CHECK: RET implicit $a11, implicit $e2
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s64) = G_MUL %0, %1
+    $e2 = COPY %2(s64)
+    RET implicit $a11, implicit $e2
+
+...
