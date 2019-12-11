@@ -258,6 +258,7 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   // Arithmetic ops.
   case TargetOpcode::G_ADD:
   case TargetOpcode::G_SUB:
+  case TargetOpcode::G_MUL:
   // Bitwise ops.
   case TargetOpcode::G_AND:
   case TargetOpcode::G_OR:
