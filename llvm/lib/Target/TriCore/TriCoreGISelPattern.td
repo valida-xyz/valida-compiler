@@ -75,6 +75,10 @@ def : Pat<(i32 (trunc ExtAddrRegs:$src)), (trunc_i32_addr ExtAddrRegs:$src)>;
 def : SimpleBinOpPat<add, ADD_ddd>;
 def : SimpleBinOpPat<sub, SUB_ddd>;
 
+// 2.1.3 Multiply and Multiply-Add
+
+def : SimpleBinOpPat<mul, MUL_ddd>;
+
 // 2.1.8 Logical
 
 def : SimpleBinOpPat<and, AND_ddd>;

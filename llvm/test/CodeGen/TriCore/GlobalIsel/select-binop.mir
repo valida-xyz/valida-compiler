@@ -188,3 +188,23 @@ body:             |
     %3(p0) = G_PTR_ADD %2, %1
     $d4 = COPY %3(p0)
 ...
+
+---
+name:            mul_s32
+legalized:       true
+regBankSelected: true
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: mul_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[MUL:%[0-9]+]]:dataregs = MUL_ddd [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[MUL]]
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:dataregbank(s32) = COPY $d4
+    %1:dataregbank(s32) = COPY $d5
+    %2:dataregbank(s32) = G_MUL %0, %1
+    $d2 = COPY %2(s32)
+    RET implicit $a11, implicit $d2
+
+...
