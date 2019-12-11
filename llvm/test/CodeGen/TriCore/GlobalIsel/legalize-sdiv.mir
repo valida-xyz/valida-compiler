@@ -1,0 +1,55 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+---
+name:            test_sdiv_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sdiv_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[OR:%[0-9]+]]:_(s32) = G_SDIV [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[OR]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_SDIV %0, %1
+    $d2 = COPY %2(s32)
+...
+---
+name:            test_sdiv_small_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sdiv_small_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[COPY1]](s32)
+    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC]](s8)
+    ; CHECK: [[SEXT1:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC1]](s8)
+    ; CHECK: [[SDIV:%[0-9]+]]:_(s32) = G_SDIV [[SEXT]], [[SEXT1]]
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[SDIV]](s32)
+    ; CHECK: $d2 = COPY [[COPY2]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s8) = G_TRUNC %0:_(s32)
+    %3:_(s8) = G_TRUNC %1:_(s32)
+    %4:_(s8) = G_SDIV %2, %3
+    %5:_(s32) = G_ANYEXT %4:_(s8)
+    $d2 = COPY %5(s32)
+...
+---
+name:            test_sdiv_big_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sdiv_big_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: $e4 = COPY [[COPY]](s64)
+    ; CHECK: $e6 = COPY [[COPY1]](s64)
+    ; CHECK: CALL &__divdi3, csr_tricore_uppercontext, implicit-def $a11,
+    ; CHECK-SAME: implicit $psw, implicit $e4, implicit $e6, implicit-def $e2
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e2
+    ; CHECK: $e2 = COPY [[COPY2]](s64)
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s64) = G_SDIV %0, %1
+    $e2 = COPY %2(s64)
+...
