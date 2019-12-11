@@ -66,12 +66,12 @@ private:
   bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
                         MachineIRBuilder &MIRBuilder) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectDivRem(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
-  bool selectSignedDivision(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
@@ -356,7 +356,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_PTR_ADD:
     return selectPtrAdd(I, MRI);
   case TargetOpcode::G_SDIV:
-    return selectSignedDivision(I, MRI);
+  case TargetOpcode::G_SREM:
+    return selectDivRem(I, MRI);
   case TargetOpcode::G_TRUNC:
     return selectTrunc(I, MRI);
   default:
@@ -861,27 +862,35 @@ bool TriCoreInstructionSelector::selectPtrAdd(
   return true;
 }
 
-bool TriCoreInstructionSelector::selectSignedDivision(
-    MachineInstr &I, MachineRegisterInfo &MRI) const {
+// G_SDIV and G_SREM is handled similarly. Since TriCore DIV instruction result
+// contains both the remainder and the quotient, therefore it is used for both
+// of these generic instructions to select them. Depending on which generic
+// instruction using this function either the quotient (G_SDIV) or the remainder
+// (G_SREM) will be extracted from the DIV_edd result.
+bool TriCoreInstructionSelector::selectDivRem(MachineInstr &I,
+                                              MachineRegisterInfo &MRI) const {
+  const bool IsSDiv = I.getOpcode() == TargetOpcode::G_SDIV;
+  auto OpcStr = IsSDiv ? "G_SDIV" : "G_SREM";
+
   const Register &DstReg = I.getOperand(0).getReg();
   const Register &Src1Reg = I.getOperand(1).getReg();
   const Register &Src2Reg = I.getOperand(2).getReg();
 
   const LLT &ScalarTy = MRI.getType(DstReg);
 
-  if (!checkType(LLT::scalar(32), ScalarTy, "G_SDIV"))
+  if (!checkType(LLT::scalar(32), ScalarTy, OpcStr))
     return false;
 
   const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
   const RegisterBank &Src1RB = *RBI.getRegBank(Src1Reg, MRI, TRI);
   const RegisterBank &Src2RB = *RBI.getRegBank(Src2Reg, MRI, TRI);
 
+  // Make sure that using DataRegBank for all operands
   if (DstRB.getID() != Src1RB.getID() || DstRB.getID() != Src2RB.getID() ||
       DstRB.getID() != TriCore::DataRegBankID) {
-
-    LLVM_DEBUG(dbgs() << "Unexpected regbank for G_SDIV. DstRB: " << DstRB
-                      << ", Src1RB: " << Src1RB << ", Src2RB: " << Src2RB
-                      << '\n');
+    LLVM_DEBUG(dbgs() << "Unexpected regbank for " << OpcStr
+                      << ". DstRB: " << DstRB << ", Src1RB: " << Src1RB
+                      << ", Src2RB: " << Src2RB << '\n');
     return false;
   }
 
@@ -889,14 +898,17 @@ bool TriCoreInstructionSelector::selectSignedDivision(
       MRI.createVirtualRegister(&TriCore::ExtDataRegsRegClass);
 
   MachineIRBuilder MIRBuilder(I);
+
   auto DivMI = MIRBuilder.buildInstr(TriCore::DIV_edd)
                    .addDef(DivReg)
                    .addUse(Src1Reg)
                    .addUse(Src2Reg);
 
+  auto SubRegIdx =  IsSDiv ? TriCore::dsub0 : TriCore::dsub1;
+
   MIRBuilder.buildInstr(TriCore::COPY)
       .addDef(DstReg)
-      .addUse(DivReg, 0, TriCore::dsub0);
+      .addUse(DivReg, 0, SubRegIdx);
 
   constrainSelectedInstRegOperands(*DivMI, TII, TRI, RBI);
 
