@@ -1,0 +1,77 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+---
+name:            test_srem_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_srem_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[SREM:%[0-9]+]]:_(s32) = G_SREM [[COPY]], [[COPY1]]
+    ; CHECK: $d2 = COPY [[SREM]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = G_SREM %0, %1
+    $d2 = COPY %2(s32)
+    RET implicit $a11, implicit $d2
+
+...
+---
+name:            test_srem_small_scalar
+body:     |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_srem_small_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[COPY]](s32)
+    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[COPY1]](s32)
+    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC]](s8)
+    ; CHECK: [[SEXT1:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC1]](s8)
+    ; CHECK: [[SREM:%[0-9]+]]:_(s32) = G_SREM [[SEXT]], [[SEXT1]]
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[SREM]](s32)
+    ; CHECK: $d2 = COPY [[COPY2]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s8) = G_TRUNC %0:_(s32)
+    %3:_(s8) = G_TRUNC %1:_(s32)
+    %4:_(s8) = G_SREM %2, %3
+    %5:_(s32) = G_ANYEXT %4:_(s8)
+    $d2 = COPY %5(s32)
+    RET implicit $a11, implicit $d2
+
+...
+
+---
+name:            test_srem_big_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_srem_big_scalar
+    ; CHECK: [[E4:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[E6:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: $e4 = COPY [[E4]](s64)
+    ; CHECK: $e6 = COPY [[E6]](s64)
+    ; CHECK: CALL &__divdi3, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit $e6, implicit-def $e2
+    ; CHECK: [[E2:%[0-9]+]]:_(s64) = COPY $e2
+    ; CHECK: [[D2:%[0-9]+]]:_(s32), [[D3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E2]](s64)
+    ; CHECK: [[D6:%[0-9]+]]:_(s32), [[D7:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E6]](s64)
+    ; CHECK: [[MUL1:%[0-9]+]]:_(s32) = G_MUL [[D2]], [[D6]]
+    ; CHECK: [[MUL2:%[0-9]+]]:_(s32) = G_MUL [[D3]], [[D6]]
+    ; CHECK: [[MUL3:%[0-9]+]]:_(s32) = G_MUL [[D2]], [[D7]]
+    ; CHECK: [[UMULH:%[0-9]+]]:_(s32) = G_UMULH [[D2]], [[D6]]
+    ; CHECK: [[ADD1:%[0-9]+]]:_(s32) = G_ADD [[MUL2]], [[MUL3]]
+    ; CHECK: [[ADD2:%[0-9]+]]:_(s32) = G_ADD [[ADD1]], [[UMULH]]
+    ; CHECK: [[D4:%[0-9]+]]:_(s32), [[D5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[E4]](s64)
+    ; CHECK: [[USUBO:%[0-9]+]]:_(s32), [[CARRY1:%[0-9]+]]:_(s1) = G_USUBO [[D4]], [[MUL1]]
+    ; CHECK: [[USUBE:%[0-9]+]]:_(s32), [[CARRY2:%[0-9]+]]:_(s1) = G_USUBE [[D5]], [[ADD2]], [[CARRY1]]
+    ; CHECK: [[MERGE:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[USUBO]](s32), [[USUBE]](s32)
+    ; CHECK: $e2 = COPY [[MERGE]](s64)
+    ; CHECK: RET implicit $a11, implicit $e2
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s64) = G_SREM %0, %1
+    $e2 = COPY %2(s64)
+    RET implicit $a11, implicit $e2
+
+...
+
