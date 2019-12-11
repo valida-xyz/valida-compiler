@@ -206,5 +206,30 @@ body:             |
     %2:dataregbank(s32) = G_MUL %0, %1
     $d2 = COPY %2(s32)
     RET implicit $a11, implicit $d2
+...
 
+---
+name:            sdiv_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: sdiv_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[DIV_edd:%[0-9]+]]:extdataregs = DIV_edd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY [[DIV_edd]].dsub0
+    ; CHECK: $d4 = COPY [[COPY2]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_SDIV %0, %1
+    $d4 = COPY %2(s32)
 ...

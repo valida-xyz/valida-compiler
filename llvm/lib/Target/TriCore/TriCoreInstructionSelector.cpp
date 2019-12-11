@@ -71,6 +71,7 @@ private:
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectSignedDivision(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
@@ -354,6 +355,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectLoadStore(I, MRI);
   case TargetOpcode::G_PTR_ADD:
     return selectPtrAdd(I, MRI);
+  case TargetOpcode::G_SDIV:
+    return selectSignedDivision(I, MRI);
   case TargetOpcode::G_TRUNC:
     return selectTrunc(I, MRI);
   default:
@@ -855,6 +858,56 @@ bool TriCoreInstructionSelector::selectPtrAdd(
 
   I.setDesc(TII.get(AddOpc));
   constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectSignedDivision(
+    MachineInstr &I, MachineRegisterInfo &MRI) const {
+  const Register &DstReg = I.getOperand(0).getReg();
+  const Register &Src1Reg = I.getOperand(1).getReg();
+  const Register &Src2Reg = I.getOperand(2).getReg();
+
+  const LLT &ScalarTy = MRI.getType(DstReg);
+
+  if (!checkType(LLT::scalar(32), ScalarTy, "G_SDIV"))
+    return false;
+
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const RegisterBank &Src1RB = *RBI.getRegBank(Src1Reg, MRI, TRI);
+  const RegisterBank &Src2RB = *RBI.getRegBank(Src2Reg, MRI, TRI);
+
+  if (DstRB.getID() != Src1RB.getID() || DstRB.getID() != Src2RB.getID() ||
+      DstRB.getID() != TriCore::DataRegBankID) {
+
+    LLVM_DEBUG(dbgs() << "Unexpected regbank for G_SDIV. DstRB: " << DstRB
+                      << ", Src1RB: " << Src1RB << ", Src2RB: " << Src2RB
+                      << '\n');
+    return false;
+  }
+
+  const Register DivReg =
+      MRI.createVirtualRegister(&TriCore::ExtDataRegsRegClass);
+
+  MachineIRBuilder MIRBuilder(I);
+  auto DivMI = MIRBuilder.buildInstr(TriCore::DIV_edd)
+                   .addDef(DivReg)
+                   .addUse(Src1Reg)
+                   .addUse(Src2Reg);
+
+  MIRBuilder.buildInstr(TriCore::COPY)
+      .addDef(DstReg)
+      .addUse(DivReg, 0, TriCore::dsub0);
+
+  constrainSelectedInstRegOperands(*DivMI, TII, TRI, RBI);
+
+  if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+          DstReg, TriCore::DataRegsRegClass, MRI)) {
+    LLVM_DEBUG(dbgs() << "Failed to constrain subregister COPY\n");
+    return false;
+  }
+
+  I.removeFromParent();
+
   return true;
 }
 
