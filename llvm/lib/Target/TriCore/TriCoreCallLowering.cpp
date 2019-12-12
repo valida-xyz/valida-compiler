@@ -120,10 +120,11 @@ struct OutgoingValueHandler : public CallLowering::ValueHandler {
                        MachineInstrBuilder MIB, CCAssignFn *AssignFn,
                        CCAssignFn *AssignFnVarArg)
       : ValueHandler(B, MRI, AssignFn), MIB(MIB),
-        AssignFnVarArg(AssignFnVarArg) {}
+        AssignFnVarArg(AssignFnVarArg), StackSize(0) {}
 
   MachineInstrBuilder MIB;
   CCAssignFn *AssignFnVarArg;
+  uint64_t StackSize;
 
   Register getStackAddress(uint64_t Size, int64_t Offset,
                            MachinePointerInfo &MPO) override {
@@ -165,6 +166,8 @@ struct OutgoingValueHandler : public CallLowering::ValueHandler {
       Res = AssignFn(ValNo, ValVT, LocVT, LocInfo, Flags, State);
     else
       Res = AssignFnVarArg(ValNo, ValVT, LocVT, LocInfo, Flags, State);
+
+    StackSize = State.getNextStackOffset();
 
     return Res;
   }
@@ -363,6 +366,11 @@ bool TriCoreCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   CCAssignFn *AssignFnFixed = CC_TriCore;
   CCAssignFn *AssignFnVarArg = CC_TriCore_VarArg;
 
+  // Create the ADJCALLSTACKDOWN before the actual CALL* instruction. We will
+  // add the required stack size to it after we have processed the arguments.
+  MachineInstrBuilder CallSeqStart;
+  CallSeqStart = MIRBuilder.buildInstr(TriCore::ADJCALLSTACKDOWN);
+
   // Create a temporarily-floating call instruction so we can add the implicit
   // uses of arg registers.
   auto MIB = MIRBuilder.buildInstrNoInsert(Info.Callee.isReg() ? TriCore::CALLI
@@ -412,6 +420,16 @@ bool TriCoreCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
     if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
       return false;
   }
+
+  // Now that we figured out the required stack size, add it as the first
+  // operand to the ADJCALLSTACKDOWN. The second operand is only needed for tail
+  // calls.
+  CallSeqStart.addImm(Handler.StackSize).addImm(0);
+
+  // Adjust the stack back up by the same amount we decreased it previously.
+  MIRBuilder.buildInstr(TriCore::ADJCALLSTACKUP)
+      .addImm(Handler.StackSize)
+      .addImm(0);
 
   return true;
 }

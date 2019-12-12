@@ -12,6 +12,21 @@
 
 include "TriCoreInstrFormats.td"
 
+
+//===----------------------------------------------------------------------===//
+// TriCore Pseudo instructions
+//
+
+// Call stack handling
+// These instructions are generated during the call lowering in
+// TriCoreCallLowering.cpp and communicate the required call frame size of a
+// call instruction to the PrologEpilogInserter pass.
+let Defs = [A10], Uses = [A10], hasSideEffects = 1, isCodeGenOnly = 1 in {
+def ADJCALLSTACKDOWN : PseudoInst<(outs), (ins i32imm:$amt1, i32imm:$amt2)>;
+def ADJCALLSTACKUP : PseudoInst<(outs), (ins i32imm:$amt1, i32imm:$amt2)>;
+} // Defs = [A10], Uses = [A10], hasSideEffects = 1, isCodeGenOnly = 1
+
+
 //===----------------------------------------------------------------------===//
 // TriCore special operands.
 //

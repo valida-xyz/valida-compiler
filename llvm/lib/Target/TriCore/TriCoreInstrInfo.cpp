@@ -29,7 +29,9 @@
 
 using namespace llvm;
 
-TriCoreInstrInfo::TriCoreInstrInfo() : TriCoreGenInstrInfo(), TRI() {}
+TriCoreInstrInfo::TriCoreInstrInfo()
+    : TriCoreGenInstrInfo(TriCore::ADJCALLSTACKDOWN, TriCore::ADJCALLSTACKUP),
+      TRI() {}
 
 std::pair<unsigned int, unsigned int>
 TriCoreInstrInfo::decomposeMachineOperandsTargetFlags(unsigned int TF) const {
