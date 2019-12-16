@@ -24,8 +24,8 @@ def CC_TriCore : CallingConv<[
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
 
   // Try to find a free scalar argument register
-  CCIfType<[i32], CCAssignToReg<[D4, D5, D6, D7]>>,
-  CCIfType<[i64], CCAssignToReg<[E4, E6]>>,
+  CCIfType<[i32, f32], CCAssignToReg<[D4, D5, D6, D7]>>,
+  CCIfType<[i64, f64], CCAssignToReg<[E4, E6]>>,
 
   // Pointers are handed over as iPtr's. Later code in GlobalISel can only
   // handle integer types, so we convert here
@@ -34,8 +34,8 @@ def CC_TriCore : CallingConv<[
   CCIfPtr<CCAssignToReg<[A4, A5, A6, A7]>>,
 
   // All registers are exhausted, pass the rest on the stack
-  CCIfType<[i32], CCAssignToStack<4, 4>>,
-  CCIfType<[i64], CCAssignToStack<8, 4>>,
+  CCIfType<[i32, f32], CCAssignToStack<4, 4>>,
+  CCIfType<[i64, f64], CCAssignToStack<8, 4>>,
  ]>;
 
 let Entry = 1 in
@@ -44,8 +44,8 @@ def CC_TriCore_VarArg : CallingConv<[
   // Everything is on the stack.
   CCIfPtr<CCBitConvertToType<i32>>,
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
-  CCIfType<[i32], CCAssignToStack<4, 4>>,
-  CCIfType<[i64], CCAssignToStack<8, 4>>,
+  CCIfType<[i32, f32], CCAssignToStack<4, 4>>,
+  CCIfType<[i64, f64], CCAssignToStack<8, 4>>,
 ]>;
 
  let Entry = 1 in
@@ -55,8 +55,8 @@ def CC_TriCore_VarArg : CallingConv<[
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
 
   // Try to find a free scalar return register
-  CCIfType<[i32], CCAssignToReg<[D2, D3]>>,
-  CCIfType<[i64], CCAssignToReg<[E2]>>,
+  CCIfType<[i32, f32], CCAssignToReg<[D2, D3]>>,
+  CCIfType<[i64, f64], CCAssignToReg<[E2]>>,
 
   // Pointers are handed over as iPtr's. Later code in GlobalISel can only
   // handle integer types, so we convert here
