@@ -23,6 +23,7 @@ TriCoreMCAsmInfo::TriCoreMCAsmInfo(const Triple &TT) {
   Data16bitsDirective = "\t.hword\t";
   Data32bitsDirective = "\t.word\t";
   Data64bitsDirective = nullptr;
+  ExceptionsType = ExceptionHandling::DwarfCFI;
   MinInstAlignment = 2;
   PrivateGlobalPrefix = ".L";
   PrivateLabelPrefix = ".L";

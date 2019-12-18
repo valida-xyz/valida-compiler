@@ -10,11 +10,12 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "InstPrinter/TriCoreInstPrinter.h"
 #include "TriCoreMCTargetDesc.h"
-#include "TriCoreMCAsmInfo.h"
+#include "InstPrinter/TriCoreInstPrinter.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
+#include "TriCoreMCAsmInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
@@ -50,7 +51,14 @@ static MCRegisterInfo *createTriCoreMCRegisterInfo(const Triple &TT) {
 static MCAsmInfo *createTriCoreMCAsmInfo(const MCRegisterInfo &MRI,
                                          const Triple &TT,
                                          const MCTargetOptions &Options) {
-  return new TriCoreMCAsmInfo(TT);
+  MCAsmInfo *MAI = new TriCoreMCAsmInfo(TT);
+
+  // Set CFA default to SP for DWARF CFI
+  const unsigned SP = MRI.getDwarfRegNum(TriCore::A10, true);
+  const MCCFIInstruction CFI = MCCFIInstruction::createDefCfa(nullptr, SP, 0);
+  MAI->addInitialFrameState(CFI);
+
+  return MAI;
 }
 
 static MCInstPrinter *createTriCoreMCInstPrinter(const Triple &T,
