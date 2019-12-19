@@ -21,6 +21,8 @@ public:
   TriCoreELFObjectWriter(uint8_t OSABI);
 
   ~TriCoreELFObjectWriter() override;
+  bool needsRelocateWithSymbol(const MCSymbol &Sym,
+                               unsigned Type) const override;
 
 protected:
   unsigned getRelocType(MCContext &Ctx, const MCValue &Target,
@@ -33,6 +35,16 @@ TriCoreELFObjectWriter::TriCoreELFObjectWriter(uint8_t OSABI)
                               /*HasRelocationAddend*/ true) {}
 
 TriCoreELFObjectWriter::~TriCoreELFObjectWriter() {}
+
+bool TriCoreELFObjectWriter::needsRelocateWithSymbol(const MCSymbol &Sym,
+                                                     unsigned Type) const {
+  // FIXME: tricore-ld cannot handle mergeable sections when a section-relative
+  //  relocation is used. To get around this problem we force relocations with
+  //  symbols for now.
+  //  This should be reverted once we have our own linker that can handle
+  //  this correctly
+  return true;
+}
 
 unsigned TriCoreELFObjectWriter::getRelocType(MCContext &Ctx,
                                               const MCValue &Target,

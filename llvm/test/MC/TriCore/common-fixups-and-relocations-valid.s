@@ -18,7 +18,7 @@
 
 
 .4byte foo
-# RELOC: 0x0 R_TRICORE_32ABS .text 0x8
+# RELOC: 0x0 R_TRICORE_32ABS foo 0x0
 
 .4byte bar+4
 # RELOC: 0x4 R_TRICORE_32ABS bar 0x4
@@ -77,13 +77,13 @@ foo_abs:
 
 .code32
 calla myfunc_24abs-4
-# RELOC: 0x24 R_TRICORE_24ABS .text 0x28
+# RELOC: 0x24 R_TRICORE_24ABS myfunc_24abs 0xFFFFFFFC
 # INSTR: calla 0
 # FIXUP: fixup A - offset: 0, value: myfunc_24abs-4, kind: fixup_24abs
 
 .code32
 calla myfunc_24abs+4
-# RELOC: 0x28 R_TRICORE_24ABS .text 0x30
+# RELOC: 0x28 R_TRICORE_24ABS myfunc_24abs 0x4
 # INSTR: calla 0
 # FIXUP: fixup A - offset: 0, value: myfunc_24abs+4, kind: fixup_24abs
 
@@ -111,19 +111,19 @@ calla bar+4
 
 .code32
 calla myfunc_24abs
-# RELOC: 0x38 R_TRICORE_24ABS .text 0x2C
+# RELOC: 0x38 R_TRICORE_24ABS myfunc_24abs 0x0
 # INSTR: calla 0
 # FIXUP: fixup A - offset: 0, value: myfunc_24abs, kind: fixup_24abs
 
 .code32
 calla myfunc_24abs+4
-# RELOC: 0x3C R_TRICORE_24ABS .text 0x30
+# RELOC: 0x3C R_TRICORE_24ABS myfunc_24abs 0x4
 # INSTR: calla 0
 # FIXUP: fixup A - offset: 0, value: myfunc_24abs+4, kind: fixup_24abs
 
 .code32
 calla 1b
-# RELOC: 0x40 R_TRICORE_24ABS .text 0x38
+# RELOC: 0x40 R_TRICORE_24ABS .Ltmp0 0x0
 # INSTR: calla 0
 # FIXUP: fixup A - offset: 0, value: .Ltmp0, kind: fixup_24abs
 
@@ -173,7 +173,7 @@ movh.a %a0, Hi:bar+2
 
 .code32
 addih.a %a0, %a0, hI:foo
-# RELOC: 0x5C R_TRICORE_HI .text 0x8
+# RELOC: 0x5C R_TRICORE_HI foo 0x0
 # INSTR: addih.a %a0, %a0, 0
 # FIXUP: fixup A - offset: 0, value: hi:foo, kind: fixup_hi
 
@@ -227,19 +227,19 @@ lea %a0, [%a0], lo:bar+4
 
 .code32
 lea %a0, foo-4
-# RELOC: 0x78 R_TRICORE_18ABS .text 0x4
+# RELOC: 0x78 R_TRICORE_18ABS foo 0xFFFFFFFC
 # INSTR: lea %a0, 0
 # FIXUP: fixup A - offset: 0, value: foo-4, kind: fixup_18abs
 
 .code32
 st.b foo, %d0
-# RELOC: 0x7C R_TRICORE_18ABS .text 0x8
+# RELOC: 0x7C R_TRICORE_18ABS foo 0x0
 # INSTR: st.b 0, %d0
 # FIXUP: fixup A - offset: 0, value: foo, kind: fixup_18abs
 
 .code32
 st.w foo+4, %d0
-# RELOC: 0x80 R_TRICORE_18ABS .text 0xC
+# RELOC: 0x80 R_TRICORE_18ABS foo 0x4
 # INSTR: st.w 0, %d0
 # FIXUP: fixup A - offset: 0, value: foo+4, kind: fixup_18abs
 
