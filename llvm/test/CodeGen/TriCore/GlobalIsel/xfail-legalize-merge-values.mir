@@ -1,0 +1,19 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+# To legalize this test we require legality of the G_INSERT instruction, which
+# we don't support yet.
+
+---
+name: test_merge_s68_s17
+body: |
+  bb.0:
+    ; CHECK-NOT: LLVM ERROR: unable to legalize instruction: {{%[0-9]+}}:_({{s[0-9]+}}) = G_INSERT
+    %0:_(s17) = G_CONSTANT i17 0
+    %1:_(s17) = G_CONSTANT i17 1
+    %2:_(s17) = G_CONSTANT i17 2
+    %3:_(s17) = G_CONSTANT i17 3
+    %4:_(s68) = G_MERGE_VALUES %0, %1, %2, %3
+    %5:_(s64) = G_TRUNC %4
+    $e0 = COPY %5
+...

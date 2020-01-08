@@ -15,6 +15,7 @@
 #include "TriCoreSubtarget.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerHelper.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
 
@@ -204,21 +205,31 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       // Lower anything left over to G_*EXT and G_LOAD
       .lower();
 
-  // G_MERGE_VALUES and G_UNMERGE_VALUES should require the smaller type to
-  // be s32 and the bigger type to be 64 bits
+  // G_MERGE_VALUES and G_UNMERGE_VALUES are legalizer artifacts. Therefore
+  // their types correspond to any legal types that are produced or consumed by
+  // our instructions. This means that we require the smaller type to be a power
+  // of 2 between s8 and s32 and the bigger type to be a power of 2 between s8
+  // and s64. Furthermore the bigger type must be a multiple of the smaller type
   for (unsigned OpCode : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
-    unsigned BigTyIdx = OpCode == G_MERGE_VALUES ? 0 : 1;
-    unsigned SmallTyIdx = OpCode == G_MERGE_VALUES ? 1 : 0;
+    const unsigned BigTyIdx = OpCode == G_MERGE_VALUES ? 0 : 1;
+    const unsigned SmallTyIdx = OpCode == G_MERGE_VALUES ? 1 : 0;
 
     getActionDefinitionsBuilder(OpCode)
+        // Clamp SmallTy to s8-s32 and make it a power of 2
+        .clampScalar(SmallTyIdx, s8, s32)
+        .widenScalarToNextPow2(SmallTyIdx)
+        // Clamp BigTy to s8-s64 and make it a power of 2
+        .clampScalar(BigTyIdx, s8, s64)
+        .widenScalarToNextPow2(BigTyIdx)
+        // At this point we only have power of 2 types between s8 and s64
         .legalIf([=](const LegalityQuery &Query) {
           const LLT &BigTy = Query.Types[BigTyIdx];
           const LLT &SmallTy = Query.Types[SmallTyIdx];
+          const unsigned BigSize = BigTy.getSizeInBits();
+          const unsigned SmallSize = SmallTy.getSizeInBits();
 
-          return SmallTy == s32 && BigTy == s64;
-        })
-        .clampScalar(SmallTyIdx, s32, s32)
-        .clampScalar(BigTyIdx, s64, s64);
+          return BigSize % SmallSize == 0;
+        });
   }
 
   // Branches

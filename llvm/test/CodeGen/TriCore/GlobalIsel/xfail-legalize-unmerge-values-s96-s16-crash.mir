@@ -1,0 +1,26 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -run-pass=legalizer -verify-machineinstrs %s -o /dev/null
+# XFAIL: *
+
+# This code triggers a bug in GlobalISel where the legalizer thinks the source
+# of the G_UNMERGE_VALUES is a vector, causing a crash.
+
+---
+name: test_unmerge_s16_s96
+body: |
+  bb.0:
+    %0:_(s64) = G_CONSTANT i64 0
+    %1:_(s96) = G_ANYEXT %0
+    %2:_(s16), %3:_(s16), %4:_(s16), %5:_(s16), %6:_(s16), %7:_(s16) = G_UNMERGE_VALUES %1
+    %10:_(s32) = G_ANYEXT %2
+    %11:_(s32) = G_ANYEXT %3
+    %12:_(s32) = G_ANYEXT %4
+    %13:_(s32) = G_ANYEXT %5
+    %14:_(s32) = G_ANYEXT %6
+    %15:_(s32) = G_ANYEXT %7
+    $d0 = COPY %10
+    $d1 = COPY %11
+    $d2 = COPY %12
+    $d3 = COPY %13
+    $d4 = COPY %14
+    $d5 = COPY %15
+...
