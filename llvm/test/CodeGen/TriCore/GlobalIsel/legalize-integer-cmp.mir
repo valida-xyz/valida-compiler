@@ -28,14 +28,14 @@ body:             |
     ; CHECK-LABEL: name: test_icmp_s16
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
-    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s16) = G_TRUNC [[COPY1]](s32)
-    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC]](s16)
-    ; CHECK: [[SEXT1:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC1]](s16)
-    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[SEXT]](s32), [[SEXT1]]
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[SEXT_INREG:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY2]], 16
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[SEXT_INREG1:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY3]], 16
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(slt), [[SEXT_INREG]](s32), [[SEXT_INREG1]]
     ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
-    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[C]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY4]], [[C]]
     ; CHECK: $d2 = COPY [[AND]](s32)
     %0:_(s32) = COPY $d4
     %1:_(s32) = COPY $d5

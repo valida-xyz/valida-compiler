@@ -123,11 +123,25 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // legal instruction and all larger output types consumed by at least one
   // legal instruction
   getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT})
-      .legalForCartesianProduct({s8, s16, s32, s64}, {s1, s8, s16, s32});
+      .legalIf([=](const LegalityQuery &Query) {
+        // Extensions are legal if the destination type fits in a register
+        // and is a power of 2
+        unsigned DstSize = Query.Types[0].getSizeInBits();
+        return DstSize == 32 || DstSize == 64;
+      })
+      // Widen is currently not supported for G_*EXT. The artifact combiner of
+      // the legalizer will create G_SEXT_INREG which can be widened.
+      .clampScalar(0, s32, s64);
 
   // G_TRUNC is always legal as we can handle code-gen implications on the
   // extension side. Also this helps us to avoid certain code-duplications
   getActionDefinitionsBuilder(G_TRUNC).alwaysLegal();
+
+  // G_SEXT_INREG is legal if it fits our registers
+  getActionDefinitionsBuilder(G_SEXT_INREG)
+      .legalForTypeWithAnyImm({s32, s64})
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0);
 
   // Load & Store
 

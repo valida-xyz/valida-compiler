@@ -24,13 +24,13 @@ body:     |
     ; CHECK-LABEL: name: test_srem_small_scalar
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[COPY]](s32)
-    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[COPY1]](s32)
-    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC]](s8)
-    ; CHECK: [[SEXT1:%[0-9]+]]:_(s32) = G_SEXT [[TRUNC1]](s8)
-    ; CHECK: [[SREM:%[0-9]+]]:_(s32) = G_SREM [[SEXT]], [[SEXT1]]
-    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[SREM]](s32)
-    ; CHECK: $d2 = COPY [[COPY2]](s32)
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[SEXT_INREG:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY2]], 8
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[SEXT_INREG1:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY3]], 8
+    ; CHECK: [[SREM:%[0-9]+]]:_(s32) = G_SREM [[SEXT_INREG]], [[SEXT_INREG1]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[SREM]](s32)
+    ; CHECK: $d2 = COPY [[COPY4]](s32)
     ; CHECK: RET implicit $a11, implicit $d2
     %0:_(s32) = COPY $d4
     %1:_(s32) = COPY $d5
