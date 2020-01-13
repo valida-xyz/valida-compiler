@@ -180,3 +180,21 @@ body: |
     $e4 = COPY %10(s64)
     $e4 = COPY %11(s64)
 ...
+
+---
+name:            test_sext_inreg
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    liveins: $e4
+    ; CHECK-LABEL: name: test_sext_inreg
+    ; CHECK: [[DEF:%[0-9]+]]:dataregbank(s64) = G_IMPLICIT_DEF
+    ; CHECK: [[SEXT_INREG:%[0-9]+]]:dataregbank(s64) = G_SEXT_INREG [[DEF]], 16
+    ; CHECK: $e4 = COPY [[SEXT_INREG]](s64)
+    %0(s64) = G_IMPLICIT_DEF
+    %1(s64) = G_SEXT_INREG %0(s64), 16
+    $e4 = COPY %1(s64)
+...
