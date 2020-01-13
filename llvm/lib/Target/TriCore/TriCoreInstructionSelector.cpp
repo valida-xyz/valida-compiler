@@ -17,6 +17,7 @@
 #include "TriCoreTargetMachine.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelectorImpl.h"
+#include "llvm/Support/MathExtras.h"
 
 #define DEBUG_TYPE "tricore-isel"
 
@@ -53,6 +54,11 @@ private:
 #include "TriCoreGenGlobalISel.inc"
 #undef GET_GLOBALISEL_TEMPORARIES_DECL
 
+  void emit32BitSext(MachineRegisterInfo &MRI, Register DstReg, Register SrcReg,
+                     unsigned SrcSize, MachineIRBuilder &MIRBuilder) const;
+  void emit32BitZext(MachineRegisterInfo &MRI, Register DstReg, Register SrcReg,
+                     unsigned SrcSize, MachineIRBuilder &MIRBuilder) const;
+
   void materialize32BitConstant(MachineIRBuilder &MIRBuilder, uint64_t Val,
                                 const Register &DestReg,
                                 MachineRegisterInfo &MRI) const;
@@ -67,6 +73,13 @@ private:
                         MachineIRBuilder &MIRBuilder) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectDivRem(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectExt(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectExtAny(MachineInstr &I, MachineRegisterInfo &MRI, unsigned DstSize,
+                    unsigned SrcSize) const;
+  bool selectExtSign(MachineInstr &I, MachineRegisterInfo &MRI,
+                     unsigned DstSize, unsigned SrcSize) const;
+  bool selectExtZero(MachineInstr &I, MachineRegisterInfo &MRI,
+                     unsigned DstSize, unsigned SrcSize) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -335,6 +348,11 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return true;
 
   switch (OpCode) {
+  case TargetOpcode::G_ANYEXT:
+  case TargetOpcode::G_SEXT:
+  case TargetOpcode::G_SEXT_INREG:
+  case TargetOpcode::G_ZEXT:
+    return selectExt(I, MRI);
   case TargetOpcode::G_BRCOND:
     return selectBrCond(I, MRI);
   case TargetOpcode::G_BRINDIRECT:
@@ -366,6 +384,37 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
 
   LLVM_DEBUG(dbgs() << "Encountered unsupported instruction.\n");
   return false;
+}
+
+void TriCoreInstructionSelector::emit32BitSext(
+    MachineRegisterInfo &MRI, Register DstReg, Register SrcReg,
+    unsigned SrcSize, MachineIRBuilder &MIRBuilder) const {
+  // 32-bit sign extension is done by the extract instruction. This instruction
+  // extracts a number of bits from a source register and sign-extends them.
+  const auto ExtrMI = MIRBuilder.buildInstr(TriCore::EXTR_ddcc)
+                          .addDef(DstReg)
+                          .addUse(SrcReg)
+                          .addImm(0)
+                          .addImm(SrcSize);
+
+  constrainSelectedInstRegOperands(*ExtrMI, TII, TRI, RBI);
+}
+
+void TriCoreInstructionSelector::emit32BitZext(
+    MachineRegisterInfo &MRI, Register DstReg, Register SrcReg,
+    unsigned SrcSize, MachineIRBuilder &MIRBuilder) const {
+  // 32-bit zero-extension can be achieved with the insert instruction. This
+  // instruction inserts a number of bits from the given immediate at a given
+  // position in the target register. By inserting 0 into the upper bits
+  // the source register is zero-extended.
+  const auto InsertMI = MIRBuilder.buildInstr(TriCore::INSERT_ddccc)
+                            .addDef(DstReg)
+                            .addUse(SrcReg)
+                            .addImm(0)
+                            .addImm(SrcSize)
+                            .addImm(32 - SrcSize);
+
+  constrainSelectedInstRegOperands(*InsertMI, TII, TRI, RBI);
 }
 
 void TriCoreInstructionSelector::materialize32BitConstant(
@@ -656,6 +705,308 @@ bool TriCoreInstructionSelector::selectCopy(MachineInstr &I,
     return false;
   }
 
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectExt(MachineInstr &I,
+                                           MachineRegisterInfo &MRI) const {
+  const bool IsSignedInReg = I.getOpcode() == TargetOpcode::G_SEXT_INREG;
+  const bool IsSigned = I.getOpcode() == TargetOpcode::G_SEXT || IsSignedInReg;
+  const bool IsAnyExt = I.getOpcode() == TargetOpcode::G_ANYEXT;
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+
+  const LLT DstTy = MRI.getType(DstReg);
+  const LLT SrcTy = MRI.getType(SrcReg);
+
+  const unsigned DstSize = DstTy.getSizeInBits();
+  const unsigned SrcSize =
+      IsSignedInReg ? I.getOperand(2).getImm() : SrcTy.getSizeInBits();
+
+  if (DstSize != 32 && DstSize != 64) {
+    LLVM_DEBUG(dbgs() << "Extension has type " << DstTy << ", but expected "
+                      << LLT::scalar(32) << " or " << LLT::scalar(64) << '\n');
+    return false;
+  }
+
+  const RegisterBank *DstRB = RBI.getRegBank(DstReg, MRI, TRI);
+  const RegisterBank *SrcRB = RBI.getRegBank(SrcReg, MRI, TRI);
+
+  if (!DstRB || DstRB->getID() != TriCore::DataRegBankID || !SrcRB ||
+      SrcRB->getID() != TriCore::DataRegBankID) {
+    LLVM_DEBUG(dbgs() << "Unexpected register bank for extension\n");
+    return false;
+  }
+
+  if (IsAnyExt)
+    return selectExtAny(I, MRI, DstSize, SrcSize);
+  else if (IsSigned)
+    return selectExtSign(I, MRI, DstSize, SrcSize);
+  else
+    return selectExtZero(I, MRI, DstSize, SrcSize);
+}
+
+bool TriCoreInstructionSelector::selectExtAny(MachineInstr &I,
+                                              MachineRegisterInfo &MRI,
+                                              unsigned DstSize,
+                                              unsigned SrcSize) const {
+  assert(I.getOpcode() == TargetOpcode::G_ANYEXT);
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+
+  // Select to COPY if we stay within the same register
+  if (DstSize == 32 || SrcSize > 32) {
+    I.setDesc(TII.get(TargetOpcode::COPY));
+
+    const TargetRegisterClass &RC =
+        SrcSize > 32 ? TriCore::ExtDataRegsRegClass : TriCore::DataRegsRegClass;
+
+    TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, RC, MRI);
+    TriCoreRegisterBankInfo::constrainGenericRegister(SrcReg, RC, MRI);
+    return true;
+  }
+
+  assert(DstSize == 64 && "Unexpected destination size for G_ANYEXT");
+  assert(SrcSize <= 32 && "Unexpected source size for G_ANYEXT");
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // For 64-bit we can do the following:
+  //
+  // %e = IMPLICIT_DEF
+  // %e = INSERT_SUBREG %e, %src, dsub0
+  const Register ExtReg =
+      MRI.createVirtualRegister(&TriCore::ExtDataRegsRegClass);
+
+  // Use implicit-def to get an undefined 64-bit register, then insert subreg
+  MIRBuilder.buildInstr(TargetOpcode::IMPLICIT_DEF).addDef(ExtReg);
+
+  // Insert into lower bits
+  MIRBuilder.buildInstr(TargetOpcode::INSERT_SUBREG)
+      .addDef(DstReg)
+      .addUse(ExtReg)
+      .addUse(SrcReg)
+      .addImm(TriCore::dsub0);
+
+  TriCoreRegisterBankInfo::constrainGenericRegister(
+      DstReg, TriCore::ExtDataRegsRegClass, MRI);
+  TriCoreRegisterBankInfo::constrainGenericRegister(
+      ExtReg, TriCore::ExtDataRegsRegClass, MRI);
+  TriCoreRegisterBankInfo::constrainGenericRegister(
+      SrcReg, TriCore::DataRegsRegClass, MRI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectExtSign(MachineInstr &I,
+                                               MachineRegisterInfo &MRI,
+                                               unsigned DstSize,
+                                               unsigned SrcSize) const {
+  assert(I.getOpcode() == TargetOpcode::G_SEXT ||
+         I.getOpcode() == TargetOpcode::G_SEXT_INREG);
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+
+  MachineIRBuilder MIRBuilder(I);
+
+  if (DstSize == 32) {
+    emit32BitSext(MRI, DstReg, SrcReg, SrcSize, MIRBuilder);
+    I.removeFromParent();
+    return true;
+  }
+
+  assert(DstSize == 64 && "Unexpected destination size for sign-extend");
+
+  // For 64-bits we can do the following:
+  //
+  // Source size 32-bits:
+  // mul %e, %d, 1
+  //
+  // Source size < 32-bits:
+  // extr %dn, %d, 0, SrcSize
+  // sha %dk, %dn, -31
+  // REG_SEQUENCE %dn, dsub0, %dk, dsub1
+  //
+  // Source size > 32-bits:
+  // same as 32-bit destination for upper subreg
+  if (SrcSize == 32) {
+    // This sign extends the result and puts it into a 64-bit register
+    const auto MulMI = MIRBuilder.buildInstr(TriCore::MUL_edc)
+                           .addDef(DstReg)
+                           .addUse(SrcReg)
+                           .addImm(1);
+
+    constrainSelectedInstRegOperands(*MulMI, TII, TRI, RBI);
+
+  } else if (SrcSize < 32) {
+    // Temporary registers
+    const Register ExtrReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+    const Register ShaReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // Sign-extend the source register to 32-bit
+    emit32BitSext(MRI, ExtrReg, SrcReg, SrcSize, MIRBuilder);
+
+    // This sets the the upper 32 bits to either 0 or 1
+    const auto ShaMI = MIRBuilder.buildInstr(TriCore::SHA_ddc)
+                           .addDef(ShaReg)
+                           .addUse(ExtrReg)
+                           .addImm(-31);
+
+    // Merge to extended register
+    MIRBuilder.buildInstr(TriCore::REG_SEQUENCE)
+        .addDef(DstReg)
+        .addUse(ExtrReg)
+        .addImm(TriCore::dsub0)
+        .addUse(ShaReg)
+        .addImm(TriCore::dsub1);
+
+    constrainSelectedInstRegOperands(*ShaMI, TII, TRI, RBI);
+
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+            DstReg, TriCore::ExtDataRegsRegClass, MRI)) {
+      LLVM_DEBUG(
+          dbgs() << "Failed to constrain destination register for G_SEXT\n");
+      return false;
+    }
+
+  } else {
+    // Source and destination register for the upper bits
+    const Register UpperReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+    const Register UpperDstReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // Extract the upper bits
+    MIRBuilder.buildInstr(TriCore::COPY)
+        .addDef(UpperReg)
+        .addUse(SrcReg, 0, TriCore::dsub1);
+
+    // Emit a 32-bit sign-extension for the upper bits
+    emit32BitSext(MRI, UpperDstReg, UpperReg, SrcSize - 32, MIRBuilder);
+
+    // Replace the original upper bits with the sign-extended upper bits
+    MIRBuilder.buildInstr(TargetOpcode::INSERT_SUBREG)
+        .addDef(DstReg)
+        .addUse(SrcReg)
+        .addUse(UpperDstReg)
+        .addImm(TriCore::dsub1);
+
+    // UpperReg, UpperDstReg already constrained by emit32BitSext
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+            DstReg, TriCore::ExtDataRegsRegClass, MRI) ||
+        !TriCoreRegisterBankInfo::constrainGenericRegister(
+            SrcReg, TriCore::ExtDataRegsRegClass, MRI)) {
+      LLVM_DEBUG(
+          dbgs()
+          << "Failed to constrain destination or source register for G_SEXT\n");
+      return false;
+    }
+  }
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectExtZero(MachineInstr &I,
+                                               MachineRegisterInfo &MRI,
+                                               unsigned DstSize,
+                                               unsigned SrcSize) const {
+  assert(I.getOpcode() == TargetOpcode::G_ZEXT);
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const Register SrcReg = I.getOperand(1).getReg();
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // If the destination size is 32-bits we can use insert. A bit-mask might be
+  // too big for the immediate of the AND instruction
+  if (DstSize == 32) {
+    emit32BitZext(MRI, DstReg, SrcReg, SrcSize, MIRBuilder);
+    I.removeFromParent();
+    return true;
+  }
+
+  assert(DstSize == 64 && "Unexpected destination size for zero-extend");
+
+  // For 64-bits we can do the following:
+  //
+  // Source size <= 32-bits:
+  // %lower = zero-extend %src
+  // %upper = MOV 0
+  // %e = REG_SEQUENCE %lower, dsub0, %upper, dsub1
+  //
+  // Source size > 32-bits:
+  // same as 32-bit for upper subreg
+  if (SrcSize <= 32) {
+    Register LowerExtReg = SrcReg;
+
+    if (SrcSize < 32) {
+      // Zero-extend the lower register to 32-bit if necessary
+      LowerExtReg = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+      emit32BitZext(MRI, LowerExtReg, SrcReg, SrcSize, MIRBuilder);
+    }
+
+    const Register ZeroReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // Set the upper subregister to 0
+    MIRBuilder.buildInstr(TriCore::MOV_dc).addDef(ZeroReg).addImm(0);
+
+    // Merge to 64-bit register
+    MIRBuilder.buildInstr(TargetOpcode::REG_SEQUENCE)
+        .addDef(DstReg)
+        .addUse(LowerExtReg)
+        .addImm(TriCore::dsub0)
+        .addUse(ZeroReg)
+        .addImm(TriCore::dsub1);
+
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+            DstReg, TriCore::ExtDataRegsRegClass, MRI) ||
+        !TriCoreRegisterBankInfo::constrainGenericRegister(
+            LowerExtReg, TriCore::DataRegsRegClass, MRI)) {
+      LLVM_DEBUG(dbgs() << "Failed to constrain destination or lower extension "
+                           "register for G_ZEXT\n");
+      return false;
+    }
+
+  } else {
+    const Register UpperReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+    const Register UpperDstReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    MIRBuilder.buildInstr(TargetOpcode::COPY)
+        .addDef(UpperReg)
+        .addUse(SrcReg, 0, TriCore::dsub1);
+
+    // Zero-extend the upper subregister
+    emit32BitZext(MRI, UpperDstReg, UpperReg, SrcSize - 32, MIRBuilder);
+
+    // Replace the original upper-bits with the zero-extended ones
+    MIRBuilder.buildInstr(TargetOpcode::INSERT_SUBREG)
+        .addDef(DstReg)
+        .addUse(SrcReg)
+        .addUse(UpperDstReg)
+        .addImm(TriCore::dsub1);
+
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+            DstReg, TriCore::ExtDataRegsRegClass, MRI) ||
+        !TriCoreRegisterBankInfo::constrainGenericRegister(
+            SrcReg, TriCore::ExtDataRegsRegClass, MRI)) {
+      LLVM_DEBUG(
+          dbgs()
+          << "Failed to constrain destination or source register for G_ZEXT\n");
+      return false;
+    }
+  }
+
+  I.removeFromParent();
   return true;
 }
 
