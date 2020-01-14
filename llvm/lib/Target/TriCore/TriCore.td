@@ -21,6 +21,7 @@ include "TriCoreCallingConv.td"
 //===----------------------------------------------------------------------===//
 
 include "TriCoreInstrInfo.td"
+include "TriCoreInstrInfoTC18.td"
 include "TriCoreGISelPattern.td"
 
 def TriCoreInstrInfo : InstrInfo;

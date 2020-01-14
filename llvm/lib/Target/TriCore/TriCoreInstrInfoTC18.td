@@ -42,7 +42,6 @@ let s1_d = 0, hasSideEffects = 1 in {
 //  FPU Arithmetic Instructions.
 //
 
-
 class FPU_ARITH_RR1<bits<8> opc1, bits<8> opc2, string mnemonic,
                     RegisterClass RC1, RegisterClass RC2>
                 : RR<opc1, opc2, (outs RC1:$d),
@@ -55,6 +54,16 @@ class FPU_ARITH_RR2<bits<8> opc1, bits<8> opc2, string mnemonic,
                 : RR<opc1, opc2, (outs RC:$d),
                 (ins RC:$s1),
                 mnemonic, "\t$d, $s1">;
+                
+//===----------------------------------------------------------------------===//
+//  FPU-conversion Instructions.
+//
+
+let s2 = 0, n = 2, Defs = [PSW] in
+class FPU_CONVERSION_RR<bits<8> opc2, string mnemonic,
+                        RegisterClass RC1, RegisterClass RC2>
+          : RR<0x4B, opc2, (outs RC1:$d), (ins RC2:$s1), mnemonic, "\t$d, $s1">;
+
 
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
@@ -195,3 +204,65 @@ let Defs = [PSW], n = 2 in {
                         "msub.df", "\t$d, $s3, $s1, $s2">;
   } // Uses = [PSW]
 } // Defs = [PSW], n = 2
+
+//===----------------------------------------------------------------------===//
+//  FPU-conversion Instructions.
+//
+
+let Uses = [PSW] in {
+  // DFTOI
+  def DFTOI_de : FPU_CONVERSION_RR<0x10, "dftoi", DataRegs, ExtDataRegs>;
+
+  // DFTOU
+  def DFTOU_de : FPU_CONVERSION_RR<0x12, "dftou", DataRegs, ExtDataRegs>;
+} // let Uses = [PSW]
+
+// DFTOIZ
+def DFTOIZ_de : FPU_CONVERSION_RR<0x13, "dftoiz", DataRegs, ExtDataRegs>;
+
+let Uses = [PSW] in {
+  // ITODF
+  def ITODF_ed : FPU_CONVERSION_RR<0x14, "itodf", ExtDataRegs, DataRegs>;
+
+  // UTODF
+  def UTODF_ed : FPU_CONVERSION_RR<0x16, "utodf", ExtDataRegs, DataRegs>;
+} // let Uses = [PSW]
+
+// DFTOUZ
+def DFTOUZ_de : FPU_CONVERSION_RR<0x17, "dftouz", DataRegs, ExtDataRegs>;
+
+// DFTOL
+let Uses = [PSW] in
+def DFTOL_ee : FPU_CONVERSION_RR<0x1A, "dftol", ExtDataRegs, ExtDataRegs>;
+
+// DFTOLZ
+def DFTOLZ_ee : FPU_CONVERSION_RR<0x1B, "dftolz", ExtDataRegs, ExtDataRegs>;
+
+// DFTOUL
+let Uses = [PSW] in
+def DFTOUL_ee : FPU_CONVERSION_RR<0x1E, "dftoul", ExtDataRegs, ExtDataRegs>;
+
+// DFTOULZ
+def DFTOULZ_ee : FPU_CONVERSION_RR<0x1F, "dftoulz", ExtDataRegs, ExtDataRegs>;
+
+let Uses = [PSW] in {
+  // LTODF
+  def LTODF_ee : FPU_CONVERSION_RR<0x26, "ltodf", ExtDataRegs, ExtDataRegs>;
+
+  // ULTODF
+  def ULTODF_ee : FPU_CONVERSION_RR<0x27, "ultodf", ExtDataRegs, ExtDataRegs>;
+
+  // DFTOF
+  def DFTOF_de : FPU_CONVERSION_RR<0x28, "dftof", DataRegs, ExtDataRegs>;
+} // let Uses = [PSW]
+
+// FTODF
+def FTODF_ed : FPU_CONVERSION_RR<0x29, "ftodf", ExtDataRegs, DataRegs>;
+
+// FTOIN
+let s2 = 0, n = 1, Defs = [PSW] in
+def FTOIN_dd : RR<0x4B, 0x37, (outs DataRegs:$d), (ins DataRegs:$s1),
+                  "ftoin", "\t$d, $s1">;
+
+// DFTOIN
+def DFTOIN_de : FPU_CONVERSION_RR<0x37, "dftoin", DataRegs, ExtDataRegs>;
