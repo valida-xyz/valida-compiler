@@ -319,6 +319,29 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     OpRegBankIdx = {PMI_FirstAddrReg, PMI_FirstAddrReg, PMI_FirstAddrReg};
     break;
   }
+  case TargetOpcode::G_MERGE_VALUES:
+  case TargetOpcode::G_UNMERGE_VALUES: {
+    // Merge and unmerge can only be selected on the data regbank, unless we can
+    // use a subregister copy. A subregister copy can be used if we go from 64
+    // to 32-bit.
+    const unsigned BigTyIdx =
+        OpCode == TargetOpcode::G_MERGE_VALUES ? 0 : NumOperands - 1;
+    const unsigned SmallTyIdx =
+        OpCode == TargetOpcode::G_MERGE_VALUES ? NumOperands - 1 : 0;
+
+    const LLT SmallTy = MRI.getType(MI.getOperand(SmallTyIdx).getReg());
+    const LLT BigTy = MRI.getType(MI.getOperand(BigTyIdx).getReg());
+
+    // Check if we can use the default mapping (subregister copy can be used)
+    if (SmallTy.getSizeInBits() == 32 && BigTy.getSizeInBits() == 64)
+      break;
+
+    // Force data regbank
+    for (unsigned Idx = 0; Idx < NumOperands; ++Idx)
+      OpRegBankIdx[Idx] = PMI_FirstDataReg;
+
+    break;
+  }
   default:
     break;
   }
