@@ -144,7 +144,7 @@ typedef struct struct_bitfields {
   int x: 16; int :0; int y: 16;
 } S_BITFIELDS;
 
-// CHECK-LABEL: define zeroext i16 @f_struct_bitfields([2 x i32] %s.coerce)
+// CHECK-LABEL: define zeroext i16 @f_struct_bitfields([1 x i32] %s.coerce)
 uint16_t f_struct_bitfields(S_BITFIELDS s) {
   return s.x;
 }
@@ -223,7 +223,7 @@ double f_va_2(char *fmt, ...) {
 // CHECK-NEXT:    [[VA:%.*]] = alloca i8*, align 4
 // CHECK-NEXT:    [[V:%.*]] = alloca i32, align 4
 // CHECK-NEXT:    [[LD:%.*]] = alloca double, align 4
-// CHECK-NEXT:    [[TS:%.*]] = alloca [[STRUCT_TINY:%.*]], align 1
+// CHECK-NEXT:    [[TS:%.*]] = alloca [[STRUCT_TINY:%.*]], align 2
 // CHECK-NEXT:    [[S32_32:%.*]] = alloca [[STRUCT_S32_S32:%.*]], align 4
 // CHECK-NEXT:    [[STACK:%.*]] = alloca [[STRUCT_STACK:%.*]], align 4
 // CHECK-NEXT:    [[RET:%.*]] = alloca i32, align 4
@@ -248,7 +248,7 @@ double f_va_2(char *fmt, ...) {
 // CHECK-NEXT:    [[TMP4:%.*]] = bitcast i8* [[ARGP_CUR4]] to %struct.tiny*
 // CHECK-NEXT:    [[TMP5:%.*]] = bitcast %struct.tiny* [[TS]] to i8*
 // CHECK-NEXT:    [[TMP6:%.*]] = bitcast %struct.tiny* [[TMP4]] to i8*
-// CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i32(i8* align 1 [[TMP5]], i8* align 4 [[TMP6]], i32 4, i1 false)
+// CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i32(i8* align 2 [[TMP5]], i8* align 4 [[TMP6]], i32 4, i1 false)
 // CHECK-NEXT:    [[ARGP_CUR6:%.*]] = load i8*, i8** [[VA]], align 4
 // CHECK-NEXT:    [[ARGP_NEXT7:%.*]] = getelementptr inbounds i8, i8* [[ARGP_CUR6]], i32 8
 // CHECK-NEXT:    store i8* [[ARGP_NEXT7]], i8** [[VA]], align 4

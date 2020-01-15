@@ -6026,6 +6026,26 @@ QualType ASTContext::getPromotedIntegerType(QualType Promotable) const {
   return (PromotableSize != IntSize) ? IntTy : UnsignedIntTy;
 }
 
+QualType ASTContext::getBaseTypeForBitfield(const FieldDecl *Decl) const {
+
+  // The TriCore EABI requires to use the smallest integer type that can
+  // represent the value of the bitfield. Its alignment and size will be
+  // used to compute the alignment and allocation size of the bitfield.
+  if (getTargetInfo().getTriple().isTriCore()) {
+    unsigned TypeSize = getTypeInfo(Decl->getType()).Width;
+    unsigned BitWidth = Decl->getBitWidthValue(*this);
+    // The TriCore EABI doesn't say anything about this case. We follow
+    // the generic Itanium ABI
+    if (BitWidth > TypeSize)
+      return Decl->getType();
+
+    TargetInfo::IntType TargetType = getTargetInfo().getLeastIntTypeByWidth(
+        BitWidth, Decl->getType()->isSignedIntegerType());
+    return getFromTargetType(TargetType);
+  }
+  return Decl->getType();
+}
+
 /// Recurses in pointer/array types until it finds an objc retainable
 /// type and returns its ownership.
 Qualifiers::ObjCLifetime ASTContext::getInnerObjCOwnership(QualType T) const {

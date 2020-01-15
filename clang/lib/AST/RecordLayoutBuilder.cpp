@@ -1462,7 +1462,7 @@ void ItaniumRecordLayoutBuilder::LayoutWideBitField(uint64_t FieldSize,
 void ItaniumRecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   bool FieldPacked = Packed || D->hasAttr<PackedAttr>();
   uint64_t FieldSize = D->getBitWidthValue(Context);
-  TypeInfo FieldInfo = Context.getTypeInfo(D->getType());
+  TypeInfo FieldInfo = Context.getTypeInfo(Context.getBaseTypeForBitfield(D));
   uint64_t TypeSize = FieldInfo.Width;
   unsigned FieldAlign = FieldInfo.Align;
 
@@ -1625,11 +1625,23 @@ void ItaniumRecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   } else {
     // #pragma pack, with any value, suppresses the insertion of padding.
     bool AllowPadding = MaxFieldAlignment.isZero();
+    bool IsTriCore = Context.getTargetInfo().getTriple().isTriCore();
 
     // Compute the real offset.
-    if (FieldSize == 0 ||
-        (AllowPadding &&
-         (FieldOffset & (FieldAlign-1)) + FieldSize > TypeSize)) {
+    // The TriCore EABI states that "A bit-field whose width is smaller than 32
+    // bits can not cross more than one Half-Word (16-bit) boundary."
+    if (IsTriCore &&
+        (FieldOffset + FieldSize) > (llvm::alignTo(FieldOffset, 16) + 16))
+      FieldOffset = llvm::alignTo(FieldOffset, 16);
+    // Moreover, the TriCore EABI mandates "A zero-width bit-field, as specified
+    // by ANSI C, forces alignment to a storage unit boundary, which for TriCore
+    // is one byte. getBaseTypeForBitfield for a 0-bit width will return the
+    // char type, which has exactly one byte alignment requirements. The
+    // original check aligns the field to its natural alignment if it would
+    // otherwise cross an allocation unit, which for TriCore we don't want
+    else if (FieldSize == 0 ||
+             (!IsTriCore && AllowPadding &&
+              (FieldOffset & (FieldAlign - 1)) + FieldSize > TypeSize)) {
       FieldOffset = llvm::alignTo(FieldOffset, FieldAlign);
     } else if (ExplicitFieldAlign &&
                (MaxFieldAlignmentInBits == 0 ||
@@ -1641,9 +1653,13 @@ void ItaniumRecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
     }
 
     // Repeat the computation for diagnostic purposes.
-    if (FieldSize == 0 ||
-        (AllowPadding &&
-         (UnpackedFieldOffset & (UnpackedFieldAlign-1)) + FieldSize > TypeSize))
+    if (IsTriCore && (UnpackedFieldOffset + FieldSize) >
+                         (llvm::alignTo(UnpackedFieldOffset, 16) + 16))
+      UnpackedFieldOffset = llvm::alignTo(UnpackedFieldOffset, 16);
+    else if (FieldSize == 0 ||
+             (!IsTriCore && AllowPadding &&
+              (UnpackedFieldOffset & (UnpackedFieldAlign - 1)) + FieldSize >
+                  TypeSize))
       UnpackedFieldOffset =
           llvm::alignTo(UnpackedFieldOffset, UnpackedFieldAlign);
     else if (ExplicitFieldAlign &&
@@ -1930,6 +1946,13 @@ void ItaniumRecordLayoutBuilder::FinishLayout(const NamedDecl *D) {
   // If we have any remaining field tail padding, include that in the overall
   // size.
   setSize(std::max(getSizeInBits(), (uint64_t)Context.toBits(PaddedFieldSize)));
+
+  // The TriCore EABI mandates that "A structure of size larger than 1 byte,
+  // containing only members with 1 byte alignment, must be aligned on 2 byte
+  // boundaries". We simply update the alignment to two bytes, which has no
+  // effect if there are already higher alignment requirements.
+  if (Context.getTargetInfo().getTriple().isTriCore() && getSizeInBits() > 8)
+    UpdateAlignment(Context.toCharUnitsFromBits(16));
 
   // Finally, round the size of the record up to the alignment of the
   // record itself.

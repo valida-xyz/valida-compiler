@@ -2514,6 +2514,10 @@ public:
   /// 6.3.1.1p2, assuming that \p PromotableType is a promotable integer type.
   QualType getPromotedIntegerType(QualType PromotableType) const;
 
+  /// Return the base type that should be used for the bitfield \p Decl during
+  /// record layout
+  QualType getBaseTypeForBitfield(const FieldDecl *Decl) const;
+
   /// Recurses in pointer/array types until it finds an Objective-C
   /// retainable type and returns its ownership.
   Qualifiers::ObjCLifetime getInnerObjCOwnership(QualType T) const;
