@@ -39,13 +39,10 @@ body:             |
     ; CHECK:      id: 1, name: ptr1, type: default, offset: -524288, size: 262144
     ; CHECK:      id: 2, name: ptr2, type: default, offset: -524296, size: 8
     ; CHECK:      liveins: $d4
-    ; CHECK:      $a15 = ADDIHA_aac $a14, 65532
-    ; CHECK-NEXT: $a2 = LEA_aac killed $a15, 0
-    ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a3 = LEA_aac killed $a15, 0
-    ; CHECK:      $a15 = LEA_aac $a14, 65528
-    ; CHECK-NEXT: $a15 = ADDIHA_aac $a15, 65528
-    ; CHECK-NEXT: $a4 = LEA_aac killed $a15, 0
+    ; CHECK:      $a2 = ADDIHA_aac $a14, 65532
+    ; CHECK:      $a3 = ADDIHA_aac $a14, 65528
+    ; CHECK:      $a4 = LEA_aac $a14, 65528
+    ; CHECK-NEXT: $a4 = ADDIHA_aac $a4, 65528
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65532
     ; CHECK-NEXT: STW_alcd killed $a15, 0, $d4 :: (store 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
