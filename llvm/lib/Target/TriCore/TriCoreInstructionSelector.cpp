@@ -58,6 +58,13 @@ private:
   void emit32BitZext(MachineRegisterInfo &MRI, Register DstReg, Register SrcReg,
                      unsigned SrcSize, MachineIRBuilder &MIRBuilder) const;
 
+  void emit32BitMerge(ArrayRef<Register> SrcRegs, Register DstReg,
+                      MachineIRBuilder &MIRBuilder,
+                      MachineRegisterInfo &MRI) const;
+  void emit32BitUnmerge(Register SrcReg, ArrayRef<Register> DstRegs,
+                        MachineIRBuilder &MIRBuilder,
+                        const MachineRegisterInfo &MRI) const;
+
   void materialize32BitConstant(MachineIRBuilder &MIRBuilder, uint64_t Val,
                                 const Register &DestReg,
                                 MachineRegisterInfo &MRI) const;
@@ -82,9 +89,11 @@ private:
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectMerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectUnmerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
 
 } // end anonymous namespace
@@ -367,6 +376,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_INTTOPTR:
   case TargetOpcode::G_PTRTOINT:
     return selectCopy(I, MRI);
+  case TargetOpcode::G_MERGE_VALUES:
+    return selectMerge(I, MRI);
   case TargetOpcode::G_LOAD:
   case TargetOpcode::G_STORE:
     return selectLoadStore(I, MRI);
@@ -377,6 +388,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectDivRem(I, MRI);
   case TargetOpcode::G_TRUNC:
     return selectTrunc(I, MRI);
+  case TargetOpcode::G_UNMERGE_VALUES:
+    return selectUnmerge(I, MRI);
   default:
     break;
   }
@@ -414,6 +427,83 @@ void TriCoreInstructionSelector::emit32BitZext(
                             .addImm(32 - SrcSize);
 
   constrainSelectedInstRegOperands(*InsertMI, TII, TRI, RBI);
+}
+
+void TriCoreInstructionSelector::emit32BitMerge(
+    ArrayRef<Register> SrcRegs, Register DstReg, MachineIRBuilder &MIRBuilder,
+    MachineRegisterInfo &MRI) const {
+  // Use the insert instruction to insert the source bits
+  assert(!SrcRegs.empty() && SrcRegs.size() % 2 == 0 &&
+         "Unexpected number of source registers for 32-bit G_MERGE_VALUES");
+  assert((MRI.getRegClassOrNull(DstReg) ||
+          MRI.getType(DstReg).getSizeInBits() <= 32) &&
+         "Unexpected destination type size");
+
+  const LLT SrcTy = MRI.getType(SrcRegs[0]);
+  const unsigned SrcSize = SrcTy.getSizeInBits();
+
+  // We need to start with one IMPLICIT_DEF to insert from/to
+  // If this merge is to a type smaller than 32-bits the upper bits will be
+  // undefined when we are done. This is however not a problem as consuming
+  // instruction will make sure that a proper extension is used or the consuming
+  // instruction does not care about the upper bits (e.g. store half-word)
+  Register InsertReg = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+  MIRBuilder.buildInstr(TargetOpcode::IMPLICIT_DEF).addDef(InsertReg);
+
+  // Build one insert instruction per source register
+  const unsigned NumSrcRegs = SrcRegs.size();
+  for (unsigned i = 0, Offset = 0; i < NumSrcRegs; ++i, Offset += SrcSize) {
+    // Current source register and destination register
+    const Register SrcReg = SrcRegs[i];
+    const Register DestReg =
+        i == NumSrcRegs - 1
+            ? DstReg
+            : MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // Insert SrcSize bits into DestReg starting at Offset, using bits from
+    // InsertReg and SrcReg
+    const auto InsertMI = MIRBuilder.buildInstr(TriCore::INSERT_dddcc)
+                              .addDef(DestReg)
+                              .addUse(InsertReg)
+                              .addUse(SrcReg)
+                              .addImm(Offset)
+                              .addImm(SrcSize);
+
+    constrainSelectedInstRegOperands(*InsertMI, TII, TRI, RBI);
+
+    // Previous destination becomes new source
+    InsertReg = DestReg;
+  }
+}
+
+void TriCoreInstructionSelector::emit32BitUnmerge(
+    Register SrcReg, ArrayRef<Register> DstRegs, MachineIRBuilder &MIRBuilder,
+    const MachineRegisterInfo &MRI) const {
+  // Use the extract instruction to get the required bits from the source reg
+  assert(
+      !DstRegs.empty() && DstRegs.size() % 2 == 0 &&
+      "Unexpected number of destination registers for 32-bit G_UNMERGE_VALUES");
+  assert((MRI.getRegClassOrNull(SrcReg) ||
+          MRI.getType(SrcReg).getSizeInBits() <= 32) &&
+         "Unexpected source type size");
+
+  const LLT DstTy = MRI.getType(DstRegs[0]);
+  const unsigned DstSize = DstTy.getSizeInBits();
+
+  // Build one extract instruction per destination register
+  const unsigned NumDstRegs = DstRegs.size();
+  for (unsigned i = 0, Offset = 0; i < NumDstRegs; ++i, Offset += DstSize) {
+    // Extract DstSize bits into DstReg from SrcReg starting at Offset
+    const Register DstReg = DstRegs[i];
+
+    const auto ExtrMI = MIRBuilder.buildInstr(TriCore::EXTR_ddcc)
+                            .addDef(DstReg)
+                            .addUse(SrcReg)
+                            .addImm(Offset)
+                            .addImm(DstSize);
+
+    constrainSelectedInstRegOperands(*ExtrMI, TII, TRI, RBI);
+  }
 }
 
 void TriCoreInstructionSelector::materialize32BitConstant(
@@ -1120,6 +1210,110 @@ bool TriCoreInstructionSelector::selectICmp(
   return true;
 }
 
+bool TriCoreInstructionSelector::selectMerge(MachineInstr &I,
+                                             MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_MERGE_VALUES);
+
+  // G_MERGE_VALUES can be selected using subregister inserts and the insert
+  // instruction
+  const unsigned NumSrcOperands = I.getNumOperands() - 1;
+  const Register SrcReg = I.getOperand(1).getReg();
+  const Register DstReg = I.getOperand(0).getReg();
+
+  const LLT SrcTy = MRI.getType(SrcReg);
+  const LLT DstTy = MRI.getType(DstReg);
+
+  const unsigned SrcSize = SrcTy.getSizeInBits();
+  const unsigned DstSize = DstTy.getSizeInBits();
+
+  // Types must be a power-of-2 between s8 and s64.
+  if (!isPowerOf2_32(SrcSize) || !isPowerOf2_32(DstSize) || DstSize > 64 ||
+      SrcSize < 8) {
+    LLVM_DEBUG(dbgs() << "G_MERGE_VALUES is only supported for power-of-2 "
+                         "types between 8 and 64-bit. Source size: "
+                      << SrcSize << "-bit, destination size: " << DstSize
+                      << "-bit\n");
+    return false;
+  }
+
+  const RegisterBank *SrcRB = RBI.getRegBank(SrcReg, MRI, TRI);
+  const RegisterBank *DstRB = RBI.getRegBank(DstReg, MRI, TRI);
+
+  // Check register banks. Merges which cannot use subreg inserts must be on
+  // the DataRegBank
+  if (!SrcRB || !DstRB ||
+      (SrcSize < 32 && (SrcRB->getID() != TriCore::DataRegBankID ||
+                        DstRB->getID() != TriCore::DataRegBankID))) {
+    LLVM_DEBUG(
+        dbgs() << "Failed to determine register bank for G_MERGE_VALUES\n");
+    return false;
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Build 32-bit merge if the result fits in 32-bits
+  if (DstSize <= 32) {
+    assert(SrcRB->getID() == TriCore::DataRegBankID &&
+           DstRB->getID() == TriCore::DataRegBankID &&
+           "Unexpected register bank for G_MERGE_VALUES");
+
+    // Gather the source registers
+    SmallVector<Register, 4> SrcRegs;
+    for (unsigned i = 1; i < NumSrcOperands + 1; ++i)
+      SrcRegs.push_back(I.getOperand(i).getReg());
+
+    // Build a 32-bit merge
+    emit32BitMerge(SrcRegs, DstReg, MIRBuilder, MRI);
+
+  } else {
+    // 64-bit merge requires 2 32-bit merges (if needed) and two subreg inserts
+    assert(DstSize == 64 && "Unexpected size for G_MERGE_VALUES");
+
+    // Source registers for the subreg inserts. Also destination regs for the
+    // 32-bit merges
+    const Register LowerDstReg =
+        SrcSize == 32 ? I.getOperand(1).getReg()
+                      : MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+    const Register UpperDstReg =
+        SrcSize == 32 ? I.getOperand(2).getReg()
+                      : MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // Check if we need to build 32-bit merges first
+    if (SrcSize < 32) {
+      // Gather source registers
+      SmallVector<Register, 4> LowerSrcRegs;
+      SmallVector<Register, 4> UpperSrcRegs;
+
+      for (unsigned i = 0, j = NumSrcOperands / 2; i < NumSrcOperands / 2;
+           ++i, ++j) {
+        LowerSrcRegs.push_back(I.getOperand(i + 1).getReg());
+        UpperSrcRegs.push_back(I.getOperand(j + 1).getReg());
+      }
+
+      // Build 32-bit merges
+      emit32BitMerge(LowerSrcRegs, LowerDstReg, MIRBuilder, MRI);
+      emit32BitMerge(UpperSrcRegs, UpperDstReg, MIRBuilder, MRI);
+    }
+
+    // Build a register sequence to complete the merge
+    MIRBuilder.buildInstr(TargetOpcode::REG_SEQUENCE)
+        .addDef(DstReg)
+        .addUse(LowerDstReg)
+        .addImm(TriCore::dsub0)
+        .addUse(UpperDstReg)
+        .addImm(TriCore::dsub1);
+
+    // We need to manually constrain the destination register. Source registers
+    // are already constrained through the 32-bit merges
+    TriCoreRegisterBankInfo::constrainGenericRegister(
+        DstReg, TriCore::ExtDataRegsRegClass, MRI);
+  }
+
+  // Finished with merge selection
+  I.removeFromParent();
+  return true;
+}
+
 bool TriCoreInstructionSelector::selectLoadStore(
     MachineInstr &I, const MachineRegisterInfo &MRI) const {
   // Make sure that TableGen caught our supported cases
@@ -1254,7 +1448,7 @@ bool TriCoreInstructionSelector::selectDivRem(MachineInstr &I,
                    .addUse(Src1Reg)
                    .addUse(Src2Reg);
 
-  auto SubRegIdx =  IsSDiv ? TriCore::dsub0 : TriCore::dsub1;
+  auto SubRegIdx = IsSDiv ? TriCore::dsub0 : TriCore::dsub1;
 
   MIRBuilder.buildInstr(TriCore::COPY)
       .addDef(DstReg)
@@ -1322,6 +1516,129 @@ bool TriCoreInstructionSelector::selectTrunc(MachineInstr &I,
   }
 
   I.setDesc(TII.get(TargetOpcode::COPY));
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectUnmerge(MachineInstr &I,
+                                               MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_UNMERGE_VALUES);
+
+  // G_UNMERGE_VALUES can be selected using subregister copies and the
+  // extract instruction
+  const unsigned NumDstOperands = I.getNumOperands() - 1;
+  const Register SrcReg = I.getOperand(NumDstOperands).getReg();
+  const Register DstReg = I.getOperand(0).getReg();
+
+  const LLT SrcTy = MRI.getType(SrcReg);
+  const LLT DstTy = MRI.getType(DstReg);
+
+  const unsigned SrcSize = SrcTy.getSizeInBits();
+  const unsigned DstSize = DstTy.getSizeInBits();
+
+  // Types must be a power-of-2 between s8 and s64.
+  if (!isPowerOf2_32(SrcSize) || !isPowerOf2_32(DstSize) || SrcSize > 64 ||
+      DstSize < 8) {
+    LLVM_DEBUG(dbgs() << "G_UNMERGE_VALUES is only supported for power-of-2 "
+                         "types between 8 and 64-bit. Source size: "
+                      << SrcSize << "-bit, destination size: " << DstSize
+                      << "-bit\n");
+    return false;
+  }
+
+  const RegisterBank *SrcRB = RBI.getRegBank(SrcReg, MRI, TRI);
+  const RegisterBank *DstRB = RBI.getRegBank(DstReg, MRI, TRI);
+
+  // Check register banks. Unmerges which cannot use subreg copies must be on
+  // the DataRegBank
+  if (!SrcRB || !DstRB ||
+      (DstSize < 32 && (SrcRB->getID() != TriCore::DataRegBankID ||
+                        DstRB->getID() != TriCore::DataRegBankID))) {
+    LLVM_DEBUG(
+        dbgs() << "Failed to determine register bank for G_UNMERGE_VALUES\n");
+    return false;
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+
+  if (SrcSize <= 32) {
+    assert(SrcRB->getID() == TriCore::DataRegBankID &&
+           DstRB->getID() == TriCore::DataRegBankID &&
+           "Unexpected register bank for G_UNMERGE_VALUES");
+
+    // Gather destination registers
+    SmallVector<Register, 4> DstRegs;
+    for (unsigned i = 0; i < NumDstOperands; ++i)
+      DstRegs.push_back(I.getOperand(i).getReg());
+
+    // Build 32-bit unmerge
+    emit32BitUnmerge(SrcReg, DstRegs, MIRBuilder, MRI);
+
+  } else {
+    // When unmerging a 64-bit value we unmerge to 32-bit first using subreg
+    // copies and then use 2 32-bit unmerges if needed
+    assert(SrcSize == 64 && DstSize <= 32 &&
+           "Unexpected size for G_UNMERGE_VALUES");
+
+    // Get register class for the destination registers
+    const TargetRegisterClass *DstRC = getRegClassForRegBank(*DstRB, DstSize);
+
+    if (!DstRC) {
+      LLVM_DEBUG(dbgs() << "Cannot determine destination register class for "
+                           "G_UNMERGE_VALUES. Destination size: "
+                        << DstSize << "-bit\n");
+      return false;
+    }
+
+    // Registers for the 64-to-32-bit unmerge. Use actual destination
+    // registers if that is the actual destination size
+    const Register LowerReg = DstSize == 32 ? I.getOperand(0).getReg()
+                                            : MRI.createVirtualRegister(DstRC);
+    const Register UpperReg = DstSize == 32 ? I.getOperand(1).getReg()
+                                            : MRI.createVirtualRegister(DstRC);
+
+    // Build subregister copies
+    MIRBuilder.buildInstr(TargetOpcode::COPY)
+        .addDef(LowerReg)
+        .addUse(SrcReg, 0, TriCore::dsub0);
+
+    MIRBuilder.buildInstr(TargetOpcode::COPY)
+        .addDef(UpperReg)
+        .addUse(SrcReg, 0, TriCore::dsub1);
+
+    // Constrain destination registers of the copies. No need to constrain the
+    // source register as it will be constrained once we hit one of its defs.
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(LowerReg, *DstRC,
+                                                           MRI) ||
+        !TriCoreRegisterBankInfo::constrainGenericRegister(UpperReg, *DstRC,
+                                                           MRI)) {
+      LLVM_DEBUG(
+          dbgs() << "Failed to constrain registers for G_UNMERGE_VALUES\n");
+      return false;
+    }
+
+    // Emit 32-bit unmerge if needed
+    if (DstSize < 32) {
+      // Gather destination registers for lower and upper unmerge
+      SmallVector<Register, 4> LowerDstRegs;
+      SmallVector<Register, 4> UpperDstRegs;
+
+      assert(NumDstOperands % 2 == 0 &&
+             "Unexpected number of operands for G_UNMERGE_VALUES");
+
+      for (unsigned i = 0, j = NumDstOperands / 2; i < NumDstOperands / 2;
+           ++i, ++j) {
+        LowerDstRegs.push_back(I.getOperand(i).getReg());
+        UpperDstRegs.push_back(I.getOperand(j).getReg());
+      }
+
+      // Emit 2 32-bit unmerges to get to the actual destination registers
+      emit32BitUnmerge(LowerReg, LowerDstRegs, MIRBuilder, MRI);
+      emit32BitUnmerge(UpperReg, UpperDstRegs, MIRBuilder, MRI);
+    }
+  }
+
+  // Finish selection
+  I.removeFromParent();
   return true;
 }
 
