@@ -23,6 +23,9 @@ class TriCoreSubtarget;
 class TriCoreLegalizerInfo : public LegalizerInfo {
 public:
   TriCoreLegalizerInfo(const TriCoreSubtarget &ST);
+
+  bool legalizeIntrinsic(MachineInstr &MI, MachineRegisterInfo &MRI,
+                         MachineIRBuilder &MIRBuilder) const override;
 };
 } // end namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREMACHINELEGALIZER_H

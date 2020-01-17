@@ -13,6 +13,7 @@
 
 #include "TriCoreLegalizerInfo.h"
 #include "TriCoreSubtarget.h"
+#include "llvm/CodeGen/GlobalISel/LegalizerHelper.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 
 using namespace llvm;
@@ -216,4 +217,22 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   computeTables();
   verify(*ST.getInstrInfo());
+}
+
+bool TriCoreLegalizerInfo::legalizeIntrinsic(
+    MachineInstr &MI, MachineRegisterInfo &MRI,
+    MachineIRBuilder &MIRBuilder) const {
+  switch (MI.getIntrinsicID()) {
+  case Intrinsic::memcpy:
+  case Intrinsic::memset:
+  case Intrinsic::memmove:
+    if (createMemLibcall(MIRBuilder, MRI, MI) ==
+        LegalizerHelper::UnableToLegalize)
+      return false;
+    MI.eraseFromParent();
+    return true;
+  default:
+    break;
+  }
+  return true;
 }
