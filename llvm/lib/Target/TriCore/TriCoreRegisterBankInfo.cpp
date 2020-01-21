@@ -154,8 +154,9 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   assert(verify(TRI) && "Invalid register bank information");
 }
 
-const RegisterBank &TriCoreRegisterBankInfo::getRegBankFromRegClass(
-    const TargetRegisterClass &RC) const {
+const RegisterBank &
+TriCoreRegisterBankInfo::getRegBankFromRegClass(const TargetRegisterClass &RC,
+                                                LLT) const {
   switch (RC.getID()) {
   case TriCore::AddrRegsRegClassID:
   case TriCore::ExtAddrRegsRegClassID:

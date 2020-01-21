@@ -704,16 +704,24 @@ static Value *canonicalizeSaturatedSubtract(const ICmpInst *ICI,
   assert((Pred == ICmpInst::ICMP_UGE || Pred == ICmpInst::ICMP_UGT) &&
          "Unexpected isUnsigned predicate!");
 
-  // Account for swapped form of subtraction: ((a > b) ? b - a : 0).
+  // Ensure the sub is of the form:
+  //  (a > b) ? a - b : 0 -> usub.sat(a, b)
+  //  (a > b) ? b - a : 0 -> -usub.sat(a, b)
+  // Checking for both a-b and a+(-b) as a constant.
   bool IsNegative = false;
-  if (match(TrueVal, m_Sub(m_Specific(B), m_Specific(A))))
+  const APInt *C;
+  if (match(TrueVal, m_Sub(m_Specific(B), m_Specific(A))) ||
+      (match(A, m_APInt(C)) &&
+       match(TrueVal, m_Add(m_Specific(B), m_SpecificInt(-*C)))))
     IsNegative = true;
-  else if (!match(TrueVal, m_Sub(m_Specific(A), m_Specific(B))))
+  else if (!match(TrueVal, m_Sub(m_Specific(A), m_Specific(B))) &&
+           !(match(B, m_APInt(C)) &&
+             match(TrueVal, m_Add(m_Specific(A), m_SpecificInt(-*C)))))
     return nullptr;
 
-  // If sub is used anywhere else, we wouldn't be able to eliminate it
-  // afterwards.
-  if (!TrueVal->hasOneUse())
+  // If we are adding a negate and the sub and icmp are used anywhere else, we
+  // would end up with more instructions.
+  if (IsNegative && !TrueVal->hasOneUse() && !ICI->hasOneUse())
     return nullptr;
 
   // (a > b) ? a - b : 0 -> usub.sat(a, b)
@@ -1734,6 +1742,9 @@ static Instruction *foldAddSubSelect(SelectInst &SI,
 
 /// Turn X + Y overflows ? -1 : X + Y -> uadd_sat X, Y
 /// And X - Y overflows ? 0 : X - Y -> usub_sat X, Y
+/// Along with a number of patterns similar to:
+/// X + Y overflows ? (X < 0 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+/// X - Y overflows ? (X > 0 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
 static Instruction *
 foldOverflowingAddSubSelect(SelectInst &SI, InstCombiner::BuilderTy &Builder) {
   Value *CondVal = SI.getCondition();
@@ -1745,6 +1756,73 @@ foldOverflowingAddSubSelect(SelectInst &SI, InstCombiner::BuilderTy &Builder) {
       !match(FalseVal, m_ExtractValue<0>(m_Specific(II))))
     return nullptr;
 
+  Value *X = II->getLHS();
+  Value *Y = II->getRHS();
+
+  auto IsSignedSaturateLimit = [&](Value *Limit, bool IsAdd) {
+    Type *Ty = Limit->getType();
+
+    ICmpInst::Predicate Pred;
+    Value *TrueVal, *FalseVal, *Op;
+    const APInt *C;
+    if (!match(Limit, m_Select(m_ICmp(Pred, m_Value(Op), m_APInt(C)),
+                               m_Value(TrueVal), m_Value(FalseVal))))
+      return false;
+
+    auto IsZeroOrOne = [](const APInt &C) {
+      return C.isNullValue() || C.isOneValue();
+    };
+    auto IsMinMax = [&](Value *Min, Value *Max) {
+      APInt MinVal = APInt::getSignedMinValue(Ty->getScalarSizeInBits());
+      APInt MaxVal = APInt::getSignedMaxValue(Ty->getScalarSizeInBits());
+      return match(Min, m_SpecificInt(MinVal)) &&
+             match(Max, m_SpecificInt(MaxVal));
+    };
+
+    if (Op != X && Op != Y)
+      return false;
+
+    if (IsAdd) {
+      // X + Y overflows ? (X <s 0 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (X <s 1 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (Y <s 0 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (Y <s 1 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+      if (Pred == ICmpInst::ICMP_SLT && IsZeroOrOne(*C) &&
+          IsMinMax(TrueVal, FalseVal))
+        return true;
+      // X + Y overflows ? (X >s 0 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (X >s -1 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (Y >s 0 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+      // X + Y overflows ? (Y >s -1 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+      if (Pred == ICmpInst::ICMP_SGT && IsZeroOrOne(*C + 1) &&
+          IsMinMax(FalseVal, TrueVal))
+        return true;
+    } else {
+      // X - Y overflows ? (X <s 0 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+      // X - Y overflows ? (X <s -1 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+      if (Op == X && Pred == ICmpInst::ICMP_SLT && IsZeroOrOne(*C + 1) &&
+          IsMinMax(TrueVal, FalseVal))
+        return true;
+      // X - Y overflows ? (X >s -1 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+      // X - Y overflows ? (X >s -2 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+      if (Op == X && Pred == ICmpInst::ICMP_SGT && IsZeroOrOne(*C + 2) &&
+          IsMinMax(FalseVal, TrueVal))
+        return true;
+      // X - Y overflows ? (Y <s 0 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+      // X - Y overflows ? (Y <s 1 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+      if (Op == Y && Pred == ICmpInst::ICMP_SLT && IsZeroOrOne(*C) &&
+          IsMinMax(FalseVal, TrueVal))
+        return true;
+      // X - Y overflows ? (Y >s 0 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+      // X - Y overflows ? (Y >s -1 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+      if (Op == Y && Pred == ICmpInst::ICMP_SGT && IsZeroOrOne(*C + 1) &&
+          IsMinMax(TrueVal, FalseVal))
+        return true;
+    }
+
+    return false;
+  };
+
   Intrinsic::ID NewIntrinsicID;
   if (II->getIntrinsicID() == Intrinsic::uadd_with_overflow &&
       match(TrueVal, m_AllOnes()))
@@ -1754,12 +1832,34 @@ foldOverflowingAddSubSelect(SelectInst &SI, InstCombiner::BuilderTy &Builder) {
            match(TrueVal, m_Zero()))
     // X - Y overflows ? 0 : X - Y -> usub_sat X, Y
     NewIntrinsicID = Intrinsic::usub_sat;
+  else if (II->getIntrinsicID() == Intrinsic::sadd_with_overflow &&
+           IsSignedSaturateLimit(TrueVal, /*IsAdd=*/true))
+    // X + Y overflows ? (X <s 0 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (X <s 1 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (X >s 0 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (X >s -1 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (Y <s 0 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (Y <s 1 ? INTMIN : INTMAX) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (Y >s 0 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+    // X + Y overflows ? (Y >s -1 ? INTMAX : INTMIN) : X + Y --> sadd_sat X, Y
+    NewIntrinsicID = Intrinsic::sadd_sat;
+  else if (II->getIntrinsicID() == Intrinsic::ssub_with_overflow &&
+           IsSignedSaturateLimit(TrueVal, /*IsAdd=*/false))
+    // X - Y overflows ? (X <s 0 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (X <s -1 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (X >s -1 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (X >s -2 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (Y <s 0 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (Y <s 1 ? INTMAX : INTMIN) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (Y >s 0 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+    // X - Y overflows ? (Y >s -1 ? INTMIN : INTMAX) : X - Y --> ssub_sat X, Y
+    NewIntrinsicID = Intrinsic::ssub_sat;
   else
     return nullptr;
 
   Function *F =
       Intrinsic::getDeclaration(SI.getModule(), NewIntrinsicID, SI.getType());
-  return CallInst::Create(F, {II->getArgOperand(0), II->getArgOperand(1)});
+  return CallInst::Create(F, {X, Y});
 }
 
 Instruction *InstCombiner::foldSelectExtConst(SelectInst &Sel) {
@@ -2217,6 +2317,48 @@ static Instruction *foldSelectRotate(SelectInst &Sel) {
   return IntrinsicInst::Create(F, { TVal, TVal, ShAmt });
 }
 
+static Instruction *foldSelectToCopysign(SelectInst &Sel,
+                                         InstCombiner::BuilderTy &Builder) {
+  Value *Cond = Sel.getCondition();
+  Value *TVal = Sel.getTrueValue();
+  Value *FVal = Sel.getFalseValue();
+  Type *SelType = Sel.getType();
+
+  // Match select ?, TC, FC where the constants are equal but negated.
+  // TODO: Generalize to handle a negated variable operand?
+  const APFloat *TC, *FC;
+  if (!match(TVal, m_APFloat(TC)) || !match(FVal, m_APFloat(FC)) ||
+      !abs(*TC).bitwiseIsEqual(abs(*FC)))
+    return nullptr;
+
+  assert(TC != FC && "Expected equal select arms to simplify");
+
+  Value *X;
+  const APInt *C;
+  bool IsTrueIfSignSet;
+  ICmpInst::Predicate Pred;
+  if (!match(Cond, m_OneUse(m_ICmp(Pred, m_BitCast(m_Value(X)), m_APInt(C)))) ||
+      !isSignBitCheck(Pred, *C, IsTrueIfSignSet) || X->getType() != SelType)
+    return nullptr;
+
+  // If needed, negate the value that will be the sign argument of the copysign:
+  // (bitcast X) <  0 ? -TC :  TC --> copysign(TC,  X)
+  // (bitcast X) <  0 ?  TC : -TC --> copysign(TC, -X)
+  // (bitcast X) >= 0 ? -TC :  TC --> copysign(TC, -X)
+  // (bitcast X) >= 0 ?  TC : -TC --> copysign(TC,  X)
+  if (IsTrueIfSignSet ^ TC->isNegative())
+    X = Builder.CreateFNegFMF(X, &Sel);
+
+  // Canonicalize the magnitude argument as the positive constant since we do
+  // not care about its sign.
+  Value *MagArg = TC->isNegative() ? FVal : TVal;
+  Function *F = Intrinsic::getDeclaration(Sel.getModule(), Intrinsic::copysign,
+                                          Sel.getType());
+  Instruction *CopySign = IntrinsicInst::Create(F, { MagArg, X });
+  CopySign->setFastMathFlags(Sel.getFastMathFlags());
+  return CopySign;
+}
+
 Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
   Value *CondVal = SI.getCondition();
   Value *TrueVal = SI.getTrueValue();
@@ -2344,12 +2486,12 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
       if (FCI->hasOneUse() && FCmpInst::isUnordered(FCI->getPredicate())) {
         FCmpInst::Predicate InvPred = FCI->getInversePredicate();
         IRBuilder<>::FastMathFlagGuard FMFG(Builder);
+        // FIXME: The FMF should propagate from the select, not the fcmp.
         Builder.setFastMathFlags(FCI->getFastMathFlags());
         Value *NewCond = Builder.CreateFCmp(InvPred, Cmp0, Cmp1,
                                             FCI->getName() + ".inv");
-
-        return SelectInst::Create(NewCond, FalseVal, TrueVal,
-                                  SI.getName() + ".p");
+        Value *NewSel = Builder.CreateSelect(NewCond, FalseVal, TrueVal);
+        return replaceInstUsesWith(SI, NewSel);
       }
 
       // NOTE: if we wanted to, this is where to detect MIN/MAX
@@ -2684,6 +2826,9 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
 
   if (Instruction *Rot = foldSelectRotate(SI))
     return Rot;
+
+  if (Instruction *Copysign = foldSelectToCopysign(SI, Builder))
+    return Copysign;
 
   return nullptr;
 }

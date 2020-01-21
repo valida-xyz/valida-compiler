@@ -39,6 +39,7 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicsNVPTX.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
@@ -120,14 +121,10 @@ bool NVPTXTargetLowering::useF32FTZ(const MachineFunction &MF) const {
   if (FtzEnabled.getNumOccurrences() > 0) {
     // If nvptx-f32ftz is used on the command-line, always honor it
     return FtzEnabled;
-  } else {
-    const Function &F = MF.getFunction();
-    // Otherwise, check for an nvptx-f32ftz attribute on the function
-    if (F.hasFnAttribute("nvptx-f32ftz"))
-      return F.getFnAttribute("nvptx-f32ftz").getValueAsString() == "true";
-    else
-      return false;
   }
+
+  return MF.getDenormalMode(APFloat::IEEEsingle()) ==
+         DenormalMode::PreserveSign;
 }
 
 static bool IsPTXVectorType(MVT VT) {

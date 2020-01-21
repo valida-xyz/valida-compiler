@@ -159,6 +159,7 @@ namespace {
       (void) llvm::createPostDomOnlyViewerPass();
       (void) llvm::createPostDomViewerPass();
       (void) llvm::createReassociatePass();
+      (void) llvm::createRedundantDbgInstEliminationPass();
       (void) llvm::createRegionInfoPass();
       (void) llvm::createRegionOnlyPrinterPass();
       (void) llvm::createRegionOnlyViewerPass();
@@ -225,6 +226,7 @@ namespace {
       (void) llvm::createScalarizeMaskedMemIntrinPass();
       (void) llvm::createWarnMissedTransformationsPass();
       (void) llvm::createHardwareLoopsPass();
+      (void)llvm::createInjectTLIMappingsLegacyPass();
 
       (void)new llvm::IntervalPartition();
       (void)new llvm::ScalarEvolutionWrapperPass();

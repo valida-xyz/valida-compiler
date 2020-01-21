@@ -29,13 +29,9 @@ void MachOReader::readHeader(Object &O) const {
 
 template <typename SectionType>
 Section constructSectionCommon(SectionType Sec) {
-  Section S;
-  S.Sectname =
-      StringRef(Sec.sectname, strnlen(Sec.sectname, sizeof(Sec.sectname)))
-          .str();
-  S.Segname =
-      StringRef(Sec.segname, strnlen(Sec.segname, sizeof(Sec.sectname))).str();
-  S.CanonicalName = (Twine(S.Segname) + "," + S.Sectname).str();
+  StringRef SegName(Sec.segname, strnlen(Sec.segname, sizeof(Sec.segname)));
+  StringRef SectName(Sec.sectname, strnlen(Sec.sectname, sizeof(Sec.sectname)));
+  Section S(SegName, SectName);
   S.Addr = Sec.addr;
   S.Size = Sec.size;
   S.Offset = Sec.offset;
@@ -150,10 +146,11 @@ void MachOReader::readLoadCommands(Object &O) const {
            sizeof(MachO::LCStruct));                                           \
     if (MachOObj.isLittleEndian() != sys::IsLittleEndianHost)                  \
       MachO::swapStruct(LC.MachOLoadCommand.LCStruct##_data);                  \
-    LC.Payload = ArrayRef<uint8_t>(                                            \
-        reinterpret_cast<uint8_t *>(const_cast<char *>(LoadCmd.Ptr)) +         \
-            sizeof(MachO::LCStruct),                                           \
-        LoadCmd.C.cmdsize - sizeof(MachO::LCStruct));                          \
+    if (LoadCmd.C.cmdsize > sizeof(MachO::LCStruct))                           \
+      LC.Payload = ArrayRef<uint8_t>(                                          \
+          reinterpret_cast<uint8_t *>(const_cast<char *>(LoadCmd.Ptr)) +       \
+              sizeof(MachO::LCStruct),                                         \
+          LoadCmd.C.cmdsize - sizeof(MachO::LCStruct));                        \
     break;
 
     switch (LoadCmd.C.cmd) {
@@ -162,10 +159,11 @@ void MachOReader::readLoadCommands(Object &O) const {
              sizeof(MachO::load_command));
       if (MachOObj.isLittleEndian() != sys::IsLittleEndianHost)
         MachO::swapStruct(LC.MachOLoadCommand.load_command_data);
-      LC.Payload = ArrayRef<uint8_t>(
-          reinterpret_cast<uint8_t *>(const_cast<char *>(LoadCmd.Ptr)) +
-              sizeof(MachO::load_command),
-          LoadCmd.C.cmdsize - sizeof(MachO::load_command));
+      if (LoadCmd.C.cmdsize > sizeof(MachO::load_command))
+        LC.Payload = ArrayRef<uint8_t>(
+            reinterpret_cast<uint8_t *>(const_cast<char *>(LoadCmd.Ptr)) +
+                sizeof(MachO::load_command),
+            LoadCmd.C.cmdsize - sizeof(MachO::load_command));
       break;
 #include "llvm/BinaryFormat/MachO.def"
     }

@@ -12,7 +12,6 @@
 #include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Host/OptionParser.h"
-#include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/OptionArgParser.h"
@@ -24,7 +23,6 @@
 #include "lldb/Target/Language.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
-#include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/StreamString.h"
@@ -180,7 +178,7 @@ public:
                         ExecutionContext *execution_context) override {
     Status error;
     const int short_option =
-        g_breakpoint_modify_options[option_idx].short_option;
+        g_breakpoint_dummy_options[option_idx].short_option;
 
     switch (short_option) {
     case 'D':

@@ -66,6 +66,7 @@ public:
 class OverflowingBinaryOperator : public Operator {
 public:
   enum {
+    AnyWrap        = 0,
     NoUnsignedWrap = (1 << 0),
     NoSignedWrap   = (1 << 1)
   };
@@ -597,9 +598,6 @@ public:
     return getType();
   }
 };
-
-class FreezeOperator : public ConcreteOperator<Operator, Instruction::Freeze>
-{};
 
 } // end namespace llvm
 

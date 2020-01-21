@@ -17,83 +17,105 @@ import lit.run
 import lit.Test
 import lit.util
 
-def main(builtin_params = {}):
+
+def main(builtin_params={}):
     opts = lit.cl_arguments.parse_args()
 
     if opts.show_version:
-        print("lit %s" % (lit.__version__,))
+        print("lit %s" % lit.__version__)
         return
 
     params = create_params(builtin_params, opts.user_params)
-    isWindows = platform.system() == 'Windows'
+    is_windows = platform.system() == 'Windows'
 
-    litConfig = lit.LitConfig.LitConfig(
-        progname = os.path.basename(sys.argv[0]),
-        path = opts.path,
-        quiet = opts.quiet,
-        useValgrind = opts.useValgrind,
-        valgrindLeakCheck = opts.valgrindLeakCheck,
-        valgrindArgs = opts.valgrindArgs,
-        noExecute = opts.noExecute,
-        debug = opts.debug,
-        isWindows = isWindows,
-        params = params,
-        config_prefix = opts.configPrefix,
-        maxFailures = opts.maxFailures,
-        echo_all_commands = opts.echoAllCommands)
+    lit_config = lit.LitConfig.LitConfig(
+        progname=os.path.basename(sys.argv[0]),
+        path=opts.path,
+        quiet=opts.quiet,
+        useValgrind=opts.useValgrind,
+        valgrindLeakCheck=opts.valgrindLeakCheck,
+        valgrindArgs=opts.valgrindArgs,
+        noExecute=opts.noExecute,
+        debug=opts.debug,
+        isWindows=is_windows,
+        params=params,
+        config_prefix=opts.configPrefix,
+        echo_all_commands=opts.echoAllCommands)
 
-    tests = lit.discovery.find_tests_for_inputs(litConfig, opts.test_paths)
+    discovered_tests = lit.discovery.find_tests_for_inputs(lit_config, opts.test_paths)
+    if not discovered_tests:
+        sys.stderr.write('error: did not disover any tests for provided path(s)\n')
+        sys.exit(2)
 
     # Command line overrides configuration for maxIndividualTestTime.
     if opts.maxIndividualTestTime is not None:  # `not None` is important (default: 0)
-        if opts.maxIndividualTestTime != litConfig.maxIndividualTestTime:
-            litConfig.note(('The test suite configuration requested an individual'
+        if opts.maxIndividualTestTime != lit_config.maxIndividualTestTime:
+            lit_config.note(('The test suite configuration requested an individual'
                 ' test timeout of {0} seconds but a timeout of {1} seconds was'
                 ' requested on the command line. Forcing timeout to be {1}'
                 ' seconds')
-                .format(litConfig.maxIndividualTestTime,
+                .format(lit_config.maxIndividualTestTime,
                         opts.maxIndividualTestTime))
-            litConfig.maxIndividualTestTime = opts.maxIndividualTestTime
+            lit_config.maxIndividualTestTime = opts.maxIndividualTestTime
 
     if opts.showSuites or opts.showTests:
-        print_suites_or_tests(tests, opts)
+        print_suites_or_tests(discovered_tests, opts)
         return
 
-    numTotalTests = len(tests)
-
     if opts.filter:
-        tests = [t for t in tests if opts.filter.search(t.getFullName())]
+        filtered_tests = [t for t in discovered_tests if
+                          opts.filter.search(t.getFullName())]
+        if not filtered_tests:
+            sys.stderr.write('error: filter did not match any tests '
+                             '(of %d discovered).  ' % len(discovered_tests))
+            if opts.allow_empty_runs:
+                sys.stderr.write('Suppressing error because '
+                                 "'--allow-empty-runs' was specified.\n")
+                sys.exit(0)
+            else:
+                sys.stderr.write("Use '--allow-empty-runs' to suppress this "
+                                 'error.\n')
+                sys.exit(2)
+    else:
+        filtered_tests = discovered_tests
 
-    determine_order(tests, opts.order)
+    determine_order(filtered_tests, opts.order)
 
     if opts.shard:
         (run, shards) = opts.shard
-        tests = filter_by_shard(tests, run, shards, litConfig)
+        filtered_tests = filter_by_shard(filtered_tests, run, shards, lit_config)
+        if not filtered_tests:
+            sys.stderr.write('warning: shard does not contain any tests.  '
+                             'Consider decreasing the number of shards.\n')
+            sys.exit(0)
 
     if opts.max_tests:
-        tests = tests[:opts.max_tests]
+        filtered_tests = filtered_tests[:opts.max_tests]
 
-    opts.numWorkers = min(len(tests), opts.numWorkers)
+    opts.workers = min(len(filtered_tests), opts.workers)
 
     start = time.time()
-    run_tests(tests, litConfig, opts, numTotalTests)
+    run_tests(filtered_tests, lit_config, opts, len(discovered_tests))
     elapsed = time.time() - start
 
-    print_summary(tests, elapsed, opts)
+    executed_tests = [t for t in filtered_tests if t.result]
+
+    print_summary(executed_tests, elapsed, opts)
 
     if opts.output_path:
-        write_test_results(tests, litConfig, elapsed, opts.output_path)
+        #TODO(yln): pass in discovered_tests
+        write_test_results(executed_tests, lit_config, elapsed, opts.output_path)
     if opts.xunit_output_file:
-        write_test_results_xunit(tests, opts)
+        write_test_results_xunit(executed_tests, opts)
 
-    if litConfig.numErrors:
-        sys.stderr.write('\n%d error(s), exiting.\n' % litConfig.numErrors)
+    if lit_config.numErrors:
+        sys.stderr.write('\n%d error(s) in tests\n' % lit_config.numErrors)
         sys.exit(2)
 
-    if litConfig.numWarnings:
-        sys.stderr.write('\n%d warning(s) in tests.\n' % litConfig.numWarnings)
+    if lit_config.numWarnings:
+        sys.stderr.write('\n%d warning(s) in tests\n' % lit_config.numWarnings)
 
-    has_failure = any(t.isFailure() for t in tests)
+    has_failure = any(t.isFailure() for t in executed_tests)
     if has_failure:
         sys.exit(1)
 
@@ -153,7 +175,8 @@ def touch_file(test):
     if test.isFailure():
         os.utime(test.getFilePath(), None)
 
-def filter_by_shard(tests, run, shards, litConfig):
+
+def filter_by_shard(tests, run, shards, lit_config):
     test_ixs = range(run - 1, len(tests), shards)
     selected_tests = [tests[i] for i in test_ixs]
 
@@ -168,35 +191,31 @@ def filter_by_shard(tests, run, shards, litConfig):
           'tests #({shards}*k)+{run} = [{preview}]'.format(
               run=run, shards=shards, sel_tests=len(selected_tests),
               total_tests=len(tests), preview=preview)
-    litConfig.note(msg)
+    lit_config.note(msg)
     return selected_tests
 
-def run_tests(tests, litConfig, opts, numTotalTests):
+
+def run_tests(tests, lit_config, opts, numTotalTests):
     display = lit.display.create_display(opts, len(tests), numTotalTests,
-                                         opts.numWorkers)
+                                         opts.workers)
     def progress_callback(test):
         display.update(test)
         if opts.order == 'failing-first':
             touch_file(test)
 
-    run = lit.run.create_run(tests, litConfig, opts.numWorkers,
-                             progress_callback, opts.timeout)
+    run = lit.run.create_run(tests, lit_config, opts.workers, progress_callback,
+                             opts.max_failures, opts.timeout)
 
     display.print_header()
     try:
-        execute_in_tmp_dir(run, litConfig)
+        execute_in_tmp_dir(run, lit_config)
+        display.clear(interrupted=False)
     except KeyboardInterrupt:
-        #TODO(yln): should we attempt to cleanup the progress bar here?
-        sys.exit(2)
-    # TODO(yln): display.finish_interrupted(), which shows the most recently started test
-    # TODO(yln): change display to update when test starts, not when test completes
-    # Ensure everything still works with SimpleProgressBar as well
-    # finally:
-    #     display.clear()
+        display.clear(interrupted=True)
+        print(' [interrupted by user]')
 
-    display.clear()
 
-def execute_in_tmp_dir(run, litConfig):
+def execute_in_tmp_dir(run, lit_config):
     # Create a temp directory inside the normal temp directory so that we can
     # try to avoid temporary test file leaks. The user can avoid this behavior
     # by setting LIT_PRESERVES_TMP in the environment, so they can easily use
@@ -225,11 +244,11 @@ def execute_in_tmp_dir(run, litConfig):
                 shutil.rmtree(tmp_dir)
             except:
                 # FIXME: Re-try after timeout on Windows.
-                litConfig.warning("Failed to delete temp directory '%s'" % tmp_dir)
+                lit_config.warning("Failed to delete temp directory '%s'" % tmp_dir)
 
 def print_summary(tests, elapsed, opts):
     if not opts.quiet:
-        print('Testing Time: %.2fs' % elapsed)
+        print('\nTesting Time: %.2fs' % elapsed)
 
     byCode = {}
     for test in tests:
@@ -246,7 +265,7 @@ def print_summary(tests, elapsed, opts):
                        ('Timed Out Tests', lit.Test.TIMEOUT)):
         if (lit.Test.XFAIL == code and not opts.show_xfail) or \
            (lit.Test.UNSUPPORTED == code and not opts.show_unsupported) or \
-           (lit.Test.UNRESOLVED == code and (opts.maxFailures is not None)):
+           (lit.Test.UNRESOLVED == code and (opts.max_failures is not None)):
             continue
         elts = byCode.get(code)
         if not elts:
@@ -278,6 +297,7 @@ def print_summary(tests, elapsed, opts):
             print('  %s: %d' % (name,N))
 
 def write_test_results(tests, lit_config, elapsed, output_path):
+    # TODO(yln): audit: unexecuted tests
     # Construct the data we will write.
     data = {}
     # Encode the current lit version as a schema version.
@@ -332,6 +352,7 @@ def write_test_results(tests, lit_config, elapsed, output_path):
         f.close()
 
 def write_test_results_xunit(tests, opts):
+    # TODO(yln): audit: unexecuted tests
     from xml.sax.saxutils import quoteattr
     # Collect the tests, indexed by test suite
     by_suite = {}

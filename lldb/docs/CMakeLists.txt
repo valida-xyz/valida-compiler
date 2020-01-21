@@ -15,7 +15,7 @@ if(DOXYGEN_FOUND)
   )
 endif()
 
-if (NOT LLDB_DISABLE_PYTHON)
+if (LLDB_ENABLE_PYTHON)
   find_program(EPYDOC_EXECUTABLE NAMES epydoc epydoc.py)
   if(EPYDOC_EXECUTABLE)
     message(STATUS "Found epydoc - ${EPYDOC_EXECUTABLE}")
@@ -30,9 +30,9 @@ if (NOT LLDB_DISABLE_PYTHON)
     # Because we don't build liblldb, epydoc will complain that the import of
     # _lldb.so failed, but that doesn't prevent it from generating the docs.
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lldb)
-    get_target_property(lldb_scripts_dir swig_wrapper BINARY_DIR)
+    get_target_property(lldb_bindings_dir swig_wrapper BINARY_DIR)
     add_custom_target(lldb-python-doc-package
-      COMMAND "${CMAKE_COMMAND}" -E copy "${lldb_scripts_dir}/lldb.py" "${CMAKE_CURRENT_BINARY_DIR}/lldb/__init__.py"
+      COMMAND "${CMAKE_COMMAND}" -E copy "${lldb_bindings_dir}/lldb.py" "${CMAKE_CURRENT_BINARY_DIR}/lldb/__init__.py"
       COMMENT "Copying lldb.py to pretend package.")
     add_dependencies(lldb-python-doc-package swig_wrapper)
 
@@ -65,6 +65,10 @@ if (LLVM_ENABLE_SPHINX)
       add_custom_target(clean-lldb-html COMMAND "${CMAKE_COMMAND}" -E
         remove_directory ${CMAKE_CURRENT_BINARY_DIR}/html)
       add_dependencies(docs-lldb-html clean-lldb-html)
+    endif()
+
+    if (${SPHINX_OUTPUT_MAN})
+      add_sphinx_target(man lldb)
     endif()
   endif()
 endif()

@@ -24,7 +24,6 @@ using ::llvm::Failed;
 using ::llvm::HasValue;
 using ::llvm::StringError;
 using ::testing::AllOf;
-using ::testing::Eq;
 using ::testing::HasSubstr;
 using MatchResult = MatchFinder::MatchResult;
 
@@ -135,26 +134,6 @@ TEST_F(StencilTest, SingleStatement) {
                        HasValue("if (!true) return 0; else return 1;"));
 }
 
-// Tests `stencil`.
-TEST_F(StencilTest, StencilFactoryFunction) {
-  StringRef Condition("C"), Then("T"), Else("E");
-  const std::string Snippet = R"cc(
-    if (true)
-      return 1;
-    else
-      return 0;
-  )cc";
-  auto StmtMatch = matchStmt(
-      Snippet, ifStmt(hasCondition(expr().bind(Condition)),
-                      hasThen(stmt().bind(Then)), hasElse(stmt().bind(Else))));
-  ASSERT_TRUE(StmtMatch);
-  // Invert the if-then-else.
-  auto Consumer = cat("if (!", node(Condition), ") ", statement(Else), " else ",
-                      statement(Then));
-  EXPECT_THAT_EXPECTED(Consumer(StmtMatch->Result),
-                       HasValue("if (!true) return 0; else return 1;"));
-}
-
 TEST_F(StencilTest, UnboundNode) {
   const std::string Snippet = R"cc(
     if (true)
@@ -254,6 +233,46 @@ TEST_F(StencilTest, AddressOfDerefExpr) {
   testExpr(Id, "int *x; *x;", addressOf(Id), "x");
 }
 
+TEST_F(StencilTest, MaybeDerefValue) {
+  StringRef Id = "id";
+  testExpr(Id, "int x; x;", maybeDeref(Id), "x");
+}
+
+TEST_F(StencilTest, MaybeDerefPointer) {
+  StringRef Id = "id";
+  testExpr(Id, "int *x; x;", maybeDeref(Id), "*x");
+}
+
+TEST_F(StencilTest, MaybeDerefBinOp) {
+  StringRef Id = "id";
+  testExpr(Id, "int *x; x + 1;", maybeDeref(Id), "*(x + 1)");
+}
+
+TEST_F(StencilTest, MaybeDerefAddressExpr) {
+  StringRef Id = "id";
+  testExpr(Id, "int x; &x;", maybeDeref(Id), "x");
+}
+
+TEST_F(StencilTest, MaybeAddressOfPointer) {
+  StringRef Id = "id";
+  testExpr(Id, "int *x; x;", maybeAddressOf(Id), "x");
+}
+
+TEST_F(StencilTest, MaybeAddressOfValue) {
+  StringRef Id = "id";
+  testExpr(Id, "int x; x;", addressOf(Id), "&x");
+}
+
+TEST_F(StencilTest, MaybeAddressOfBinOp) {
+  StringRef Id = "id";
+  testExpr(Id, "int x; x + 1;", maybeAddressOf(Id), "&(x + 1)");
+}
+
+TEST_F(StencilTest, MaybeAddressOfDerefExpr) {
+  StringRef Id = "id";
+  testExpr(Id, "int *x; *x;", addressOf(Id), "x");
+}
+
 TEST_F(StencilTest, AccessOpValue) {
   StringRef Snippet = R"cc(
     S x;
@@ -347,6 +366,21 @@ TEST_F(StencilTest, RunOp) {
                                                               : "Unbound");
   };
   testExpr(Id, "3;", run(SimpleFn), "Bound");
+}
+
+TEST_F(StencilTest, CatOfInvalidRangeFails) {
+  StringRef Snippet = R"cpp(
+#define MACRO (3.77)
+  double foo(double d);
+  foo(MACRO);)cpp";
+
+  auto StmtMatch =
+      matchStmt(Snippet, callExpr(callee(functionDecl(hasName("foo"))),
+                                  argumentCountIs(1),
+                                  hasArgument(0, expr().bind("arg"))));
+  ASSERT_TRUE(StmtMatch);
+  Stencil S = cat(node("arg"));
+  EXPECT_THAT_EXPECTED(S->eval(StmtMatch->Result), Failed<StringError>());
 }
 
 TEST(StencilToStringTest, RawTextOp) {

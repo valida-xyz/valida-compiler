@@ -960,6 +960,7 @@ static FunctionSummary::FFlags getDecodedFFlags(uint64_t RawFlags) {
   Flags.NoRecurse = (RawFlags >> 2) & 0x1;
   Flags.ReturnDoesNotAlias = (RawFlags >> 3) & 0x1;
   Flags.NoInline = (RawFlags >> 4) & 0x1;
+  Flags.AlwaysInline = (RawFlags >> 5) & 0x1;
   return Flags;
 }
 
@@ -985,7 +986,8 @@ static GlobalValueSummary::GVFlags getDecodedGVSummaryFlags(uint64_t RawFlags,
 // Decode the flags for GlobalVariable in the summary
 static GlobalVarSummary::GVarFlags getDecodedGVarFlags(uint64_t RawFlags) {
   return GlobalVarSummary::GVarFlags((RawFlags & 0x1) ? true : false,
-                                     (RawFlags & 0x2) ? true : false);
+                                     (RawFlags & 0x2) ? true : false,
+                                     (RawFlags & 0x4) ? true : false);
 }
 
 static GlobalValue::VisibilityTypes getDecodedVisibility(unsigned Val) {
@@ -1055,13 +1057,16 @@ static int getDecodedCastOpcode(unsigned Val) {
 }
 
 static int getDecodedUnaryOpcode(unsigned Val, Type *Ty) {
+  bool IsFP = Ty->isFPOrFPVectorTy();
+  // UnOps are only valid for int/fp or vector of int/fp types
+  if (!IsFP && !Ty->isIntOrIntVectorTy())
+    return -1;
+
   switch (Val) {
   default:
     return -1;
   case bitc::UNOP_FNEG:
-    return Ty->isFPOrFPVectorTy() ? Instruction::FNeg : -1;
-  case bitc::UNOP_FREEZE:
-    return Instruction::Freeze;
+    return IsFP ? Instruction::FNeg : -1;
   }
 }
 
@@ -1657,6 +1662,7 @@ Error BitcodeReader::parseAttributeGroupBlock() {
         }
       }
 
+      UpgradeFramePointerAttributes(B);
       MAttributeGroups[GrpID] = AttributeList::get(Context, Idx, B);
       break;
     }
@@ -3862,7 +3868,7 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
     case bitc::FUNC_CODE_INST_UNOP: {    // UNOP: [opval, ty, opcode]
       unsigned OpNum = 0;
       Value *LHS;
-      if (getValueTypePair(Record, OpNum, NextValueNo, LHS, &FullTy) ||
+      if (getValueTypePair(Record, OpNum, NextValueNo, LHS) ||
           OpNum+1 > Record.size())
         return error("Invalid record");
 
@@ -5115,6 +5121,19 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
       OperandBundles.emplace_back(BundleTags[Record[0]], std::move(Inputs));
       continue;
     }
+
+    case bitc::FUNC_CODE_INST_FREEZE: { // FREEZE: [opty,opval]
+      unsigned OpNum = 0;
+      Value *Op = nullptr;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Op, &FullTy))
+        return error("Invalid record");
+      if (OpNum != Record.size())
+        return error("Invalid record");
+
+      I = new FreezeInst(Op);
+      InstructionList.push_back(I);
+      break;
+    }
     }
 
     // Add instruction to end of current BB.  If there is no current BB, reject
@@ -5761,9 +5780,11 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
   }
   const uint64_t Version = Record[0];
   const bool IsOldProfileFormat = Version == 1;
-  if (Version < 1 || Version > 8)
+  if (Version < 1 || Version > ModuleSummaryIndex::BitcodeSummaryVersion)
     return error("Invalid summary version " + Twine(Version) +
-                 ". Version should be in the range [1-7].");
+                 ". Version should be in the range [1-" +
+                 Twine(ModuleSummaryIndex::BitcodeSummaryVersion) +
+                 "].");
   Record.clear();
 
   // Keep around the last seen summary to be used when we see an optional
@@ -5945,7 +5966,8 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       uint64_t RawFlags = Record[1];
       unsigned RefArrayStart = 2;
       GlobalVarSummary::GVarFlags GVF(/* ReadOnly */ false,
-                                      /* WriteOnly */ false);
+                                      /* WriteOnly */ false,
+                                      /* Constant */ false);
       auto Flags = getDecodedGVSummaryFlags(RawFlags, Version);
       if (Version >= 5) {
         GVF = getDecodedGVarFlags(Record[2]);
@@ -6081,7 +6103,8 @@ Error ModuleSummaryIndexBitcodeReader::parseEntireSummary(unsigned ID) {
       uint64_t RawFlags = Record[2];
       unsigned RefArrayStart = 3;
       GlobalVarSummary::GVarFlags GVF(/* ReadOnly */ false,
-                                      /* WriteOnly */ false);
+                                      /* WriteOnly */ false,
+                                      /* Constant */ false);
       auto Flags = getDecodedGVSummaryFlags(RawFlags, Version);
       if (Version >= 5) {
         GVF = getDecodedGVarFlags(Record[3]);

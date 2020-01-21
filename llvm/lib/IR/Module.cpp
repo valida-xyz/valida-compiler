@@ -71,9 +71,8 @@ template class llvm::SymbolTableListTraits<GlobalIFunc>;
 //
 
 Module::Module(StringRef MID, LLVMContext &C)
-    : Context(C), Materializer(), ModuleID(MID), SourceFileName(MID), DL("") {
-  ValSymTab = new ValueSymbolTable();
-  NamedMDSymTab = new StringMap<NamedMDNode *>();
+    : Context(C), ValSymTab(std::make_unique<ValueSymbolTable>()),
+      Materializer(), ModuleID(MID), SourceFileName(MID), DL("") {
   Context.addModule(this);
 }
 
@@ -84,9 +83,6 @@ Module::~Module() {
   FunctionList.clear();
   AliasList.clear();
   IFuncList.clear();
-  NamedMDList.clear();
-  delete ValSymTab;
-  delete static_cast<StringMap<NamedMDNode *> *>(NamedMDSymTab);
 }
 
 std::unique_ptr<RandomNumberGenerator> Module::createRNG(const Pass* P) const {
@@ -250,15 +246,14 @@ GlobalIFunc *Module::getNamedIFunc(StringRef Name) const {
 NamedMDNode *Module::getNamedMetadata(const Twine &Name) const {
   SmallString<256> NameData;
   StringRef NameRef = Name.toStringRef(NameData);
-  return static_cast<StringMap<NamedMDNode*> *>(NamedMDSymTab)->lookup(NameRef);
+  return NamedMDSymTab.lookup(NameRef);
 }
 
 /// getOrInsertNamedMetadata - Return the first named MDNode in the module
 /// with the specified name. This method returns a new NamedMDNode if a
 /// NamedMDNode with the specified name is not found.
 NamedMDNode *Module::getOrInsertNamedMetadata(StringRef Name) {
-  NamedMDNode *&NMD =
-    (*static_cast<StringMap<NamedMDNode *> *>(NamedMDSymTab))[Name];
+  NamedMDNode *&NMD = NamedMDSymTab[Name];
   if (!NMD) {
     NMD = new NamedMDNode(Name);
     NMD->setParent(this);
@@ -270,7 +265,7 @@ NamedMDNode *Module::getOrInsertNamedMetadata(StringRef Name) {
 /// eraseNamedMetadata - Remove the given NamedMDNode from this module and
 /// delete it.
 void Module::eraseNamedMetadata(NamedMDNode *NMD) {
-  static_cast<StringMap<NamedMDNode *> *>(NamedMDSymTab)->erase(NMD->getName());
+  NamedMDSymTab.erase(NMD->getName());
   NamedMDList.erase(NMD->getIterator());
 }
 
@@ -379,6 +374,22 @@ void Module::debug_compile_units_iterator::SkipNoDebugCUs() {
   while (CUs && (Idx < CUs->getNumOperands()) &&
          ((*this)->getEmissionKind() == DICompileUnit::NoDebug))
     ++Idx;
+}
+
+iterator_range<Module::global_object_iterator> Module::global_objects() {
+  return concat<GlobalObject>(functions(), globals());
+}
+iterator_range<Module::const_global_object_iterator>
+Module::global_objects() const {
+  return concat<const GlobalObject>(functions(), globals());
+}
+
+iterator_range<Module::global_value_iterator> Module::global_values() {
+  return concat<GlobalValue>(functions(), globals(), aliases(), ifuncs());
+}
+iterator_range<Module::const_global_value_iterator>
+Module::global_values() const {
+  return concat<const GlobalValue>(functions(), globals(), aliases(), ifuncs());
 }
 
 //===----------------------------------------------------------------------===//

@@ -36,7 +36,6 @@ public:
 
   DecodeStatus getInstruction(MCInst &Instr, uint64_t &Size,
                               ArrayRef<uint8_t> Bytes, uint64_t Address,
-                              raw_ostream &VStream,
                               raw_ostream &CStream) const override;
 };
 } // end anonymous namespace
@@ -596,7 +595,6 @@ static DecodeStatus decode_16_x15ac(MCInst &MI, unsigned insn, uint64_t Address,
 DecodeStatus TriCoreDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
                                                  ArrayRef<uint8_t> Bytes,
                                                  uint64_t Address,
-                                                 raw_ostream &OS,
                                                  raw_ostream &CS) const {
   uint32_t Insn;
   DecodeStatus Result;

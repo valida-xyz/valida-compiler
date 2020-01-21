@@ -739,6 +739,18 @@ static void GetOpenCLBuiltinFctOverloads(
   }
 }
 
+/// Add extensions to the function declaration.
+/// \param S (in/out) The Sema instance.
+/// \param BIDecl (in) Description of the builtin.
+/// \param FDecl (in/out) FunctionDecl instance.
+static void AddOpenCLExtensions(Sema &S, const OpenCLBuiltinStruct &BIDecl,
+                                FunctionDecl *FDecl) {
+  // Fetch extension associated with a function prototype.
+  StringRef E = FunctionExtensionTable[BIDecl.Extension];
+  if (E != "")
+    S.setOpenCLExtensionForDecl(FDecl, E);
+}
+
 /// When trying to resolve a function name, if isOpenCLBuiltin() returns a
 /// non-null <Index, Len> pair, then the name is referencing an OpenCL
 /// builtin function.  Add all candidate signatures to the LookUpResult.
@@ -823,8 +835,11 @@ static void InsertOCLBuiltinDeclarationsFromTable(Sema &S, LookupResult &LR,
         NewOpenCLBuiltin->addAttr(ConstAttr::CreateImplicit(Context));
       if (OpenCLBuiltin.IsConv)
         NewOpenCLBuiltin->addAttr(ConvergentAttr::CreateImplicit(Context));
-      if ((GenTypeMaxCnt > 1 || Len > 1) && !S.getLangOpts().OpenCLCPlusPlus)
+
+      if (!S.getLangOpts().OpenCLCPlusPlus)
         NewOpenCLBuiltin->addAttr(OverloadableAttr::CreateImplicit(Context));
+
+      AddOpenCLExtensions(S, OpenCLBuiltin, NewOpenCLBuiltin);
 
       LR.addDecl(NewOpenCLBuiltin);
     }
@@ -1560,7 +1575,9 @@ llvm::DenseSet<Module*> &Sema::getLookupModules() {
   unsigned N = CodeSynthesisContexts.size();
   for (unsigned I = CodeSynthesisContextLookupModules.size();
        I != N; ++I) {
-    Module *M = getDefiningModule(*this, CodeSynthesisContexts[I].Entity);
+    Module *M = CodeSynthesisContexts[I].Entity ?
+                getDefiningModule(*this, CodeSynthesisContexts[I].Entity) :
+                nullptr;
     if (M && !LookupModulesCache.insert(M).second)
       M = nullptr;
     CodeSynthesisContextLookupModules.push_back(M);
@@ -3112,11 +3129,10 @@ Sema::SpecialMemberOverloadResult Sema::LookupSpecialMember(CXXRecordDecl *RD,
       });
     }
     CXXDestructorDecl *DD = RD->getDestructor();
-    assert(DD && "record without a destructor");
     Result->setMethod(DD);
-    Result->setKind(DD->isDeleted() ?
-                    SpecialMemberOverloadResult::NoMemberOrDeleted :
-                    SpecialMemberOverloadResult::Success);
+    Result->setKind(DD && !DD->isDeleted()
+                        ? SpecialMemberOverloadResult::Success
+                        : SpecialMemberOverloadResult::NoMemberOrDeleted);
     return *Result;
   }
 

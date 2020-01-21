@@ -43,6 +43,9 @@ multiple file formats.
  starts with ".note". Otherwise, it will have type `SHT_PROGBITS`. Can be
  specified multiple times to add multiple sections.
 
+ For MachO objects, ``<section>`` must be formatted as
+ ``<segment name>,<section name>``.
+
 .. option:: --binary-architecture <arch>, -B
 
  Ignored for compatibility.
@@ -57,6 +60,18 @@ multiple file formats.
  Remove most local symbols from the output. Different file formats may limit
  this to a subset of the local symbols. For example, file and section symbols in
  ELF objects will not be discarded.
+
+.. option:: --dump-section <section>=<file>
+
+ Dump the contents of section ``<section>`` into the file ``<file>``. Can be
+ specified multiple times to dump multiple sections to different files.
+ ``<file>`` is unrelated to the input and output files provided to
+ :program:`llvm-objcopy` and as such the normal copying and editing
+ operations will still be performed. No operations are performed on the sections
+ prior to dumping them.
+
+ For MachO objects, ``<section>`` must be formatted as
+ ``<segment name>,<section name>``.
 
 .. option:: --enable-deterministic-archives, -D
 
@@ -84,6 +99,19 @@ multiple file formats.
  For MachO objects, ``<section>`` must be formatted as
  ``<segment name>,<section name>``.
 
+.. option:: --redefine-sym <old>=<new>
+
+ Rename symbols called ``<old>`` to ``<new>`` in the output. Can be specified
+ multiple times to rename multiple symbols.
+
+.. option:: --redefine-syms <filename>
+
+ Rename symbols in the output as described in the file ``<filename>``. In the
+ file, each line represents a single symbol to rename, with the old name and new
+ name separated by whitespace. Leading and trailing whitespace is ignored, as is
+ anything following a '#'. Can be specified multiple times to read names from
+ multiple files.
+
 .. option:: --regex
 
  If specified, symbol and section names specified by other switches are treated
@@ -93,6 +121,9 @@ multiple file formats.
 
  Remove the specified section from the output. Can be specified multiple times
  to remove multiple sections simultaneously.
+
+ For MachO objects, ``<section>`` must be formatted as
+ ``<segment name>,<section name>``.
 
 .. option:: --set-section-alignment <section>=<align>
 
@@ -258,15 +289,6 @@ them.
 
  Remove local symbols starting with ".L" from the output.
 
-.. option:: --dump-section <section>=<file>
-
- Dump the contents of section ``<section>`` into the file ``<file>``. Can be
- specified multiple times to dump multiple sections to different files.
- ``<file>`` is unrelated to the input and output files provided to
- :program:`llvm-objcopy` and as such the normal copying and editing
- operations will still be performed. No operations are performed on the sections
- prior to dumping them.
-
 .. option:: --extract-dwo
 
  Remove all sections that are not DWARF .dwo sections from the output.
@@ -378,19 +400,6 @@ them.
 
  Preserve access and modification timestamps in the output.
 
-.. option:: --redefine-sym <old>=<new>
-
- Rename symbols called ``<old>`` to ``<new>`` in the output. Can be specified
- multiple times to rename multiple symbols.
-
-.. option:: --redefine-syms <filename>
-
- Rename symbols in the output as described in the file ``<filename>``. In the
- file, each line represents a single symbol to rename, with the old name and new
- name separated by an equals sign. Leading and trailing whitespace is ignored,
- as is anything following a '#'. Can be specified multiple times to read names
- from multiple files.
-
 .. option:: --rename-section <old>=<new>[,<flag>,...]
 
  Rename sections called ``<old>`` to ``<new>`` in the output, and apply any
@@ -409,6 +418,7 @@ them.
  - `load` = if the section has `SHT_NOBITS` type, mark it as a `SHT_PROGBITS`
    section.
  - `readonly` = if this flag is not specified, add the `SHF_WRITE` flag.
+ - `exclude` = add the `SHF_EXCLUDE` flag.
  - `code` = add the `SHF_EXECINSTR` flag.
  - `merge` = add the `SHF_MERGE` flag.
  - `strings` = add the `SHF_STRINGS` flag.

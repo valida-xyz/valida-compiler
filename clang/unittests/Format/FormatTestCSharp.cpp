@@ -316,6 +316,27 @@ TEST_F(FormatTestCSharp, AttributesIndentation) {
                "    }\n"
                "}\n",
                Style);
+
+  verifyFormat("public A : Base\n"
+               "{\n"
+               "}\n"
+               "[Test]\n"
+               "public Foo()\n"
+               "{\n"
+               "}\n",
+               Style);
+
+  verifyFormat("namespace\n"
+               "{\n"
+               "public A : Base\n"
+               "{\n"
+               "}\n"
+               "[Test]\n"
+               "public Foo()\n"
+               "{\n"
+               "}\n"
+               "}\n",
+               Style);
 }
 
 TEST_F(FormatTestCSharp, CSharpSpaceBefore) {
@@ -351,6 +372,15 @@ TEST_F(FormatTestCSharp, CSharpSpaceBefore) {
   verifyFormat("do {\n"
                "} while(x);",
                Style);
+}
+
+TEST_F(FormatTestCSharp, CSharpSpaceAfterCStyleCast) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+
+  verifyFormat("(int)x / y;", Style);
+
+  Style.SpaceAfterCStyleCast = true;
+  verifyFormat("(int) x / y;", Style);
 }
 
 } // namespace format

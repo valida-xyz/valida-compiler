@@ -46,6 +46,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -166,6 +167,16 @@ static cl::opt<bool> UnrollRevisitChildLoops(
              "This shouldn't typically be needed as child loops (or their "
              "clones) were already visited."));
 
+static cl::opt<unsigned> UnrollThresholdAggressive(
+    "unroll-threshold-aggressive", cl::init(300), cl::Hidden,
+    cl::desc("Threshold (max size of unrolled loop) to use in aggressive (O3) "
+             "optimizations"));
+static cl::opt<unsigned>
+    UnrollThresholdDefault("unroll-threshold-default", cl::init(150),
+                           cl::Hidden,
+                           cl::desc("Default threshold (max size of unrolled "
+                                    "loop), used in all but O3 optimizations"));
+
 /// A magic value for use with the Threshold parameter to indicate
 /// that the loop unroll should be performed regardless of how much
 /// code expansion would result.
@@ -184,7 +195,8 @@ TargetTransformInfo::UnrollingPreferences llvm::gatherUnrollingPreferences(
   TargetTransformInfo::UnrollingPreferences UP;
 
   // Set up the defaults
-  UP.Threshold = OptLevel > 2 ? 300 : 150;
+  UP.Threshold =
+      OptLevel > 2 ? UnrollThresholdAggressive : UnrollThresholdDefault;
   UP.MaxPercentThresholdBoost = 400;
   UP.OptSizeThreshold = 0;
   UP.PartialThreshold = 150;
@@ -212,7 +224,8 @@ TargetTransformInfo::UnrollingPreferences llvm::gatherUnrollingPreferences(
 
   // Apply size attributes
   bool OptForSize = L->getHeader()->getParent()->hasOptSize() ||
-                    llvm::shouldOptimizeForSize(L->getHeader(), PSI, BFI);
+                    llvm::shouldOptimizeForSize(L->getHeader(), PSI, BFI,
+                                                PGSOQueryType::IRPass);
   if (OptForSize) {
     UP.Threshold = UP.OptSizeThreshold;
     UP.PartialThreshold = UP.PartialOptSizeThreshold;

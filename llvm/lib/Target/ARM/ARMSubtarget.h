@@ -203,6 +203,10 @@ protected:
   /// whether the FP VML[AS] instructions are slow (if so, don't use them).
   bool SlowFPVMLx = false;
 
+  /// SlowFPVFMx - If the VFP4 / NEON instructions are available, indicates
+  /// whether the FP VFM[AS] instructions are slow (if so, don't use them).
+  bool SlowFPVFMx = false;
+
   /// HasVMLxForwarding - If true, NEON has special multiplier accumulator
   /// forwarding to allow mul + mla being issued back to back.
   bool HasVMLxForwarding = false;
@@ -632,6 +636,11 @@ public:
 
   bool useMulOps() const { return UseMulOps; }
   bool useFPVMLx() const { return !SlowFPVMLx; }
+  bool useFPVFMx() const {
+    return !isTargetDarwin() && hasVFP4Base() && !SlowFPVFMx;
+  }
+  bool useFPVFMx16() const { return useFPVFMx() && hasFullFP16(); }
+  bool useFPVFMx64() const { return useFPVFMx() && hasFP64(); }
   bool hasVMLxForwarding() const { return HasVMLxForwarding; }
   bool isFPBrccSlow() const { return SlowFPBrcc; }
   bool hasFP64() const { return HasFP64; }
@@ -805,6 +814,9 @@ public:
 
   /// True for some subtargets at > -O0.
   bool enablePostRAMachineScheduler() const override;
+
+  /// Check whether this subtarget wants to use subregister liveness.
+  bool enableSubRegLiveness() const override;
 
   /// Enable use of alias analysis during code generation (during MI
   /// scheduling, DAGCombine, etc.).

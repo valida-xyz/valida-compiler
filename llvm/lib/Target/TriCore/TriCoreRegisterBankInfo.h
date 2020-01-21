@@ -103,8 +103,8 @@ class TriCoreRegisterBankInfo final : public TriCoreGenRegisterBankInfo {
 public:
   explicit TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI);
 
-  const RegisterBank &
-  getRegBankFromRegClass(const TargetRegisterClass &RC) const override;
+  const RegisterBank &getRegBankFromRegClass(const TargetRegisterClass &RC,
+                                             LLT) const override;
 
   const InstructionMapping &
   getInstrMapping(const MachineInstr &MI) const override;

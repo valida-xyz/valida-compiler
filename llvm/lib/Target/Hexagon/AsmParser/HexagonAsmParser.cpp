@@ -312,6 +312,8 @@ public:
   bool iss30_2Imm() const { return true; }
   bool iss29_3Imm() const { return true; }
   bool iss27_2Imm() const { return CheckImmRange(27, 2, true, true, false); }
+  bool iss10_0Imm() const { return CheckImmRange(10, 0, true, false, false); }
+  bool iss10_6Imm() const { return CheckImmRange(10, 6, true, false, false); }
   bool iss9_0Imm() const { return CheckImmRange(9, 0, true, false, false); }
   bool iss8_0Imm() const { return CheckImmRange(8, 0, true, false, false); }
   bool iss8_0Imm64() const { return CheckImmRange(8, 0, true, true, false); }
@@ -578,6 +580,7 @@ bool HexagonAsmParser::matchOneInstruction(MCInst &MCI, SMLoc IDLoc,
   case Match_MnemonicFail:
     return Error(IDLoc, "unrecognized instruction");
   case Match_InvalidOperand:
+    LLVM_FALLTHROUGH;
   case Match_InvalidTiedOperand:
     SMLoc ErrorLoc = IDLoc;
     if (ErrorInfo != ~0U) {
@@ -813,10 +816,10 @@ bool HexagonAsmParser::RegisterMatchesArch(unsigned MatchNum) const {
   return true;
 }
 
-// extern "C" void LLVMInitializeHexagonAsmLexer();
+// extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeHexagonAsmLexer();
 
 /// Force static initialization.
-extern "C" void LLVMInitializeHexagonAsmParser() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeHexagonAsmParser() {
   RegisterMCAsmParser<HexagonAsmParser> X(getTheHexagonTarget());
 }
 

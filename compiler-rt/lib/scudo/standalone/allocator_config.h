@@ -40,7 +40,9 @@ struct AndroidConfig {
   using SizeClassMap = AndroidSizeClassMap;
 #if SCUDO_CAN_USE_PRIMARY64
   // 1GB regions
-  typedef SizeClassAllocator64<SizeClassMap, 30U> Primary;
+  typedef SizeClassAllocator64<SizeClassMap, 30U,
+                               /*MaySupportMemoryTagging=*/true>
+      Primary;
 #else
   // 512KB regions
   typedef SizeClassAllocator32<SizeClassMap, 19U> Primary;
@@ -64,13 +66,15 @@ struct AndroidSvelteConfig {
   using TSDRegistryT = TSDRegistrySharedT<A, 1U>; // Shared, only 1 TSD.
 };
 
+#if SCUDO_CAN_USE_PRIMARY64
 struct FuchsiaConfig {
   // 1GB Regions
   typedef SizeClassAllocator64<DefaultSizeClassMap, 30U> Primary;
-  typedef MapAllocator<> Secondary;
+  typedef MapAllocator<0U> Secondary;
   template <class A>
   using TSDRegistryT = TSDRegistrySharedT<A, 8U>; // Shared, max 8 TSDs.
 };
+#endif
 
 #if SCUDO_ANDROID
 typedef AndroidConfig Config;

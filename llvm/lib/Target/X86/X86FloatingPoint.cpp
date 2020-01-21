@@ -40,6 +40,7 @@
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -666,6 +667,12 @@ static const TableEntry OpcodeTable[] = {
   { X86::CMOVP_Fp32   , X86::CMOVP_F   },
   { X86::CMOVP_Fp64   , X86::CMOVP_F   },
   { X86::CMOVP_Fp80   , X86::CMOVP_F   },
+  { X86::COM_FpIr32   , X86::COM_FIr   },
+  { X86::COM_FpIr64   , X86::COM_FIr   },
+  { X86::COM_FpIr80   , X86::COM_FIr   },
+  { X86::COM_Fpr32    , X86::COM_FST0r },
+  { X86::COM_Fpr64    , X86::COM_FST0r },
+  { X86::COM_Fpr80    , X86::COM_FST0r },
   { X86::DIVR_Fp32m   , X86::DIVR_F32m },
   { X86::DIVR_Fp64m   , X86::DIVR_F64m },
   { X86::DIVR_Fp64m32 , X86::DIVR_F32m },
@@ -797,6 +804,10 @@ static unsigned getConcreteOpcode(unsigned Opcode) {
 static const TableEntry PopTable[] = {
   { X86::ADD_FrST0 , X86::ADD_FPrST0  },
 
+  { X86::COMP_FST0r, X86::FCOMPP      },
+  { X86::COM_FIr   , X86::COM_FIPr    },
+  { X86::COM_FST0r , X86::COMP_FST0r  },
+
   { X86::DIVR_FrST0, X86::DIVR_FPrST0 },
   { X86::DIV_FrST0 , X86::DIV_FPrST0  },
 
@@ -835,7 +846,7 @@ void FPS::popStackAfter(MachineBasicBlock::iterator &I) {
   int Opcode = Lookup(PopTable, I->getOpcode());
   if (Opcode != -1) {
     I->setDesc(TII->get(Opcode));
-    if (Opcode == X86::UCOM_FPPr)
+    if (Opcode == X86::FCOMPP || Opcode == X86::UCOM_FPPr)
       I->RemoveOperand(0);
   } else {    // Insert an explicit pop
     I = BuildMI(*MBB, ++I, dl, TII->get(X86::ST_FPrr)).addReg(X86::ST0);
@@ -965,22 +976,23 @@ void FPS::shuffleStackTop(const unsigned char *FixStack,
 //===----------------------------------------------------------------------===//
 
 void FPS::handleCall(MachineBasicBlock::iterator &I) {
+  MachineInstr &MI = *I;
   unsigned STReturns = 0;
-  const MachineFunction* MF = I->getParent()->getParent();
 
-  for (const auto &MO : I->operands()) {
-    if (!MO.isReg())
+  for (unsigned i = 0, e = MI.getNumOperands(); i != e; ++i) {
+    MachineOperand &Op = MI.getOperand(i);
+    if (!Op.isReg() || Op.getReg() < X86::FP0 || Op.getReg() > X86::FP6)
       continue;
 
-    unsigned R = MO.getReg() - X86::FP0;
+    assert(Op.isImplicit() && "Expected implicit def/use");
 
-    if (R < 8) {
-      if (MF->getFunction().getCallingConv() != CallingConv::X86_RegCall) {
-        assert(MO.isDef() && MO.isImplicit());
-      }
+    if (Op.isDef())
+      STReturns |= 1 << getFPReg(Op);
 
-      STReturns |= 1 << R;
-    }
+    // Remove the operand so that later passes don't see it.
+    MI.RemoveOperand(i);
+    --i;
+    --e;
   }
 
   unsigned N = countTrailingOnes(STReturns);
@@ -1351,6 +1363,9 @@ void FPS::handleTwoArgFP(MachineBasicBlock::iterator &I) {
   // Replace the old instruction with a new instruction
   MBB->remove(&*I++);
   I = BuildMI(*MBB, I, dl, TII->get(Opcode)).addReg(getSTReg(NotTOS));
+
+  if (!MI.mayRaiseFPException())
+    I->setFlag(MachineInstr::MIFlag::NoFPExcept);
 
   // If both operands are killed, pop one off of the stack in addition to
   // overwriting the other one.

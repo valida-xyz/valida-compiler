@@ -31,13 +31,16 @@
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/CodeGen/GCMetadata.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/CodeGen/GCStrategy.h"
+#include "llvm/CodeGen/LazyMachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -52,6 +55,7 @@
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
+#include "llvm/CodeGen/MachineSizeOpts.h"
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
@@ -81,7 +85,6 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include "llvm/MC/MCAsmInfo.h"
-#include "llvm/MC/MCCodePadder.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCDwarf.h"
@@ -248,6 +251,8 @@ void AsmPrinter::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<MachineModuleInfoWrapperPass>();
   AU.addRequired<MachineOptimizationRemarkEmitterPass>();
   AU.addRequired<GCModuleInfo>();
+  AU.addRequired<LazyMachineBlockFrequencyInfoPass>();
+  AU.addRequired<ProfileSummaryInfoWrapperPass>();
 }
 
 bool AsmPrinter::doInitialization(Module &M) {
@@ -710,16 +715,6 @@ void AsmPrinter::EmitFunctionHeader() {
   // their wild and crazy things as required.
   EmitFunctionEntryLabel();
 
-  // If the function had address-taken blocks that got deleted, then we have
-  // references to the dangling symbols.  Emit them at the start of the function
-  // so that we don't get references to undefined symbols.
-  std::vector<MCSymbol*> DeadBlockSyms;
-  MMI->takeDeletedSymbolsForFunction(&F, DeadBlockSyms);
-  for (unsigned i = 0, e = DeadBlockSyms.size(); i != e; ++i) {
-    OutStreamer->AddComment("Address taken block that was later removed");
-    OutStreamer->EmitLabel(DeadBlockSyms[i]);
-  }
-
   if (CurrentFnBegin) {
     if (MAI->useAssignmentForEHBegin()) {
       MCSymbol *CurPos = OutContext.createTempSymbol();
@@ -874,6 +869,10 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     OS << MI->getOperand(0).getImm();
   } else if (MI->getOperand(0).isCImm()) {
     MI->getOperand(0).getCImm()->getValue().print(OS, false /*isSigned*/);
+  } else if (MI->getOperand(0).isTargetIndex()) {
+    auto Op = MI->getOperand(0);
+    OS << "!target-index(" << Op.getIndex() << "," << Op.getOffset() << ")";
+    return true;
   } else {
     unsigned Reg;
     if (MI->getOperand(0).isReg()) {
@@ -1213,6 +1212,8 @@ void AsmPrinter::EmitFunctionBody() {
   // Emit section containing stack size metadata.
   emitStackSizeSection(*MF);
 
+  emitPatchableFunctionEntries();
+
   if (isVerbose())
     OutStreamer->GetCommentOS() << "-- End function\n";
 
@@ -1490,8 +1491,6 @@ bool AsmPrinter::doFinalization(Module &M) {
     }
   }
 
-  OutStreamer->AddBlankLine();
-
   // Print aliases in topological order, that is, for each alias a = b,
   // b must be printed before a.
   // This is because on some targets (e.g. PowerPC) linker expects aliases in
@@ -1653,6 +1652,7 @@ MCSymbol *AsmPrinter::getCurExceptionSym() {
 
 void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
   this->MF = &MF;
+  const Function &F = MF.getFunction();
 
   // Get the function symbol.
   if (MAI->needsFunctionDescriptors()) {
@@ -1665,7 +1665,6 @@ void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
     CurrentFnSym =
         OutContext.getOrCreateSymbol("." + CurrentFnDescSym->getName());
 
-    const Function &F = MF.getFunction();
     MCSectionXCOFF *FnEntryPointSec =
         cast<MCSectionXCOFF>(getObjFileLowering().SectionForGlobal(&F, TM));
     // Set the containing csect.
@@ -1678,7 +1677,8 @@ void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
   CurrentFnBegin = nullptr;
   CurExceptionSym = nullptr;
   bool NeedsLocalForSize = MAI->needsLocalForSize();
-  if (needFuncLabelsForEHOrDebugInfo(MF, MMI) || NeedsLocalForSize ||
+  if (F.hasFnAttribute("patchable-function-entry") ||
+      needFuncLabelsForEHOrDebugInfo(MF, MMI) || NeedsLocalForSize ||
       MF.getTarget().Options.EmitStackSizeSection) {
     CurrentFnBegin = createTempSymbol("func_begin");
     if (NeedsLocalForSize)
@@ -1686,6 +1686,13 @@ void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
   }
 
   ORE = &getAnalysis<MachineOptimizationRemarkEmitterPass>().getORE();
+  PSI = &getAnalysis<ProfileSummaryInfoWrapperPass>().getPSI();
+  MBFI = (PSI && PSI->hasProfileSummary()) ?
+         // ORE conditionally computes MBFI. If available, use it, otherwise
+         // request it.
+         (ORE->getBFI() ? ORE->getBFI() :
+          &getAnalysis<LazyMachineBlockFrequencyInfoPass>().getBFI()) :
+         nullptr;
 }
 
 namespace {
@@ -1755,6 +1762,11 @@ void AsmPrinter::EmitConstantPool() {
       MCSymbol *Sym = GetCPISymbol(CPI);
       if (!Sym->isUndefined())
         continue;
+
+      if (TM.getTargetTriple().isOSBinFormatXCOFF()) {
+        cast<MCSymbolXCOFF>(Sym)->setContainingCsect(
+            cast<MCSectionXCOFF>(CPSections[i].S));
+      }
 
       if (CurSection != CPSections[i].S) {
         OutStreamer->SwitchSection(CPSections[i].S);
@@ -1845,10 +1857,16 @@ void AsmPrinter::EmitJumpTableInfo() {
     // second label is actually referenced by the code.
     if (JTInDiffSection && DL.hasLinkerPrivateGlobalPrefix())
       // FIXME: This doesn't have to have any specific name, just any randomly
-      // named and numbered 'l' label would work.  Simplify GetJTISymbol.
+      // named and numbered local label started with 'l' would work.  Simplify
+      // GetJTISymbol.
       OutStreamer->EmitLabel(GetJTISymbol(JTI, true));
 
-    OutStreamer->EmitLabel(GetJTISymbol(JTI));
+    MCSymbol* JTISymbol = GetJTISymbol(JTI);
+    if (TM.getTargetTriple().isOSBinFormatXCOFF()) {
+      cast<MCSymbolXCOFF>(JTISymbol)->setContainingCsect(
+          cast<MCSectionXCOFF>(TLOF.getSectionForJumpTable(F, TM)));
+    }
+    OutStreamer->EmitLabel(JTISymbol);
 
     for (unsigned ii = 0, ee = JTBBs.size(); ii != ee; ++ii)
       EmitJumpTableEntry(MJTI, JTBBs[ii], JTI);
@@ -2901,19 +2919,6 @@ static void emitBasicBlockLoopComments(const MachineBasicBlock &MBB,
   PrintChildLoopComment(OS, Loop, AP.getFunctionNumber());
 }
 
-void AsmPrinter::setupCodePaddingContext(const MachineBasicBlock &MBB,
-                                         MCCodePaddingContext &Context) const {
-  assert(MF != nullptr && "Machine function must be valid");
-  Context.IsPaddingActive = !MF->hasInlineAsm() &&
-                            !MF->getFunction().hasOptSize() &&
-                            TM.getOptLevel() != CodeGenOpt::None;
-  Context.IsBasicBlockReachableViaFallthrough =
-      std::find(MBB.pred_begin(), MBB.pred_end(), MBB.getPrevNode()) !=
-      MBB.pred_end();
-  Context.IsBasicBlockReachableViaBranch =
-      MBB.pred_size() > 0 && !isBlockOnlyReachableByFallthrough(&MBB);
-}
-
 /// EmitBasicBlockStart - This method prints the label for the specified
 /// MachineBasicBlock, an alignment (if present) and a comment describing
 /// it if appropriate.
@@ -2930,9 +2935,6 @@ void AsmPrinter::EmitBasicBlockStart(const MachineBasicBlock &MBB) {
   const Align Alignment = MBB.getAlignment();
   if (Alignment != Align::None())
     EmitAlignment(Alignment);
-  MCCodePaddingContext Context;
-  setupCodePaddingContext(MBB, Context);
-  OutStreamer->EmitCodePaddingBasicBlockStart(Context);
 
   // If the block has its address taken, emit any labels that were used to
   // reference the block.  It is possible that there is more than one label
@@ -2980,11 +2982,7 @@ void AsmPrinter::EmitBasicBlockStart(const MachineBasicBlock &MBB) {
   }
 }
 
-void AsmPrinter::EmitBasicBlockEnd(const MachineBasicBlock &MBB) {
-  MCCodePaddingContext Context;
-  setupCodePaddingContext(MBB, Context);
-  OutStreamer->EmitCodePaddingBasicBlockEnd(Context);
-}
+void AsmPrinter::EmitBasicBlockEnd(const MachineBasicBlock &MBB) {}
 
 void AsmPrinter::EmitVisibility(MCSymbol *Sym, unsigned Visibility,
                                 bool IsDefinition) const {
@@ -3187,6 +3185,45 @@ void AsmPrinter::recordSled(MCSymbol *Sled, const MachineInstr &MI,
     Kind = SledKind::LOG_ARGS_ENTER;
   Sleds.emplace_back(XRayFunctionEntry{Sled, CurrentFnSym, Kind,
                                        AlwaysInstrument, &F, Version});
+}
+
+void AsmPrinter::emitPatchableFunctionEntries() {
+  const Function &F = MF->getFunction();
+  unsigned PatchableFunctionEntry = 0;
+  (void)F.getFnAttribute("patchable-function-entry")
+      .getValueAsString()
+      .getAsInteger(10, PatchableFunctionEntry);
+  if (!PatchableFunctionEntry)
+    return;
+  const unsigned PointerSize = getPointerSize();
+  if (TM.getTargetTriple().isOSBinFormatELF()) {
+    auto Flags = ELF::SHF_WRITE | ELF::SHF_ALLOC;
+
+    // As of binutils 2.33, GNU as does not support section flag "o" or linkage
+    // field "unique". Use SHF_LINK_ORDER if we are using the integrated
+    // assembler.
+    if (MAI->useIntegratedAssembler()) {
+      Flags |= ELF::SHF_LINK_ORDER;
+      std::string GroupName;
+      if (F.hasComdat()) {
+        Flags |= ELF::SHF_GROUP;
+        GroupName = F.getComdat()->getName();
+      }
+      MCSection *Section = getObjFileLowering().SectionForGlobal(&F, TM);
+      unsigned UniqueID =
+          PatchableFunctionEntryID
+              .try_emplace(Section, PatchableFunctionEntryID.size())
+              .first->second;
+      OutStreamer->SwitchSection(OutContext.getELFSection(
+          "__patchable_function_entries", ELF::SHT_PROGBITS, Flags, 0,
+          GroupName, UniqueID, cast<MCSymbolELF>(CurrentFnSym)));
+    } else {
+      OutStreamer->SwitchSection(OutContext.getELFSection(
+          "__patchable_function_entries", ELF::SHT_PROGBITS, Flags));
+    }
+    EmitAlignment(Align(PointerSize));
+    OutStreamer->EmitSymbolValue(CurrentFnBegin, PointerSize);
+  }
 }
 
 uint16_t AsmPrinter::getDwarfVersion() const {

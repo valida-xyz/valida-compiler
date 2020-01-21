@@ -37,6 +37,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include <list>
 #include <map>
 #include <string>
@@ -692,18 +693,6 @@ getRequiredQualification(ASTContext &Context, const DeclContext *CurContext,
   return Result;
 }
 
-/// Determine whether \p Id is a name reserved for the implementation (C99
-/// 7.1.3, C++ [lib.global.names]).
-static bool isReservedName(const IdentifierInfo *Id,
-                           bool doubleUnderscoreOnly = false) {
-  if (Id->getLength() < 2)
-    return false;
-  const char *Name = Id->getNameStart();
-  return Name[0] == '_' &&
-         (Name[1] == '_' ||
-          (Name[1] >= 'A' && Name[1] <= 'Z' && !doubleUnderscoreOnly));
-}
-
 // Some declarations have reserved names that we don't want to ever show.
 // Filter out names reserved for the implementation if they come from a
 // system header.
@@ -713,13 +702,13 @@ static bool shouldIgnoreDueToReservedName(const NamedDecl *ND, Sema &SemaRef) {
     return false;
 
   // Ignore reserved names for compiler provided decls.
-  if (isReservedName(Id) && ND->getLocation().isInvalid())
+  if (Id->isReservedName() && ND->getLocation().isInvalid())
     return true;
 
   // For system headers ignore only double-underscore names.
   // This allows for system headers providing private symbols with a single
   // underscore.
-  if (isReservedName(Id, /*doubleUnderscoreOnly=*/true) &&
+  if (Id->isReservedName(/*doubleUnderscoreOnly=*/true) &&
       SemaRef.SourceMgr.isInSystemHeader(
           SemaRef.SourceMgr.getSpellingLoc(ND->getLocation())))
     return true;
@@ -1321,7 +1310,7 @@ void ResultBuilder::AddResult(Result R, DeclContext *CurContext,
         /// Motivating case is const_iterator begin() const vs iterator begin().
         auto &OverloadSet = OverloadMap[std::make_pair(
             CurContext, Method->getDeclName().getAsOpaqueInteger())];
-        for (const DeclIndexPair& Entry : OverloadSet) {
+        for (const DeclIndexPair Entry : OverloadSet) {
           Result &Incumbent = Results[Entry.second];
           switch (compareOverloads(*Method,
                                    *cast<CXXMethodDecl>(Incumbent.Declaration),
@@ -2324,6 +2313,13 @@ static void AddOrdinaryNameResults(Sema::ParserCompletionContext CCC, Scope *S,
         Builder.AddChunk(CodeCompletionString::CK_SemiColon);
         Results.AddResult(Result(Builder.TakeString()));
       }
+      // For pointers, suggest 'return nullptr' in C++.
+      if (SemaRef.getLangOpts().CPlusPlus11 &&
+          (ReturnType->isPointerType() || ReturnType->isMemberPointerType())) {
+        Builder.AddTypedTextChunk("return nullptr");
+        Builder.AddChunk(CodeCompletionString::CK_SemiColon);
+        Results.AddResult(Result(Builder.TakeString()));
+      }
     }
 
     // goto identifier ;
@@ -2991,7 +2987,11 @@ static void AddTemplateParameterChunks(
     if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(*P)) {
       if (TTP->wasDeclaredWithTypename())
         PlaceholderStr = "typename";
-      else
+      else if (const auto *TC = TTP->getTypeConstraint()) {
+        llvm::raw_string_ostream OS(PlaceholderStr);
+        TC->print(OS, Policy);
+        OS.flush();
+      } else
         PlaceholderStr = "class";
 
       if (TTP->getIdentifier()) {
@@ -3327,6 +3327,18 @@ CodeCompletionResult::createCodeCompletionStringForOverride(
   return Result.TakeString();
 }
 
+// FIXME: Right now this works well with lambdas. Add support for other functor
+// types like std::function.
+static const NamedDecl *extractFunctorCallOperator(const NamedDecl *ND) {
+  const auto *VD = dyn_cast<VarDecl>(ND);
+  if (!VD)
+    return nullptr;
+  const auto *RecordDecl = VD->getType()->getAsCXXRecordDecl();
+  if (!RecordDecl || !RecordDecl->isLambda())
+    return nullptr;
+  return RecordDecl->getLambdaCallOperator();
+}
+
 CodeCompletionString *CodeCompletionResult::createCodeCompletionStringForDecl(
     Preprocessor &PP, ASTContext &Ctx, CodeCompletionBuilder &Result,
     bool IncludeBriefComments, const CodeCompletionContext &CCContext,
@@ -3351,9 +3363,8 @@ CodeCompletionString *CodeCompletionResult::createCodeCompletionStringForDecl(
   for (const auto *I : ND->specific_attrs<AnnotateAttr>())
     Result.AddAnnotation(Result.getAllocator().CopyString(I->getAnnotation()));
 
-  AddResultTypeChunk(Ctx, Policy, ND, CCContext.getBaseType(), Result);
-
-  if (const auto *Function = dyn_cast<FunctionDecl>(ND)) {
+  auto AddFunctionTypeAndResult = [&](const FunctionDecl *Function) {
+    AddResultTypeChunk(Ctx, Policy, Function, CCContext.getBaseType(), Result);
     AddQualifierToCompletionString(Result, Qualifier, QualifierIsInformative,
                                    Ctx, Policy);
     AddTypedNameChunk(Ctx, Policy, ND, Result);
@@ -3361,8 +3372,20 @@ CodeCompletionString *CodeCompletionResult::createCodeCompletionStringForDecl(
     AddFunctionParameterChunks(PP, Policy, Function, Result);
     Result.AddChunk(CodeCompletionString::CK_RightParen);
     AddFunctionTypeQualsToCompletionString(Result, Function);
+  };
+
+  if (const auto *Function = dyn_cast<FunctionDecl>(ND)) {
+    AddFunctionTypeAndResult(Function);
     return Result.TakeString();
   }
+
+  if (const auto *CallOperator =
+          dyn_cast_or_null<FunctionDecl>(extractFunctorCallOperator(ND))) {
+    AddFunctionTypeAndResult(CallOperator);
+    return Result.TakeString();
+  }
+
+  AddResultTypeChunk(Ctx, Policy, ND, CCContext.getBaseType(), Result);
 
   if (const FunctionTemplateDecl *FunTmpl =
           dyn_cast<FunctionTemplateDecl>(ND)) {
@@ -3429,6 +3452,7 @@ CodeCompletionString *CodeCompletionResult::createCodeCompletionStringForDecl(
     Result.AddChunk(CodeCompletionString::CK_RightAngle);
     return Result.TakeString();
   }
+
   if (const auto *Method = dyn_cast<ObjCMethodDecl>(ND)) {
     Selector Sel = Method->getSelector();
     if (Sel.isUnarySelector()) {
@@ -3653,6 +3677,10 @@ CodeCompleteConsumer::OverloadCandidate::CreateSignatureString(
     unsigned CurrentArg, Sema &S, CodeCompletionAllocator &Allocator,
     CodeCompletionTUInfo &CCTUInfo, bool IncludeBriefComments) const {
   PrintingPolicy Policy = getCompletionPrintingPolicy(S);
+  // Show signatures of constructors as they are declared:
+  //   vector(int n) rather than vector<string>(int n)
+  // This is less noisy without being less clear, and avoids tricky cases.
+  Policy.SuppressTemplateArgsInCXXConstructors = true;
 
   // FIXME: Set priority, availability appropriately.
   CodeCompletionBuilder Result(Allocator, CCTUInfo, 1,
@@ -3678,8 +3706,11 @@ CodeCompleteConsumer::OverloadCandidate::CreateSignatureString(
         Result.addBriefComment(RC->getBriefText(S.getASTContext()));
     }
     AddResultTypeChunk(S.Context, Policy, FDecl, QualType(), Result);
-    Result.AddTextChunk(
-        Result.getAllocator().CopyString(FDecl->getNameAsString()));
+
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    FDecl->getDeclName().print(OS, Policy);
+    Result.AddTextChunk(Result.getAllocator().CopyString(OS.str()));
   } else {
     Result.AddResultTypeChunk(Result.getAllocator().CopyString(
         Proto->getReturnType().getAsString(Policy)));
@@ -4783,7 +4814,7 @@ void Sema::CodeCompleteMemberReferenceExpr(Scope *S, Expr *Base,
       }
 
       // Add properties from the protocols in a qualified interface.
-      for (auto *I : BaseType->getAs<ObjCObjectPointerType>()->quals())
+      for (auto *I : BaseType->castAs<ObjCObjectPointerType>()->quals())
         AddObjCProperties(CCContext, I, true, /*AllowNullaryMethods=*/true,
                           CurContext, AddedProperties, Results,
                           IsBaseExprStatement, /*IsClassProperty*/ false,
@@ -4796,7 +4827,7 @@ void Sema::CodeCompleteMemberReferenceExpr(Scope *S, Expr *Base,
               BaseType->getAs<ObjCObjectPointerType>())
         Class = ObjCPtr->getInterfaceDecl();
       else
-        Class = BaseType->getAs<ObjCObjectType>()->getInterface();
+        Class = BaseType->castAs<ObjCObjectType>()->getInterface();
 
       // Add all ivars from this class and its superclasses.
       if (Class) {
@@ -7720,8 +7751,8 @@ static void AddObjCKeyValueCompletions(ObjCPropertyDecl *Property,
   if (IsInstanceMethod &&
       (ReturnType.isNull() ||
        (ReturnType->isObjCObjectPointerType() &&
-        ReturnType->getAs<ObjCObjectPointerType>()->getInterfaceDecl() &&
-        ReturnType->getAs<ObjCObjectPointerType>()
+        ReturnType->castAs<ObjCObjectPointerType>()->getInterfaceDecl() &&
+        ReturnType->castAs<ObjCObjectPointerType>()
                 ->getInterfaceDecl()
                 ->getName() == "NSArray"))) {
     std::string SelectorName = (Twine(Property->getName()) + "AtIndexes").str();
@@ -8107,8 +8138,8 @@ static void AddObjCKeyValueCompletions(ObjCPropertyDecl *Property,
   if (!IsInstanceMethod &&
       (ReturnType.isNull() ||
        (ReturnType->isObjCObjectPointerType() &&
-        ReturnType->getAs<ObjCObjectPointerType>()->getInterfaceDecl() &&
-        ReturnType->getAs<ObjCObjectPointerType>()
+        ReturnType->castAs<ObjCObjectPointerType>()->getInterfaceDecl() &&
+        ReturnType->castAs<ObjCObjectPointerType>()
                 ->getInterfaceDecl()
                 ->getName() == "NSSet"))) {
     std::string SelectorName =

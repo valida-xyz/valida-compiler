@@ -366,7 +366,7 @@ inline api_pred_ty<is_negative> m_Negative(const APInt *&V) {
 struct is_nonnegative {
   bool isValue(const APInt &C) { return C.isNonNegative(); }
 };
-/// Match an integer or vector of nonnegative values.
+/// Match an integer or vector of non-negative values.
 /// For vectors, this includes constants with undefined elements.
 inline cst_pred_ty<is_nonnegative> m_NonNegative() {
   return cst_pred_ty<is_nonnegative>();
@@ -374,6 +374,28 @@ inline cst_pred_ty<is_nonnegative> m_NonNegative() {
 inline api_pred_ty<is_nonnegative> m_NonNegative(const APInt *&V) {
   return V;
 }
+
+struct is_strictlypositive {
+  bool isValue(const APInt &C) { return C.isStrictlyPositive(); }
+};
+/// Match an integer or vector of strictly positive values.
+/// For vectors, this includes constants with undefined elements.
+inline cst_pred_ty<is_strictlypositive> m_StrictlyPositive() {
+  return cst_pred_ty<is_strictlypositive>();
+}
+inline api_pred_ty<is_strictlypositive> m_StrictlyPositive(const APInt *&V) {
+  return V;
+}
+
+struct is_nonpositive {
+  bool isValue(const APInt &C) { return C.isNonPositive(); }
+};
+/// Match an integer or vector of non-positive values.
+/// For vectors, this includes constants with undefined elements.
+inline cst_pred_ty<is_nonpositive> m_NonPositive() {
+  return cst_pred_ty<is_nonpositive>();
+}
+inline api_pred_ty<is_nonpositive> m_NonPositive(const APInt *&V) { return V; }
 
 struct is_one {
   bool isValue(const APInt &C) { return C.isOneValue(); }
@@ -825,28 +847,6 @@ m_FNegNSZ(const RHS &X) {
   return m_FSub(m_AnyZeroFP(), X);
 }
 
-template <typename Op_t> struct Freeze_match {
-  Op_t X;
-
-  Freeze_match(const Op_t &Op) : X(Op) {}
-  template <typename OpTy> bool match(OpTy *V) {
-    auto *I = dyn_cast<UnaryOperator>(V);
-    if (!I) return false;
-
-    if (isa<FreezeOperator>(I))
-      return X.match(I->getOperand(0));
-
-    return false;
-  }
-};
-
-/// Matches freeze.
-template <typename OpTy>
-inline Freeze_match<OpTy>
-m_Freeze(const OpTy &X) {
-  return Freeze_match<OpTy>(X);
-}
-
 template <typename LHS, typename RHS>
 inline BinaryOp_match<LHS, RHS, Instruction::Mul> m_Mul(const LHS &L,
                                                         const RHS &R) {
@@ -1253,6 +1253,12 @@ inline ThreeOps_match<Cond, constantint_match<L>, constantint_match<R>,
                       Instruction::Select>
 m_SelectCst(const Cond &C) {
   return m_Select(C, m_ConstantInt<L>(), m_ConstantInt<R>());
+}
+
+/// Matches FreezeInst.
+template <typename OpTy>
+inline OneOps_match<OpTy, Instruction::Freeze> m_Freeze(const OpTy &Op) {
+  return OneOps_match<OpTy, Instruction::Freeze>(Op);
 }
 
 /// Matches InsertElementInst.
@@ -1752,6 +1758,12 @@ struct m_Intrinsic_Ty<T0, T1, T2, T3> {
                         Argument_match<T3>>;
 };
 
+template <typename T0, typename T1, typename T2, typename T3, typename T4>
+struct m_Intrinsic_Ty<T0, T1, T2, T3, T4> {
+  using Ty = match_combine_and<typename m_Intrinsic_Ty<T0, T1, T2, T3>::Ty,
+                               Argument_match<T4>>;
+};
+
 /// Match intrinsic calls like this:
 /// m_Intrinsic<Intrinsic::fabs>(m_Value(X))
 template <Intrinsic::ID IntrID> inline IntrinsicID_match m_Intrinsic() {
@@ -1780,6 +1792,15 @@ template <Intrinsic::ID IntrID, typename T0, typename T1, typename T2,
 inline typename m_Intrinsic_Ty<T0, T1, T2, T3>::Ty
 m_Intrinsic(const T0 &Op0, const T1 &Op1, const T2 &Op2, const T3 &Op3) {
   return m_CombineAnd(m_Intrinsic<IntrID>(Op0, Op1, Op2), m_Argument<3>(Op3));
+}
+
+template <Intrinsic::ID IntrID, typename T0, typename T1, typename T2,
+          typename T3, typename T4>
+inline typename m_Intrinsic_Ty<T0, T1, T2, T3, T4>::Ty
+m_Intrinsic(const T0 &Op0, const T1 &Op1, const T2 &Op2, const T3 &Op3,
+            const T4 &Op4) {
+  return m_CombineAnd(m_Intrinsic<IntrID>(Op0, Op1, Op2, Op3),
+                      m_Argument<4>(Op4));
 }
 
 // Helper intrinsic matching specializations.

@@ -15,7 +15,6 @@ using namespace llvm;
 // descriptions. Currently we, conservatively, disallow:
 // - cross beat carries.
 // - narrowing of results.
-// - top/bottom operations.
 // - complex operations.
 // - horizontal operations.
 // - byte swapping.
@@ -150,6 +149,24 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VFMA_qr_Sf32:
     case MVE_VFMA_qr_f16:
     case MVE_VFMA_qr_f32:
+    case MVE_VMAXAs16:
+    case MVE_VMAXAs32:
+    case MVE_VMAXAs8:
+    case MVE_VMAXs16:
+    case MVE_VMAXs32:
+    case MVE_VMAXs8:
+    case MVE_VMAXu16:
+    case MVE_VMAXu32:
+    case MVE_VMAXu8:
+    case MVE_VMINAs16:
+    case MVE_VMINAs32:
+    case MVE_VMINAs8:
+    case MVE_VMINs16:
+    case MVE_VMINs32:
+    case MVE_VMINs8:
+    case MVE_VMINu16:
+    case MVE_VMINu32:
+    case MVE_VMINu8:
     case MVE_VMLAS_qr_s16:
     case MVE_VMLAS_qr_s32:
     case MVE_VMLAS_qr_s8:
@@ -243,6 +260,22 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VMOVimmi32:	
     case MVE_VMOVimmi64:
     case MVE_VMOVimmi8:	
+    case MVE_VMULLBp16:
+    case MVE_VMULLBp8:
+    case MVE_VMULLBs16:
+    case MVE_VMULLBs32:
+    case MVE_VMULLBs8:
+    case MVE_VMULLBu16:
+    case MVE_VMULLBu32:
+    case MVE_VMULLBu8:
+    case MVE_VMULLTp16:
+    case MVE_VMULLTp8:
+    case MVE_VMULLTs16:
+    case MVE_VMULLTs32:
+    case MVE_VMULLTs8:
+    case MVE_VMULLTu16:
+    case MVE_VMULLTu32:
+    case MVE_VMULLTu8:	
     case MVE_VMUL_qr_f16:
     case MVE_VMUL_qr_f32:
     case MVE_VMUL_qr_i16:
@@ -250,6 +283,9 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VMUL_qr_i8:
     case MVE_VMULf16:
     case MVE_VMULf32:
+    case MVE_VMULi16:
+    case MVE_VMULi8:
+    case MVE_VMULi32:
     case MVE_VMVN:
     case MVE_VMVNimmi16:
     case MVE_VMVNimmi32:
@@ -266,31 +302,7 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VORRIZ24v4i32:
     case MVE_VORRIZ8v4i32:
     case MVE_VORRIZ8v8i16:
-    case MVE_VPNOT:
-    case MVE_VPSEL:
     case MVE_VPST:	
-    case MVE_VPTv16i8:
-    case MVE_VPTv16i8r:
-    case MVE_VPTv16s8:
-    case MVE_VPTv16s8r:
-    case MVE_VPTv16u8:	
-    case MVE_VPTv16u8r:
-    case MVE_VPTv4f32:
-    case MVE_VPTv4f32r:
-    case MVE_VPTv4i32:
-    case MVE_VPTv4i32r:
-    case MVE_VPTv4s32:
-    case MVE_VPTv4s32r:
-    case MVE_VPTv4u32:
-    case MVE_VPTv4u32r:
-    case MVE_VPTv8f16:
-    case MVE_VPTv8f16r:
-    case MVE_VPTv8i16:
-    case MVE_VPTv8i16r:
-    case MVE_VPTv8s16:
-    case MVE_VPTv8s16r:
-    case MVE_VPTv8u16:
-    case MVE_VPTv8u16r:
     case MVE_VQABSs16:
     case MVE_VQABSs32:
     case MVE_VQABSs8:
@@ -306,6 +318,14 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VQADDu16:
     case MVE_VQADDu32:
     case MVE_VQADDu8:
+    case MVE_VQDMULL_qr_s16bh:
+    case MVE_VQDMULL_qr_s16th:
+    case MVE_VQDMULL_qr_s32bh:
+    case MVE_VQDMULL_qr_s32th:
+    case MVE_VQDMULLs16bh:
+    case MVE_VQDMULLs16th:
+    case MVE_VQDMULLs32bh:
+    case MVE_VQDMULLs32th:
     case MVE_VQNEGs16:
     case MVE_VQNEGs32:
     case MVE_VQNEGs8:
@@ -324,6 +344,12 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VQSHLU_imms16:
     case MVE_VQSHLU_imms32:
     case MVE_VQSHLU_imms8:
+    case MVE_VQSHLimms16:
+    case MVE_VQSHLimms32:
+    case MVE_VQSHLimms8:
+    case MVE_VQSHLimmu16:
+    case MVE_VQSHLimmu32:
+    case MVE_VQSHLimmu8:
     case MVE_VQSHL_by_vecs16:
     case MVE_VQSHL_by_vecs32:
     case MVE_VQSHL_by_vecs8:
@@ -408,12 +434,6 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VSLIimm16:
     case MVE_VSLIimm32:
     case MVE_VSLIimm8:
-    case MVE_VSLIimms16:	
-    case MVE_VSLIimms32:
-    case MVE_VSLIimms8:
-    case MVE_VSLIimmu16:
-    case MVE_VSLIimmu32:
-    case MVE_VSLIimmu8:
     case MVE_VSRIimm16:
     case MVE_VSRIimm32:
     case MVE_VSRIimm8:

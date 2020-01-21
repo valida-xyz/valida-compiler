@@ -305,11 +305,6 @@ bool SIRegisterInfo::requiresVirtualBaseRegisters(
   return true;
 }
 
-bool SIRegisterInfo::trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
-  // This helps catch bugs as verifier errors.
-  return true;
-}
-
 int64_t SIRegisterInfo::getMUBUFInstrOffset(const MachineInstr *MI) const {
   assert(SIInstrInfo::isMUBUF(*MI));
 
@@ -1123,11 +1118,15 @@ void SIRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
               if (!IsVOP2)
                 MIB.addImm(0); // clamp bit
             } else {
-              Register ConstOffsetReg =
-                RS->scavengeRegister(&AMDGPU::SReg_32_XM0RegClass, MIB, 0, false);
+              assert(MIB->getOpcode() == AMDGPU::V_ADD_I32_e64 &&
+                     "Need to reuse carry out register");
 
-              // This should always be able to use the unused carry out.
-              assert(ConstOffsetReg && "this scavenge should not be able to fail");
+              // Use scavenged unused carry out as offset register.
+              Register ConstOffsetReg;
+              if (!isWave32)
+                ConstOffsetReg = getSubReg(MIB.getReg(1), AMDGPU::sub0);
+              else
+                ConstOffsetReg = MIB.getReg(1);
 
               BuildMI(*MBB, *MIB, DL, TII->get(AMDGPU::S_MOV_B32), ConstOffsetReg)
                 .addImm(Offset);
@@ -1136,10 +1135,9 @@ void SIRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
               MIB.addImm(0); // clamp bit
             }
           } else {
-            // We have to produce a carry out, and we there isn't a free SGPR
-            // pair for it. We can keep the whole computation on the SALU to
-            // avoid clobbering an additional register at the cost of an extra
-            // mov.
+            // We have to produce a carry out, and there isn't a free SGPR pair
+            // for it. We can keep the whole computation on the SALU to avoid
+            // clobbering an additional register at the cost of an extra mov.
 
             // We may have 1 free scratch SGPR even though a carry out is
             // unavailable. Only one additional mov is needed.
@@ -1161,9 +1159,9 @@ void SIRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
               BuildMI(*MBB, MI, DL, TII->get(AMDGPU::S_SUB_U32), ScaledReg)
                 .addReg(ScaledReg, RegState::Kill)
                 .addImm(Offset);
-            BuildMI(*MBB, MI, DL, TII->get(AMDGPU::S_LSHL_B32), ScaledReg)
-              .addReg(DiffReg, RegState::Kill)
-              .addImm(ST.getWavefrontSizeLog2());
+              BuildMI(*MBB, MI, DL, TII->get(AMDGPU::S_LSHL_B32), ScaledReg)
+                .addReg(DiffReg, RegState::Kill)
+                .addImm(ST.getWavefrontSizeLog2());
             }
           }
         }
@@ -1772,14 +1770,6 @@ SIRegisterInfo::getRegClassForSizeOnBank(unsigned Size,
         &AMDGPU::SReg_32_XM0_XEXECRegClass : &AMDGPU::SReg_64_XEXECRegClass;
     case AMDGPU::SGPRRegBankID:
       return &AMDGPU::SReg_32RegClass;
-    case AMDGPU::SCCRegBankID:
-      // This needs to return an allocatable class, so don't bother returning
-      // the dummy SCC class.
-      //
-      // FIXME: This is a grotesque hack. We use SGPR_32 as an indication this
-      // was not an VCC bank value since we use the larger class SReg_32 for
-      // other values. These should all use SReg_32.
-      return &AMDGPU::SGPR_32RegClass;
     default:
       llvm_unreachable("unknown register bank");
     }
@@ -1789,7 +1779,7 @@ SIRegisterInfo::getRegClassForSizeOnBank(unsigned Size,
                                                  &AMDGPU::SReg_32RegClass;
   case 64:
     return RB.getID() == AMDGPU::VGPRRegBankID ? &AMDGPU::VReg_64RegClass :
-                                                 &AMDGPU::SReg_64_XEXECRegClass;
+                                                 &AMDGPU::SReg_64RegClass;
   case 96:
     return RB.getID() == AMDGPU::VGPRRegBankID ? &AMDGPU::VReg_96RegClass :
                                                  &AMDGPU::SReg_96RegClass;

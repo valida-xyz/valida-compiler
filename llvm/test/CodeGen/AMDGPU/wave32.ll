@@ -243,14 +243,12 @@ bb13:
 ; GFX1032: s_or_b32 [[MASK1]], [[MASK1]], [[MASK0]]
 ; GFX1064: s_or_b64 [[MASK1]], [[MASK1]], [[MASK0]]
 ; GCN:   BB{{.*}}: ; %Flow
-; GFX1032: s_and_b32 [[MASK0:s[0-9]+]], exec_lo, [[MASK1]]
-; GFX1064: s_and_b64 [[MASK0:s\[[0-9:]+\]]], exec, [[MASK1]]
-; GFX1032: s_or_b32  [[MASK0]], [[MASK0]], [[ACC:s[0-9]+]]
-; GFX1064: s_or_b64  [[MASK0]], [[MASK0]], [[ACC:s\[[0-9:]+\]]]
-; GFX1032: s_mov_b32 [[ACC]], [[MASK0]]
-; GFX1064: s_mov_b64 [[ACC]], [[MASK0]]
-; GFX1032: s_andn2_b32 exec_lo, exec_lo, [[MASK0]]
-; GFX1064: s_andn2_b64 exec, exec, [[MASK0]]
+; GFX1032: s_and_b32 [[TMP0:s[0-9]+]], exec_lo, [[MASK1]]
+; GFX1064: s_and_b64 [[TMP0:s\[[0-9:]+\]]], exec, [[MASK1]]
+; GFX1032: s_or_b32  [[ACC:s[0-9]+]], [[TMP0]], [[ACC]]
+; GFX1064: s_or_b64  [[ACC:s\[[0-9:]+\]]], [[TMP0]], [[ACC]]
+; GFX1032: s_andn2_b32 exec_lo, exec_lo, [[ACC]]
+; GFX1064: s_andn2_b64 exec, exec, [[ACC]]
 ; GCN:     s_cbranch_execz
 ; GCN:   BB{{.*}}:
 ; GCN: s_load_dword [[LOAD:s[0-9]+]]
@@ -493,10 +491,10 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}test_br_cc_f16:
-; GFX1032:      v_cmp_nlt_f16_e32 vcc_lo,
-; GFX1032-NEXT: s_and_b32 vcc_lo, exec_lo, vcc_lo
-; GFX1064:      v_cmp_nlt_f16_e32 vcc,
-; GFX1064-NEXT: s_and_b64 vcc, exec, vcc{{$}}
+; GFX1032:  v_cmp_nlt_f16_e32 vcc_lo,
+; GFX1032:  s_and_b32 vcc_lo, exec_lo, vcc_lo
+; GFX1064:  v_cmp_nlt_f16_e32 vcc,
+; GFX1064:  s_and_b64 vcc, exec, vcc{{$}}
 ; GCN-NEXT: s_cbranch_vccnz
 define amdgpu_kernel void @test_br_cc_f16(
     half addrspace(1)* %r,
@@ -725,7 +723,7 @@ main_body:
   br i1 %cc, label %endif, label %if
 
 if:
-  %src = call float @llvm.amdgcn.buffer.load.f32(<4 x i32> undef, i32 %idx, i32 0, i1 0, i1 0)
+  %src = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx, i32 0, i32 0, i32 0)
   %out = fadd float %src, %src
   %out.0 = call float @llvm.amdgcn.wwm.f32(float %out)
   %out.1 = fadd float %src, %out.0
@@ -762,8 +760,8 @@ main_body:
 ; GFX1064: s_and_b64 exec, exec, s[{{[0-9:]+}}]
 define amdgpu_ps float @test_wqm2(i32 inreg %idx0, i32 inreg %idx1) #0 {
 main_body:
-  %src0 = call float @llvm.amdgcn.buffer.load.f32(<4 x i32> undef, i32 %idx0, i32 0, i1 0, i1 0)
-  %src1 = call float @llvm.amdgcn.buffer.load.f32(<4 x i32> undef, i32 %idx1, i32 0, i1 0, i1 0)
+  %src0 = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx0, i32 0, i32 0, i32 0)
+  %src1 = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx1, i32 0, i32 0, i32 0)
   %out = fadd float %src0, %src1
   %out.0 = bitcast float %out to i32
   %out.1 = call i32 @llvm.amdgcn.wqm.i32(i32 %out.0)
@@ -1112,7 +1110,7 @@ declare float @llvm.amdgcn.wwm.f32(float)
 declare i32 @llvm.amdgcn.wqm.i32(i32)
 declare float @llvm.amdgcn.interp.p1(float, i32, i32, i32)
 declare float @llvm.amdgcn.interp.p2(float, float, i32, i32, i32)
-declare float @llvm.amdgcn.buffer.load.f32(<4 x i32>, i32, i32, i1, i1)
+declare float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32>, i32, i32, i32, i32 immarg)
 declare i32 @llvm.amdgcn.mbcnt.lo(i32, i32)
 declare i32 @llvm.amdgcn.mbcnt.hi(i32, i32)
 declare i64 @llvm.amdgcn.fcmp.i64.f32(float, float, i32)

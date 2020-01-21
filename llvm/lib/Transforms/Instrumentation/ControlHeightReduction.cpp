@@ -27,7 +27,9 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Support/BranchProbability.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -622,6 +624,10 @@ static bool checkMDProf(MDNode *MD, BranchProbability &TrueProb,
 
   assert(SumWt >= TrueWt && SumWt >= FalseWt &&
          "Overflow calculating branch probabilities.");
+
+  // Guard against 0-to-0 branch weights to avoid a division-by-zero crash.
+  if (SumWt == 0)
+    return false;
 
   TrueProb = BranchProbability::getBranchProbability(TrueWt, SumWt);
   FalseProb = BranchProbability::getBranchProbability(FalseWt, SumWt);

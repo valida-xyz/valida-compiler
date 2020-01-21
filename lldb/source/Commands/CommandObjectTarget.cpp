@@ -24,7 +24,6 @@
 #include "lldb/Interpreter/OptionGroupBoolean.h"
 #include "lldb/Interpreter/OptionGroupFile.h"
 #include "lldb/Interpreter/OptionGroupFormat.h"
-#include "lldb/Interpreter/OptionGroupPlatform.h"
 #include "lldb/Interpreter/OptionGroupString.h"
 #include "lldb/Interpreter/OptionGroupUInt64.h"
 #include "lldb/Interpreter/OptionGroupUUID.h"
@@ -53,7 +52,6 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatAdapters.h"
 
-#include <cerrno>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -78,7 +76,7 @@ static void DumpTargetInfo(uint32_t target_idx, Target *target,
   uint32_t properties = 0;
   if (target_arch.IsValid()) {
     strm.Printf("%sarch=", properties++ > 0 ? ", " : " ( ");
-    target_arch.DumpTriple(strm);
+    target_arch.DumpTriple(strm.AsRawOstream());
     properties++;
   }
   PlatformSP platform_sp(target->GetPlatform());
@@ -812,32 +810,28 @@ protected:
   void DumpGlobalVariableList(const ExecutionContext &exe_ctx,
                               const SymbolContext &sc,
                               const VariableList &variable_list, Stream &s) {
-    size_t count = variable_list.GetSize();
-    if (count > 0) {
-      if (sc.module_sp) {
-        if (sc.comp_unit) {
-          s.Printf("Global variables for %s in %s:\n",
-                   sc.comp_unit->GetPath().c_str(),
-                   sc.module_sp->GetFileSpec().GetPath().c_str());
-        } else {
-          s.Printf("Global variables for %s\n",
-                   sc.module_sp->GetFileSpec().GetPath().c_str());
-        }
-      } else if (sc.comp_unit) {
-        s.Printf("Global variables for %s\n", sc.comp_unit->GetPath().c_str());
+    if (variable_list.Empty())
+      return;
+    if (sc.module_sp) {
+      if (sc.comp_unit) {
+        s.Format("Global variables for {0} in {1}:\n",
+                 sc.comp_unit->GetPrimaryFile(), sc.module_sp->GetFileSpec());
+      } else {
+        s.Printf("Global variables for %s\n",
+                 sc.module_sp->GetFileSpec().GetPath().c_str());
       }
+    } else if (sc.comp_unit) {
+      s.Format("Global variables for {0}\n", sc.comp_unit->GetPrimaryFile());
+    }
 
-      for (uint32_t i = 0; i < count; ++i) {
-        VariableSP var_sp(variable_list.GetVariableAtIndex(i));
-        if (var_sp) {
-          ValueObjectSP valobj_sp(ValueObjectVariable::Create(
-              exe_ctx.GetBestExecutionContextScope(), var_sp));
+    for (VariableSP var_sp : variable_list) {
+      if (!var_sp)
+        continue;
+      ValueObjectSP valobj_sp(ValueObjectVariable::Create(
+          exe_ctx.GetBestExecutionContextScope(), var_sp));
 
-          if (valobj_sp)
-            DumpValueObject(s, var_sp, valobj_sp,
-                            var_sp->GetName().GetCString());
-        }
-      }
+      if (valobj_sp)
+        DumpValueObject(s, var_sp, valobj_sp, var_sp->GetName().GetCString());
     }
   }
 
@@ -929,9 +923,9 @@ protected:
         if (!success) {
           if (frame) {
             if (comp_unit)
-              result.AppendErrorWithFormat(
-                  "no global variables in current compile unit: %s\n",
-                  comp_unit->GetPath().c_str());
+              result.AppendErrorWithFormatv(
+                  "no global variables in current compile unit: {0}\n",
+                  comp_unit->GetPrimaryFile());
             else
               result.AppendErrorWithFormat(
                   "no debug information for frame %u\n",
@@ -1295,7 +1289,7 @@ static void DumpModuleArchitecture(Stream &strm, Module *module,
     StreamString arch_strm;
 
     if (full_triple)
-      module->GetArchitecture().DumpTriple(arch_strm);
+      module->GetArchitecture().DumpTriple(arch_strm.AsRawOstream());
     else
       arch_strm.PutCString(module->GetArchitecture().GetArchitectureName());
     std::string arch_str = arch_strm.GetString();
@@ -1330,8 +1324,8 @@ static uint32_t DumpCompileUnitLineTable(CommandInterpreter &interpreter,
         if (i > 0)
           strm << "\n\n";
 
-        strm << "Line table for " << *static_cast<FileSpec *>(sc.comp_unit)
-             << " in `" << module->GetFileSpec().GetFilename() << "\n";
+        strm << "Line table for " << sc.comp_unit->GetPrimaryFile() << " in `"
+             << module->GetFileSpec().GetFilename() << "\n";
         LineTable *line_table = sc.comp_unit->GetLineTable();
         if (line_table)
           line_table->GetDescription(
@@ -1353,7 +1347,7 @@ static void DumpFullpath(Stream &strm, const FileSpec *file_spec_ptr,
       strm.Printf("%-*s", width, fullpath.c_str());
       return;
     } else {
-      file_spec_ptr->Dump(&strm);
+      file_spec_ptr->Dump(strm.AsRawOstream());
       return;
     }
   }
@@ -1420,12 +1414,13 @@ static size_t DumpModuleObjfileHeaders(Stream &strm, ModuleList &module_list) {
 }
 
 static void DumpModuleSymtab(CommandInterpreter &interpreter, Stream &strm,
-                             Module *module, SortOrder sort_order) {
+                             Module *module, SortOrder sort_order,
+                             Mangled::NamePreference name_preference) {
   if (!module)
     return;
   if (Symtab *symtab = module->GetSymtab())
     symtab->Dump(&strm, interpreter.GetExecutionContext().GetTargetPtr(),
-                 sort_order);
+                 sort_order, name_preference);
 }
 
 static void DumpModuleSections(CommandInterpreter &interpreter, Stream &strm,
@@ -1970,6 +1965,11 @@ public:
       const int short_option = m_getopt_table[option_idx].val;
 
       switch (short_option) {
+      case 'm':
+        m_prefer_mangled.SetCurrentValue(true);
+        m_prefer_mangled.SetOptionWasSet();
+        break;
+
       case 's':
         m_sort_order = (SortOrder)OptionArgParser::ToOptionEnum(
             option_arg, GetDefinitions()[option_idx].enum_values,
@@ -1984,6 +1984,7 @@ public:
 
     void OptionParsingStarting(ExecutionContext *execution_context) override {
       m_sort_order = eSortOrderNone;
+      m_prefer_mangled.Clear();
     }
 
     llvm::ArrayRef<OptionDefinition> GetDefinitions() override {
@@ -1991,12 +1992,16 @@ public:
     }
 
     SortOrder m_sort_order;
+    OptionValueBoolean m_prefer_mangled = {false, false};
   };
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
     Target *target = &GetSelectedTarget();
     uint32_t num_dumped = 0;
+    Mangled::NamePreference name_preference =
+        (m_options.m_prefer_mangled ? Mangled::ePreferMangled
+                                    : Mangled::ePreferDemangled);
 
     uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
     result.GetOutputStream().SetAddressByteSize(addr_byte_size);
@@ -2022,7 +2027,7 @@ protected:
           DumpModuleSymtab(
               m_interpreter, result.GetOutputStream(),
               target->GetImages().GetModulePointerAtIndexUnlocked(image_idx),
-              m_options.m_sort_order);
+              m_options.m_sort_order, name_preference);
         }
       } else {
         result.AppendError("the target has no associated executable images");
@@ -2050,7 +2055,7 @@ protected:
                 break;
               num_dumped++;
               DumpModuleSymtab(m_interpreter, result.GetOutputStream(), module,
-                               m_options.m_sort_order);
+                               m_options.m_sort_order, name_preference);
             }
           }
         } else
@@ -4033,169 +4038,165 @@ protected:
   bool AddModuleSymbols(Target *target, ModuleSpec &module_spec, bool &flush,
                         CommandReturnObject &result) {
     const FileSpec &symbol_fspec = module_spec.GetSymbolFileSpec();
-    if (symbol_fspec) {
-      char symfile_path[PATH_MAX];
-      symbol_fspec.GetPath(symfile_path, sizeof(symfile_path));
+    if (!symbol_fspec) {
+      result.AppendError(
+          "one or more executable image paths must be specified");
+      result.SetStatus(eReturnStatusFailed);
+      return false;
+    }
 
-      if (!module_spec.GetUUID().IsValid()) {
-        if (!module_spec.GetFileSpec() && !module_spec.GetPlatformFileSpec())
-          module_spec.GetFileSpec().GetFilename() = symbol_fspec.GetFilename();
-      }
-      // We now have a module that represents a symbol file that can be used
-      // for a module that might exist in the current target, so we need to
-      // find that module in the target
-      ModuleList matching_module_list;
+    char symfile_path[PATH_MAX];
+    symbol_fspec.GetPath(symfile_path, sizeof(symfile_path));
 
-      size_t num_matches = 0;
-      // First extract all module specs from the symbol file
-      lldb_private::ModuleSpecList symfile_module_specs;
-      if (ObjectFile::GetModuleSpecifications(module_spec.GetSymbolFileSpec(),
-                                              0, 0, symfile_module_specs)) {
-        // Now extract the module spec that matches the target architecture
-        ModuleSpec target_arch_module_spec;
-        ModuleSpec symfile_module_spec;
-        target_arch_module_spec.GetArchitecture() = target->GetArchitecture();
-        if (symfile_module_specs.FindMatchingModuleSpec(target_arch_module_spec,
-                                                        symfile_module_spec)) {
-          // See if it has a UUID?
-          if (symfile_module_spec.GetUUID().IsValid()) {
-            // It has a UUID, look for this UUID in the target modules
-            ModuleSpec symfile_uuid_module_spec;
-            symfile_uuid_module_spec.GetUUID() = symfile_module_spec.GetUUID();
-            target->GetImages().FindModules(symfile_uuid_module_spec,
-                                            matching_module_list);
-            num_matches = matching_module_list.GetSize();
-          }
+    if (!module_spec.GetUUID().IsValid()) {
+      if (!module_spec.GetFileSpec() && !module_spec.GetPlatformFileSpec())
+        module_spec.GetFileSpec().GetFilename() = symbol_fspec.GetFilename();
+    }
+
+    // We now have a module that represents a symbol file that can be used
+    // for a module that might exist in the current target, so we need to
+    // find that module in the target
+    ModuleList matching_module_list;
+
+    size_t num_matches = 0;
+    // First extract all module specs from the symbol file
+    lldb_private::ModuleSpecList symfile_module_specs;
+    if (ObjectFile::GetModuleSpecifications(module_spec.GetSymbolFileSpec(),
+                                            0, 0, symfile_module_specs)) {
+      // Now extract the module spec that matches the target architecture
+      ModuleSpec target_arch_module_spec;
+      ModuleSpec symfile_module_spec;
+      target_arch_module_spec.GetArchitecture() = target->GetArchitecture();
+      if (symfile_module_specs.FindMatchingModuleSpec(target_arch_module_spec,
+                                                      symfile_module_spec)) {
+        // See if it has a UUID?
+        if (symfile_module_spec.GetUUID().IsValid()) {
+          // It has a UUID, look for this UUID in the target modules
+          ModuleSpec symfile_uuid_module_spec;
+          symfile_uuid_module_spec.GetUUID() = symfile_module_spec.GetUUID();
+          target->GetImages().FindModules(symfile_uuid_module_spec,
+                                          matching_module_list);
+          num_matches = matching_module_list.GetSize();
         }
+      }
 
-        if (num_matches == 0) {
-          // No matches yet, iterate through the module specs to find a UUID
-          // value that we can match up to an image in our target
-          const size_t num_symfile_module_specs =
-              symfile_module_specs.GetSize();
-          for (size_t i = 0; i < num_symfile_module_specs && num_matches == 0;
-               ++i) {
-            if (symfile_module_specs.GetModuleSpecAtIndex(
-                    i, symfile_module_spec)) {
-              if (symfile_module_spec.GetUUID().IsValid()) {
-                // It has a UUID, look for this UUID in the target modules
-                ModuleSpec symfile_uuid_module_spec;
-                symfile_uuid_module_spec.GetUUID() =
-                    symfile_module_spec.GetUUID();
-                target->GetImages().FindModules(symfile_uuid_module_spec,
-                                                matching_module_list);
-                num_matches = matching_module_list.GetSize();
-              }
+      if (num_matches == 0) {
+        // No matches yet, iterate through the module specs to find a UUID
+        // value that we can match up to an image in our target
+        const size_t num_symfile_module_specs =
+            symfile_module_specs.GetSize();
+        for (size_t i = 0; i < num_symfile_module_specs && num_matches == 0;
+              ++i) {
+          if (symfile_module_specs.GetModuleSpecAtIndex(
+                  i, symfile_module_spec)) {
+            if (symfile_module_spec.GetUUID().IsValid()) {
+              // It has a UUID, look for this UUID in the target modules
+              ModuleSpec symfile_uuid_module_spec;
+              symfile_uuid_module_spec.GetUUID() =
+                  symfile_module_spec.GetUUID();
+              target->GetImages().FindModules(symfile_uuid_module_spec,
+                                              matching_module_list);
+              num_matches = matching_module_list.GetSize();
             }
           }
         }
       }
-
-      // Just try to match up the file by basename if we have no matches at
-      // this point
-      if (num_matches == 0) {
-        target->GetImages().FindModules(module_spec, matching_module_list);
-        num_matches = matching_module_list.GetSize();
-      }
-
-      while (num_matches == 0) {
-        ConstString filename_no_extension(
-            module_spec.GetFileSpec().GetFileNameStrippingExtension());
-        // Empty string returned, lets bail
-        if (!filename_no_extension)
-          break;
-
-        // Check if there was no extension to strip and the basename is the
-        // same
-        if (filename_no_extension == module_spec.GetFileSpec().GetFilename())
-          break;
-
-        // Replace basename with one less extension
-        module_spec.GetFileSpec().GetFilename() = filename_no_extension;
-
-        target->GetImages().FindModules(module_spec, matching_module_list);
-        num_matches = matching_module_list.GetSize();
-      }
-
-      if (num_matches > 1) {
-        result.AppendErrorWithFormat("multiple modules match symbol file '%s', "
-                                     "use the --uuid option to resolve the "
-                                     "ambiguity.\n",
-                                     symfile_path);
-      } else if (num_matches == 1) {
-        ModuleSP module_sp(matching_module_list.GetModuleAtIndex(0));
-
-        // The module has not yet created its symbol vendor, we can just give
-        // the existing target module the symfile path to use for when it
-        // decides to create it!
-        module_sp->SetSymbolFileFileSpec(symbol_fspec);
-
-        SymbolFile *symbol_file =
-            module_sp->GetSymbolFile(true, &result.GetErrorStream());
-        if (symbol_file) {
-          ObjectFile *object_file = symbol_file->GetObjectFile();
-
-          if (object_file && object_file->GetFileSpec() == symbol_fspec) {
-            // Provide feedback that the symfile has been successfully added.
-            const FileSpec &module_fs = module_sp->GetFileSpec();
-            result.AppendMessageWithFormat(
-                "symbol file '%s' has been added to '%s'\n", symfile_path,
-                module_fs.GetPath().c_str());
-
-            // Let clients know something changed in the module if it is
-            // currently loaded
-            ModuleList module_list;
-            module_list.Append(module_sp);
-            target->SymbolsDidLoad(module_list);
-
-            // Make sure we load any scripting resources that may be embedded
-            // in the debug info files in case the platform supports that.
-            Status error;
-            StreamString feedback_stream;
-            module_sp->LoadScriptingResourceInTarget(target, error,
-                                                     &feedback_stream);
-            if (error.Fail() && error.AsCString())
-              result.AppendWarningWithFormat(
-                  "unable to load scripting data for module %s - error "
-                  "reported was %s",
-                  module_sp->GetFileSpec()
-                      .GetFileNameStrippingExtension()
-                      .GetCString(),
-                  error.AsCString());
-            else if (feedback_stream.GetSize())
-              result.AppendWarningWithFormat("%s", feedback_stream.GetData());
-
-            flush = true;
-            result.SetStatus(eReturnStatusSuccessFinishResult);
-            return true;
-          }
-        }
-        // Clear the symbol file spec if anything went wrong
-        module_sp->SetSymbolFileFileSpec(FileSpec());
-      }
-
-      namespace fs = llvm::sys::fs;
-      if (module_spec.GetUUID().IsValid()) {
-        StreamString ss_symfile_uuid;
-        module_spec.GetUUID().Dump(&ss_symfile_uuid);
-        result.AppendErrorWithFormat(
-            "symbol file '%s' (%s) does not match any existing module%s\n",
-            symfile_path, ss_symfile_uuid.GetData(),
-            !fs::is_regular_file(symbol_fspec.GetPath())
-                ? "\n       please specify the full path to the symbol file"
-                : "");
-      } else {
-        result.AppendErrorWithFormat(
-            "symbol file '%s' does not match any existing module%s\n",
-            symfile_path,
-            !fs::is_regular_file(symbol_fspec.GetPath())
-                ? "\n       please specify the full path to the symbol file"
-                : "");
-      }
-    } else {
-      result.AppendError(
-          "one or more executable image paths must be specified");
     }
+
+    // Just try to match up the file by basename if we have no matches at
+    // this point
+    if (num_matches == 0) {
+      target->GetImages().FindModules(module_spec, matching_module_list);
+      num_matches = matching_module_list.GetSize();
+    }
+
+    while (num_matches == 0) {
+      ConstString filename_no_extension(
+          module_spec.GetFileSpec().GetFileNameStrippingExtension());
+      // Empty string returned, let's bail
+      if (!filename_no_extension)
+        break;
+
+      // Check if there was no extension to strip and the basename is the same
+      if (filename_no_extension == module_spec.GetFileSpec().GetFilename())
+        break;
+
+      // Replace basename with one fewer extension
+      module_spec.GetFileSpec().GetFilename() = filename_no_extension;
+      target->GetImages().FindModules(module_spec, matching_module_list);
+      num_matches = matching_module_list.GetSize();
+    }
+
+    if (num_matches > 1) {
+      result.AppendErrorWithFormat("multiple modules match symbol file '%s', "
+                                   "use the --uuid option to resolve the "
+                                   "ambiguity.\n",
+                                   symfile_path);
+    } else if (num_matches == 1) {
+      ModuleSP module_sp(matching_module_list.GetModuleAtIndex(0));
+
+      // The module has not yet created its symbol vendor, we can just give
+      // the existing target module the symfile path to use for when it
+      // decides to create it!
+      module_sp->SetSymbolFileFileSpec(symbol_fspec);
+
+      SymbolFile *symbol_file =
+          module_sp->GetSymbolFile(true, &result.GetErrorStream());
+      if (symbol_file) {
+        ObjectFile *object_file = symbol_file->GetObjectFile();
+
+        if (object_file && object_file->GetFileSpec() == symbol_fspec) {
+          // Provide feedback that the symfile has been successfully added.
+          const FileSpec &module_fs = module_sp->GetFileSpec();
+          result.AppendMessageWithFormat(
+              "symbol file '%s' has been added to '%s'\n", symfile_path,
+              module_fs.GetPath().c_str());
+
+          // Let clients know something changed in the module if it is
+          // currently loaded
+          ModuleList module_list;
+          module_list.Append(module_sp);
+          target->SymbolsDidLoad(module_list);
+
+          // Make sure we load any scripting resources that may be embedded
+          // in the debug info files in case the platform supports that.
+          Status error;
+          StreamString feedback_stream;
+          module_sp->LoadScriptingResourceInTarget(target, error,
+                                                    &feedback_stream);
+          if (error.Fail() && error.AsCString())
+            result.AppendWarningWithFormat(
+                "unable to load scripting data for module %s - error "
+                "reported was %s",
+                module_sp->GetFileSpec()
+                    .GetFileNameStrippingExtension()
+                    .GetCString(),
+                error.AsCString());
+          else if (feedback_stream.GetSize())
+            result.AppendWarningWithFormat("%s", feedback_stream.GetData());
+
+          flush = true;
+          result.SetStatus(eReturnStatusSuccessFinishResult);
+          return true;
+        }
+      }
+      // Clear the symbol file spec if anything went wrong
+      module_sp->SetSymbolFileFileSpec(FileSpec());
+    }
+
+    namespace fs = llvm::sys::fs;
+    StreamString ss_symfile_uuid;
+    if (module_spec.GetUUID().IsValid()) {
+      ss_symfile_uuid << " (";
+      module_spec.GetUUID().Dump(&ss_symfile_uuid);
+      ss_symfile_uuid << ')';
+    }
+    result.AppendErrorWithFormat(
+        "symbol file '%s'%s does not match any existing module%s\n",
+        symfile_path, ss_symfile_uuid.GetData(),
+        !fs::is_regular_file(symbol_fspec.GetPath())
+            ? "\n       please specify the full path to the symbol file"
+            : "");
     result.SetStatus(eReturnStatusFailed);
     return false;
   }
@@ -4685,12 +4686,8 @@ protected:
                                      new_hook_sp->GetID());
     } else {
       m_stop_hook_sp = new_hook_sp;
-      m_interpreter.GetLLDBCommandsFromIOHandler(
-          "> ",     // Prompt
-          *this,    // IOHandlerDelegate
-          true,     // Run IOHandler in async mode
-          nullptr); // Baton for the "io_handler" that will be passed back
-                    // into our IOHandlerDelegate functions
+      m_interpreter.GetLLDBCommandsFromIOHandler("> ",   // Prompt
+                                                 *this); // IOHandlerDelegate
     }
     result.SetStatus(eReturnStatusSuccessFinishNoResult);
 

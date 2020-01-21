@@ -280,7 +280,7 @@ public:
                     unsigned FalseReg) const override;
 
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
-                   const DebugLoc &DL, unsigned DestReg, unsigned SrcReg,
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
                    bool KillSrc) const override;
 
   void storeRegToStackSlot(MachineBasicBlock &MBB,
@@ -345,8 +345,6 @@ public:
 
   bool DefinesPredicate(MachineInstr &MI,
                         std::vector<MachineOperand> &Pred) const override;
-
-  bool isPredicable(const MachineInstr &MI) const override;
 
   // Comparison optimization.
 

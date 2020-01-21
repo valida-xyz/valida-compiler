@@ -23,6 +23,9 @@
 
 using namespace llvm;
 
+const DIExpression::FragmentInfo DebugVariable::DefaultFragment = {
+    std::numeric_limits<uint64_t>::max(), std::numeric_limits<uint64_t>::min()};
+
 DILocation::DILocation(LLVMContext &C, StorageType Storage, unsigned Line,
                        unsigned Column, ArrayRef<Metadata *> MDs,
                        bool ImplicitCode)
@@ -517,8 +520,8 @@ DICompileUnit *DICompileUnit::getImpl(
     unsigned EmissionKind, Metadata *EnumTypes, Metadata *RetainedTypes,
     Metadata *GlobalVariables, Metadata *ImportedEntities, Metadata *Macros,
     uint64_t DWOId, bool SplitDebugInlining, bool DebugInfoForProfiling,
-    unsigned NameTableKind, bool RangesBaseAddress, StorageType Storage,
-    bool ShouldCreate) {
+    unsigned NameTableKind, bool RangesBaseAddress, MDString *SysRoot,
+    StorageType Storage, bool ShouldCreate) {
   assert(Storage != Uniqued && "Cannot unique DICompileUnit");
   assert(isCanonical(Producer) && "Expected canonical MDString");
   assert(isCanonical(Flags) && "Expected canonical MDString");
@@ -527,7 +530,7 @@ DICompileUnit *DICompileUnit::getImpl(
   Metadata *Ops[] = {
       File,      Producer,      Flags,           SplitDebugFilename,
       EnumTypes, RetainedTypes, GlobalVariables, ImportedEntities,
-      Macros};
+      Macros,    SysRoot};
   return storeImpl(new (array_lengthof(Ops)) DICompileUnit(
                        Context, Storage, SourceLanguage, IsOptimized,
                        RuntimeVersion, EmissionKind, DWOId, SplitDebugInlining,
@@ -712,12 +715,12 @@ DICommonBlock *DICommonBlock::getImpl(LLVMContext &Context, Metadata *Scope,
 
 DIModule *DIModule::getImpl(LLVMContext &Context, Metadata *Scope,
                             MDString *Name, MDString *ConfigurationMacros,
-                            MDString *IncludePath, MDString *ISysRoot,
-                            StorageType Storage, bool ShouldCreate) {
+                            MDString *IncludePath, StorageType Storage,
+                            bool ShouldCreate) {
   assert(isCanonical(Name) && "Expected canonical MDString");
-  DEFINE_GETIMPL_LOOKUP(
-      DIModule, (Scope, Name, ConfigurationMacros, IncludePath, ISysRoot));
-  Metadata *Ops[] = {Scope, Name, ConfigurationMacros, IncludePath, ISysRoot};
+  DEFINE_GETIMPL_LOOKUP(DIModule,
+                        (Scope, Name, ConfigurationMacros, IncludePath));
+  Metadata *Ops[] = {Scope, Name, ConfigurationMacros, IncludePath};
   DEFINE_GETIMPL_STORE_NO_CONSTRUCTOR_ARGS(DIModule, Ops);
 }
 
@@ -1148,10 +1151,14 @@ Optional<DIExpression *> DIExpression::createFragmentExpression(
     for (auto Op : Expr->expr_ops()) {
       switch (Op.getOp()) {
       default: break;
+      case dwarf::DW_OP_shr:
+      case dwarf::DW_OP_shra:
+      case dwarf::DW_OP_shl:
       case dwarf::DW_OP_plus:
+      case dwarf::DW_OP_plus_uconst:
       case dwarf::DW_OP_minus:
-        // We can't safely split arithmetic into multiple fragments because we
-        // can't express carry-over between fragments.
+        // We can't safely split arithmetic or shift operations into multiple
+        // fragments because we can't express carry-over between fragments.
         //
         // FIXME: We *could* preserve the lowest fragment of a constant offset
         // operation if the offset fits into SizeInBits.
@@ -1187,6 +1194,20 @@ bool DIExpression::isConstant() const {
   if (getNumElements() == 6 && getElement(3) != dwarf::DW_OP_LLVM_fragment)
     return false;
   return true;
+}
+
+DIExpression::ExtOps DIExpression::getExtOps(unsigned FromSize, unsigned ToSize,
+                                             bool Signed) {
+  dwarf::TypeKind TK = Signed ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
+  DIExpression::ExtOps Ops{{dwarf::DW_OP_LLVM_convert, FromSize, TK,
+                            dwarf::DW_OP_LLVM_convert, ToSize, TK}};
+  return Ops;
+}
+
+DIExpression *DIExpression::appendExt(const DIExpression *Expr,
+                                      unsigned FromSize, unsigned ToSize,
+                                      bool Signed) {
+  return appendToStack(Expr, getExtOps(FromSize, ToSize, Signed));
 }
 
 DIGlobalVariableExpression *

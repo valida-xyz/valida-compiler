@@ -13,6 +13,19 @@ else:
 
 ##### Common utilities for update_*test_checks.py
 
+
+_verbose = False
+
+def parse_commandline_args(parser):
+  parser.add_argument('-v', '--verbose', action='store_true',
+                      help='Show verbose output')
+  parser.add_argument('-u', '--update-only', action='store_true',
+                      help='Only update test if it was already autogened')
+  args = parser.parse_args()
+  global _verbose
+  _verbose = args.verbose
+  return args
+
 def should_add_line_to_output(input_line, prefix_set):
   # Skip any blank comment lines in the IR.
   if input_line.strip() == ';':
@@ -45,10 +58,10 @@ def invoke_tool(exe, cmd_args, ir):
 
 ##### LLVM IR parser
 
-RUN_LINE_RE = re.compile(r'^\s*[;#]\s*RUN:\s*(.*)$')
+RUN_LINE_RE = re.compile(r'^\s*(?://|[;#])\s*RUN:\s*(.*)$')
 CHECK_PREFIX_RE = re.compile(r'--?check-prefix(?:es)?[= ](\S+)')
 PREFIX_RE = re.compile('^[a-zA-Z0-9_-]+$')
-CHECK_RE = re.compile(r'^\s*[;#]\s*([^:]+?)(?:-NEXT|-NOT|-DAG|-LABEL|-SAME)?:')
+CHECK_RE = re.compile(r'^\s*(?://|[;#])\s*([^:]+?)(?:-NEXT|-NOT|-DAG|-LABEL|-SAME|-EMPTY)?:')
 
 OPT_FUNCTION_RE = re.compile(
     r'^\s*define\s+(?:internal\s+)?[^@]*@(?P<func>[\w-]+?)\s*'
@@ -68,6 +81,8 @@ MARCH_ARG_RE = re.compile(r'-march[= ]([^ ]+)')
 SCRUB_LEADING_WHITESPACE_RE = re.compile(r'^(\s+)')
 SCRUB_WHITESPACE_RE = re.compile(r'(?!^(|  \w))[ \t]+', flags=re.M)
 SCRUB_TRAILING_WHITESPACE_RE = re.compile(r'[ \t]+$', flags=re.M)
+SCRUB_TRAILING_WHITESPACE_TEST_RE = SCRUB_TRAILING_WHITESPACE_RE
+SCRUB_TRAILING_WHITESPACE_AND_ATTRIBUTES_RE = re.compile(r'([ \t]|(#[0-9]+))+$', flags=re.M)
 SCRUB_KILL_COMMENT_RE = re.compile(r'^ *#+ +kill:.*\n')
 SCRUB_LOOP_COMMENT_RE = re.compile(
     r'# =>This Inner Loop Header:.*|# in Loop:.*', flags=re.M)
@@ -83,6 +98,28 @@ def warn(msg, test_file=None):
     msg = '{}: {}'.format(msg, test_file)
   print('WARNING: {}'.format(msg), file=sys.stderr)
 
+def debug(*args, **kwargs):
+  # Python2 does not allow def debug(*args, file=sys.stderr, **kwargs):
+  if 'file' not in kwargs:
+    kwargs['file'] = sys.stderr
+  if _verbose:
+    print(*args, **kwargs)
+
+def find_run_lines(test, lines):
+  debug('Scanning for RUN lines in test file:', test)
+  raw_lines = [m.group(1)
+               for m in [RUN_LINE_RE.match(l) for l in lines] if m]
+  run_lines = [raw_lines[0]] if len(raw_lines) > 0 else []
+  for l in raw_lines[1:]:
+    if run_lines[-1].endswith('\\'):
+      run_lines[-1] = run_lines[-1].rstrip('\\') + ' ' + l
+    else:
+      run_lines.append(l)
+  debug('Found {} RUN lines in {}:'.format(len(run_lines), test))
+  for l in run_lines:
+    debug('  RUN: {}'.format(l))
+  return run_lines
+
 def scrub_body(body):
   # Scrub runs of whitespace out of the assembly, but leave the leading
   # whitespace in place.
@@ -90,7 +127,7 @@ def scrub_body(body):
   # Expand the tabs used for indentation.
   body = string.expandtabs(body, 2)
   # Strip trailing whitespace.
-  body = SCRUB_TRAILING_WHITESPACE_RE.sub(r'', body)
+  body = SCRUB_TRAILING_WHITESPACE_TEST_RE.sub(r'', body)
   return body
 
 def do_scrub(body, scrubber, scrubber_args, extra):
@@ -196,7 +233,7 @@ def get_value_use(var):
   return '[[' + get_value_name(var) + ']]'
 
 # Replace IR value defs and uses with FileCheck variables.
-def genericize_check_lines(lines, is_analyze):
+def genericize_check_lines(lines, is_analyze, vars_seen):
   # This gets called for each match that occurs in
   # a line. We transform variables we haven't seen
   # into defs, and variables we have seen into uses.
@@ -213,7 +250,6 @@ def genericize_check_lines(lines, is_analyze):
     # including the commas and spaces.
     return match.group(1) + rv + match.group(3)
 
-  vars_seen = set()
   lines_with_def = []
 
   for i, line in enumerate(lines):
@@ -229,16 +265,37 @@ def genericize_check_lines(lines, is_analyze):
 
 
 def add_checks(output_lines, comment_marker, prefix_list, func_dict, func_name, check_label_format, is_asm, is_analyze):
+  # prefix_blacklist are prefixes we cannot use to print the function because it doesn't exist in run lines that use these prefixes as well.
+  prefix_blacklist = set()
   printed_prefixes = []
   for p in prefix_list:
     checkprefixes = p[0]
+    # If not all checkprefixes of this run line produced the function we cannot check for it as it does not
+    # exist for this run line. A subset of the check prefixes might know about the function but only because
+    # other run lines created it.
+    if any(map(lambda checkprefix: func_name not in func_dict[checkprefix], checkprefixes)):
+        prefix_blacklist |= set(checkprefixes)
+        continue
+
+  # prefix_blacklist is constructed, we can now emit the output
+  for p in prefix_list:
+    checkprefixes = p[0]
+    saved_output = None
     for checkprefix in checkprefixes:
       if checkprefix in printed_prefixes:
         break
-      # TODO func_dict[checkprefix] may be None, '' or not exist.
-      # Fix the call sites.
-      if func_name not in func_dict[checkprefix] or not func_dict[checkprefix][func_name]:
-        continue
+
+      # prefix is blacklisted. We remember the output as we might need it later but we will not emit anything for the prefix.
+      if checkprefix in prefix_blacklist:
+          if not saved_output and func_name in func_dict[checkprefix]:
+              saved_output = func_dict[checkprefix][func_name]
+          continue
+
+      # If we do not have output for this prefix but there is one saved, we go ahead with this prefix and the saved output.
+      if not func_dict[checkprefix][func_name]:
+        if not saved_output:
+            continue
+        func_dict[checkprefix][func_name] = saved_output
 
       # Add some space between different check prefixes, but not after the last
       # check line (before the test code).
@@ -246,9 +303,10 @@ def add_checks(output_lines, comment_marker, prefix_list, func_dict, func_name, 
         if len(printed_prefixes) != 0:
           output_lines.append(comment_marker)
 
+      vars_seen = set()
       printed_prefixes.append(checkprefix)
       args_and_sig = str(func_dict[checkprefix][func_name].args_and_sig)
-      args_and_sig = genericize_check_lines([args_and_sig], is_analyze)[0]
+      args_and_sig = genericize_check_lines([args_and_sig], is_analyze, vars_seen)[0]
       if '[[' in args_and_sig:
         output_lines.append(check_label_format % (checkprefix, func_name, ''))
         output_lines.append('%s %s-SAME: %s' % (comment_marker, checkprefix, args_and_sig))
@@ -268,7 +326,7 @@ def add_checks(output_lines, comment_marker, prefix_list, func_dict, func_name, 
 
       # For IR output, change all defs to FileCheck variables, so we're immune
       # to variable naming fashions.
-      func_body = genericize_check_lines(func_body, is_analyze)
+      func_body = genericize_check_lines(func_body, is_analyze, vars_seen)
 
       # This could be selectively enabled with an optional invocation argument.
       # Disabled for now: better to check everything. Be safe rather than sorry.

@@ -7,11 +7,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "SystemInitializerFull.h"
-
 #include "lldb/API/SBCommandInterpreter.h"
+#include "lldb/Host/Config.h"
 
-#if !defined(LLDB_DISABLE_PYTHON)
+#if LLDB_ENABLE_PYTHON
 #include "Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.h"
+#endif
+
+#if LLDB_ENABLE_LUA
+#include "Plugins/ScriptInterpreter/Lua/ScriptInterpreterLua.h"
 #endif
 
 #include "lldb/Core/Debugger.h"
@@ -69,6 +73,7 @@
 #include "Plugins/ObjectFile/ELF/ObjectFileELF.h"
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
 #include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
+#include "Plugins/ObjectFile/wasm/ObjectFileWasm.h"
 #include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
 #include "Plugins/Platform/Android/PlatformAndroid.h"
 #include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
@@ -90,6 +95,7 @@
 #include "Plugins/SymbolFile/PDB/SymbolFilePDB.h"
 #include "Plugins/SymbolFile/Symtab/SymbolFileSymtab.h"
 #include "Plugins/SymbolVendor/ELF/SymbolVendorELF.h"
+#include "Plugins/SymbolVendor/wasm/SymbolVendorWasm.h"
 #include "Plugins/SystemRuntime/MacOSX/SystemRuntimeMacOSX.h"
 #include "Plugins/UnwindAssembly/InstEmulation/UnwindAssemblyInstEmulation.h"
 #include "Plugins/UnwindAssembly/x86/UnwindAssembly-x86.h"
@@ -173,18 +179,23 @@ llvm::Error SystemInitializerFull::Initialize() {
   ObjectFileELF::Initialize();
   ObjectFileMachO::Initialize();
   ObjectFilePECOFF::Initialize();
+  wasm::ObjectFileWasm::Initialize();
 
   ObjectContainerBSDArchive::Initialize();
   ObjectContainerUniversalMachO::Initialize();
 
   ScriptInterpreterNone::Initialize();
 
-#ifndef LLDB_DISABLE_PYTHON
+#if LLDB_ENABLE_PYTHON
   OperatingSystemPython::Initialize();
 #endif
 
-#if !defined(LLDB_DISABLE_PYTHON)
+#if LLDB_ENABLE_PYTHON
   ScriptInterpreterPython::Initialize();
+#endif
+
+#if LLDB_ENABLE_LUA
+  ScriptInterpreterLua::Initialize();
 #endif
 
   platform_freebsd::PlatformFreeBSD::Initialize();
@@ -232,6 +243,7 @@ llvm::Error SystemInitializerFull::Initialize() {
   SymbolFileDWARF::Initialize();
   SymbolFilePDB::Initialize();
   SymbolFileSymtab::Initialize();
+  wasm::SymbolVendorWasm::Initialize();
   UnwindAssemblyInstEmulation::Initialize();
   UnwindAssembly_x86::Initialize();
 
@@ -324,6 +336,7 @@ void SystemInitializerFull::Terminate() {
   ThreadSanitizerRuntime::Terminate();
   UndefinedBehaviorSanitizerRuntime::Terminate();
   MainThreadCheckerRuntime::Terminate();
+  wasm::SymbolVendorWasm::Terminate();
   SymbolVendorELF::Terminate();
   breakpad::SymbolFileBreakpad::Terminate();
   SymbolFileDWARF::Terminate();
@@ -375,9 +388,6 @@ void SystemInitializerFull::Terminate() {
   DynamicLoaderStatic::Terminate();
   DynamicLoaderWindowsDYLD::Terminate();
 
-#ifndef LLDB_DISABLE_PYTHON
-  OperatingSystemPython::Terminate();
-#endif
 
   platform_freebsd::PlatformFreeBSD::Terminate();
   platform_linux::PlatformLinux::Terminate();
@@ -396,9 +406,22 @@ void SystemInitializerFull::Terminate() {
   ObjectFileELF::Terminate();
   ObjectFileMachO::Terminate();
   ObjectFilePECOFF::Terminate();
+  wasm::ObjectFileWasm::Terminate();
 
   ObjectContainerBSDArchive::Terminate();
   ObjectContainerUniversalMachO::Terminate();
+
+#if LLDB_ENABLE_PYTHON
+  OperatingSystemPython::Terminate();
+#endif
+
+#if LLDB_ENABLE_PYTHON
+  ScriptInterpreterPython::Terminate();
+#endif
+
+#if LLDB_ENABLE_LUA
+  ScriptInterpreterLua::Terminate();
+#endif
 
   // Now shutdown the common parts, in reverse order.
   SystemInitializerCommon::Terminate();

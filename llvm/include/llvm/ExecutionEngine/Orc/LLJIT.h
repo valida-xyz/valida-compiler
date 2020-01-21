@@ -45,6 +45,9 @@ public:
   /// Returns the ExecutionSession for this instance.
   ExecutionSession &getExecutionSession() { return *ES; }
 
+  /// Returns a reference to the triple for this instance.
+  const Triple &getTargetTriple() const { return TT; }
+
   /// Returns a reference to the DataLayout for this instance.
   const DataLayout &getDataLayout() const { return DL; }
 
@@ -117,6 +120,12 @@ public:
   /// Returns a reference to the ObjLinkingLayer
   ObjectLayer &getObjLinkingLayer() { return *ObjLinkingLayer; }
 
+  /// Returns a reference to the object transform layer.
+  ObjectTransformLayer &getObjTransformLayer() { return ObjTransformLayer; }
+
+  /// Returns a reference to the IR transform layer.
+  IRTransformLayer &getIRTransformLayer() { return *TransformLayer; }
+
 protected:
   static std::unique_ptr<ObjectLayer>
   createObjectLinkingLayer(LLJITBuilderState &S, ExecutionSession &ES);
@@ -137,10 +146,13 @@ protected:
   JITDylib &Main;
 
   DataLayout DL;
+  Triple TT;
   std::unique_ptr<ThreadPool> CompileThreads;
 
   std::unique_ptr<ObjectLayer> ObjLinkingLayer;
+  ObjectTransformLayer ObjTransformLayer;
   std::unique_ptr<IRCompileLayer> CompileLayer;
+  std::unique_ptr<IRTransformLayer> TransformLayer;
 
   CtorDtorRunner CtorRunner, DtorRunner;
 };
@@ -151,12 +163,6 @@ class LLLazyJIT : public LLJIT {
   template <typename, typename, typename> friend class LLJITBuilderSetters;
 
 public:
-
-  /// Set an IR transform (e.g. pass manager pipeline) to run on each function
-  /// when it is compiled.
-  void setLazyCompileTransform(IRTransformLayer::TransformFunction Transform) {
-    TransformLayer->setTransform(std::move(Transform));
-  }
 
   /// Sets the partition function.
   void
@@ -178,7 +184,6 @@ private:
   LLLazyJIT(LLLazyJITBuilderState &S, Error &Err);
 
   std::unique_ptr<LazyCallThroughManager> LCTMgr;
-  std::unique_ptr<IRTransformLayer> TransformLayer;
   std::unique_ptr<CompileOnDemandLayer> CODLayer;
 };
 

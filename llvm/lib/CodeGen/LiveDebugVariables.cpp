@@ -49,6 +49,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
@@ -505,7 +506,7 @@ static void printExtendedName(raw_ostream &OS, const DINode *Node,
                               const DILocation *DL) {
   const LLVMContext &Ctx = Node->getContext();
   StringRef Res;
-  unsigned Line;
+  unsigned Line = 0;
   if (const auto *V = dyn_cast<const DILocalVariable>(Node)) {
     Res = V->getName();
     Line = V->getLine();

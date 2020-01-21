@@ -30,6 +30,7 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCSymbolELF.h"
+#include "llvm/MC/MCSymbolXCOFF.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -82,9 +83,7 @@ static MCAsmInfo *createPPCMCAsmInfo(const MCRegisterInfo &MRI,
                   TheTriple.getArch() == Triple::ppc64le);
 
   MCAsmInfo *MAI;
-  if (TheTriple.isOSDarwin())
-    MAI = new PPCMCAsmInfoDarwin(isPPC64, TheTriple);
-  else if (TheTriple.isOSBinFormatXCOFF())
+  if (TheTriple.isOSBinFormatXCOFF())
     MAI = new PPCXCOFFMCAsmInfo(isPPC64, TheTriple);
   else
     MAI = new PPCELFMCAsmInfo(isPPC64, TheTriple);
@@ -108,8 +107,11 @@ public:
       : PPCTargetStreamer(S), OS(OS) {}
 
   void emitTCEntry(const MCSymbol &S) override {
+    const MCAsmInfo *MAI = Streamer.getContext().getAsmInfo();
     OS << "\t.tc ";
-    OS << S.getName();
+    OS << (MAI->getSymbolsHaveSMC()
+               ? cast<MCSymbolXCOFF>(S).getUnqualifiedName()
+               : S.getName());
     OS << "[TC],";
     OS << S.getName();
     OS << '\n';
@@ -197,7 +199,8 @@ public:
 
   void finish() override {
     for (auto *Sym : UpdateOther)
-      copyLocalEntry(Sym, Sym->getVariableValue());
+      if (Sym->isVariable())
+        copyLocalEntry(Sym, Sym->getVariableValue());
   }
 
 private:
@@ -243,7 +246,10 @@ public:
   PPCTargetXCOFFStreamer(MCStreamer &S) : PPCTargetStreamer(S) {}
 
   void emitTCEntry(const MCSymbol &S) override {
-    report_fatal_error("TOC entries not supported yet.");
+    const MCAsmInfo *MAI = Streamer.getContext().getAsmInfo();
+    const unsigned PointerSize = MAI->getCodePointerSize();
+    Streamer.EmitValueToAlignment(PointerSize);
+    Streamer.EmitSymbolValue(&S, PointerSize);
   }
 
   void emitMachine(StringRef CPU) override {
@@ -286,7 +292,7 @@ static MCInstPrinter *createPPCMCInstPrinter(const Triple &T,
   return new PPCInstPrinter(MAI, MII, MRI, T);
 }
 
-extern "C" void LLVMInitializePowerPCTargetMC() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializePowerPCTargetMC() {
   for (Target *T :
        {&getThePPC32Target(), &getThePPC64Target(), &getThePPC64LETarget()}) {
     // Register the MC asm info.

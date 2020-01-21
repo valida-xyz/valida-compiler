@@ -1,4 +1,4 @@
-add_llvm_library(LLVMCodeGen
+add_llvm_component_library(LLVMCodeGen
   AggressiveAntiDepBreaker.cpp
   AllocationOrder.cpp
   Analysis.cpp
@@ -102,6 +102,7 @@ add_llvm_library(LLVMCodeGen
   MIRPrinter.cpp
   MIRPrintingPass.cpp
   MacroFusion.cpp
+  NonRelocatableStringpool.cpp
   OptimizePHIs.cpp
   ParallelCG.cpp
   PeepholeOptimizer.cpp
@@ -163,6 +164,7 @@ add_llvm_library(LLVMCodeGen
   TargetRegisterInfo.cpp
   TargetSchedule.cpp
   TargetSubtargetInfo.cpp
+  TypePromotion.cpp
   TwoAddressInstructionPass.cpp
   UnreachableBlockElim.cpp
   ValueTypes.cpp

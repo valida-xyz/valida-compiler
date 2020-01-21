@@ -17,6 +17,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TokenKinds.h"
+#include "clang/Driver/Types.h"
 #include "clang/Format/Format.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Preprocessor.h"
@@ -221,14 +222,6 @@ bool isSpelledInSource(SourceLocation Loc, const SourceManager &SM) {
       return false;
   }
   return true;
-}
-
-SourceLocation spellingLocIfSpelled(SourceLocation Loc,
-                                    const SourceManager &SM) {
-  if (!isSpelledInSource(Loc, SM))
-    // Use the expansion location as spelling location is not interesting.
-    return SM.getExpansionRange(Loc).getBegin();
-  return SM.getSpellingLoc(Loc);
 }
 
 llvm::Optional<Range> getTokenRange(const SourceManager &SM,
@@ -1120,6 +1113,18 @@ EligibleRegion getEligiblePoints(llvm::StringRef Code,
     ER.EligiblePoints.emplace_back(offsetToPosition(Code, Code.size()));
   }
   return ER;
+}
+
+bool isHeaderFile(llvm::StringRef FileName,
+                  llvm::Optional<LangOptions> LangOpts) {
+  // Respect the langOpts, for non-file-extension cases, e.g. standard library
+  // files.
+  if (LangOpts && LangOpts->IsHeaderFile)
+    return true;
+  namespace types = clang::driver::types;
+  auto Lang = types::lookupTypeForExtension(
+      llvm::sys::path::extension(FileName).substr(1));
+  return Lang != types::TY_INVALID && types::onlyPrecompileType(Lang);
 }
 
 } // namespace clangd

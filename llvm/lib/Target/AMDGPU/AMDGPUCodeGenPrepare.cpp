@@ -38,6 +38,7 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include <cassert>
@@ -69,6 +70,7 @@ class AMDGPUCodeGenPrepare : public FunctionPass,
   Module *Mod = nullptr;
   const DataLayout *DL = nullptr;
   bool HasUnsafeFPMath = false;
+  bool HasFP32Denormals = false;
 
   /// Copies exact/nsw/nuw flags (if any) from binary operation \p I to
   /// binary operation \p V.
@@ -574,7 +576,6 @@ bool AMDGPUCodeGenPrepare::visitFDiv(BinaryOperator &FDiv) {
 
   Value *NewFDiv = nullptr;
 
-  bool HasDenormals = ST->hasFP32Denormals();
   if (VectorType *VT = dyn_cast<VectorType>(Ty)) {
     NewFDiv = UndefValue::get(VT);
 
@@ -585,7 +586,7 @@ bool AMDGPUCodeGenPrepare::visitFDiv(BinaryOperator &FDiv) {
       Value *DenEltI = Builder.CreateExtractElement(Den, I);
       Value *NewElt;
 
-      if (shouldKeepFDivF32(NumEltI, UnsafeDiv, HasDenormals)) {
+      if (shouldKeepFDivF32(NumEltI, UnsafeDiv, HasFP32Denormals)) {
         NewElt = Builder.CreateFDiv(NumEltI, DenEltI);
       } else {
         NewElt = Builder.CreateCall(Decl, { NumEltI, DenEltI });
@@ -594,7 +595,7 @@ bool AMDGPUCodeGenPrepare::visitFDiv(BinaryOperator &FDiv) {
       NewFDiv = Builder.CreateInsertElement(NewFDiv, NewElt, I);
     }
   } else {
-    if (!shouldKeepFDivF32(Num, UnsafeDiv, HasDenormals))
+    if (!shouldKeepFDivF32(Num, UnsafeDiv, HasFP32Denormals))
       NewFDiv = Builder.CreateCall(Decl, { Num, Den });
   }
 
@@ -653,7 +654,6 @@ Value* AMDGPUCodeGenPrepare::expandDivRem24(IRBuilder<> &Builder,
   if (IsSigned)
     ++DivBits;
 
-  Type *Ty = Num->getType();
   Type *I32Ty = Builder.getInt32Ty();
   Type *F32Ty = Builder.getFloatTy();
   ConstantInt *One = Builder.getInt32(1);
@@ -724,10 +724,10 @@ Value* AMDGPUCodeGenPrepare::expandDivRem24(IRBuilder<> &Builder,
     Res = Builder.CreateSub(Num, Rem);
   }
 
-  // Truncate to number of bits this divide really is.
+  // Extend in register from the number of bits this divide really is.
   if (IsSigned) {
-    Res = Builder.CreateTrunc(Res, Builder.getIntNTy(DivBits));
-    Res = Builder.CreateSExt(Res, Ty);
+    Res = Builder.CreateShl(Res, 32 - DivBits);
+    Res = Builder.CreateAShr(Res, 32 - DivBits);
   } else {
     ConstantInt *TruncMask = Builder.getInt32((UINT64_C(1) << DivBits) - 1);
     Res = Builder.CreateAnd(Res, TruncMask);
@@ -1033,6 +1033,7 @@ bool AMDGPUCodeGenPrepare::runOnFunction(Function &F) {
   AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
   DA = &getAnalysis<LegacyDivergenceAnalysis>();
   HasUnsafeFPMath = hasUnsafeFPMath(F);
+  HasFP32Denormals = ST->hasFP32Denormals(F);
 
   bool MadeChange = false;
 

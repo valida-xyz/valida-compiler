@@ -426,10 +426,12 @@ LinkerScript::computeInputSections(const InputSectionDescription *cmd) {
           cast<InputSection>(sec)->getRelocatedSection())
         continue;
 
+      // Check the name early to improve performance in the common case.
+      if (!pat.sectionPat.match(sec->name))
+        continue;
+
       std::string filename = getFilename(sec->file);
-      if (!cmd->filePat.match(filename) ||
-          pat.excludedFilePat.match(filename) ||
-          !pat.sectionPat.match(sec->name))
+      if (!cmd->filePat.match(filename) || pat.excludedFilePat.match(filename))
         continue;
 
       ret.push_back(sec);
@@ -442,7 +444,7 @@ LinkerScript::computeInputSections(const InputSectionDescription *cmd) {
 }
 
 void LinkerScript::discard(InputSectionBase *s) {
-  if (s == in.shStrTab || s == mainPart->relaDyn || s == mainPart->relrDyn)
+  if (s == in.shStrTab || s == mainPart->relrDyn)
     error("discarding " + s->name + " section is not allowed");
 
   // You can discard .hash and .gnu.hash sections by linker scripts. Since
@@ -954,8 +956,6 @@ void LinkerScript::adjustSectionsBeforeSorting() {
     if (isEmpty && isDiscardable(*sec)) {
       sec->markDead();
       cmd = nullptr;
-    } else if (!sec->isLive()) {
-      sec->markLive();
     }
   }
 

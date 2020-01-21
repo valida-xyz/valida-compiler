@@ -3,6 +3,7 @@ set(LLVM_LINK_COMPONENTS support)
 add_clang_library(clangTidyBugproneModule
   ArgumentCommentCheck.cpp
   AssertSideEffectCheck.cpp
+  BadSignalToKillThreadCheck.cpp
   BoolPointerImplicitConversionCheck.cpp
   BranchCloneCheck.cpp
   BugproneTidyModule.cpp
@@ -27,6 +28,8 @@ add_clang_library(clangTidyBugproneModule
   NotNullTerminatedResultCheck.cpp
   ParentVirtualCallCheck.cpp
   PosixReturnCheck.cpp
+  ReservedIdentifierCheck.cpp
+  SignedCharMisuseCheck.cpp
   SizeofContainerCheck.cpp
   SizeofExpressionCheck.cpp
   StringConstructorCheck.cpp

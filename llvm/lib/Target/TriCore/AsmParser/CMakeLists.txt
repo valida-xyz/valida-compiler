@@ -1,3 +1,3 @@
-add_llvm_library(LLVMTriCoreAsmParser
-  TriCoreAsmParser.cpp
-  )
+add_llvm_component_library(LLVMTriCoreAsmParser
+        TriCoreAsmParser.cpp
+        )

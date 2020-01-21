@@ -3,11 +3,10 @@
 
 ; SI-LABEL: {{^}}i1_copy_from_loop:
 ;
-; SI: [[LOOP:BB0_[0-9]+]]:  ; %Flow1
-; SI:   s_or_b64 exec, exec, [[EXIT_MASK:s\[[0-9]+:[0-9]+\]]]
 ; SI:   ; %Flow
+; SI:  s_or_b64 [[EXIT_MASK:s\[[0-9]+:[0-9]+\]]]
 ; SI:  s_and_b64 [[ACCUM_MASK:s\[[0-9]+:[0-9]+\]]], [[CC_MASK:s\[[0-9]+:[0-9]+\]]], exec
-; SI:  s_or_b64  [[I1_VALUE:s\[[0-9]+:[0-9]+\]]], s[6:7], [[ACCUM_MASK]]
+; SI:  s_or_b64  [[I1_VALUE:s\[[0-9]+:[0-9]+\]]], {{s\[[0-9]+:[0-9]+\]}}, [[ACCUM_MASK]]
 ; SI:  s_cbranch_execz [[FOR_END_LABEL:BB0_[0-9]+]]
 
 ; SI: ; %for.body
@@ -30,7 +29,7 @@ for.body:
   br i1 %cc, label %mid.loop, label %for.end
 
 mid.loop:
-  %v = call float @llvm.amdgcn.buffer.load.f32(<4 x i32> %rsrc, i32 %tid, i32 %i, i1 false, i1 false)
+  %v = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> %rsrc, i32 %tid, i32 %i, i32 0, i32 0)
   %cc2 = fcmp oge float %v, 0.0
   br i1 %cc2, label %end.loop, label %for.end
 
@@ -49,7 +48,7 @@ end:
   ret void
 }
 
-declare float @llvm.amdgcn.buffer.load.f32(<4 x i32>, i32, i32, i1, i1) #0
+declare float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32>, i32, i32, i32, i32 immarg) #0
 declare void @llvm.amdgcn.exp.f32(i32, i32, float, float, float, float, i1, i1) #1
 
 attributes #0 = { nounwind readonly }

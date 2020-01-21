@@ -194,7 +194,7 @@ getReservedRegs(const MachineFunction &MF) const {
   markSuperRegs(Reserved, ARM::PC);
   markSuperRegs(Reserved, ARM::FPSCR);
   markSuperRegs(Reserved, ARM::APSR_NZCV);
-  if (TFI->hasFP(MF) || STI.isTargetDarwin())
+  if (TFI->hasFP(MF))
     markSuperRegs(Reserved, getFramePointerReg(STI));
   if (hasBasePointer(MF))
     markSuperRegs(Reserved, BasePtr);
@@ -388,7 +388,7 @@ bool ARMBaseRegisterInfo::hasBasePointer(const MachineFunction &MF) const {
     return true;
 
   // Thumb has trouble with negative offsets from the FP. Thumb2 has a limited
-  // negative range for ldr/str (255), and thumb1 is positive offsets only.
+  // negative range for ldr/str (255), and Thumb1 is positive offsets only.
   //
   // It's going to be better to use the SP or Base Pointer instead. When there
   // are variable sized objects, we can't reference off of the SP, so we
@@ -476,11 +476,6 @@ void ARMBaseRegisterInfo::emitLoadConstPool(
 
 bool ARMBaseRegisterInfo::
 requiresRegisterScavenging(const MachineFunction &MF) const {
-  return true;
-}
-
-bool ARMBaseRegisterInfo::
-trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
   return true;
 }
 

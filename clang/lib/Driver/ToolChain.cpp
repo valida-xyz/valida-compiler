@@ -637,6 +637,8 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args,
     Triple.setArchName("arm64");
     return Triple.getTriple();
   }
+  case llvm::Triple::aarch64_32:
+    return getTripleString();
   case llvm::Triple::arm:
   case llvm::Triple::armeb:
   case llvm::Triple::thumb:
@@ -848,7 +850,7 @@ void ToolChain::addExternCSystemIncludeIfExists(const ArgList &DriverArgs,
 /*static*/ void ToolChain::addSystemIncludes(const ArgList &DriverArgs,
                                              ArgStringList &CC1Args,
                                              ArrayRef<StringRef> Paths) {
-  for (const auto Path : Paths) {
+  for (const auto &Path : Paths) {
     CC1Args.push_back("-internal-isystem");
     CC1Args.push_back(DriverArgs.MakeArgString(Path));
   }

@@ -21,6 +21,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
 

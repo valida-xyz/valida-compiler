@@ -79,7 +79,7 @@ namespace llvm {
   void initializeARMExecutionDomainFixPass(PassRegistry&);
 }
 
-extern "C" void LLVMInitializeARMTarget() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeARMTarget() {
   // Register the target.
   RegisterTargetMachine<ARMLETargetMachine> X(getTheARMLETarget());
   RegisterTargetMachine<ARMLETargetMachine> A(getTheThumbLETarget());
@@ -91,7 +91,6 @@ extern "C" void LLVMInitializeARMTarget() {
   initializeARMLoadStoreOptPass(Registry);
   initializeARMPreAllocLoadStoreOptPass(Registry);
   initializeARMParallelDSPPass(Registry);
-  initializeARMCodeGenPreparePass(Registry);
   initializeARMConstantIslandsPass(Registry);
   initializeARMExecutionDomainFixPass(Registry);
   initializeARMExpandPseudoPass(Registry);
@@ -99,6 +98,7 @@ extern "C" void LLVMInitializeARMTarget() {
   initializeMVEVPTBlockPass(Registry);
   initializeMVETailPredicationPass(Registry);
   initializeARMLowOverheadLoopsPass(Registry);
+  initializeMVEGatherScatterLoweringPass(Registry);
 }
 
 static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
@@ -405,6 +405,8 @@ void ARMPassConfig::addIRPasses() {
           return ST.hasAnyDataBarrier() && !ST.isThumb1Only();
         }));
 
+  addPass(createMVEGatherScatterLoweringPass());
+
   TargetPassConfig::addIRPasses();
 
   // Run the parallel DSP pass.
@@ -422,7 +424,7 @@ void ARMPassConfig::addIRPasses() {
 
 void ARMPassConfig::addCodeGenPrepare() {
   if (getOptLevel() != CodeGenOpt::None)
-    addPass(createARMCodeGenPreparePass());
+    addPass(createTypePromotionPass());
   TargetPassConfig::addCodeGenPrepare();
 }
 

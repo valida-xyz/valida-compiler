@@ -74,12 +74,35 @@ bool CombinerHelper::matchCombineCopy(MachineInstr &MI) {
     return false;
   Register DstReg = MI.getOperand(0).getReg();
   Register SrcReg = MI.getOperand(1).getReg();
+
+  // Give up if either DstReg or SrcReg  is a physical register.
+  if (Register::isPhysicalRegister(DstReg) ||
+      Register::isPhysicalRegister(SrcReg))
+    return false;
+
+  // Give up the types don't match.
   LLT DstTy = MRI.getType(DstReg);
   LLT SrcTy = MRI.getType(SrcReg);
-  // Simple Copy Propagation.
-  // a(sx) = COPY b(sx) -> Replace all uses of a with b.
-  if (DstTy.isValid() && SrcTy.isValid() && DstTy == SrcTy)
+  // Give up if one has a valid LLT, but the other doesn't.
+  if (DstTy.isValid() != SrcTy.isValid())
+    return false;
+  // Give up if the types don't match.
+  if (DstTy.isValid() && SrcTy.isValid() && DstTy != SrcTy)
+    return false;
+
+  // Get the register banks and classes.
+  const RegisterBank *DstBank = MRI.getRegBankOrNull(DstReg);
+  const RegisterBank *SrcBank = MRI.getRegBankOrNull(SrcReg);
+  const TargetRegisterClass *DstRC = MRI.getRegClassOrNull(DstReg);
+  const TargetRegisterClass *SrcRC = MRI.getRegClassOrNull(SrcReg);
+
+  // Replace if the register constraints match.
+  if ((SrcRC == DstRC) && (SrcBank == DstBank))
     return true;
+  // Replace if DstReg has no constraints.
+  if (!DstBank && !DstRC)
+    return true;
+
   return false;
 }
 void CombinerHelper::applyCombineCopy(MachineInstr &MI) {
@@ -109,10 +132,7 @@ bool CombinerHelper::matchCombineConcatVectors(MachineInstr &MI, bool &IsUndef,
   // Walk over all the operands of concat vectors and check if they are
   // build_vector themselves or undef.
   // Then collect their operands in Ops.
-  for (const MachineOperand &MO : MI.operands()) {
-    // Skip the instruction definition.
-    if (MO.isDef())
-      continue;
+  for (const MachineOperand &MO : MI.uses()) {
     Register Reg = MO.getReg();
     MachineInstr *Def = MRI.getVRegDef(Reg);
     assert(Def && "Operand not defined");
@@ -121,12 +141,8 @@ bool CombinerHelper::matchCombineConcatVectors(MachineInstr &MI, bool &IsUndef,
       IsUndef = false;
       // Remember the operands of the build_vector to fold
       // them into the yet-to-build flattened concat vectors.
-      for (const MachineOperand &BuildVecMO : Def->operands()) {
-        // Skip the definition.
-        if (BuildVecMO.isDef())
-          continue;
+      for (const MachineOperand &BuildVecMO : Def->uses())
         Ops.push_back(BuildVecMO.getReg());
-      }
       break;
     case TargetOpcode::G_IMPLICIT_DEF: {
       LLT OpType = MRI.getType(Reg);
@@ -189,7 +205,10 @@ bool CombinerHelper::matchCombineShuffleVector(MachineInstr &MI,
   LLT DstType = MRI.getType(MI.getOperand(0).getReg());
   Register Src1 = MI.getOperand(1).getReg();
   LLT SrcType = MRI.getType(Src1);
-  unsigned DstNumElts = DstType.getNumElements();
+  // As bizarre as it may look, shuffle vector can actually produce
+  // scalar! This is because at the IR level a <1 x ty> shuffle
+  // vector is perfectly valid.
+  unsigned DstNumElts = DstType.isVector() ? DstType.getNumElements() : 1;
   unsigned SrcNumElts = SrcType.isVector() ? SrcType.getNumElements() : 1;
 
   // If the resulting vector is smaller than the size of the source
@@ -199,7 +218,15 @@ bool CombinerHelper::matchCombineShuffleVector(MachineInstr &MI,
   // Note: We may still be able to produce a concat_vectors fed by
   //       extract_vector_elt and so on. It is less clear that would
   //       be better though, so don't bother for now.
-  if (DstNumElts < 2 * SrcNumElts)
+  //
+  // If the destination is a scalar, the size of the sources doesn't
+  // matter. we will lower the shuffle to a plain copy. This will
+  // work only if the source and destination have the same size. But
+  // that's covered by the next condition.
+  //
+  // TODO: If the size between the source and destination don't match
+  //       we could still emit an extract vector element in that case.
+  if (DstNumElts < 2 * SrcNumElts && DstNumElts != 1)
     return false;
 
   // Check that the shuffle mask can be broken evenly between the
@@ -212,8 +239,7 @@ bool CombinerHelper::matchCombineShuffleVector(MachineInstr &MI,
   // vectors.
   unsigned NumConcat = DstNumElts / SrcNumElts;
   SmallVector<int, 8> ConcatSrcs(NumConcat, -1);
-  SmallVector<int, 8> Mask;
-  ShuffleVectorInst::getShuffleMask(MI.getOperand(3).getShuffleMask(), Mask);
+  ArrayRef<int> Mask = MI.getOperand(3).getShuffleMask();
   for (unsigned i = 0; i != DstNumElts; ++i) {
     int Idx = Mask[i];
     // Undef value.
@@ -254,7 +280,10 @@ void CombinerHelper::applyCombineShuffleVector(MachineInstr &MI,
   Builder.setInsertPt(*MI.getParent(), MI);
   Register NewDstReg = MRI.cloneVirtualRegister(DstReg);
 
-  Builder.buildMerge(NewDstReg, Ops);
+  if (Ops.size() == 1)
+    Builder.buildCopy(NewDstReg, Ops[0]);
+  else
+    Builder.buildMerge(NewDstReg, Ops);
 
   MI.eraseFromParent();
   replaceRegWith(MRI, DstReg, NewDstReg);
@@ -681,18 +710,36 @@ bool CombinerHelper::findPreIndexCandidate(MachineInstr &MI, Register &Addr,
 }
 
 bool CombinerHelper::tryCombineIndexedLoadStore(MachineInstr &MI) {
+  IndexedLoadStoreMatchInfo MatchInfo;
+  if (matchCombineIndexedLoadStore(MI, MatchInfo)) {
+    applyCombineIndexedLoadStore(MI, MatchInfo);
+    return true;
+  }
+  return false;
+}
+
+bool CombinerHelper::matchCombineIndexedLoadStore(MachineInstr &MI, IndexedLoadStoreMatchInfo &MatchInfo) {
   unsigned Opcode = MI.getOpcode();
   if (Opcode != TargetOpcode::G_LOAD && Opcode != TargetOpcode::G_SEXTLOAD &&
       Opcode != TargetOpcode::G_ZEXTLOAD && Opcode != TargetOpcode::G_STORE)
     return false;
 
-  bool IsStore = Opcode == TargetOpcode::G_STORE;
-  Register Addr, Base, Offset;
-  bool IsPre = findPreIndexCandidate(MI, Addr, Base, Offset);
-  if (!IsPre && !findPostIndexCandidate(MI, Addr, Base, Offset))
+  MatchInfo.IsPre = findPreIndexCandidate(MI, MatchInfo.Addr, MatchInfo.Base,
+                                          MatchInfo.Offset);
+  if (!MatchInfo.IsPre &&
+      !findPostIndexCandidate(MI, MatchInfo.Addr, MatchInfo.Base,
+                              MatchInfo.Offset))
     return false;
 
+  return true;
+}
 
+void CombinerHelper::applyCombineIndexedLoadStore(
+    MachineInstr &MI, IndexedLoadStoreMatchInfo &MatchInfo) {
+  MachineInstr &AddrDef = *MRI.getUniqueVRegDef(MatchInfo.Addr);
+  MachineIRBuilder MIRBuilder(MI);
+  unsigned Opcode = MI.getOpcode();
+  bool IsStore = Opcode == TargetOpcode::G_STORE;
   unsigned NewOpcode;
   switch (Opcode) {
   case TargetOpcode::G_LOAD:
@@ -711,25 +758,22 @@ bool CombinerHelper::tryCombineIndexedLoadStore(MachineInstr &MI) {
     llvm_unreachable("Unknown load/store opcode");
   }
 
-  MachineInstr &AddrDef = *MRI.getUniqueVRegDef(Addr);
-  MachineIRBuilder MIRBuilder(MI);
   auto MIB = MIRBuilder.buildInstr(NewOpcode);
   if (IsStore) {
-    MIB.addDef(Addr);
+    MIB.addDef(MatchInfo.Addr);
     MIB.addUse(MI.getOperand(0).getReg());
   } else {
     MIB.addDef(MI.getOperand(0).getReg());
-    MIB.addDef(Addr);
+    MIB.addDef(MatchInfo.Addr);
   }
 
-  MIB.addUse(Base);
-  MIB.addUse(Offset);
-  MIB.addImm(IsPre);
+  MIB.addUse(MatchInfo.Base);
+  MIB.addUse(MatchInfo.Offset);
+  MIB.addImm(MatchInfo.IsPre);
   MI.eraseFromParent();
   AddrDef.eraseFromParent();
 
   LLVM_DEBUG(dbgs() << "    Combinined to indexed operation");
-  return true;
 }
 
 bool CombinerHelper::matchElideBrByInvertingCond(MachineInstr &MI) {
@@ -1293,6 +1337,52 @@ bool CombinerHelper::tryCombineMemCpyFamily(MachineInstr &MI, unsigned MaxLen) {
   if (ID == Intrinsic::memset)
     return optimizeMemset(MI, Dst, Src, KnownLen, DstAlign, IsVolatile);
   return false;
+}
+
+bool CombinerHelper::matchPtrAddImmedChain(MachineInstr &MI,
+                                           PtrAddChain &MatchInfo) {
+  // We're trying to match the following pattern:
+  //   %t1 = G_PTR_ADD %base, G_CONSTANT imm1
+  //   %root = G_PTR_ADD %t1, G_CONSTANT imm2
+  // -->
+  //   %root = G_PTR_ADD %base, G_CONSTANT (imm1 + imm2)
+
+  if (MI.getOpcode() != TargetOpcode::G_PTR_ADD)
+    return false;
+
+  Register Add2 = MI.getOperand(1).getReg();
+  Register Imm1 = MI.getOperand(2).getReg();
+  auto MaybeImmVal = getConstantVRegValWithLookThrough(Imm1, MRI);
+  if (!MaybeImmVal)
+    return false;
+
+  MachineInstr *Add2Def = MRI.getUniqueVRegDef(Add2);
+  if (!Add2Def || Add2Def->getOpcode() != TargetOpcode::G_PTR_ADD)
+    return false;
+
+  Register Base = Add2Def->getOperand(1).getReg();
+  Register Imm2 = Add2Def->getOperand(2).getReg();
+  auto MaybeImm2Val = getConstantVRegValWithLookThrough(Imm2, MRI);
+  if (!MaybeImm2Val)
+    return false;
+
+  // Pass the combined immediate to the apply function.
+  MatchInfo.Imm = MaybeImmVal->Value + MaybeImm2Val->Value;
+  MatchInfo.Base = Base;
+  return true;
+}
+
+bool CombinerHelper::applyPtrAddImmedChain(MachineInstr &MI,
+                                           PtrAddChain &MatchInfo) {
+  assert(MI.getOpcode() == TargetOpcode::G_PTR_ADD && "Expected G_PTR_ADD");
+  MachineIRBuilder MIB(MI);
+  LLT OffsetTy = MRI.getType(MI.getOperand(2).getReg());
+  auto NewOffset = MIB.buildConstant(OffsetTy, MatchInfo.Imm);
+  Observer.changingInstr(MI);
+  MI.getOperand(1).setReg(MatchInfo.Base);
+  MI.getOperand(2).setReg(NewOffset.getReg(0));
+  Observer.changedInstr(MI);
+  return true;
 }
 
 bool CombinerHelper::tryCombine(MachineInstr &MI) {

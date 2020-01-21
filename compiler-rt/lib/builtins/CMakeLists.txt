@@ -242,6 +242,13 @@ set(x86_ARCH_SOURCES
 )
 
 if (NOT MSVC)
+  set(x86_ARCH_SOURCES
+    ${x86_ARCH_SOURCES}
+    i386/fp_mode.c
+  )
+endif ()
+
+if (NOT MSVC)
   set(x86_64_SOURCES
     ${GENERIC_TF_SOURCES}
     x86_64/floatdidf.c
@@ -519,6 +526,7 @@ set(mips64el_SOURCES ${GENERIC_TF_SOURCES}
 
 set(powerpc64_SOURCES
   ppc/divtc3.c
+  ppc/fixtfti.c
   ppc/fixtfdi.c
   ppc/fixunstfti.c
   ppc/fixunstfdi.c

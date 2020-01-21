@@ -2,7 +2,6 @@
 Test that ASan memory history provider returns correct stack traces
 """
 
-from __future__ import print_function
 
 
 import lldb
@@ -17,6 +16,7 @@ class AsanTestCase(TestBase):
     mydir = TestBase.compute_mydir(__file__)
 
     @skipIfFreeBSD  # llvm.org/pr21136 runtimes not yet available by default
+    @expectedFailureNetBSD
     @skipUnlessAddressSanitizer
     def test(self):
         self.build()

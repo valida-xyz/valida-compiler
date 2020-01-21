@@ -1,3 +1,3 @@
-add_llvm_library(LLVMTriCoreInfo
-  TriCoreTargetInfo.cpp
-  )
+add_llvm_component_library(LLVMTriCoreInfo
+        TriCoreTargetInfo.cpp
+        )

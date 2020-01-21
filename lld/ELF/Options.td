@@ -59,6 +59,8 @@ defm Tdata: Eq<"Tdata", "Same as --section-start with .data as the sectionname">
 
 defm Ttext: Eq<"Ttext", "Same as --section-start with .text as the sectionname">;
 
+def Ttext_segment: Separate<["-", "--"], "Ttext-segment">;
+
 defm allow_multiple_definition: B<"allow-multiple-definition",
     "Allow multiple definitions",
     "Do not allow multiple definitions (default)">;
@@ -174,13 +176,6 @@ def fix_cortex_a53_843419: F<"fix-cortex-a53-843419">,
 def fix_cortex_a8: F<"fix-cortex-a8">,
   HelpText<"Apply fixes for ARM Cortex-A8 erratum 657417">;
 
-// This option is intentionally hidden from the user as the implementation
-// is not complete.
-def require_cet: F<"require-cet">;
-
-def force_bti: F<"force-bti">,
-  HelpText<"Force enable AArch64 BTI in PLT, warn if Input ELF file does not have GNU_PROPERTY_AARCH64_FEATURE_1_BTI property">;
-
 defm format: Eq<"format", "Change the input format of the inputs following this option">,
   MetaVarName<"[default,elf,binary]">;
 
@@ -278,9 +273,6 @@ defm orphan_handling:
 defm pack_dyn_relocs:
   Eq<"pack-dyn-relocs", "Pack dynamic relocations in the given format">,
   MetaVarName<"[none,android,relr,android+relr]">;
-
-def pac_plt: F<"pac-plt">,
-  HelpText<"AArch64 only, use pointer authentication in PLT">;
 
 defm use_android_relr_tags: B<"use-android-relr-tags",
     "Use SHT_ANDROID_RELR / DT_ANDROID_RELR* tags instead of SHT_RELR / DT_RELR*",
@@ -462,9 +454,8 @@ def: Flag<["-"], "(">, Alias<start_group>, HelpText<"Alias for --start-group">;
 def: Flag<["-"], "s">, Alias<strip_all>, HelpText<"Alias for --strip-all">;
 def: Flag<["-"], "S">, Alias<strip_debug>, HelpText<"Alias for --strip-debug">;
 def: Flag<["-"], "t">, Alias<trace>, HelpText<"Alias for --trace">;
+def: Joined<["-", "--"], "Ttext-segment=">, Alias<Ttext_segment>;
 def: JoinedOrSeparate<["-"], "y">, Alias<trace_symbol>, HelpText<"Alias for --trace-symbol">;
-def: Separate<["-", "--"], "Ttext-segment">, Alias<Ttext>, HelpText<"Alias for --Ttext">;
-def: Joined<["-", "--"], "Ttext-segment=">, Alias<Ttext>, HelpText<"Alias for --Ttext">;
 def: JoinedOrSeparate<["-"], "u">, Alias<undefined>, HelpText<"Alias for --undefined">;
 def: Flag<["-"], "V">, Alias<version>, HelpText<"Alias for --version">;
 

@@ -131,7 +131,7 @@ namespace {
 llvm::Optional<DocumentSymbol> declToSym(ASTContext &Ctx, const NamedDecl &ND) {
   auto &SM = Ctx.getSourceManager();
 
-  SourceLocation NameLoc = spellingLocIfSpelled(findName(&ND), SM);
+  SourceLocation NameLoc = nameLocation(ND, SM);
   // getFileLoc is a good choice for us, but we also need to make sure
   // sourceLocToPosition won't switch files, so we call getSpellingLoc on top of
   // that to make sure it does not switch files.
@@ -193,8 +193,11 @@ private:
   enum class VisitKind { No, OnlyDecl, DeclAndChildren };
 
   void traverseDecl(Decl *D, std::vector<DocumentSymbol> &Results) {
-    if (auto *Templ = llvm::dyn_cast<TemplateDecl>(D))
-      D = Templ->getTemplatedDecl();
+    if (auto *Templ = llvm::dyn_cast<TemplateDecl>(D)) {
+      // TemplatedDecl might be null, e.g. concepts.
+      if (auto *TD = Templ->getTemplatedDecl())
+        D = TD;
+    }
     auto *ND = llvm::dyn_cast<NamedDecl>(D);
     if (!ND)
       return;

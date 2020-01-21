@@ -14,6 +14,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,7 +57,7 @@ PreservedAnalyses PrintFunctionPass::run(Function &F,
     if (forcePrintModuleIR())
       OS << Banner << " (function: " << F.getName() << ")\n" << *F.getParent();
     else
-      OS << Banner << static_cast<Value &>(F);
+      OS << Banner << '\n' << static_cast<Value &>(F);
   }
   return PreservedAnalyses::all();
 }

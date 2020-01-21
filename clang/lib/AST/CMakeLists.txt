@@ -1,6 +1,7 @@
 set(LLVM_LINK_COMPONENTS
   BinaryFormat
   Core
+  FrontendOpenMP
   Support
   )
 
@@ -14,6 +15,7 @@ clang_tablegen(Opcodes.inc
 
 add_clang_library(clangAST
   APValue.cpp
+  ASTConcept.cpp
   ASTConsumer.cpp
   ASTContext.cpp
   ASTDiagnostic.cpp
@@ -44,6 +46,7 @@ add_clang_library(clangAST
   DeclTemplate.cpp
   Expr.cpp
   ExprClassification.cpp
+  ExprConcepts.cpp
   ExprConstant.cpp
   ExprCXX.cpp
   ExprObjC.cpp

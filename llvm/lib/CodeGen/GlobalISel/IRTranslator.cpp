@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/Analysis.h"
@@ -56,6 +57,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
@@ -224,12 +226,12 @@ int IRTranslator::getOrCreateFrameIndex(const AllocaInst &AI) {
   if (FrameIndices.find(&AI) != FrameIndices.end())
     return FrameIndices[&AI];
 
-  unsigned ElementSize = DL->getTypeAllocSize(AI.getAllocatedType());
-  unsigned Size =
+  uint64_t ElementSize = DL->getTypeAllocSize(AI.getAllocatedType());
+  uint64_t Size =
       ElementSize * cast<ConstantInt>(AI.getArraySize())->getZExtValue();
 
   // Always allocate at least one byte.
-  Size = std::max(Size, 1u);
+  Size = std::max<uint64_t>(Size, 1u);
 
   unsigned Alignment = AI.getAlignment();
   if (!Alignment)
@@ -315,7 +317,7 @@ bool IRTranslator::translateFSub(const User &U, MachineIRBuilder &MIRBuilder) {
       Flags = MachineInstr::copyFlagsFromInstruction(I);
     }
     // Negate the last operand of the FSUB
-    MIRBuilder.buildInstr(TargetOpcode::G_FNEG, {Res}, {Op1}, Flags);
+    MIRBuilder.buildFNeg(Res, Op1, Flags);
     return true;
   }
   return translateBinaryOp(TargetOpcode::G_FSUB, U, MIRBuilder);
@@ -329,7 +331,7 @@ bool IRTranslator::translateFNeg(const User &U, MachineIRBuilder &MIRBuilder) {
     const Instruction &I = cast<Instruction>(U);
     Flags = MachineInstr::copyFlagsFromInstruction(I);
   }
-  MIRBuilder.buildInstr(TargetOpcode::G_FNEG, {Res}, {Op0}, Flags);
+  MIRBuilder.buildFNeg(Res, Op0, Flags);
   return true;
 }
 
@@ -352,8 +354,8 @@ bool IRTranslator::translateCompare(const User &U,
         Res, getOrCreateVReg(*Constant::getAllOnesValue(U.getType())));
   else {
     assert(CI && "Instruction should be CmpInst");
-    MIRBuilder.buildInstr(TargetOpcode::G_FCMP, {Res}, {Pred, Op0, Op1},
-                          MachineInstr::copyFlagsFromInstruction(*CI));
+    MIRBuilder.buildFCmp(Pred, Res, Op0, Op1,
+                         MachineInstr::copyFlagsFromInstruction(*CI));
   }
 
   return true;
@@ -630,8 +632,7 @@ void IRTranslator::emitSwitchCase(SwitchCG::CaseBlock &CB,
   if (CB.TrueBB == CB.ThisBB->getNextNode()) {
     std::swap(CB.TrueBB, CB.FalseBB);
     auto True = MIB.buildConstant(i1Ty, 1);
-    Cond = MIB.buildInstr(TargetOpcode::G_XOR, {i1Ty}, {Cond, True}, None)
-               .getReg(0);
+    Cond = MIB.buildXor(i1Ty, Cond, True).getReg(0);
   }
 
   MIB.buildBrCond(Cond, *CB.TrueBB);
@@ -858,11 +859,6 @@ static bool isSwiftError(const Value *V) {
 
 bool IRTranslator::translateLoad(const User &U, MachineIRBuilder &MIRBuilder) {
   const LoadInst &LI = cast<LoadInst>(U);
-
-  auto Flags = LI.isVolatile() ? MachineMemOperand::MOVolatile
-                               : MachineMemOperand::MONone;
-  Flags |= MachineMemOperand::MOLoad;
-
   if (DL->getTypeStoreSize(LI.getType()) == 0)
     return true;
 
@@ -881,6 +877,9 @@ bool IRTranslator::translateLoad(const User &U, MachineIRBuilder &MIRBuilder) {
     return true;
   }
 
+  auto &TLI = *MF->getSubtarget().getTargetLowering();
+  MachineMemOperand::Flags Flags = TLI.getLoadMemOperandFlags(LI, *DL);
+
   const MDNode *Ranges =
       Regs.size() == 1 ? LI.getMetadata(LLVMContext::MD_range) : nullptr;
   for (unsigned i = 0; i < Regs.size(); ++i) {
@@ -889,9 +888,11 @@ bool IRTranslator::translateLoad(const User &U, MachineIRBuilder &MIRBuilder) {
 
     MachinePointerInfo Ptr(LI.getPointerOperand(), Offsets[i] / 8);
     unsigned BaseAlign = getMemOpAlignment(LI);
+    AAMDNodes AAMetadata;
+    LI.getAAMetadata(AAMetadata);
     auto MMO = MF->getMachineMemOperand(
         Ptr, Flags, (MRI->getType(Regs[i]).getSizeInBits() + 7) / 8,
-        MinAlign(BaseAlign, Offsets[i] / 8), AAMDNodes(), Ranges,
+        MinAlign(BaseAlign, Offsets[i] / 8), AAMetadata, Ranges,
         LI.getSyncScopeID(), LI.getOrdering());
     MIRBuilder.buildLoad(Regs[i], Addr, *MMO);
   }
@@ -901,10 +902,6 @@ bool IRTranslator::translateLoad(const User &U, MachineIRBuilder &MIRBuilder) {
 
 bool IRTranslator::translateStore(const User &U, MachineIRBuilder &MIRBuilder) {
   const StoreInst &SI = cast<StoreInst>(U);
-  auto Flags = SI.isVolatile() ? MachineMemOperand::MOVolatile
-                               : MachineMemOperand::MONone;
-  Flags |= MachineMemOperand::MOStore;
-
   if (DL->getTypeStoreSize(SI.getValueOperand()->getType()) == 0)
     return true;
 
@@ -924,15 +921,20 @@ bool IRTranslator::translateStore(const User &U, MachineIRBuilder &MIRBuilder) {
     return true;
   }
 
+  auto &TLI = *MF->getSubtarget().getTargetLowering();
+  MachineMemOperand::Flags Flags = TLI.getStoreMemOperandFlags(SI, *DL);
+
   for (unsigned i = 0; i < Vals.size(); ++i) {
     Register Addr;
     MIRBuilder.materializePtrAdd(Addr, Base, OffsetTy, Offsets[i] / 8);
 
     MachinePointerInfo Ptr(SI.getPointerOperand(), Offsets[i] / 8);
     unsigned BaseAlign = getMemOpAlignment(SI);
+    AAMDNodes AAMetadata;
+    SI.getAAMetadata(AAMetadata);
     auto MMO = MF->getMachineMemOperand(
         Ptr, Flags, (MRI->getType(Vals[i]).getSizeInBits() + 7) / 8,
-        MinAlign(BaseAlign, Offsets[i] / 8), AAMDNodes(), nullptr,
+        MinAlign(BaseAlign, Offsets[i] / 8), AAMetadata, nullptr,
         SI.getSyncScopeID(), SI.getOrdering());
     MIRBuilder.buildStore(Vals[i], Addr, *MMO);
   }
@@ -1011,8 +1013,7 @@ bool IRTranslator::translateSelect(const User &U,
     Flags = MachineInstr::copyFlagsFromInstruction(*Cmp);
 
   for (unsigned i = 0; i < ResRegs.size(); ++i) {
-    MIRBuilder.buildInstr(TargetOpcode::G_SELECT, {ResRegs[i]},
-                          {Tst, Op0Regs[i], Op1Regs[i]}, Flags);
+    MIRBuilder.buildSelect(ResRegs[i], Tst, Op0Regs[i], Op1Regs[i], Flags);
   }
 
   return true;
@@ -1166,8 +1167,8 @@ void IRTranslator::getStackGuard(Register DstReg,
                                  MachineIRBuilder &MIRBuilder) {
   const TargetRegisterInfo *TRI = MF->getSubtarget().getRegisterInfo();
   MRI->setRegClass(DstReg, TRI->getPointerRegClass(*MF));
-  auto MIB = MIRBuilder.buildInstr(TargetOpcode::LOAD_STACK_GUARD);
-  MIB.addDef(DstReg);
+  auto MIB =
+      MIRBuilder.buildInstr(TargetOpcode::LOAD_STACK_GUARD, {DstReg}, {});
 
   auto &TLI = *MF->getSubtarget().getTargetLowering();
   Value *Global = TLI.getSDagStackGuard(*MF->getFunction().getParent());
@@ -1186,11 +1187,9 @@ void IRTranslator::getStackGuard(Register DstReg,
 bool IRTranslator::translateOverflowIntrinsic(const CallInst &CI, unsigned Op,
                                               MachineIRBuilder &MIRBuilder) {
   ArrayRef<Register> ResRegs = getOrCreateVRegs(CI);
-  MIRBuilder.buildInstr(Op)
-      .addDef(ResRegs[0])
-      .addDef(ResRegs[1])
-      .addUse(getOrCreateVReg(*CI.getOperand(0)))
-      .addUse(getOrCreateVReg(*CI.getOperand(1)));
+  MIRBuilder.buildInstr(
+      Op, {ResRegs[0], ResRegs[1]},
+      {getOrCreateVReg(*CI.getOperand(0)), getOrCreateVReg(*CI.getOperand(1))});
 
   return true;
 }
@@ -1251,6 +1250,8 @@ unsigned IRTranslator::getSimpleIntrinsicOpcode(Intrinsic::ID ID) {
       return TargetOpcode::G_FSQRT;
     case Intrinsic::trunc:
       return TargetOpcode::G_INTRINSIC_TRUNC;
+    case Intrinsic::readcyclecounter:
+      return TargetOpcode::G_READCYCLECOUNTER;
   }
   return Intrinsic::not_intrinsic;
 }
@@ -1362,8 +1363,7 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
     unsigned ListSize = TLI.getVaListSizeInBits(*DL) / 8;
 
     // FIXME: Get alignment
-    MIRBuilder.buildInstr(TargetOpcode::G_VASTART)
-        .addUse(getOrCreateVReg(*Ptr))
+    MIRBuilder.buildInstr(TargetOpcode::G_VASTART, {}, {getOrCreateVReg(*Ptr)})
         .addMemOperand(MF->getMachineMemOperand(
             MachinePointerInfo(Ptr), MachineMemOperand::MOStore, ListSize, 1));
     return true;
@@ -1412,17 +1412,18 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
     Register Op1 = getOrCreateVReg(*CI.getArgOperand(1));
     Register Op2 = getOrCreateVReg(*CI.getArgOperand(2));
     if (TM.Options.AllowFPOpFusion != FPOpFusion::Strict &&
-        TLI.isFMAFasterThanFMulAndFAdd(TLI.getValueType(*DL, CI.getType()))) {
+        TLI.isFMAFasterThanFMulAndFAdd(*MF,
+                                       TLI.getValueType(*DL, CI.getType()))) {
       // TODO: Revisit this to see if we should move this part of the
       // lowering to the combiner.
-      MIRBuilder.buildInstr(TargetOpcode::G_FMA, {Dst}, {Op0, Op1, Op2},
-                            MachineInstr::copyFlagsFromInstruction(CI));
+      MIRBuilder.buildFMA(Dst, Op0, Op1, Op2,
+                          MachineInstr::copyFlagsFromInstruction(CI));
     } else {
       LLT Ty = getLLTForType(*CI.getType(), *DL);
-      auto FMul = MIRBuilder.buildInstr(TargetOpcode::G_FMUL, {Ty}, {Op0, Op1},
-                                        MachineInstr::copyFlagsFromInstruction(CI));
-      MIRBuilder.buildInstr(TargetOpcode::G_FADD, {Dst}, {FMul, Op2},
-                            MachineInstr::copyFlagsFromInstruction(CI));
+      auto FMul = MIRBuilder.buildFMul(
+          Ty, Op0, Op1, MachineInstr::copyFlagsFromInstruction(CI));
+      MIRBuilder.buildFAdd(Dst, FMul, Op2,
+                           MachineInstr::copyFlagsFromInstruction(CI));
     }
     return true;
   }
@@ -1500,9 +1501,8 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
                                           : TargetOpcode::G_CTTZ_ZERO_UNDEF
                           : Cst->isZero() ? TargetOpcode::G_CTLZ
                                           : TargetOpcode::G_CTLZ_ZERO_UNDEF;
-    MIRBuilder.buildInstr(Opcode)
-        .addDef(getOrCreateVReg(CI))
-        .addUse(getOrCreateVReg(*CI.getArgOperand(0)));
+    MIRBuilder.buildInstr(Opcode, {getOrCreateVReg(CI)},
+                          {getOrCreateVReg(*CI.getArgOperand(0))});
     return true;
   }
   case Intrinsic::invariant_start: {
@@ -1518,6 +1518,13 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
   case Intrinsic::sideeffect:
     // Discard annotate attributes, assumptions, and artificial side-effects.
     return true;
+  case Intrinsic::read_register: {
+    Value *Arg = CI.getArgOperand(0);
+    MIRBuilder
+        .buildInstr(TargetOpcode::G_READ_REGISTER, {getOrCreateVReg(CI)}, {})
+        .addMetadata(cast<MDNode>(cast<MetadataAsValue>(Arg)->getMetadata()));
+    return true;
+  }
   }
   return false;
 }
@@ -1587,7 +1594,9 @@ bool IRTranslator::translateCall(const User &U, MachineIRBuilder &MIRBuilder) {
   const Function *F = CI.getCalledFunction();
 
   // FIXME: support Windows dllimport function calls.
-  if (F && F->hasDLLImportStorageClass())
+  if (F && (F->hasDLLImportStorageClass() ||
+            (MF->getTarget().getTargetTriple().isOSWindows() &&
+             F->hasExternalWeakLinkage())))
     return false;
 
   // FIXME: support control flow guard targets.
@@ -1846,10 +1855,9 @@ bool IRTranslator::translateVAArg(const User &U, MachineIRBuilder &MIRBuilder) {
   // we're completely discarding the i64/double distinction here (amongst
   // others). Fortunately the ABIs I know of where that matters don't use va_arg
   // anyway but that's not guaranteed.
-  MIRBuilder.buildInstr(TargetOpcode::G_VAARG)
-    .addDef(getOrCreateVReg(U))
-    .addUse(getOrCreateVReg(*U.getOperand(0)))
-    .addImm(DL->getABITypeAlignment(U.getType()));
+  MIRBuilder.buildInstr(TargetOpcode::G_VAARG, {getOrCreateVReg(U)},
+                        {getOrCreateVReg(*U.getOperand(0)),
+                         uint64_t(DL->getABITypeAlignment(U.getType()))});
   return true;
 }
 
@@ -1916,11 +1924,14 @@ bool IRTranslator::translateExtractElement(const User &U,
 
 bool IRTranslator::translateShuffleVector(const User &U,
                                           MachineIRBuilder &MIRBuilder) {
-  MIRBuilder.buildInstr(TargetOpcode::G_SHUFFLE_VECTOR)
-      .addDef(getOrCreateVReg(U))
-      .addUse(getOrCreateVReg(*U.getOperand(0)))
-      .addUse(getOrCreateVReg(*U.getOperand(1)))
-      .addShuffleMask(cast<Constant>(U.getOperand(2)));
+  SmallVector<int, 8> Mask;
+  ShuffleVectorInst::getShuffleMask(cast<Constant>(U.getOperand(2)), Mask);
+  ArrayRef<int> MaskAlloc = MF->allocateShuffleMask(Mask);
+  MIRBuilder
+      .buildInstr(TargetOpcode::G_SHUFFLE_VECTOR, {getOrCreateVReg(U)},
+                  {getOrCreateVReg(*U.getOperand(0)),
+                   getOrCreateVReg(*U.getOperand(1))})
+      .addShuffleMask(MaskAlloc);
   return true;
 }
 
@@ -1944,9 +1955,8 @@ bool IRTranslator::translateAtomicCmpXchg(const User &U,
   if (I.isWeak())
     return false;
 
-  auto Flags = I.isVolatile() ? MachineMemOperand::MOVolatile
-                              : MachineMemOperand::MONone;
-  Flags |= MachineMemOperand::MOLoad | MachineMemOperand::MOStore;
+  auto &TLI = *MF->getSubtarget().getTargetLowering();
+  auto Flags = TLI.getAtomicMemOperandFlags(I, *DL);
 
   Type *ResType = I.getType();
   Type *ValType = ResType->Type::getStructElementType(0);
@@ -1958,11 +1968,14 @@ bool IRTranslator::translateAtomicCmpXchg(const User &U,
   Register Cmp = getOrCreateVReg(*I.getCompareOperand());
   Register NewVal = getOrCreateVReg(*I.getNewValOperand());
 
+  AAMDNodes AAMetadata;
+  I.getAAMetadata(AAMetadata);
+
   MIRBuilder.buildAtomicCmpXchgWithSuccess(
       OldValRes, SuccessRes, Addr, Cmp, NewVal,
       *MF->getMachineMemOperand(MachinePointerInfo(I.getPointerOperand()),
                                 Flags, DL->getTypeStoreSize(ValType),
-                                getMemOpAlignment(I), AAMDNodes(), nullptr,
+                                getMemOpAlignment(I), AAMetadata, nullptr,
                                 I.getSyncScopeID(), I.getSuccessOrdering(),
                                 I.getFailureOrdering()));
   return true;
@@ -1971,10 +1984,8 @@ bool IRTranslator::translateAtomicCmpXchg(const User &U,
 bool IRTranslator::translateAtomicRMW(const User &U,
                                       MachineIRBuilder &MIRBuilder) {
   const AtomicRMWInst &I = cast<AtomicRMWInst>(U);
-
-  auto Flags = I.isVolatile() ? MachineMemOperand::MOVolatile
-                              : MachineMemOperand::MONone;
-  Flags |= MachineMemOperand::MOLoad | MachineMemOperand::MOStore;
+  auto &TLI = *MF->getSubtarget().getTargetLowering();
+  auto Flags = TLI.getAtomicMemOperandFlags(I, *DL);
 
   Type *ResType = I.getType();
 
@@ -2027,12 +2038,15 @@ bool IRTranslator::translateAtomicRMW(const User &U,
     break;
   }
 
+  AAMDNodes AAMetadata;
+  I.getAAMetadata(AAMetadata);
+
   MIRBuilder.buildAtomicRMW(
       Opcode, Res, Addr, Val,
       *MF->getMachineMemOperand(MachinePointerInfo(I.getPointerOperand()),
                                 Flags, DL->getTypeStoreSize(ResType),
-                                getMemOpAlignment(I), AAMDNodes(), nullptr,
-                                I.getSyncScopeID(), I.getOrdering()));
+                                getMemOpAlignment(I), AAMetadata,
+                                nullptr, I.getSyncScopeID(), I.getOrdering()));
   return true;
 }
 

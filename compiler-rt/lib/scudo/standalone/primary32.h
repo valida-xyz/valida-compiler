@@ -42,10 +42,11 @@ template <class SizeClassMapT, uptr RegionSizeLog> class SizeClassAllocator32 {
 public:
   typedef SizeClassMapT SizeClassMap;
   // Regions should be large enough to hold the largest Block.
-  COMPILER_CHECK((1UL << RegionSizeLog) >= SizeClassMap::MaxSize);
+  static_assert((1UL << RegionSizeLog) >= SizeClassMap::MaxSize, "");
   typedef SizeClassAllocator32<SizeClassMapT, RegionSizeLog> ThisT;
   typedef SizeClassAllocatorLocalCache<ThisT> CacheT;
   typedef typename CacheT::TransferBatch TransferBatch;
+  static const bool SupportsMemoryTagging = false;
 
   static uptr getSizeByClassId(uptr ClassId) {
     return (ClassId == SizeClassMap::BatchClassId)
@@ -123,13 +124,26 @@ public:
   }
 
   void disable() {
-    for (uptr I = 0; I < NumClasses; I++)
-      getSizeClassInfo(I)->Mutex.lock();
+    // The BatchClassId must be locked last since other classes can use it.
+    for (sptr I = static_cast<sptr>(NumClasses) - 1; I >= 0; I--) {
+      if (static_cast<uptr>(I) == SizeClassMap::BatchClassId)
+        continue;
+      getSizeClassInfo(static_cast<uptr>(I))->Mutex.lock();
+    }
+    getSizeClassInfo(SizeClassMap::BatchClassId)->Mutex.lock();
+    RegionsStashMutex.lock();
+    PossibleRegions.disable();
   }
 
   void enable() {
-    for (sptr I = static_cast<sptr>(NumClasses) - 1; I >= 0; I--)
-      getSizeClassInfo(static_cast<uptr>(I))->Mutex.unlock();
+    PossibleRegions.enable();
+    RegionsStashMutex.unlock();
+    getSizeClassInfo(SizeClassMap::BatchClassId)->Mutex.unlock();
+    for (uptr I = 0; I < NumClasses; I++) {
+      if (I == SizeClassMap::BatchClassId)
+        continue;
+      getSizeClassInfo(I)->Mutex.unlock();
+    }
   }
 
   template <typename F> void iterateOverBlocks(F Callback) {
@@ -173,6 +187,9 @@ public:
     return TotalReleasedBytes;
   }
 
+  bool useMemoryTagging() { return false; }
+  void disableMemoryTagging() {}
+
 private:
   static const uptr NumClasses = SizeClassMap::NumClasses;
   static const uptr RegionSize = 1UL << RegionSizeLog;
@@ -204,7 +221,7 @@ private:
     uptr AllocatedUser;
     ReleaseToOsInfo ReleaseInfo;
   };
-  COMPILER_CHECK(sizeof(SizeClassInfo) % SCUDO_CACHE_LINE_SIZE == 0);
+  static_assert(sizeof(SizeClassInfo) % SCUDO_CACHE_LINE_SIZE == 0, "");
 
   uptr computeRegionId(uptr Mem) {
     const uptr Id = Mem >> RegionSizeLog;
@@ -300,10 +317,10 @@ private:
     const uptr NumberOfBlocks = RegionSize / Size;
     DCHECK_GT(NumberOfBlocks, 0);
     TransferBatch *B = nullptr;
-    constexpr uptr ShuffleArraySize = 48;
+    constexpr u32 ShuffleArraySize = 8U * TransferBatch::MaxNumCached;
     void *ShuffleArray[ShuffleArraySize];
     u32 Count = 0;
-    const uptr AllocatedUser = NumberOfBlocks * Size;
+    const uptr AllocatedUser = Size * NumberOfBlocks;
     for (uptr I = Region; I < Region + AllocatedUser; I += Size) {
       ShuffleArray[Count++] = reinterpret_cast<void *>(I);
       if (Count == ShuffleArraySize) {
@@ -319,6 +336,11 @@ private:
         return nullptr;
     }
     DCHECK(B);
+    if (!Sci->FreeList.empty()) {
+      Sci->FreeList.push_back(B);
+      B = Sci->FreeList.front();
+      Sci->FreeList.pop_front();
+    }
     DCHECK_GT(B->getCount(), 0);
 
     C->getStats().add(StatFree, AllocatedUser);

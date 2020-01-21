@@ -950,9 +950,9 @@ private:
         if (CurrentToken->isOneOf(tok::star, tok::amp))
           CurrentToken->Type = TT_PointerOrReference;
         consumeToken();
-        if (CurrentToken &&
-            CurrentToken->Previous->isOneOf(TT_BinaryOperator, TT_UnaryOperator,
-                                            tok::comma))
+        if (CurrentToken && CurrentToken->Previous->isOneOf(
+                                TT_BinaryOperator, TT_UnaryOperator, tok::comma,
+                                tok::star, tok::arrow, tok::amp, tok::ampamp))
           CurrentToken->Previous->Type = TT_OverloadedOperator;
       }
       if (CurrentToken) {
@@ -1344,8 +1344,12 @@ private:
         Contexts.back().IsExpression = false;
     } else if (Current.is(tok::kw_new)) {
       Contexts.back().CanBeExpression = false;
-    } else if (Current.isOneOf(tok::semi, tok::exclaim)) {
+    } else if (Current.is(tok::semi) ||
+               (Current.is(tok::exclaim) && Current.Previous &&
+                !Current.Previous->is(tok::kw_operator))) {
       // This should be the condition or increment in a for-loop.
+      // But not operator !() (can't use TT_OverloadedOperator here as its not
+      // been annotated yet).
       Contexts.back().IsExpression = true;
     }
   }
@@ -1636,8 +1640,9 @@ private:
 
   /// Determine whether ')' is ending a cast.
   bool rParenEndsCast(const FormatToken &Tok) {
-    // C-style casts are only used in C++ and Java.
-    if (!Style.isCpp() && Style.Language != FormatStyle::LK_Java)
+    // C-style casts are only used in C++, C# and Java.
+    if (!Style.isCSharp() && !Style.isCpp() &&
+        Style.Language != FormatStyle::LK_Java)
       return false;
 
     // Empty parens aren't casts and there are no casts at the end of the line.
@@ -1825,7 +1830,8 @@ private:
     // Use heuristics to recognize unary operators.
     if (PrevToken->isOneOf(tok::equal, tok::l_paren, tok::comma, tok::l_square,
                            tok::question, tok::colon, tok::kw_return,
-                           tok::kw_case, tok::at, tok::l_brace, tok::kw_throw))
+                           tok::kw_case, tok::at, tok::l_brace, tok::kw_throw,
+                           tok::kw_co_return, tok::kw_co_yield))
       return TT_UnaryOperator;
 
     // There can't be two consecutive binary operators.
@@ -2155,9 +2161,20 @@ static bool isFunctionDeclarationName(const FormatToken &Current,
         continue;
       if (Next->isOneOf(tok::kw_new, tok::kw_delete)) {
         // For 'new[]' and 'delete[]'.
-        if (Next->Next && Next->Next->is(tok::l_square) && Next->Next->Next &&
-            Next->Next->Next->is(tok::r_square))
+        if (Next->Next &&
+            Next->Next->startsSequence(tok::l_square, tok::r_square))
           Next = Next->Next->Next;
+        continue;
+      }
+      if (Next->startsSequence(tok::l_square, tok::r_square)) {
+        // For operator[]().
+        Next = Next->Next;
+        continue;
+      }
+      if ((Next->isSimpleTypeSpecifier() || Next->is(tok::identifier)) &&
+          Next->Next && Next->Next->isOneOf(tok::star, tok::amp, tok::ampamp)) {
+        // For operator void*(), operator char*(), operator Foo*().
+        Next = Next->Next;
         continue;
       }
 
@@ -2576,6 +2593,13 @@ bool TokenAnnotator::spaceRequiredBeforeParens(const FormatToken &Right) const {
           Right.ParameterCount > 0);
 }
 
+/// Returns \c true if the token is followed by a boolean condition, \c false
+/// otherwise.
+static bool isKeywordWithCondition(const FormatToken &Tok) {
+  return Tok.isOneOf(tok::kw_if, tok::kw_for, tok::kw_while, tok::kw_switch,
+                     tok::kw_constexpr, tok::kw_catch);
+}
+
 bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
                                           const FormatToken &Left,
                                           const FormatToken &Right) {
@@ -2594,6 +2618,15 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
       (Left.is(tok::l_brace) && Left.BlockKind != BK_Block &&
        Right.is(tok::r_brace) && Right.BlockKind != BK_Block))
     return Style.SpaceInEmptyParentheses;
+  if (Style.SpacesInConditionalStatement) {
+    if (Left.is(tok::l_paren) && Left.Previous &&
+        isKeywordWithCondition(*Left.Previous))
+      return true;
+    if (Right.is(tok::r_paren) && Right.MatchingParen &&
+        Right.MatchingParen->Previous &&
+        isKeywordWithCondition(*Right.MatchingParen->Previous))
+      return true;
+  }
   if (Left.is(tok::l_paren) || Right.is(tok::r_paren))
     return (Right.is(TT_CastRParen) ||
             (Left.MatchingParen && Left.MatchingParen->is(TT_CastRParen)))
@@ -2673,6 +2706,20 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
                                     tok::l_square));
   if (Right.is(tok::star) && Left.is(tok::l_paren))
     return false;
+  if (Right.isOneOf(tok::star, tok::amp, tok::ampamp) &&
+      (Left.is(tok::identifier) || Left.isSimpleTypeSpecifier()) &&
+      // Space between the type and the * in:
+      //   operator void*()
+      //   operator char*()
+      //   operator /*comment*/ const char*()
+      //   operator volatile /*comment*/ char*()
+      //   operator Foo*()
+      // dependent on PointerAlignment style.
+      Left.Previous &&
+      (Left.Previous->endsSequence(tok::kw_operator) ||
+       Left.Previous->endsSequence(tok::kw_const, tok::kw_operator) ||
+       Left.Previous->endsSequence(tok::kw_volatile, tok::kw_operator)))
+    return (Style.PointerAlignment != FormatStyle::PAS_Left);
   const auto SpaceRequiredForArrayInitializerLSquare =
       [](const FormatToken &LSquareTok, const FormatStyle &Style) {
         return Style.SpacesInContainerLiterals ||
@@ -2702,7 +2749,9 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
       !Right.isOneOf(TT_ObjCMethodExpr, TT_LambdaLSquare,
                      TT_DesignatedInitializerLSquare,
                      TT_StructuredBindingLSquare, TT_AttributeSquare) &&
-      !Left.isOneOf(tok::numeric_constant, TT_DictLiteral))
+      !Left.isOneOf(tok::numeric_constant, TT_DictLiteral) &&
+      !(!Left.is(tok::r_square) && Style.SpaceBeforeSquareBrackets &&
+        Right.is(TT_ArraySubscriptLSquare)))
     return false;
   if (Left.is(tok::l_brace) && Right.is(tok::r_brace))
     return !Left.Children.empty(); // No spaces in "{}".
@@ -2974,14 +3023,18 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
     return true;
   }
   if (Left.is(TT_UnaryOperator)) {
-    // The alternative operators for ~ and ! are "compl" and "not".
-    // If they are used instead, we do not want to combine them with
-    // the token to the right, unless that is a left paren.
     if (!Right.is(tok::l_paren)) {
+      // The alternative operators for ~ and ! are "compl" and "not".
+      // If they are used instead, we do not want to combine them with
+      // the token to the right, unless that is a left paren.
       if (Left.is(tok::exclaim) && Left.TokenText == "not")
         return true;
       if (Left.is(tok::tilde) && Left.TokenText == "compl")
         return true;
+      // Lambda captures allow for a lone &, so "&]" needs to be properly
+      // handled.
+      if (Left.is(tok::amp) && Right.is(tok::r_square))
+        return Style.SpacesInSquareBrackets;
     }
     return (Style.SpaceAfterLogicalNot && Left.is(tok::exclaim)) ||
            Right.is(TT_BinaryOperator);
@@ -3015,7 +3068,8 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
     // The identifier might actually be a macro name such as ALWAYS_INLINE. If
     // this turns out to be too lenient, add analysis of the identifier itself.
     return Right.WhitespaceRange.getBegin() != Right.WhitespaceRange.getEnd();
-  if (Right.is(tok::coloncolon) && !Left.isOneOf(tok::l_brace, tok::comment))
+  if (Right.is(tok::coloncolon) &&
+      !Left.isOneOf(tok::l_brace, tok::comment, tok::l_paren))
     return (Left.is(TT_TemplateOpener) &&
             Style.Standard < FormatStyle::LS_Cpp11) ||
            !(Left.isOneOf(tok::l_paren, tok::r_paren, tok::l_square,

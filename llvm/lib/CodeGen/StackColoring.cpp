@@ -48,6 +48,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Use.h"
 #include "llvm/IR/Value.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -1003,7 +1004,7 @@ void StackColoring::remapInstructions(DenseMap<int, int> &SlotRemap) {
         // zone are okay, despite the fact that we don't have a good way
         // for validating all of the usages of the calculation.
 #ifndef NDEBUG
-        bool TouchesMemory = I.mayLoad() || I.mayStore();
+        bool TouchesMemory = I.mayLoadOrStore();
         // If we *don't* protect the user from escaped allocas, don't bother
         // validating the instructions.
         if (!I.isDebugInstr() && TouchesMemory && ProtectFromEscapedAllocas) {
@@ -1024,6 +1025,15 @@ void StackColoring::remapInstructions(DenseMap<int, int> &SlotRemap) {
       SmallVector<MachineMemOperand *, 2> NewMMOs;
       bool ReplaceMemOps = false;
       for (MachineMemOperand *MMO : I.memoperands()) {
+        if (const auto *FSV = dyn_cast_or_null<FixedStackPseudoSourceValue>(
+                MMO->getPseudoValue())) {
+          int FI = FSV->getFrameIndex();
+          auto To = SlotRemap.find(FI);
+          if (To != SlotRemap.end())
+            const_cast<FixedStackPseudoSourceValue *>(FSV)->setFrameIndex(
+                To->second);
+        }
+
         // If this memory location can be a slot remapped here,
         // we remove AA information.
         bool MayHaveConflictingAAMD = false;

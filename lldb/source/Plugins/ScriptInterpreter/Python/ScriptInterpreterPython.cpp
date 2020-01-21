@@ -6,11 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifdef LLDB_DISABLE_PYTHON
+#include "lldb/Host/Config.h"
 
-// Python is disabled in this build
-
-#else
+#if LLDB_ENABLE_PYTHON
 
 // LLDB Python header must be included first
 #include "lldb-python.h"
@@ -77,10 +75,22 @@ extern "C" void init_lldb(void);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreturn-type-c-linkage"
 
+// Disable warning C4190: 'LLDBSwigPythonBreakpointCallbackFunction' has
+// C-linkage specified, but returns UDT 'llvm::Expected<bool>' which is
+// incompatible with C
+#if _MSC_VER
+#pragma warning (push)
+#pragma warning (disable : 4190)
+#endif
+
 extern "C" llvm::Expected<bool> LLDBSwigPythonBreakpointCallbackFunction(
     const char *python_function_name, const char *session_dictionary_name,
     const lldb::StackFrameSP &sb_frame,
     const lldb::BreakpointLocationSP &sb_bp_loc, StructuredDataImpl *args_impl);
+
+#if _MSC_VER
+#pragma warning (pop)
+#endif
 
 #pragma clang diagnostic pop
 
@@ -1054,7 +1064,7 @@ void ScriptInterpreterPythonImpl::ExecuteInterpreterLoop() {
 
   IOHandlerSP io_handler_sp(new IOHandlerPythonInterpreter(debugger, this));
   if (io_handler_sp) {
-    debugger.PushIOHandler(io_handler_sp);
+    debugger.RunIOHandlerAsync(io_handler_sp);
   }
 }
 
@@ -1190,6 +1200,7 @@ bool ScriptInterpreterPythonImpl::ExecuteOneLineWithReturn(
     return true;
   }
   }
+  llvm_unreachable("Fully covered switch!");
 }
 
 Status ScriptInterpreterPythonImpl::ExecuteMultipleLines(
@@ -1237,14 +1248,14 @@ void ScriptInterpreterPythonImpl::CollectDataForBreakpointCommandCallback(
     CommandReturnObject &result) {
   m_active_io_handler = eIOHandlerBreakpoint;
   m_debugger.GetCommandInterpreter().GetPythonCommandsFromIOHandler(
-      "    ", *this, true, &bp_options_vec);
+      "    ", *this, &bp_options_vec);
 }
 
 void ScriptInterpreterPythonImpl::CollectDataForWatchpointCommandCallback(
     WatchpointOptions *wp_options, CommandReturnObject &result) {
   m_active_io_handler = eIOHandlerWatchpoint;
   m_debugger.GetCommandInterpreter().GetPythonCommandsFromIOHandler(
-      "    ", *this, true, wp_options);
+      "    ", *this, wp_options);
 }
 
 Status ScriptInterpreterPythonImpl::SetBreakpointCommandCallbackFunction(
@@ -2046,8 +2057,7 @@ ScriptInterpreterPythonImpl::LoadPluginModule(const FileSpec &file_spec,
 
   StructuredData::ObjectSP module_sp;
 
-  if (LoadScriptingModule(file_spec.GetPath().c_str(), true, true, error,
-                          &module_sp))
+  if (LoadScriptingModule(file_spec.GetPath().c_str(), true, error, &module_sp))
     return module_sp;
 
   return StructuredData::ObjectSP();
@@ -2726,8 +2736,8 @@ uint64_t replace_all(std::string &str, const std::string &oldStr,
 }
 
 bool ScriptInterpreterPythonImpl::LoadScriptingModule(
-    const char *pathname, bool can_reload, bool init_session,
-    lldb_private::Status &error, StructuredData::ObjectSP *module_sp) {
+    const char *pathname, bool init_session, lldb_private::Status &error,
+    StructuredData::ObjectSP *module_sp) {
   if (!pathname || !pathname[0]) {
     error.SetErrorString("invalid pathname");
     return false;
@@ -2826,11 +2836,6 @@ bool ScriptInterpreterPythonImpl::LoadScriptingModule(
                                     .IsAllocated();
 
     bool was_imported = (was_imported_globally || was_imported_locally);
-
-    if (was_imported && !can_reload) {
-      error.SetErrorString("module already imported");
-      return false;
-    }
 
     // now actually do the import
     command_stream.Clear();
@@ -3282,4 +3287,4 @@ void ScriptInterpreterPythonImpl::AddToSysPath(AddLocation location,
 //
 // void ScriptInterpreterPythonImpl::Terminate() { Py_Finalize (); }
 
-#endif // LLDB_DISABLE_PYTHON
+#endif

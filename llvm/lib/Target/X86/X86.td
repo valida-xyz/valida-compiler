@@ -455,6 +455,10 @@ def FeatureFastVectorShiftMasks
         "fast-vector-shift-masks", "HasFastVectorShiftMasks", "true",
         "Prefer a left/right vector logical shift pair over a shift+and pair">;
 
+def FeatureUseGLMDivSqrtCosts
+    : SubtargetFeature<"use-glm-div-sqrt-costs", "UseGLMDivSqrtCosts", "true",
+        "Use Goldmont specific floating point div/sqrt costs">;
+
 // Merge branches using three-way conditional code.
 def FeatureMergeToThreeWayBranch : SubtargetFeature<"merge-to-threeway-branch",
                                         "ThreewayBranchProfitable", "true",
@@ -469,12 +473,6 @@ def FeatureUseAA : SubtargetFeature<"use-aa", "UseAA", "true",
 def ProcIntelAtom : SubtargetFeature<"", "X86ProcFamily", "IntelAtom", "">;
 // Silvermont
 def ProcIntelSLM  : SubtargetFeature<"", "X86ProcFamily", "IntelSLM", "">;
-// Goldmont
-def ProcIntelGLM  : SubtargetFeature<"", "X86ProcFamily", "IntelGLM", "">;
-// Goldmont Plus
-def ProcIntelGLP  : SubtargetFeature<"", "X86ProcFamily", "IntelGLP", "">;
-// Tremont
-def ProcIntelTRM  : SubtargetFeature<"", "X86ProcFamily", "IntelTRM", "">;
 
 //===----------------------------------------------------------------------===//
 // Register File Description
@@ -503,6 +501,7 @@ include "X86SchedHaswell.td"
 include "X86SchedBroadwell.td"
 include "X86ScheduleSLM.td"
 include "X86ScheduleZnver1.td"
+include "X86ScheduleZnver2.td"
 include "X86ScheduleBdVer2.td"
 include "X86ScheduleBtVer2.td"
 include "X86SchedSkylakeClient.td"
@@ -745,7 +744,7 @@ def ProcessorFeatures {
                                                   FeatureXSAVES,
                                                   FeatureCLFLUSHOPT,
                                                   FeatureFSGSBase];
-  list<SubtargetFeature> GLMSpecificFeatures = [ProcIntelGLM,
+  list<SubtargetFeature> GLMSpecificFeatures = [FeatureUseGLMDivSqrtCosts,
                                                 FeaturePOPCNTFalseDeps];
   list<SubtargetFeature> GLMInheritableFeatures =
     !listconcat(SLMInheritableFeatures, GLMAdditionalFeatures);
@@ -756,7 +755,7 @@ def ProcessorFeatures {
   list<SubtargetFeature> GLPAdditionalFeatures = [FeaturePTWRITE,
                                                   FeatureRDPID,
                                                   FeatureSGX];
-  list<SubtargetFeature> GLPSpecificFeatures = [ProcIntelGLP];
+  list<SubtargetFeature> GLPSpecificFeatures = [FeatureUseGLMDivSqrtCosts];
   list<SubtargetFeature> GLPInheritableFeatures =
     !listconcat(GLMInheritableFeatures, GLPAdditionalFeatures);
   list<SubtargetFeature> GLPFeatures =
@@ -768,7 +767,7 @@ def ProcessorFeatures {
                                                   FeatureMOVDIRI,
                                                   FeatureMOVDIR64B,
                                                   FeatureWAITPKG];
-  list<SubtargetFeature> TRMSpecificFeatures = [ProcIntelTRM];
+  list<SubtargetFeature> TRMSpecificFeatures = [FeatureUseGLMDivSqrtCosts];
   list<SubtargetFeature> TRMFeatures =
     !listconcat(GLPInheritableFeatures, TRMAdditionalFeatures,
                 TRMSpecificFeatures);
@@ -1206,7 +1205,7 @@ def : Proc<"bdver3", ProcessorFeatures.BdVer3Features>;
 def : Proc<"bdver4", ProcessorFeatures.BdVer4Features>;
 
 def : ProcessorModel<"znver1", Znver1Model, ProcessorFeatures.ZNFeatures>;
-def : ProcessorModel<"znver2", Znver1Model, ProcessorFeatures.ZN2Features>;
+def : ProcessorModel<"znver2", Znver2Model, ProcessorFeatures.ZN2Features>;
 
 def : Proc<"geode",           [FeatureX87, FeatureSlowUAMem16, FeatureCMPXCHG8B,
                                Feature3DNowA, FeatureInsertVZEROUPPER]>;

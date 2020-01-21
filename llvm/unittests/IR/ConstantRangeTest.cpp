@@ -2217,6 +2217,22 @@ TEST_F(ConstantRangeTest, USubSat) {
       });
 }
 
+TEST_F(ConstantRangeTest, UMulSat) {
+  TestUnsignedBinOpExhaustive(
+      [](const ConstantRange &CR1, const ConstantRange &CR2) {
+        return CR1.umul_sat(CR2);
+      },
+      [](const APInt &N1, const APInt &N2) { return N1.umul_sat(N2); });
+}
+
+TEST_F(ConstantRangeTest, UShlSat) {
+  TestUnsignedBinOpExhaustive(
+      [](const ConstantRange &CR1, const ConstantRange &CR2) {
+        return CR1.ushl_sat(CR2);
+      },
+      [](const APInt &N1, const APInt &N2) { return N1.ushl_sat(N2); });
+}
+
 TEST_F(ConstantRangeTest, SAddSat) {
   TestSignedBinOpExhaustive(
       [](const ConstantRange &CR1, const ConstantRange &CR2) {
@@ -2235,6 +2251,22 @@ TEST_F(ConstantRangeTest, SSubSat) {
       [](const APInt &N1, const APInt &N2) {
         return N1.ssub_sat(N2);
       });
+}
+
+TEST_F(ConstantRangeTest, SMulSat) {
+  TestSignedBinOpExhaustive(
+      [](const ConstantRange &CR1, const ConstantRange &CR2) {
+        return CR1.smul_sat(CR2);
+      },
+      [](const APInt &N1, const APInt &N2) { return N1.smul_sat(N2); });
+}
+
+TEST_F(ConstantRangeTest, SShlSat) {
+  TestSignedBinOpExhaustive(
+      [](const ConstantRange &CR1, const ConstantRange &CR2) {
+        return CR1.sshl_sat(CR2);
+      },
+      [](const APInt &N1, const APInt &N2) { return N1.sshl_sat(N2); });
 }
 
 TEST_F(ConstantRangeTest, Abs) {
@@ -2263,4 +2295,26 @@ TEST_F(ConstantRangeTest, Abs) {
   });
 }
 
+TEST_F(ConstantRangeTest, castOps) {
+  ConstantRange A(APInt(16, 66), APInt(16, 128));
+  ConstantRange FpToI8 = A.castOp(Instruction::FPToSI, 8);
+  EXPECT_EQ(8u, FpToI8.getBitWidth());
+  EXPECT_TRUE(FpToI8.isFullSet());
+
+  ConstantRange FpToI16 = A.castOp(Instruction::FPToSI, 16);
+  EXPECT_EQ(16u, FpToI16.getBitWidth());
+  EXPECT_EQ(A, FpToI16);
+
+  ConstantRange FPExtToDouble = A.castOp(Instruction::FPExt, 64);
+  EXPECT_EQ(64u, FPExtToDouble.getBitWidth());
+  EXPECT_TRUE(FPExtToDouble.isFullSet());
+
+  ConstantRange PtrToInt = A.castOp(Instruction::PtrToInt, 64);
+  EXPECT_EQ(64u, PtrToInt.getBitWidth());
+  EXPECT_TRUE(PtrToInt.isFullSet());
+
+  ConstantRange IntToPtr = A.castOp(Instruction::IntToPtr, 64);
+  EXPECT_EQ(64u, IntToPtr.getBitWidth());
+  EXPECT_TRUE(IntToPtr.isFullSet());
+}
 }  // anonymous namespace

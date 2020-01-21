@@ -48,7 +48,9 @@
 #ifndef LLDB_PLUGINS_SCRIPTINTERPRETER_PYTHON_PYTHONDATAOBJECTS_H
 #define LLDB_PLUGINS_SCRIPTINTERPRETER_PYTHON_PYTHONDATAOBJECTS_H
 
-#ifndef LLDB_DISABLE_PYTHON
+#include "lldb/Host/Config.h"
+
+#if LLDB_ENABLE_PYTHON
 
 // LLDB Python header must be included first
 #include "lldb-python.h"
@@ -130,7 +132,7 @@ template <typename T> T Take(PyObject *obj) {
   assert(!PyErr_Occurred());
   T thing(PyRefType::Owned, obj);
   assert(thing.IsValid());
-  return std::move(thing);
+  return thing;
 }
 
 // Retain a reference you have borrowed, and turn it into
@@ -148,7 +150,7 @@ template <typename T> T Retain(PyObject *obj) {
   assert(!PyErr_Occurred());
   T thing(PyRefType::Borrowed, obj);
   assert(thing.IsValid());
-  return std::move(thing);
+  return thing;
 }
 
 // This class can be used like a utility function to convert from

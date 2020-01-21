@@ -44,6 +44,10 @@ cl::opt<bool> NoGlobalRM("disable-global-remove",
                          cl::desc("Do not remove global variables"),
                          cl::init(false));
 
+cl::opt<bool> NoAttributeRM("disable-attribute-remove",
+                         cl::desc("Do not remove function attributes"),
+                         cl::init(false));
+
 cl::opt<bool> ReplaceFuncsWithNull(
     "replace-funcs-with-null",
     cl::desc("When stubbing functions, replace all uses will null"),
@@ -359,6 +363,11 @@ bool ReduceCrashingFunctionAttributes::TestFuncAttrs(
 
   // Set this new list of attributes on the function.
   F->setAttributes(NewAttrs);
+
+  // If the attribute list includes "optnone" we need to make sure it also
+  // includes "noinline" otherwise we will get a verifier failure.
+  if (F->hasFnAttribute(Attribute::OptimizeNone))
+    F->addFnAttr(Attribute::NoInline);
 
   // Try running on the hacked up program...
   if (TestFn(BD, M.get())) {
@@ -1203,36 +1212,38 @@ static Error DebugACrash(BugDriver &BD, BugTester TestFn) {
       BD.EmitProgressBitcode(BD.getProgram(), "reduced-function");
   }
 
-  // For each remaining function, try to reduce that function's attributes.
-  std::vector<std::string> FunctionNames;
-  for (Function &F : BD.getProgram())
-    FunctionNames.push_back(F.getName());
+  if (!NoAttributeRM) {
+    // For each remaining function, try to reduce that function's attributes.
+    std::vector<std::string> FunctionNames;
+    for (Function &F : BD.getProgram())
+      FunctionNames.push_back(F.getName());
 
-  if (!FunctionNames.empty() && !BugpointIsInterrupted) {
-    outs() << "\n*** Attempting to reduce the number of function attributes in "
-              "the testcase\n";
+    if (!FunctionNames.empty() && !BugpointIsInterrupted) {
+      outs() << "\n*** Attempting to reduce the number of function attributes"
+                " in the testcase\n";
 
-    unsigned OldSize = 0;
-    unsigned NewSize = 0;
-    for (std::string &Name : FunctionNames) {
-      Function *Fn = BD.getProgram().getFunction(Name);
-      assert(Fn && "Could not find funcion?");
+      unsigned OldSize = 0;
+      unsigned NewSize = 0;
+      for (std::string &Name : FunctionNames) {
+        Function *Fn = BD.getProgram().getFunction(Name);
+        assert(Fn && "Could not find funcion?");
 
-      std::vector<Attribute> Attrs;
-      for (Attribute A : Fn->getAttributes().getFnAttributes())
-        Attrs.push_back(A);
+        std::vector<Attribute> Attrs;
+        for (Attribute A : Fn->getAttributes().getFnAttributes())
+          Attrs.push_back(A);
 
-      OldSize += Attrs.size();
-      Expected<bool> Result =
+        OldSize += Attrs.size();
+        Expected<bool> Result =
           ReduceCrashingFunctionAttributes(BD, Name, TestFn).reduceList(Attrs);
-      if (Error E = Result.takeError())
-        return E;
+        if (Error E = Result.takeError())
+          return E;
 
-      NewSize += Attrs.size();
+        NewSize += Attrs.size();
+      }
+
+      if (OldSize < NewSize)
+        BD.EmitProgressBitcode(BD.getProgram(), "reduced-function-attributes");
     }
-
-    if (OldSize < NewSize)
-      BD.EmitProgressBitcode(BD.getProgram(), "reduced-function-attributes");
   }
 
   // Attempt to change conditional branches into unconditional branches to

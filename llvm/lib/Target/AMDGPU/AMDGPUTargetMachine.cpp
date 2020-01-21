@@ -37,6 +37,7 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
@@ -182,7 +183,7 @@ static cl::opt<bool> EnableScalarIRPasses(
   cl::init(true),
   cl::Hidden);
 
-extern "C" void LLVMInitializeAMDGPUTarget() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTarget() {
   // Register the target
   RegisterTargetMachine<R600TargetMachine> X(getTheAMDGPUTarget());
   RegisterTargetMachine<GCNTargetMachine> Y(getTheGCNTarget());
@@ -947,7 +948,7 @@ void GCNPassConfig::addOptimizedRegAlloc() {
   insertPass(&RegisterCoalescerID, &SIPreAllocateWWMRegsID, false);
 
   if (EnableDCEInRA)
-    insertPass(&RenameIndependentSubregsID, &DeadMachineInstructionElimID);
+    insertPass(&DetectDeadLanesID, &DeadMachineInstructionElimID);
 
   TargetPassConfig::addOptimizedRegAlloc();
 }

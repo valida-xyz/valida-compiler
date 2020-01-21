@@ -389,6 +389,11 @@ public:
   /// \returns true if this APInt is positive.
   bool isStrictlyPositive() const { return isNonNegative() && !isNullValue(); }
 
+  /// Determine if this APInt Value is non-positive (<= 0).
+  ///
+  /// \returns true if this APInt is non-positive.
+  bool isNonPositive() const { return !isStrictlyPositive(); }
+
   /// Determine if all bits are set
   ///
   /// This checks to see if the value has all bits of the APInt are set or not.
@@ -595,8 +600,8 @@ public:
   /// Constructs an APInt value that has a contiguous range of bits set. The
   /// bits from loBit (inclusive) to hiBit (exclusive) will be set. All other
   /// bits will be zero. For example, with parameters(32, 0, 16) you would get
-  /// 0x0000FFFF. If hiBit is less than loBit then the set bits "wrap". For
-  /// example, with parameters (32, 28, 4), you would get 0xF000000F.
+  /// 0x0000FFFF. Please call getBitsSetWithWrap if \p loBit may be greater than
+  /// \p hiBit.
   ///
   /// \param numBits the intended bit width of the result
   /// \param loBit the index of the lowest bit set.
@@ -604,8 +609,20 @@ public:
   ///
   /// \returns An APInt value with the requested bits set.
   static APInt getBitsSet(unsigned numBits, unsigned loBit, unsigned hiBit) {
+    assert(loBit <= hiBit && "loBit greater than hiBit");
     APInt Res(numBits, 0);
     Res.setBits(loBit, hiBit);
+    return Res;
+  }
+
+  /// Wrap version of getBitsSet.
+  /// If \p hiBit is no less than \p loBit, this is same with getBitsSet.
+  /// If \p hiBit is less than \p loBit, the set bits "wrap". For example, with
+  /// parameters (32, 28, 4), you would get 0xF000000F.
+  static APInt getBitsSetWithWrap(unsigned numBits, unsigned loBit,
+                                  unsigned hiBit) {
+    APInt Res(numBits, 0);
+    Res.setBitsWithWrap(loBit, hiBit);
     return Res;
   }
 
@@ -1346,6 +1363,19 @@ public:
   /// that is greater than or equal to the current width.
   APInt trunc(unsigned width) const;
 
+  /// Truncate to new width with unsigned saturation.
+  ///
+  /// If the APInt, treated as unsigned integer, can be losslessly truncated to
+  /// the new bitwidth, then return truncated APInt. Else, return max value.
+  APInt truncUSat(unsigned width) const;
+
+  /// Truncate to new width with signed saturation.
+  ///
+  /// If this APInt, treated as signed integer, can be losslessly truncated to
+  /// the new bitwidth, then return truncated APInt. Else, return either
+  /// signed min value if the APInt was negative, or signed max value.
+  APInt truncSSat(unsigned width) const;
+
   /// Sign extend to a new width.
   ///
   /// This operation sign extends the APInt to a new width. If the high order
@@ -1418,6 +1448,21 @@ public:
   }
 
   /// Set the bits from loBit (inclusive) to hiBit (exclusive) to 1.
+  /// This function handles "wrap" case when \p loBit > \p hiBit, and calls
+  /// setBits when \p loBit <= \p hiBit.
+  void setBitsWithWrap(unsigned loBit, unsigned hiBit) {
+    assert(hiBit <= BitWidth && "hiBit out of range");
+    assert(loBit <= BitWidth && "loBit out of range");
+    if (loBit <= hiBit) {
+      setBits(loBit, hiBit);
+      return;
+    }
+    setLowBits(hiBit);
+    setHighBits(BitWidth - loBit);
+  }
+
+  /// Set the bits from loBit (inclusive) to hiBit (exclusive) to 1.
+  /// This function handles case when \p loBit <= \p hiBit.
   void setBits(unsigned loBit, unsigned hiBit) {
     assert(hiBit <= BitWidth && "hiBit out of range");
     assert(loBit <= BitWidth && "loBit out of range");

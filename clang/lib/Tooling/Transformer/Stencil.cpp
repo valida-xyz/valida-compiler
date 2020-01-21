@@ -59,7 +59,9 @@ struct DebugPrintNodeData {
 enum class UnaryNodeOperator {
   Parens,
   Deref,
-  Address,
+  MaybeDeref,
+  AddressOf,
+  MaybeAddressOf,
 };
 
 // Generic container for stencil operations with a (single) node-id argument.
@@ -121,8 +123,14 @@ std::string toStringData(const UnaryOperationData &Data) {
   case UnaryNodeOperator::Deref:
     OpName = "deref";
     break;
-  case UnaryNodeOperator::Address:
+  case UnaryNodeOperator::MaybeDeref:
+    OpName = "maybeDeref";
+    break;
+  case UnaryNodeOperator::AddressOf:
     OpName = "addressOf";
+    break;
+  case UnaryNodeOperator::MaybeAddressOf:
+    OpName = "maybeAddressOf";
     break;
   }
   return (OpName + "(\"" + Data.Id + "\")").str();
@@ -191,7 +199,21 @@ Error evalData(const UnaryOperationData &Data,
   case UnaryNodeOperator::Deref:
     Source = tooling::buildDereference(*E, *Match.Context);
     break;
-  case UnaryNodeOperator::Address:
+  case UnaryNodeOperator::MaybeDeref:
+    if (!E->getType()->isAnyPointerType()) {
+      *Result += tooling::getText(*E, *Match.Context);
+      return Error::success();
+    }
+    Source = tooling::buildDereference(*E, *Match.Context);
+    break;
+  case UnaryNodeOperator::AddressOf:
+    Source = tooling::buildAddressOf(*E, *Match.Context);
+    break;
+  case UnaryNodeOperator::MaybeAddressOf:
+    if (E->getType()->isAnyPointerType()) {
+      *Result += tooling::getText(*E, *Match.Context);
+      return Error::success();
+    }
     Source = tooling::buildAddressOf(*E, *Match.Context);
     break;
   }
@@ -208,6 +230,8 @@ Error evalData(const SelectorData &Data, const MatchFinder::MatchResult &Match,
   auto Range = Data.Selector(Match);
   if (!Range)
     return Range.takeError();
+  if (auto Err = tooling::validateEditRange(*Range, *Match.SourceManager))
+    return Err;
   *Result += tooling::getText(*Range, *Match.Context);
   return Error::success();
 }
@@ -272,14 +296,6 @@ public:
 };
 } // namespace
 
-llvm::Expected<std::string>
-StencilInterface::eval(const MatchFinder::MatchResult &R) const {
-  std::string Output;
-  if (auto Err = eval(R, &Output))
-    return std::move(Err);
-  return Output;
-}
-
 Stencil transformer::detail::makeStencil(StringRef Text) { return text(Text); }
 
 Stencil transformer::detail::makeStencil(RangeSelector Selector) {
@@ -287,52 +303,60 @@ Stencil transformer::detail::makeStencil(RangeSelector Selector) {
 }
 
 Stencil transformer::text(StringRef Text) {
-  return Stencil(std::make_shared<StencilImpl<RawTextData>>(Text));
+  return std::make_shared<StencilImpl<RawTextData>>(Text);
 }
 
 Stencil transformer::selection(RangeSelector Selector) {
-  return Stencil(
-      std::make_shared<StencilImpl<SelectorData>>(std::move(Selector)));
+  return std::make_shared<StencilImpl<SelectorData>>(std::move(Selector));
 }
 
 Stencil transformer::dPrint(StringRef Id) {
-  return Stencil(std::make_shared<StencilImpl<DebugPrintNodeData>>(Id));
+  return std::make_shared<StencilImpl<DebugPrintNodeData>>(Id);
 }
 
 Stencil transformer::expression(llvm::StringRef Id) {
-  return Stencil(std::make_shared<StencilImpl<UnaryOperationData>>(
-      UnaryNodeOperator::Parens, Id));
+  return std::make_shared<StencilImpl<UnaryOperationData>>(
+      UnaryNodeOperator::Parens, Id);
 }
 
 Stencil transformer::deref(llvm::StringRef ExprId) {
-  return Stencil(std::make_shared<StencilImpl<UnaryOperationData>>(
-      UnaryNodeOperator::Deref, ExprId));
+  return std::make_shared<StencilImpl<UnaryOperationData>>(
+      UnaryNodeOperator::Deref, ExprId);
+}
+
+Stencil transformer::maybeDeref(llvm::StringRef ExprId) {
+  return std::make_shared<StencilImpl<UnaryOperationData>>(
+      UnaryNodeOperator::MaybeDeref, ExprId);
 }
 
 Stencil transformer::addressOf(llvm::StringRef ExprId) {
-  return Stencil(std::make_shared<StencilImpl<UnaryOperationData>>(
-      UnaryNodeOperator::Address, ExprId));
+  return std::make_shared<StencilImpl<UnaryOperationData>>(
+      UnaryNodeOperator::AddressOf, ExprId);
+}
+
+Stencil transformer::maybeAddressOf(llvm::StringRef ExprId) {
+  return std::make_shared<StencilImpl<UnaryOperationData>>(
+      UnaryNodeOperator::MaybeAddressOf, ExprId);
 }
 
 Stencil transformer::access(StringRef BaseId, Stencil Member) {
-  return Stencil(
-      std::make_shared<StencilImpl<AccessData>>(BaseId, std::move(Member)));
+  return std::make_shared<StencilImpl<AccessData>>(BaseId, std::move(Member));
 }
 
 Stencil transformer::ifBound(StringRef Id, Stencil TrueStencil,
                              Stencil FalseStencil) {
-  return Stencil(std::make_shared<StencilImpl<IfBoundData>>(
-      Id, std::move(TrueStencil), std::move(FalseStencil)));
+  return std::make_shared<StencilImpl<IfBoundData>>(Id, std::move(TrueStencil),
+                                                    std::move(FalseStencil));
 }
 
 Stencil transformer::run(MatchConsumer<std::string> Fn) {
-  return Stencil(
-      std::make_shared<StencilImpl<MatchConsumer<std::string>>>(std::move(Fn)));
+  return std::make_shared<StencilImpl<MatchConsumer<std::string>>>(
+      std::move(Fn));
 }
 
 Stencil transformer::catVector(std::vector<Stencil> Parts) {
   // Only one argument, so don't wrap in sequence.
   if (Parts.size() == 1)
     return std::move(Parts[0]);
-  return Stencil(std::make_shared<StencilImpl<SequenceData>>(std::move(Parts)));
+  return std::make_shared<StencilImpl<SequenceData>>(std::move(Parts));
 }

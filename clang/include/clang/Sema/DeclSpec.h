@@ -833,7 +833,8 @@ public:
     DQ_PR_unsafe_unretained = 0x800,
     DQ_PR_nullability = 0x1000,
     DQ_PR_null_resettable = 0x2000,
-    DQ_PR_class = 0x4000
+    DQ_PR_class = 0x4000,
+    DQ_PR_direct = 0x8000,
   };
 
   ObjCDeclSpec()
@@ -903,7 +904,7 @@ private:
   unsigned objcDeclQualifier : 7;
 
   // NOTE: VC++ treats enums as signed, avoid using ObjCPropertyAttributeKind
-  unsigned PropertyAttributes : 15;
+  unsigned PropertyAttributes : 16;
 
   unsigned Nullability : 2;
 
@@ -1756,7 +1757,8 @@ enum class DeclaratorContext {
     TemplateArgContext,  // Any template argument (in template argument list).
     TemplateTypeArgContext, // Template type argument (in default argument).
     AliasDeclContext,    // C++11 alias-declaration.
-    AliasTemplateContext // C++11 alias-declaration template.
+    AliasTemplateContext, // C++11 alias-declaration template.
+    RequiresExprContext   // C++2a requires-expression.
 };
 
 
@@ -1825,6 +1827,10 @@ private:
   /// The asm label, if specified.
   Expr *AsmLabel;
 
+  /// \brief The constraint-expression specified by the trailing
+  /// requires-clause, or null if no such clause was specified.
+  Expr *TrailingRequiresClause;
+
 #ifndef _MSC_VER
   union {
 #endif
@@ -1854,7 +1860,8 @@ public:
         GroupingParens(false), FunctionDefinition(FDK_Declaration),
         Redeclaration(false), Extension(false), ObjCIvar(false),
         ObjCWeakProperty(false), InlineStorageUsed(false),
-        Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr) {}
+        Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr),
+        TrailingRequiresClause(nullptr) {}
 
   ~Declarator() {
     clear();
@@ -1975,6 +1982,7 @@ public:
     case DeclaratorContext::TemplateTypeArgContext:
     case DeclaratorContext::TrailingReturnContext:
     case DeclaratorContext::TrailingReturnVarContext:
+    case DeclaratorContext::RequiresExprContext:
       return true;
     }
     llvm_unreachable("unknown context kind!");
@@ -1997,6 +2005,7 @@ public:
     case DeclaratorContext::TemplateParamContext:
     case DeclaratorContext::CXXCatchContext:
     case DeclaratorContext::ObjCCatchContext:
+    case DeclaratorContext::RequiresExprContext:
       return true;
 
     case DeclaratorContext::TypeNameContext:
@@ -2033,6 +2042,7 @@ public:
     case DeclaratorContext::MemberContext:
     case DeclaratorContext::PrototypeContext:
     case DeclaratorContext::TemplateParamContext:
+    case DeclaratorContext::RequiresExprContext:
       // Maybe one day...
       return false;
 
@@ -2110,6 +2120,7 @@ public:
     case DeclaratorContext::TemplateArgContext:
     case DeclaratorContext::TemplateTypeArgContext:
     case DeclaratorContext::TrailingReturnContext:
+    case DeclaratorContext::RequiresExprContext:
       return false;
     }
     llvm_unreachable("unknown context kind!");
@@ -2331,6 +2342,7 @@ public:
     case DeclaratorContext::TemplateTypeArgContext:
     case DeclaratorContext::TrailingReturnContext:
     case DeclaratorContext::TrailingReturnVarContext:
+    case DeclaratorContext::RequiresExprContext:
       return false;
     }
     llvm_unreachable("unknown context kind!");
@@ -2364,6 +2376,7 @@ public:
     case DeclaratorContext::TrailingReturnContext:
     case DeclaratorContext::TrailingReturnVarContext:
     case DeclaratorContext::TemplateTypeArgContext:
+    case DeclaratorContext::RequiresExprContext:
       return false;
 
     case DeclaratorContext::BlockContext:
@@ -2398,6 +2411,22 @@ public:
           Chunk.Fun.hasTrailingReturnType())
         return true;
     return false;
+  }
+
+  /// \brief Sets a trailing requires clause for this declarator.
+  void setTrailingRequiresClause(Expr *TRC) {
+    TrailingRequiresClause = TRC;
+  }
+
+  /// \brief Sets a trailing requires clause for this declarator.
+  Expr *getTrailingRequiresClause() {
+    return TrailingRequiresClause;
+  }
+
+  /// \brief Determine whether a trailing requires clause was written in this
+  /// declarator.
+  bool hasTrailingRequiresClause() const {
+    return TrailingRequiresClause != nullptr;
   }
 
   /// takeAttributes - Takes attributes from the given parsed-attributes

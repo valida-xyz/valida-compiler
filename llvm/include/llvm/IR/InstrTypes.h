@@ -47,7 +47,7 @@
 namespace llvm {
 
 namespace Intrinsic {
-enum ID : unsigned;
+typedef unsigned ID;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1272,6 +1272,19 @@ public:
     return isArgOperand(&UI.getUse());
   }
 
+  /// Given a use for a arg operand, get the arg operand number that
+  /// corresponds to it.
+  unsigned getArgOperandNo(const Use *U) const {
+    assert(isArgOperand(U) && "Arg operand # out of range!");
+    return U - arg_begin();
+  }
+
+  /// Given a value use iterator, return the arg operand number corresponding to
+  /// it. Iterator must actually correspond to a data operand.
+  unsigned getArgOperandNo(Value::const_user_iterator UI) const {
+    return getArgOperandNo(&UI.getUse());
+  }
+
   /// Returns true if this CallSite passes the given Value* as an argument to
   /// the called function.
   bool hasArgument(const Value *V) const {
@@ -1572,17 +1585,29 @@ public:
   }
 
   /// Extract the alignment of the return value.
+  /// FIXME: Remove this function once transition to Align is over.
+  /// Use getRetAlign() instead.
   unsigned getRetAlignment() const {
     if (const auto MA = Attrs.getRetAlignment())
       return MA->value();
     return 0;
   }
 
+  /// Extract the alignment of the return value.
+  MaybeAlign getRetAlign() const { return Attrs.getRetAlignment(); }
+
   /// Extract the alignment for a call or parameter (0=unknown).
+  /// FIXME: Remove this function once transition to Align is over.
+  /// Use getParamAlign() instead.
   unsigned getParamAlignment(unsigned ArgNo) const {
     if (const auto MA = Attrs.getParamAlignment(ArgNo))
       return MA->value();
     return 0;
+  }
+
+  /// Extract the alignment for a call or parameter (0=unknown).
+  MaybeAlign getParamAlign(unsigned ArgNo) const {
+    return Attrs.getParamAlignment(ArgNo);
   }
 
   /// Extract the byval type for a call or parameter.
@@ -1922,7 +1947,7 @@ public:
   /// Is the function attribute S disallowed by some operand bundle on
   /// this operand bundle user?
   bool isFnAttrDisallowedByOpBundle(StringRef S) const {
-    // Operand bundles only possibly disallow readnone, readonly and argmenonly
+    // Operand bundles only possibly disallow readnone, readonly and argmemonly
     // attributes.  All String attributes are fine.
     return false;
   }

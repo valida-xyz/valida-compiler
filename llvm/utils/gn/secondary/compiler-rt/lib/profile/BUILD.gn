@@ -25,10 +25,16 @@ static_library("profile") {
     cflags += [ "/wd4221" ]
   }
 
+  include_dirs = [
+    "..",
+    "../../include",
+  ]
+
   sources = [
     "GCDAProfiling.c",
     "InstrProfiling.c",
     "InstrProfiling.h",
+    "InstrProfilingBiasVar.c",
     "InstrProfilingBuffer.c",
     "InstrProfilingFile.c",
     "InstrProfilingInternal.h",

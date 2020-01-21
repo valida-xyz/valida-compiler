@@ -53,8 +53,8 @@ TriCoreInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
 
 void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator MI,
-                                   const DebugLoc &DL, unsigned DestReg,
-                                   unsigned SrcReg, bool KillSrc) const {
+                                   const DebugLoc &DL, MCRegister DestReg,
+                                   MCRegister SrcReg, bool KillSrc) const {
 
   if (TriCore::DataRegsRegClass.contains(DestReg)) {
 
@@ -93,8 +93,8 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
     // Copy from extended data register to extended data register -> MOV_edd
     if (TriCore::ExtDataRegsRegClass.contains(SrcReg)) {
-      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
-      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
+      const MCRegister LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
+      const MCRegister HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
 
       BuildMI(MBB, MI, DL, get(TriCore::MOV_edd), DestReg)
           .addUse(HigherSrcReg, getKillRegState(KillSrc))
@@ -113,11 +113,11 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     // We need to move both sub-registers from the extended address
     // register to data registers using MOV_da
     if (TriCore::ExtAddrRegsRegClass.contains(SrcReg)) {
-      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
-      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
+      const MCRegister LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
+      const MCRegister HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
 
-      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::dsub0);
-      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::dsub1);
+      const MCRegister LowerDstReg = TRI.getSubReg(DestReg, TriCore::dsub0);
+      const MCRegister HigherDstReg = TRI.getSubReg(DestReg, TriCore::dsub1);
 
       BuildMI(MBB, MI, DL, get(TriCore::MOVD_da), LowerDstReg)
           .addUse(LowerSrcReg, getKillRegState(KillSrc));
@@ -134,11 +134,11 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     // We need to move both sub-registers from the extended address
     // register to the address registers using MOVAA_aa
     if (TriCore::ExtAddrRegsRegClass.contains(SrcReg)) {
-      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
-      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
+      const MCRegister LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::asub0);
+      const MCRegister HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::asub1);
 
-      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
-      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
+      const MCRegister LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
+      const MCRegister HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
 
       BuildMI(MBB, MI, DL, get(TriCore::MOVAA_aa), LowerDstReg)
           .addUse(LowerSrcReg, getKillRegState(KillSrc));
@@ -152,11 +152,11 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     // We need to move both sub-registers from the extended address
     // register to the data registers using MOVA_ad
     if (TriCore::ExtDataRegsRegClass.contains(SrcReg)) {
-      const unsigned LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
-      const unsigned HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
+      const MCRegister LowerSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub0);
+      const MCRegister HigherSrcReg = TRI.getSubReg(SrcReg, TriCore::dsub1);
 
-      const unsigned LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
-      const unsigned HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
+      const MCRegister LowerDstReg = TRI.getSubReg(DestReg, TriCore::asub0);
+      const MCRegister HigherDstReg = TRI.getSubReg(DestReg, TriCore::asub1);
 
       BuildMI(MBB, MI, DL, get(TriCore::MOVA_ad), LowerDstReg)
           .addUse(LowerSrcReg, getKillRegState(KillSrc));

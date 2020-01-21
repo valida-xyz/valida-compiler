@@ -244,7 +244,10 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     S32, S64, S16, V2S16
   };
 
-  setAction({G_BRCOND, S1}, Legal);
+  const LLT MinLegalScalarShiftTy = ST.has16BitInsts() ? S16 : S32;
+
+  setAction({G_BRCOND, S1}, Legal); // VCC branches
+  setAction({G_BRCOND, S32}, Legal); // SCC branches
 
   // TODO: All multiples of 32, vectors of pointers, all v2s16 pairs, more
   // elements for v3s16
@@ -272,6 +275,13 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .scalarize(0);
   }
 
+  // FIXME: Not really legal. Placeholder for custom lowering.
+  getActionDefinitionsBuilder({G_SDIV, G_UDIV, G_SREM, G_UREM})
+    .legalFor({S32, S64})
+    .clampScalar(0, S32, S64)
+    .widenScalarToNextPow2(0, 32)
+    .scalarize(0);
+
   getActionDefinitionsBuilder({G_UMULH, G_SMULH})
     .legalFor({S32})
     .clampScalar(0, S32, S32)
@@ -289,7 +299,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   getActionDefinitionsBuilder({G_UADDO, G_USUBO,
                                G_UADDE, G_SADDE, G_USUBE, G_SSUBE})
-    .legalFor({{S32, S1}})
+    .legalFor({{S32, S1}, {S32, S32}})
     .clampScalar(0, S32, S32)
     .scalarize(0); // TODO: Implement.
 
@@ -300,7 +310,9 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     // Don't worry about the size constraint.
     .legalIf(all(isRegisterType(0), isRegisterType(1)))
     // FIXME: Testing hack
-    .legalForCartesianProduct({S16, LLT::vector(2, 8), });
+    .legalForCartesianProduct({S16, LLT::vector(2, 8), })
+    .lower();
+
 
   getActionDefinitionsBuilder(G_FCONSTANT)
     .legalFor({S32, S64, S16})
@@ -354,6 +366,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   if (ST.hasVOP3PInsts()) {
     MinNumMaxNum.customFor(FPTypesPK16)
+      .moreElementsIf(isSmallOddVector(0), oneMoreElement(0))
       .clampMaxNumElements(0, S16, 2)
       .clampScalar(0, S16, S64)
       .scalarize(0);
@@ -438,13 +451,15 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
                {S96, S32},
                // FIXME: Hack
                {S64, LLT::scalar(33)},
-               {S32, S8}, {S128, S32}, {S128, S64}, {S32, LLT::scalar(24)}})
-    .scalarize(0);
+               {S32, S8}, {S32, LLT::scalar(24)}})
+    .scalarize(0)
+    .clampScalar(0, S32, S64);
 
   // TODO: Split s1->s64 during regbankselect for VALU.
   auto &IToFP = getActionDefinitionsBuilder({G_SITOFP, G_UITOFP})
-    .legalFor({{S32, S32}, {S64, S32}, {S16, S32}, {S32, S1}, {S16, S1}, {S64, S1}})
+    .legalFor({{S32, S32}, {S64, S32}, {S16, S32}})
     .lowerFor({{S32, S64}})
+    .lowerIf(typeIs(1, S1))
     .customFor({{S64, S64}});
   if (ST.has16BitInsts())
     IToFP.legalFor({{S16, S16}});
@@ -462,10 +477,15 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
        .scalarize(0);
 
   getActionDefinitionsBuilder(G_INTRINSIC_ROUND)
-    .legalFor({S32, S64})
-    .scalarize(0);
+    .scalarize(0)
+    .lower();
 
-  if (ST.getGeneration() >= AMDGPUSubtarget::SEA_ISLANDS) {
+  if (ST.has16BitInsts()) {
+    getActionDefinitionsBuilder({G_INTRINSIC_TRUNC, G_FCEIL, G_FRINT})
+      .legalFor({S16, S32, S64})
+      .clampScalar(0, S16, S64)
+      .scalarize(0);
+  } else if (ST.getGeneration() >= AMDGPUSubtarget::SEA_ISLANDS) {
     getActionDefinitionsBuilder({G_INTRINSIC_TRUNC, G_FCEIL, G_FRINT})
       .legalFor({S32, S64})
       .clampScalar(0, S32, S64)
@@ -491,9 +511,20 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
   auto &CmpBuilder =
     getActionDefinitionsBuilder(G_ICMP)
+    // The compare output type differs based on the register bank of the output,
+    // so make both s1 and s32 legal.
+    //
+    // Scalar compares producing output in scc will be promoted to s32, as that
+    // is the allocatable register type that will be needed for the copy from
+    // scc. This will be promoted during RegBankSelect, and we assume something
+    // before that won't try to use s32 result types.
+    //
+    // Vector compares producing an output in vcc/SGPR will use s1 in VCC reg
+    // bank.
     .legalForCartesianProduct(
       {S1}, {S32, S64, GlobalPtr, LocalPtr, ConstantPtr, PrivatePtr, FlatPtr})
-    .legalFor({{S1, S32}, {S1, S64}});
+    .legalForCartesianProduct(
+      {S32}, {S32, S64, GlobalPtr, LocalPtr, ConstantPtr, PrivatePtr, FlatPtr});
   if (ST.has16BitInsts()) {
     CmpBuilder.legalFor({{S1, S16}});
   }
@@ -502,7 +533,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     .widenScalarToNextPow2(1)
     .clampScalar(1, S32, S64)
     .scalarize(0)
-    .legalIf(all(typeIs(0, S1), isPointer(1)));
+    .legalIf(all(typeInSet(0, {S1, S32}), isPointer(1)));
 
   getActionDefinitionsBuilder(G_FCMP)
     .legalForCartesianProduct({S1}, ST.has16BitInsts() ? FPTypes16 : FPTypesBase)
@@ -639,6 +670,11 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
 
     // Split vector extloads.
     unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+    unsigned Align = Query.MMODescrs[0].AlignInBits;
+
+    if (MemSize < DstTy.getSizeInBits())
+      MemSize = std::max(MemSize, Align);
+
     if (DstTy.isVector() && DstTy.getSizeInBits() > MemSize)
       return true;
 
@@ -653,7 +689,6 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     if (NumRegs == 3 && !ST.hasDwordx3LoadStores())
       return true;
 
-    unsigned Align = Query.MMODescrs[0].AlignInBits;
     if (Align < MemSize) {
       const SITargetLowering *TLI = ST.getTargetLowering();
       return !TLI->allowsMisalignedMemoryAccessesImpl(MemSize, AS, Align / 8);
@@ -795,13 +830,13 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
           unsigned MemSize = Query.MMODescrs[0].SizeInBits;
           unsigned Align = Query.MMODescrs[0].AlignInBits;
 
-          // No extending vector loads.
-          if (Size > MemSize && Ty0.isVector())
-            return false;
-
           // FIXME: Widening store from alignment not valid.
           if (MemSize < Size)
             MemSize = std::max(MemSize, Align);
+
+          // No extending vector loads.
+          if (Size > MemSize && Ty0.isVector())
+            return false;
 
           switch (MemSize) {
           case 8:
@@ -870,10 +905,12 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     .lower();
 
   // TODO: Pointer types, any 32-bit or 64-bit vector
+
+  // Condition should be s32 for scalar, s1 for vector.
   getActionDefinitionsBuilder(G_SELECT)
     .legalForCartesianProduct({S32, S64, S16, V2S32, V2S16, V4S16,
           GlobalPtr, LocalPtr, FlatPtr, PrivatePtr,
-          LLT::vector(2, LocalPtr), LLT::vector(2, PrivatePtr)}, {S1})
+          LLT::vector(2, LocalPtr), LLT::vector(2, PrivatePtr)}, {S1, S32})
     .clampScalar(0, S16, S64)
     .moreElementsIf(isSmallOddVector(0), oneMoreElement(0))
     .fewerElementsIf(numElementsNotEven(0), scalarize(0))
@@ -883,7 +920,7 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     .clampMaxNumElements(0, PrivatePtr, 2)
     .scalarize(0)
     .widenScalarToNextPow2(0)
-    .legalIf(all(isPointer(0), typeIs(1, S1)));
+    .legalIf(all(isPointer(0), typeInSet(1, {S1, S32})));
 
   // TODO: Only the low 4/5/6 bits of the shift amount are observed, so we can
   // be more flexible with the shift amount type.
@@ -896,7 +933,8 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     } else
       Shifts.legalFor({{S16, S32}, {S16, S16}});
 
-    Shifts.clampScalar(1, S16, S32);
+    // TODO: Support 16-bit shift amounts
+    Shifts.clampScalar(1, S32, S32);
     Shifts.clampScalar(0, S16, S64);
     Shifts.widenScalarToNextPow2(0, 16);
   } else {
@@ -1081,7 +1119,20 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .scalarize(1);
   }
 
-  getActionDefinitionsBuilder(G_SEXT_INREG).lower();
+  // TODO: Make legal for s32, s64. s64 case needs break down in regbankselect.
+  getActionDefinitionsBuilder(G_SEXT_INREG)
+    .clampScalar(0, MinLegalScalarShiftTy, S64)
+    .lower();
+
+  getActionDefinitionsBuilder({G_READ_REGISTER, G_WRITE_REGISTER}).lower();
+
+  getActionDefinitionsBuilder(G_READCYCLECOUNTER)
+    .legalFor({S64});
+
+  getActionDefinitionsBuilder({G_VASTART, G_VAARG, G_BRJT, G_JUMP_TABLE,
+        G_DYN_STACKALLOC, G_INDEXED_LOAD, G_INDEXED_SEXTLOAD,
+        G_INDEXED_ZEXTLOAD, G_INDEXED_STORE})
+    .unsupported();
 
   computeTables();
   verify(*ST.getInstrInfo());
@@ -1185,12 +1236,8 @@ Register AMDGPULegalizerInfo::getSegmentAperture(
   // private_segment_aperture_base_hi.
   uint32_t StructOffset = (AS == AMDGPUAS::LOCAL_ADDRESS) ? 0x40 : 0x44;
 
-  // FIXME: Don't use undef
-  Value *V = UndefValue::get(PointerType::get(
-                               Type::getInt8Ty(MF.getFunction().getContext()),
-                               AMDGPUAS::CONSTANT_ADDRESS));
-
-  MachinePointerInfo PtrInfo(V, StructOffset);
+  // TODO: can we be smarter about machine pointer info?
+  MachinePointerInfo PtrInfo(AMDGPUAS::CONSTANT_ADDRESS);
   MachineMemOperand *MMO = MF.getMachineMemOperand(
     PtrInfo,
     MachineMemOperand::MOLoad |
@@ -1719,13 +1766,15 @@ bool AMDGPULegalizerInfo::legalizeFMad(
   LLT Ty = MRI.getType(MI.getOperand(0).getReg());
   assert(Ty.isScalar());
 
+  MachineFunction &MF = B.getMF();
+  const SIMachineFunctionInfo *MFI = MF.getInfo<SIMachineFunctionInfo>();
+
   // TODO: Always legal with future ftz flag.
-  if (Ty == LLT::scalar(32) && !ST.hasFP32Denormals())
+  if (Ty == LLT::scalar(32) && !MFI->getMode().FP32Denormals)
     return true;
-  if (Ty == LLT::scalar(16) && !ST.hasFP16Denormals())
+  if (Ty == LLT::scalar(16) && !MFI->getMode().FP64FP16Denormals)
     return true;
 
-  MachineFunction &MF = B.getMF();
 
   MachineIRBuilder HelperBuilder(MI);
   GISelObserverWrapper DummyObserver;
@@ -1763,14 +1812,26 @@ bool AMDGPULegalizerInfo::legalizeAtomicCmpXChg(
 
 // Return the use branch instruction, otherwise null if the usage is invalid.
 static MachineInstr *verifyCFIntrinsic(MachineInstr &MI,
-                                       MachineRegisterInfo &MRI) {
+                                       MachineRegisterInfo &MRI,
+                                       MachineInstr *&Br) {
   Register CondDef = MI.getOperand(0).getReg();
   if (!MRI.hasOneNonDBGUse(CondDef))
     return nullptr;
 
   MachineInstr &UseMI = *MRI.use_instr_nodbg_begin(CondDef);
-  return UseMI.getParent() == MI.getParent() &&
-    UseMI.getOpcode() == AMDGPU::G_BRCOND ? &UseMI : nullptr;
+  if (UseMI.getParent() != MI.getParent() ||
+      UseMI.getOpcode() != AMDGPU::G_BRCOND)
+    return nullptr;
+
+  // Make sure the cond br is followed by a G_BR
+  MachineBasicBlock::iterator Next = std::next(UseMI.getIterator());
+  if (Next != MI.getParent()->end()) {
+    if (Next->getOpcode() != AMDGPU::G_BR)
+      return nullptr;
+    Br = &*Next;
+  }
+
+  return &UseMI;
 }
 
 Register AMDGPULegalizerInfo::getLiveInRegister(MachineRegisterInfo &MRI,
@@ -1864,6 +1925,7 @@ bool AMDGPULegalizerInfo::legalizeFDIV(MachineInstr &MI,
   LLT DstTy = MRI.getType(Dst);
   LLT S16 = LLT::scalar(16);
   LLT S32 = LLT::scalar(32);
+  LLT S64 = LLT::scalar(64);
 
   if (legalizeFastUnsafeFDIV(MI, MRI, B))
     return true;
@@ -1872,6 +1934,8 @@ bool AMDGPULegalizerInfo::legalizeFDIV(MachineInstr &MI,
     return legalizeFDIV16(MI, MRI, B);
   if (DstTy == S32)
     return legalizeFDIV32(MI, MRI, B);
+  if (DstTy == S64)
+    return legalizeFDIV64(MI, MRI, B);
 
   return false;
 }
@@ -1896,7 +1960,8 @@ bool AMDGPULegalizerInfo::legalizeFastUnsafeFDIV(MachineInstr &MI,
   if (!MF.getTarget().Options.UnsafeFPMath && ResTy == S64)
     return false;
 
-  if (!Unsafe && ResTy == S32 && ST.hasFP32Denormals())
+  if (!Unsafe && ResTy == S32 &&
+      MF.getInfo<SIMachineFunctionInfo>()->getMode().FP32Denormals)
     return false;
 
   if (auto CLHS = getConstantFPVRegVal(LHS, MRI)) {
@@ -1972,15 +2037,16 @@ bool AMDGPULegalizerInfo::legalizeFDIV16(MachineInstr &MI,
 // Enable or disable FP32 denorm mode. When 'Enable' is true, emit instructions
 // to enable denorm mode. When 'Enable' is false, disable denorm mode.
 static void toggleSPDenormMode(bool Enable,
+                               MachineIRBuilder &B,
                                const GCNSubtarget &ST,
-                               MachineIRBuilder &B) {
+                               AMDGPU::SIModeRegisterDefaults Mode) {
   // Set SP denorm mode to this value.
   unsigned SPDenormMode =
     Enable ? FP_DENORM_FLUSH_NONE : FP_DENORM_FLUSH_IN_FLUSH_OUT;
 
   if (ST.hasDenormModeInst()) {
     // Preserve default FP64FP16 denorm mode while updating FP32 mode.
-    unsigned DPDenormModeDefault = ST.hasFP64Denormals()
+    unsigned DPDenormModeDefault = Mode.FP64FP16Denormals
                                    ? FP_DENORM_FLUSH_NONE
                                    : FP_DENORM_FLUSH_IN_FLUSH_OUT;
 
@@ -2007,6 +2073,8 @@ bool AMDGPULegalizerInfo::legalizeFDIV32(MachineInstr &MI,
   Register Res = MI.getOperand(0).getReg();
   Register LHS = MI.getOperand(1).getReg();
   Register RHS = MI.getOperand(2).getReg();
+  const SIMachineFunctionInfo *MFI = B.getMF().getInfo<SIMachineFunctionInfo>();
+  AMDGPU::SIModeRegisterDefaults Mode = MFI->getMode();
 
   uint16_t Flags = MI.getFlags();
 
@@ -2018,14 +2086,14 @@ bool AMDGPULegalizerInfo::legalizeFDIV32(MachineInstr &MI,
   auto DenominatorScaled =
     B.buildIntrinsic(Intrinsic::amdgcn_div_scale, {S32, S1}, false)
       .addUse(RHS)
-      .addUse(RHS)
       .addUse(LHS)
+      .addImm(1)
       .setMIFlags(Flags);
   auto NumeratorScaled =
     B.buildIntrinsic(Intrinsic::amdgcn_div_scale, {S32, S1}, false)
       .addUse(LHS)
       .addUse(RHS)
-      .addUse(LHS)
+      .addImm(0)
       .setMIFlags(Flags);
 
   auto ApproxRcp = B.buildIntrinsic(Intrinsic::amdgcn_rcp, {S32}, false)
@@ -2035,8 +2103,8 @@ bool AMDGPULegalizerInfo::legalizeFDIV32(MachineInstr &MI,
 
   // FIXME: Doesn't correctly model the FP mode switch, and the FP operations
   // aren't modeled as reading it.
-  if (!ST.hasFP32Denormals())
-    toggleSPDenormMode(true, ST, B);
+  if (!Mode.FP32Denormals)
+    toggleSPDenormMode(true, B, ST, Mode);
 
   auto Fma0 = B.buildFMA(S32, NegDivScale0, ApproxRcp, One, Flags);
   auto Fma1 = B.buildFMA(S32, Fma0, ApproxRcp, ApproxRcp, Flags);
@@ -2045,8 +2113,8 @@ bool AMDGPULegalizerInfo::legalizeFDIV32(MachineInstr &MI,
   auto Fma3 = B.buildFMA(S32, Fma2, Fma1, Mul, Flags);
   auto Fma4 = B.buildFMA(S32, NegDivScale0, Fma3, NumeratorScaled, Flags);
 
-  if (!ST.hasFP32Denormals())
-    toggleSPDenormMode(false, ST, B);
+  if (!Mode.FP32Denormals)
+    toggleSPDenormMode(false, B, ST, Mode);
 
   auto Fmas = B.buildIntrinsic(Intrinsic::amdgcn_div_fmas, {S32}, false)
     .addUse(Fma4.getReg(0))
@@ -2056,6 +2124,87 @@ bool AMDGPULegalizerInfo::legalizeFDIV32(MachineInstr &MI,
     .setMIFlags(Flags);
 
   B.buildIntrinsic(Intrinsic::amdgcn_div_fixup, Res, false)
+    .addUse(Fmas.getReg(0))
+    .addUse(RHS)
+    .addUse(LHS)
+    .setMIFlags(Flags);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool AMDGPULegalizerInfo::legalizeFDIV64(MachineInstr &MI,
+                                         MachineRegisterInfo &MRI,
+                                         MachineIRBuilder &B) const {
+  B.setInstr(MI);
+  Register Res = MI.getOperand(0).getReg();
+  Register LHS = MI.getOperand(1).getReg();
+  Register RHS = MI.getOperand(2).getReg();
+
+  uint16_t Flags = MI.getFlags();
+
+  LLT S64 = LLT::scalar(64);
+  LLT S1 = LLT::scalar(1);
+
+  auto One = B.buildFConstant(S64, 1.0);
+
+  auto DivScale0 = B.buildIntrinsic(Intrinsic::amdgcn_div_scale, {S64, S1}, false)
+    .addUse(LHS)
+    .addUse(RHS)
+    .addImm(1)
+    .setMIFlags(Flags);
+
+  auto NegDivScale0 = B.buildFNeg(S64, DivScale0.getReg(0), Flags);
+
+  auto Rcp = B.buildIntrinsic(Intrinsic::amdgcn_rcp, {S64}, false)
+    .addUse(DivScale0.getReg(0))
+    .setMIFlags(Flags);
+
+  auto Fma0 = B.buildFMA(S64, NegDivScale0, Rcp, One, Flags);
+  auto Fma1 = B.buildFMA(S64, Rcp, Fma0, Rcp, Flags);
+  auto Fma2 = B.buildFMA(S64, NegDivScale0, Fma1, One, Flags);
+
+  auto DivScale1 = B.buildIntrinsic(Intrinsic::amdgcn_div_scale, {S64, S1}, false)
+    .addUse(LHS)
+    .addUse(RHS)
+    .addImm(0)
+    .setMIFlags(Flags);
+
+  auto Fma3 = B.buildFMA(S64, Fma1, Fma2, Fma1, Flags);
+  auto Mul = B.buildMul(S64, DivScale1.getReg(0), Fma3, Flags);
+  auto Fma4 = B.buildFMA(S64, NegDivScale0, Mul, DivScale1.getReg(0), Flags);
+
+  Register Scale;
+  if (!ST.hasUsableDivScaleConditionOutput()) {
+    // Workaround a hardware bug on SI where the condition output from div_scale
+    // is not usable.
+
+    Scale = MRI.createGenericVirtualRegister(S1);
+
+    LLT S32 = LLT::scalar(32);
+
+    auto NumUnmerge = B.buildUnmerge(S32, LHS);
+    auto DenUnmerge = B.buildUnmerge(S32, RHS);
+    auto Scale0Unmerge = B.buildUnmerge(S32, DivScale0);
+    auto Scale1Unmerge = B.buildUnmerge(S32, DivScale1);
+
+    auto CmpNum = B.buildICmp(ICmpInst::ICMP_EQ, S1, NumUnmerge.getReg(1),
+                              Scale1Unmerge.getReg(1));
+    auto CmpDen = B.buildICmp(ICmpInst::ICMP_EQ, S1, DenUnmerge.getReg(1),
+                              Scale0Unmerge.getReg(1));
+    B.buildXor(Scale, CmpNum, CmpDen);
+  } else {
+    Scale = DivScale1.getReg(1);
+  }
+
+  auto Fmas = B.buildIntrinsic(Intrinsic::amdgcn_div_fmas, {S64}, false)
+    .addUse(Fma4.getReg(0))
+    .addUse(Fma3.getReg(0))
+    .addUse(Mul.getReg(0))
+    .addUse(Scale)
+    .setMIFlags(Flags);
+
+  B.buildIntrinsic(Intrinsic::amdgcn_div_fixup, makeArrayRef(Res), false)
     .addUse(Fmas.getReg(0))
     .addUse(RHS)
     .addUse(LHS)
@@ -2207,19 +2356,38 @@ bool AMDGPULegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
                                             MachineRegisterInfo &MRI,
                                             MachineIRBuilder &B) const {
   // Replace the use G_BRCOND with the exec manipulate and branch pseudos.
-  switch (MI.getIntrinsicID()) {
-  case Intrinsic::amdgcn_if: {
-    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI)) {
+  auto IntrID = MI.getIntrinsicID();
+  switch (IntrID) {
+  case Intrinsic::amdgcn_if:
+  case Intrinsic::amdgcn_else: {
+    MachineInstr *Br = nullptr;
+    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br)) {
       const SIRegisterInfo *TRI
         = static_cast<const SIRegisterInfo *>(MRI.getTargetRegisterInfo());
 
       B.setInstr(*BrCond);
       Register Def = MI.getOperand(1).getReg();
       Register Use = MI.getOperand(3).getReg();
-      B.buildInstr(AMDGPU::SI_IF)
-        .addDef(Def)
-        .addUse(Use)
-        .addMBB(BrCond->getOperand(1).getMBB());
+
+      MachineBasicBlock *BrTarget = BrCond->getOperand(1).getMBB();
+      if (Br)
+        BrTarget = Br->getOperand(0).getMBB();
+
+      if (IntrID == Intrinsic::amdgcn_if) {
+        B.buildInstr(AMDGPU::SI_IF)
+          .addDef(Def)
+          .addUse(Use)
+          .addMBB(BrTarget);
+      } else {
+        B.buildInstr(AMDGPU::SI_ELSE)
+          .addDef(Def)
+          .addUse(Use)
+          .addMBB(BrTarget)
+          .addImm(0);
+      }
+
+      if (Br)
+        Br->getOperand(0).setMBB(BrCond->getOperand(1).getMBB());
 
       MRI.setRegClass(Def, TRI->getWaveMaskRegClass());
       MRI.setRegClass(Use, TRI->getWaveMaskRegClass());
@@ -2231,11 +2399,14 @@ bool AMDGPULegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
     return false;
   }
   case Intrinsic::amdgcn_loop: {
-    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI)) {
+    MachineInstr *Br = nullptr;
+    if (MachineInstr *BrCond = verifyCFIntrinsic(MI, MRI, Br)) {
       const SIRegisterInfo *TRI
         = static_cast<const SIRegisterInfo *>(MRI.getTargetRegisterInfo());
 
       B.setInstr(*BrCond);
+
+      // FIXME: Need to adjust branch targets based on unconditional branch.
       Register Reg = MI.getOperand(2).getReg();
       B.buildInstr(AMDGPU::SI_LOOP)
         .addUse(Reg)

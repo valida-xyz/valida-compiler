@@ -1,4 +1,4 @@
-; RUN: opt -mtriple=x86_64-- -Os -debug-pass=Structure < %s -o /dev/null 2>&1 | FileCheck %s
+; RUN: opt -mtriple=x86_64-- -Os -debug-pass=Structure < %s -o /dev/null 2>&1 | FileCheck --check-prefixes=CHECK,%llvmcheckext %s
 
 ; REQUIRES: asserts
 
@@ -10,6 +10,8 @@
 ; CHECK-NEXT: Target Library Information
 ; CHECK-NEXT:   FunctionPass Manager
 ; CHECK-NEXT:     Module Verifier
+; CHECK-EXT:      Good Bye World Pass
+; CHECK-NOEXT-NOT:      Good Bye World Pass
 ; CHECK-NEXT:     Instrument function entry/exit with calls to e.g. mcount() (pre inlining)
 ; CHECK-NEXT:     Simplify the CFG
 ; CHECK-NEXT:     Dominator Tree Construction
@@ -210,9 +212,11 @@
 ; CHECK-NEXT:       Lazy Branch Probability Analysis
 ; CHECK-NEXT:       Lazy Block Frequency Analysis
 ; CHECK-NEXT:       Optimization Remark Emitter
+; CHECK-NEXT:       Inject TLI Mappings
 ; CHECK-NEXT:       Loop Vectorization
 ; CHECK-NEXT:       Canonicalize natural loops
 ; CHECK-NEXT:       Scalar Evolution Analysis
+; CHECK-NEXT:       Basic Alias Analysis (stateless AA impl)
 ; CHECK-NEXT:       Function Alias Analysis Results
 ; CHECK-NEXT:       Loop Access Analysis
 ; CHECK-NEXT:       Lazy Branch Probability Analysis

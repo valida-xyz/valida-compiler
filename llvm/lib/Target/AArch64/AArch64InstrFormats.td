@@ -305,7 +305,7 @@ def simm9 : Operand<i64>, ImmLeaf<i64, [{ return Imm >= -256 && Imm < 256; }]> {
 }
 
 def SImm8Operand : SImmOperand<8>;
-def simm8 : Operand<i64>, ImmLeaf<i64, [{ return Imm >= -128 && Imm < 127; }]> {
+def simm8 : Operand<i32>, ImmLeaf<i32, [{ return Imm >= -128 && Imm < 127; }]> {
   let ParserMatchClass = SImm8Operand;
   let DecoderMethod = "DecodeSImm<8>";
 }
@@ -358,6 +358,16 @@ def am_indexed7s128 : ComplexPattern<i64, 2, "SelectAddrModeIndexed7S128", []>;
 def am_indexedu6s128 : ComplexPattern<i64, 2, "SelectAddrModeIndexedU6S128", []>;
 def am_indexeds9s128 : ComplexPattern<i64, 2, "SelectAddrModeIndexedS9S128", []>;
 
+def UImmS2XForm : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(N->getZExtValue() / 2, SDLoc(N), MVT::i64);
+}]>;
+def UImmS4XForm : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(N->getZExtValue() / 4, SDLoc(N), MVT::i64);
+}]>;
+def UImmS8XForm : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(N->getZExtValue() / 8, SDLoc(N), MVT::i64);
+}]>;
+
 // uimm5sN predicate - True if the immediate is a multiple of N in the range
 // [0 * N, 32 * N].
 def UImm5s2Operand : UImmScaledMemoryIndexed<5, 2>;
@@ -365,17 +375,41 @@ def UImm5s4Operand : UImmScaledMemoryIndexed<5, 4>;
 def UImm5s8Operand : UImmScaledMemoryIndexed<5, 8>;
 
 def uimm5s2 : Operand<i64>, ImmLeaf<i64,
-                [{ return Imm >= 0 && Imm < (32*2) && ((Imm % 2) == 0); }]> {
+                [{ return Imm >= 0 && Imm < (32*2) && ((Imm % 2) == 0); }],
+                UImmS2XForm> {
   let ParserMatchClass = UImm5s2Operand;
   let PrintMethod = "printImmScale<2>";
 }
 def uimm5s4 : Operand<i64>, ImmLeaf<i64,
-                [{ return Imm >= 0 && Imm < (32*4) && ((Imm % 4) == 0); }]> {
+                [{ return Imm >= 0 && Imm < (32*4) && ((Imm % 4) == 0); }],
+                UImmS4XForm> {
   let ParserMatchClass = UImm5s4Operand;
   let PrintMethod = "printImmScale<4>";
 }
 def uimm5s8 : Operand<i64>, ImmLeaf<i64,
-                [{ return Imm >= 0 && Imm < (32*8) && ((Imm % 8) == 0); }]> {
+                [{ return Imm >= 0 && Imm < (32*8) && ((Imm % 8) == 0); }],
+                UImmS8XForm> {
+  let ParserMatchClass = UImm5s8Operand;
+  let PrintMethod = "printImmScale<8>";
+}
+
+// tuimm5sN predicate - similiar to uimm5sN, but use TImmLeaf (TargetConstant)
+// instead of ImmLeaf (Constant)
+def tuimm5s2 : Operand<i64>, TImmLeaf<i64,
+                [{ return Imm >= 0 && Imm < (32*2) && ((Imm % 2) == 0); }],
+                UImmS2XForm> {
+  let ParserMatchClass = UImm5s2Operand;
+  let PrintMethod = "printImmScale<2>";
+}
+def tuimm5s4 : Operand<i64>, TImmLeaf<i64,
+                [{ return Imm >= 0 && Imm < (32*4) && ((Imm % 4) == 0); }],
+                UImmS4XForm> {
+  let ParserMatchClass = UImm5s4Operand;
+  let PrintMethod = "printImmScale<4>";
+}
+def tuimm5s8 : Operand<i64>, TImmLeaf<i64,
+                [{ return Imm >= 0 && Imm < (32*8) && ((Imm % 8) == 0); }],
+                UImmS8XForm> {
   let ParserMatchClass = UImm5s8Operand;
   let PrintMethod = "printImmScale<8>";
 }
@@ -590,6 +624,37 @@ def vecshiftR64Narrow : Operand<i32>, ImmLeaf<i32, [{
   let ParserMatchClass = Imm1_32Operand;
 }
 
+// Same as vecshiftR#N, but use TargetConstant (TimmLeaf) instead of Constant
+// (ImmLeaf)
+def tvecshiftR8 : Operand<i32>, TImmLeaf<i32, [{
+  return (((uint32_t)Imm) > 0) && (((uint32_t)Imm) < 9);
+}]> {
+  let EncoderMethod = "getVecShiftR8OpValue";
+  let DecoderMethod = "DecodeVecShiftR8Imm";
+  let ParserMatchClass = Imm1_8Operand;
+}
+def tvecshiftR16 : Operand<i32>, TImmLeaf<i32, [{
+  return (((uint32_t)Imm) > 0) && (((uint32_t)Imm) < 17);
+}]> {
+  let EncoderMethod = "getVecShiftR16OpValue";
+  let DecoderMethod = "DecodeVecShiftR16Imm";
+  let ParserMatchClass = Imm1_16Operand;
+}
+def tvecshiftR32 : Operand<i32>, TImmLeaf<i32, [{
+  return (((uint32_t)Imm) > 0) && (((uint32_t)Imm) < 33);
+}]> {
+  let EncoderMethod = "getVecShiftR32OpValue";
+  let DecoderMethod = "DecodeVecShiftR32Imm";
+  let ParserMatchClass = Imm1_32Operand;
+}
+def tvecshiftR64 : Operand<i32>, TImmLeaf<i32, [{
+  return (((uint32_t)Imm) > 0) && (((uint32_t)Imm) < 65);
+}]> {
+  let EncoderMethod = "getVecShiftR64OpValue";
+  let DecoderMethod = "DecodeVecShiftR64Imm";
+  let ParserMatchClass = Imm1_64Operand;
+}
+
 def Imm0_1Operand : AsmImmRange<0, 1>;
 def Imm0_7Operand : AsmImmRange<0, 7>;
 def Imm0_15Operand : AsmImmRange<0, 15>;
@@ -624,7 +689,6 @@ def vecshiftL64 : Operand<i32>, ImmLeaf<i32, [{
   let DecoderMethod = "DecodeVecShiftL64Imm";
   let ParserMatchClass = Imm0_63Operand;
 }
-
 
 // Crazy immediate formats used by 32-bit and 64-bit logical immediate
 // instructions for splatting repeating bit patterns across the immediate.
@@ -713,6 +777,13 @@ def imm0_127 : Operand<i32>, ImmLeaf<i32, [{
   let PrintMethod = "printImm";
 }
 
+def imm0_127_64b : Operand<i64>, ImmLeaf<i64, [{
+  return ((uint64_t)Imm) < 128;
+}]> {
+  let ParserMatchClass = Imm0_127Operand;
+  let PrintMethod = "printImm";
+}
+
 // NOTE: These imm0_N operands have to be of type i64 because i64 is the size
 // for all shift-amounts.
 
@@ -725,6 +796,14 @@ def imm0_63 : Operand<i64>, ImmLeaf<i64, [{
 
 // imm0_31 predicate - True if the immediate is in the range [0,31]
 def imm0_31 : Operand<i64>, ImmLeaf<i64, [{
+  return ((uint64_t)Imm) < 32;
+}]> {
+  let ParserMatchClass = Imm0_31Operand;
+}
+
+// timm0_31 predicate - same ass imm0_31, but use TargetConstant (TimmLeaf)
+// instead of Contant (ImmLeaf)
+def timm0_31 : Operand<i64>, TImmLeaf<i64, [{
   return ((uint64_t)Imm) < 32;
 }]> {
   let ParserMatchClass = Imm0_31Operand;
@@ -754,6 +833,13 @@ def imm0_15 : Operand<i64>, ImmLeaf<i64, [{
 // imm0_7 predicate - True if the immediate is in the range [0,7]
 def imm0_7 : Operand<i64>, ImmLeaf<i64, [{
   return ((uint64_t)Imm) < 8;
+}]> {
+  let ParserMatchClass = Imm0_7Operand;
+}
+
+// imm32_0_7 predicate - True if the 32-bit immediate is in the range [0,7]
+def imm32_0_7 : Operand<i32>, TImmLeaf<i32, [{
+  return ((uint32_t)Imm) < 8;
 }]> {
   let ParserMatchClass = Imm0_7Operand;
 }
@@ -1011,10 +1097,15 @@ class AsmVectorIndex<int Min, int Max, string NamePrefix=""> : AsmOperandClass {
   let RenderMethod = "addVectorIndexOperands";
 }
 
-class AsmVectorIndexOpnd<ValueType ty, AsmOperandClass mc, code pred>
-    : Operand<ty>, ImmLeaf<ty, pred> {
+class AsmVectorIndexOpnd<ValueType ty, AsmOperandClass mc>
+    : Operand<ty> {
   let ParserMatchClass = mc;
   let PrintMethod = "printVectorIndex";
+}
+
+multiclass VectorIndex<ValueType ty, AsmOperandClass mc, code pred> {
+  def "" : AsmVectorIndexOpnd<ty, mc>, ImmLeaf<ty, pred>;
+  def _timm : AsmVectorIndexOpnd<ty, mc>, TImmLeaf<ty, pred>;
 }
 
 def VectorIndex1Operand : AsmVectorIndex<1, 1>;
@@ -1023,17 +1114,27 @@ def VectorIndexHOperand : AsmVectorIndex<0, 7>;
 def VectorIndexSOperand : AsmVectorIndex<0, 3>;
 def VectorIndexDOperand : AsmVectorIndex<0, 1>;
 
-def VectorIndex1 : AsmVectorIndexOpnd<i64, VectorIndex1Operand, [{ return ((uint64_t)Imm) == 1; }]>;
-def VectorIndexB : AsmVectorIndexOpnd<i64, VectorIndexBOperand, [{ return ((uint64_t)Imm) < 16; }]>;
-def VectorIndexH : AsmVectorIndexOpnd<i64, VectorIndexHOperand, [{ return ((uint64_t)Imm) < 8; }]>;
-def VectorIndexS : AsmVectorIndexOpnd<i64, VectorIndexSOperand, [{ return ((uint64_t)Imm) < 4; }]>;
-def VectorIndexD : AsmVectorIndexOpnd<i64, VectorIndexDOperand, [{ return ((uint64_t)Imm) < 2; }]>;
+defm VectorIndex1 : VectorIndex<i64, VectorIndex1Operand,
+                                [{ return ((uint64_t)Imm) == 1; }]>;
+defm VectorIndexB : VectorIndex<i64, VectorIndexBOperand,
+                                [{ return ((uint64_t)Imm) < 16; }]>;
+defm VectorIndexH : VectorIndex<i64, VectorIndexHOperand,
+                                [{ return ((uint64_t)Imm) < 8; }]>;
+defm VectorIndexS : VectorIndex<i64, VectorIndexSOperand,
+                                [{ return ((uint64_t)Imm) < 4; }]>;
+defm VectorIndexD : VectorIndex<i64, VectorIndexDOperand,
+                                [{ return ((uint64_t)Imm) < 2; }]>;
 
-def VectorIndex132b : AsmVectorIndexOpnd<i32, VectorIndex1Operand, [{ return ((uint64_t)Imm) == 1; }]>;
-def VectorIndexB32b : AsmVectorIndexOpnd<i32, VectorIndexBOperand, [{ return ((uint64_t)Imm) < 16; }]>;
-def VectorIndexH32b : AsmVectorIndexOpnd<i32, VectorIndexHOperand, [{ return ((uint64_t)Imm) < 8; }]>;
-def VectorIndexS32b : AsmVectorIndexOpnd<i32, VectorIndexSOperand, [{ return ((uint64_t)Imm) < 4; }]>;
-def VectorIndexD32b : AsmVectorIndexOpnd<i32, VectorIndexDOperand, [{ return ((uint64_t)Imm) < 2; }]>;
+defm VectorIndex132b : VectorIndex<i32, VectorIndex1Operand,
+                                   [{ return ((uint64_t)Imm) == 1; }]>;
+defm VectorIndexB32b : VectorIndex<i32, VectorIndexBOperand,
+                                   [{ return ((uint64_t)Imm) < 16; }]>;
+defm VectorIndexH32b : VectorIndex<i32, VectorIndexHOperand,
+                                   [{ return ((uint64_t)Imm) < 8; }]>;
+defm VectorIndexS32b : VectorIndex<i32, VectorIndexSOperand,
+                                   [{ return ((uint64_t)Imm) < 4; }]>;
+defm VectorIndexD32b : VectorIndex<i32, VectorIndexDOperand,
+                                   [{ return ((uint64_t)Imm) < 2; }]>;
 
 def SVEVectorIndexExtDupBOperand : AsmVectorIndex<0, 63, "SVE">;
 def SVEVectorIndexExtDupHOperand : AsmVectorIndex<0, 31, "SVE">;
@@ -1041,16 +1142,21 @@ def SVEVectorIndexExtDupSOperand : AsmVectorIndex<0, 15, "SVE">;
 def SVEVectorIndexExtDupDOperand : AsmVectorIndex<0, 7, "SVE">;
 def SVEVectorIndexExtDupQOperand : AsmVectorIndex<0, 3, "SVE">;
 
-def sve_elm_idx_extdup_b
-  : AsmVectorIndexOpnd<i64, SVEVectorIndexExtDupBOperand, [{ return ((uint64_t)Imm) < 64; }]>;
-def sve_elm_idx_extdup_h
-  : AsmVectorIndexOpnd<i64, SVEVectorIndexExtDupHOperand, [{ return ((uint64_t)Imm) < 32; }]>;
-def sve_elm_idx_extdup_s
-  : AsmVectorIndexOpnd<i64, SVEVectorIndexExtDupSOperand, [{ return ((uint64_t)Imm) < 16; }]>;
-def sve_elm_idx_extdup_d
-  : AsmVectorIndexOpnd<i64, SVEVectorIndexExtDupDOperand, [{ return ((uint64_t)Imm) < 8; }]>;
-def sve_elm_idx_extdup_q
-  : AsmVectorIndexOpnd<i64, SVEVectorIndexExtDupQOperand, [{ return ((uint64_t)Imm) < 4; }]>;
+defm sve_elm_idx_extdup_b
+  : VectorIndex<i64, SVEVectorIndexExtDupBOperand,
+                [{ return ((uint64_t)Imm) < 64; }]>;
+defm sve_elm_idx_extdup_h
+  : VectorIndex<i64, SVEVectorIndexExtDupHOperand,
+                [{ return ((uint64_t)Imm) < 32; }]>;
+defm sve_elm_idx_extdup_s
+  : VectorIndex<i64, SVEVectorIndexExtDupSOperand,
+                [{ return ((uint64_t)Imm) < 16; }]>;
+defm sve_elm_idx_extdup_d
+  : VectorIndex<i64, SVEVectorIndexExtDupDOperand,
+                [{ return ((uint64_t)Imm) < 8; }]>;
+defm sve_elm_idx_extdup_q
+  : VectorIndex<i64, SVEVectorIndexExtDupQOperand,
+                [{ return ((uint64_t)Imm) < 4; }]>;
 
 // 8-bit immediate for AdvSIMD where 64-bit values of the form:
 // aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee ffffffff gggggggg hhhhhhhh
@@ -1403,6 +1509,7 @@ class RCPCLoad<bits<2> sz, string asm, RegisterClass RC>
 class AuthBase<bits<1> M, dag oops, dag iops, string asm, string operands,
                list<dag> pattern>
   : I<oops, iops, asm, operands, "", pattern>, Sched<[]> {
+  let isAuthenticated = 1;
   let Inst{31-25} = 0b1101011;
   let Inst{20-11} = 0b1111100001;
   let Inst{10} = M;
@@ -1427,6 +1534,7 @@ class AuthOneOperand<bits<3> opc, bits<1> M, string asm>
   let Inst{9-5} = Rn;
 }
 
+let Uses = [LR,SP] in
 class AuthReturn<bits<3> op, bits<1> M, string asm>
   : AuthBase<M, (outs), (ins), asm, "", []> {
   let Inst{24} = 0;
@@ -1441,6 +1549,7 @@ class BaseAuthLoad<bit M, bit W, dag oops, dag iops, string asm,
   bits<10> offset;
   bits<5> Rn;
   bits<5> Rt;
+  let isAuthenticated = 1;
   let Inst{31-24} = 0b11111000;
   let Inst{23} = M;
   let Inst{22} = offset{9};
@@ -1463,6 +1572,9 @@ multiclass AuthLoad<bit M, string asm, Operand opr> {
 
   def : InstAlias<asm # "\t$Rt, [$Rn]",
                   (!cast<Instruction>(NAME # "indexed") GPR64:$Rt, GPR64sp:$Rn, 0)>;
+
+  def : InstAlias<asm # "\t$Rt, [$wback]!",
+                  (!cast<Instruction>(NAME # "writeback") GPR64sp:$wback, GPR64:$Rt, 0), 0>;
 }
 
 //---
@@ -3046,6 +3158,22 @@ def ro_Windexed16 : ComplexPattern<i64, 4, "SelectAddrModeWRO<16>", []>;
 def ro_Windexed32 : ComplexPattern<i64, 4, "SelectAddrModeWRO<32>", []>;
 def ro_Windexed64 : ComplexPattern<i64, 4, "SelectAddrModeWRO<64>", []>;
 def ro_Windexed128 : ComplexPattern<i64, 4, "SelectAddrModeWRO<128>", []>;
+
+def gi_ro_Windexed8 :
+    GIComplexOperandMatcher<s64, "selectAddrModeWRO<8>">,
+    GIComplexPatternEquiv<ro_Windexed8>;
+def gi_ro_Windexed16 :
+    GIComplexOperandMatcher<s64, "selectAddrModeWRO<16>">,
+    GIComplexPatternEquiv<ro_Windexed16>;
+def gi_ro_Windexed32 :
+    GIComplexOperandMatcher<s64, "selectAddrModeWRO<32>">,
+    GIComplexPatternEquiv<ro_Windexed32>;
+def gi_ro_Windexed64 :
+    GIComplexOperandMatcher<s64, "selectAddrModeWRO<64>">,
+    GIComplexPatternEquiv<ro_Windexed64>;
+def gi_ro_Windexed128 :
+    GIComplexOperandMatcher<s64, "selectAddrModeWRO<128>">,
+    GIComplexPatternEquiv<ro_Windexed128>;
 
 class MemExtendOperand<string Reg, int Width> : AsmOperandClass {
   let Name = "Mem" # Reg # "Extend" # Width;
@@ -10052,15 +10180,20 @@ class ComplexRotationOperand<int Angle, int Remainder, string Type>
   let DiagnosticType = "InvalidComplexRotation" # Type;
   let Name = "ComplexRotation" # Type;
 }
-def complexrotateop : Operand<i32> {
+def complexrotateop : Operand<i32>, ImmLeaf<i32, [{ return Imm >= 0 && Imm <= 270;  }],
+                                                 SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant((N->getSExtValue() / 90), SDLoc(N), MVT::i32);
+}]>> {
   let ParserMatchClass = ComplexRotationOperand<90, 0, "Even">;
   let PrintMethod = "printComplexRotationOp<90, 0>";
 }
-def complexrotateopodd : Operand<i32> {
+def complexrotateopodd : Operand<i32>, ImmLeaf<i32, [{ return Imm >= 0 && Imm <= 270;  }],
+                                                 SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(((N->getSExtValue() - 90) / 180), SDLoc(N), MVT::i32);
+}]>> {
   let ParserMatchClass = ComplexRotationOperand<180, 90, "Odd">;
   let PrintMethod = "printComplexRotationOp<180, 90>";
 }
-
 let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in
 class BaseSIMDThreeSameVectorComplex<bit Q, bit U, bits<2> size, bits<3> opcode,
                                      RegisterOperand regtype, Operand rottype,
@@ -10391,9 +10524,9 @@ class CryptoRRTied<bits<1>op0, bits<2>op1, string asm, string asmops>
   let Inst{11-10} = op1;
 }
 class CryptoRRTied_2D<bits<1>op0, bits<2>op1, string asm>
-  : CryptoRRTied<op0, op1, asm, "{\t$Vd.2d, $Vn.2d}">;
+  : CryptoRRTied<op0, op1, asm, "{\t$Vd.2d, $Vn.2d|.2d\t$Vd, $Vn}">;
 class CryptoRRTied_4S<bits<1>op0, bits<2>op1, string asm>
-  : CryptoRRTied<op0, op1, asm, "{\t$Vd.4s, $Vn.4s}">;
+  : CryptoRRTied<op0, op1, asm, "{\t$Vd.4s, $Vn.4s|.4s\t$Vd, $Vn}">;
 
 class CryptoRRR<bits<1> op0, bits<2>op1, dag oops, dag iops, string asm,
                 string asmops, string cst>
@@ -10408,19 +10541,19 @@ class CryptoRRR<bits<1> op0, bits<2>op1, dag oops, dag iops, string asm,
 }
 class CryptoRRR_2D<bits<1> op0, bits<2>op1, string asm>
   : CryptoRRR<op0, op1, (outs V128:$Vd), (ins V128:$Vn, V128:$Vm), asm,
-              "{\t$Vd.2d, $Vn.2d, $Vm.2d}", "">;
+              "{\t$Vd.2d, $Vn.2d, $Vm.2d|.2d\t$Vd, $Vn, $Vm}", "">;
 class CryptoRRRTied_2D<bits<1> op0, bits<2>op1, string asm>
   : CryptoRRR<op0, op1, (outs V128:$Vdst), (ins V128:$Vd, V128:$Vn, V128:$Vm), asm,
-              "{\t$Vd.2d, $Vn.2d, $Vm.2d}", "$Vd = $Vdst">;
+              "{\t$Vd.2d, $Vn.2d, $Vm.2d|.2d\t$Vd, $Vn, $Vm}", "$Vd = $Vdst">;
 class CryptoRRR_4S<bits<1> op0, bits<2>op1, string asm>
   : CryptoRRR<op0, op1, (outs V128:$Vd), (ins V128:$Vn, V128:$Vm), asm,
-              "{\t$Vd.4s, $Vn.4s, $Vm.4s}", "">;
+              "{\t$Vd.4s, $Vn.4s, $Vm.4s|.4s\t$Vd, $Vn, $Vm}", "">;
 class CryptoRRRTied_4S<bits<1> op0, bits<2>op1, string asm>
   : CryptoRRR<op0, op1, (outs V128:$Vdst), (ins V128:$Vd, V128:$Vn, V128:$Vm), asm,
-              "{\t$Vd.4s, $Vn.4s, $Vm.4s}", "$Vd = $Vdst">;
+              "{\t$Vd.4s, $Vn.4s, $Vm.4s|.4s\t$Vd, $Vn, $Vm}", "$Vd = $Vdst">;
 class CryptoRRRTied<bits<1> op0, bits<2>op1, string asm>
   : CryptoRRR<op0, op1, (outs FPR128:$Vdst), (ins FPR128:$Vd, FPR128:$Vn, V128:$Vm),
-              asm, "{\t$Vd, $Vn, $Vm.2d}", "$Vd = $Vdst">;
+              asm, "{\t$Vd, $Vn, $Vm.2d|.2d\t$Vd, $Vn, $Vm}", "$Vd = $Vdst">;
 
 class CryptoRRRR<bits<2>op0, string asm, string asmops>
   : BaseCryptoV82<(outs V128:$Vd), (ins V128:$Vn, V128:$Vm, V128:$Va), asm,
@@ -10434,15 +10567,18 @@ class CryptoRRRR<bits<2>op0, string asm, string asmops>
   let Inst{14-10} = Va;
 }
 class CryptoRRRR_16B<bits<2>op0, string asm>
- : CryptoRRRR<op0, asm, "{\t$Vd.16b, $Vn.16b, $Vm.16b, $Va.16b}"> {
+ : CryptoRRRR<op0, asm, "{\t$Vd.16b, $Vn.16b, $Vm.16b, $Va.16b" #
+                        "|.16b\t$Vd, $Vn, $Vm, $Va}"> {
 }
 class CryptoRRRR_4S<bits<2>op0, string asm>
- : CryptoRRRR<op0, asm, "{\t$Vd.4s, $Vn.4s, $Vm.4s, $Va.4s}"> {
+ : CryptoRRRR<op0, asm, "{\t$Vd.4s, $Vn.4s, $Vm.4s, $Va.4s" #
+                         "|.4s\t$Vd, $Vn, $Vm, $Va}"> {
 }
 
 class CryptoRRRi6<string asm>
   : BaseCryptoV82<(outs V128:$Vd), (ins V128:$Vn, V128:$Vm, uimm6:$imm), asm,
-                  "{\t$Vd.2d, $Vn.2d, $Vm.2d, $imm}", "", []> {
+                  "{\t$Vd.2d, $Vn.2d, $Vm.2d, $imm" #
+                  "|.2d\t$Vd, $Vn, $Vm, $imm}", "", []> {
   bits<6> imm;
   bits<5> Vm;
   let Inst{24-21} = 0b0100;
@@ -10455,7 +10591,8 @@ class CryptoRRRi6<string asm>
 class CryptoRRRi2Tied<bits<1>op0, bits<2>op1, string asm>
   : BaseCryptoV82<(outs V128:$Vdst),
                   (ins V128:$Vd, V128:$Vn, V128:$Vm, VectorIndexS:$imm),
-                  asm, "{\t$Vd.4s, $Vn.4s, $Vm.s$imm}", "$Vd = $Vdst", []> {
+                  asm, "{\t$Vd.4s, $Vn.4s, $Vm.s$imm" #
+                       "|.4s\t$Vd, $Vn, $Vm$imm}", "$Vd = $Vdst", []> {
   bits<2> imm;
   bits<5> Vm;
   let Inst{24-21} = 0b0010;

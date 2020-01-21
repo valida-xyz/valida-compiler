@@ -278,7 +278,11 @@ class VectorType;
       VST4_UPD,
       VST2LN_UPD,
       VST3LN_UPD,
-      VST4LN_UPD
+      VST4LN_UPD,
+
+      // Load/Store of dual registers
+      LDRD,
+      STRD
     };
 
   } // end namespace ARMISD
@@ -377,7 +381,7 @@ class VectorType;
 
     bool isLegalT2ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
 
-    /// Returns true if the addresing mode representing by AM is legal
+    /// Returns true if the addressing mode representing by AM is legal
     /// for the Thumb1 target, for a load/store of the specified type.
     bool isLegalT1ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
 
@@ -604,7 +608,7 @@ class VectorType;
     /// Returns true if \p VecTy is a legal interleaved access type. This
     /// function checks the vector element type and the overall width of the
     /// vector.
-    bool isLegalInterleavedAccessType(VectorType *VecTy,
+    bool isLegalInterleavedAccessType(unsigned Factor, VectorType *VecTy,
                                       const DataLayout &DL) const;
 
     bool alignLoopsWithOptSize() const override;
@@ -731,14 +735,17 @@ class VectorType;
     SDValue LowerINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     void lowerABS(SDNode *N, SmallVectorImpl<SDValue> &Results,
                   SelectionDAG &DAG) const;
+    void LowerLOAD(SDNode *N, SmallVectorImpl<SDValue> &Results,
+                   SelectionDAG &DAG) const;
 
-    Register getRegisterByName(const char* RegName, EVT VT,
+    Register getRegisterByName(const char* RegName, LLT VT,
                                const MachineFunction &MF) const override;
 
     SDValue BuildSDIVPow2(SDNode *N, const APInt &Divisor, SelectionDAG &DAG,
                           SmallVectorImpl<SDNode *> &Created) const override;
 
-    bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
+    bool isFMAFasterThanFMulAndFAdd(const MachineFunction &MF,
+                                    EVT VT) const override;
 
     SDValue ReconstructShuffle(SDValue Op, SelectionDAG &DAG) const;
 

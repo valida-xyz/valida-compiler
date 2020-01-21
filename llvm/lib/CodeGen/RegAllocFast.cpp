@@ -35,6 +35,7 @@
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Metadata.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Pass.h"
@@ -1252,7 +1253,7 @@ void RegAllocFast::allocateBasicBlock(MachineBasicBlock &MBB) {
   MachineBasicBlock::iterator MII = MBB.begin();
 
   // Add live-in registers as live.
-  for (const MachineBasicBlock::RegisterMaskPair LI : MBB.liveins())
+  for (const MachineBasicBlock::RegisterMaskPair &LI : MBB.liveins())
     if (MRI->isAllocatable(LI.PhysReg))
       definePhysReg(MII, LI.PhysReg, regReserved);
 

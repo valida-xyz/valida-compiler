@@ -8,26 +8,26 @@
 declare i32 @target_func()
 
 
-; Test that Control Flow Guard checks are not added to functions with nocf_checks attribute.
-define i32 @func_nocf_checks() #0 {
+; Test that Control Flow Guard checks are not added on calls with the "guard_nocf" attribute.
+define i32 @func_guard_nocf() {
 entry:
   %func_ptr = alloca i32 ()*, align 8
   store i32 ()* @target_func, i32 ()** %func_ptr, align 8
   %0 = load i32 ()*, i32 ()** %func_ptr, align 8
-  %1 = call i32 %0()
+  %1 = call i32 %0() #0
   ret i32 %1
 
-  ; X32-LABEL: func_nocf_checks
+  ; X32-LABEL: func_guard_nocf
   ; X32: 	     movl  $_target_func, %eax
   ; X32-NOT: __guard_check_icall_fptr
 	; X32: 	     calll *%eax
 
-  ; X64-LABEL: func_nocf_checks
+  ; X64-LABEL: func_guard_nocf
   ; X64:       leaq	target_func(%rip), %rax
   ; X64-NOT: __guard_dispatch_icall_fptr
   ; X64:       callq	*%rax
 }
-attributes #0 = { nocf_check }
+attributes #0 = { "guard_nocf" }
 
 
 ; Test that Control Flow Guard checks are added even at -O0.
@@ -171,11 +171,42 @@ entry:
 
   ; X64-LABEL: func_cf_tail
   ; X64:       leaq	target_func(%rip), %rax
-  ; X64:       movq __guard_dispatch_icall_fptr(%rip), %rcx
-  ; X64:       rex64 jmpq *%rcx            # TAILCALL
+  ; X64:       rex64 jmpq *__guard_dispatch_icall_fptr(%rip)         # TAILCALL
   ; X64-NOT:   callq
 }
 
+%struct.Foo = type { i32 (%struct.Foo*)** }
+
+; Test that Control Flow Guard checks are correctly added for variadic musttail
+; calls. These are used for MS C++ ABI virtual member pointer thunks.
+; PR44049
+define i32 @vmptr_thunk(%struct.Foo* inreg %p) {
+entry:
+  %vptr.addr = getelementptr inbounds %struct.Foo, %struct.Foo* %p, i32 0, i32 0
+  %vptr = load i32 (%struct.Foo*)**, i32 (%struct.Foo*)*** %vptr.addr
+  %slot = getelementptr inbounds i32 (%struct.Foo*)*, i32 (%struct.Foo*)** %vptr, i32 1
+  %vmethod = load i32 (%struct.Foo*)*, i32 (%struct.Foo*)** %slot
+  %rv = musttail call i32 %vmethod(%struct.Foo* inreg %p)
+  ret i32 %rv
+
+  ; On i686, the call to __guard_check_icall_fptr should come immediately before the call to the target function.
+  ; X32-LABEL: _vmptr_thunk:
+  ; X32:       movl %eax, %esi
+  ; X32:       movl (%eax), %eax
+  ; X32:       movl 4(%eax), %ecx
+  ; X32:       calll *___guard_check_icall_fptr
+  ; X32:       movl %esi, %eax
+  ; X32:       jmpl       *%ecx                  # TAILCALL
+  ; X32-NOT:   calll
+
+  ; Use NEXT here because we previously had an extra instruction in this sequence.
+  ; X64-LABEL: vmptr_thunk:
+  ; X64:            movq (%rcx), %rax
+  ; X64-NEXT:       movq 8(%rax), %rax
+  ; X64-NEXT:       movq __guard_dispatch_icall_fptr(%rip), %rdx
+  ; X64-NEXT:       rex64 jmpq *%rdx            # TAILCALL
+  ; X64-NOT:   callq
+}
 
 ; Test that longjmp targets have public labels and are included in the .gljmp section.
 %struct._SETJMP_FLOAT128 = type { [2 x i64] }
