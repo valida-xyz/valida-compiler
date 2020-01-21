@@ -41,7 +41,6 @@ public:
 private:
   bool selectImpl(MachineInstr &I, CodeGenCoverage &CoverageInfo) const;
 
-  const TriCoreSubtarget &STI;
   const TriCoreInstrInfo &TII;
   const TriCoreRegisterInfo &TRI;
   const TriCoreRegisterBankInfo &RBI;
@@ -97,7 +96,7 @@ private:
 TriCoreInstructionSelector::TriCoreInstructionSelector(
     const TriCoreTargetMachine &TM, const TriCoreSubtarget &STI,
     const TriCoreRegisterBankInfo &RBI)
-    : InstructionSelector(), STI(STI), TII(*STI.getInstrInfo()),
+    : InstructionSelector(), TII(*STI.getInstrInfo()),
       TRI(*STI.getRegisterInfo()), RBI(RBI),
 
 #define GET_GLOBALISEL_PREDICATES_INIT
