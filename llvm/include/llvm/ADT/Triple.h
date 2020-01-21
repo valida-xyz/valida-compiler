@@ -732,15 +732,16 @@ public:
     return getArch() == Triple::riscv32 || getArch() == Triple::riscv64;
   }
 
+  /// Tests whether the target is TriCore
+  bool isTriCore() const { return getArch() == Triple::tricore; }
+
   /// Tests whether the target is x86 (32- or 64-bit).
   bool isX86() const {
     return getArch() == Triple::x86 || getArch() == Triple::x86_64;
   }
 
   /// Tests whether the target is VE
-  bool isVE() const {
-    return getArch() == Triple::ve;
-  }
+  bool isVE() const { return getArch() == Triple::ve; }
 
   /// Tests whether the target supports comdat
   bool supportsCOMDAT() const {
