@@ -19,6 +19,44 @@
 
 using namespace llvm;
 
+static LegalityPredicate isMisalignedMemAccess() {
+  return [=](const LegalityQuery &Query) -> bool {
+    const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+    const unsigned Align = Query.MMODescrs[0].AlignInBits;
+
+    // Pointers require word alignment
+    // TODO: remove this once we support half-word aligned pointers
+    if (Query.Types[0].isPointer())
+      return Align < 32;
+
+    // Access is misaligned if the access has no natural alignment, up to
+    // half-word alignment
+    return Align < 16 && MemSize > Align;
+  };
+}
+
+static LegalityPredicate isTruncStore() {
+  return [=](const LegalityQuery &Query) {
+    // Truncating store if type size is bigger than memory size
+    return Query.Types[0].getSizeInBits() > Query.MMODescrs[0].SizeInBits;
+  };
+}
+
+static LegalizeMutation narrowToAlignedMemAccess() {
+  return [=](const LegalityQuery &Query) -> std::pair<unsigned, LLT> {
+    const unsigned Align = Query.MMODescrs[0].AlignInBits;
+    return std::make_pair(0, LLT::scalar(Align)); // <TyIdx, NewTy>
+  };
+}
+
+static LegalizeMutation narrowToMemSize() {
+  return [=](const LegalityQuery &Query) {
+    // Use the memory size as size for the new type
+    const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+    return std::make_pair(0, LLT::scalar(MemSize));
+  };
+}
+
 TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   using namespace TargetOpcode;
   const LLT p0 = LLT::pointer(0, 32);
@@ -150,19 +188,27 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // Memory size must be a power of 2.
   getActionDefinitionsBuilder(G_LOAD)
       .legalForTypesWithMemDesc({
-          // Minimum alignment for all cases can be 8 bits (1 byte)
+          // Load/store uses natural alignment up to half-word alignment
+          // Pointers require word alignment
+          // TODO: p0 load/store can use half-word alignment if they are put on
+          //  the data regbank.
           {s32, p0, 8, 8},
-          {s32, p0, 16, 8},
-          {s32, p0, 32, 8},
-          {s64, p0, 64, 8},
-          {p0, p0, 32, 8},
+          {s32, p0, 16, 16},
+          {s32, p0, 32, 16},
+          {s64, p0, 64, 16},
+          {p0, p0, 32, 32},
       })
+      // Unaligned loads must be broken up into aligned loads
+      .narrowScalarIf(isMisalignedMemAccess(), narrowToAlignedMemAccess())
+      // Non-power-of-2 loads need to be broken up
       .lowerIfMemSizeNotPow2()
+      // Result must fit in a register
       .clampScalar(0, s32, s64)
       // Lower any extending loads left into G_ANYEXT and G_LOAD
       .lowerIf([=](const LegalityQuery &Query) {
         return Query.Types[0].getSizeInBits() != Query.MMODescrs[0].SizeInBits;
       })
+      // Eliminate left-over non-pow-2 results
       .widenScalarToNextPow2(0);
 
   // G_STORE is legal for pointers and scalars if the store size is equal to the
@@ -171,26 +217,24 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // TableGen instead of having to fall back to C++ for truncating stores.
   getActionDefinitionsBuilder(G_STORE)
       .legalForTypesWithMemDesc({
-          // Minimum alignment for all cases can be 8 bits (1 byte)
+          // Load/store uses natural alignment up to half-word alignment
+          // Pointers require word alignment
+          // TODO: p0 load/store can use half-word alignment if they are put on
+          //  the data regbank.
           {s8, p0, 8, 8},
-          {s16, p0, 16, 8},
-          {s32, p0, 32, 8},
-          {s64, p0, 64, 8},
-          {p0, p0, 32, 8},
+          {s16, p0, 16, 16},
+          {s32, p0, 32, 16},
+          {s64, p0, 64, 16},
+          {p0, p0, 32, 32},
       })
-      .clampScalar(0, s8, s64)
-      .lowerIfMemSizeNotPow2()
+      // Unaligned stores must be broken up into aligned stores
+      .narrowScalarIf(isMisalignedMemAccess(), narrowToAlignedMemAccess())
       // Lower truncating stores into G_TRUNC and G_STORE
-      .narrowScalarIf(
-          [=](const LegalityQuery &Query) {
-            return Query.Types[0].getSizeInBits() >
-                   Query.MMODescrs[0].SizeInBits;
-          },
-          [=](const LegalityQuery &Query) {
-            // Use the memory size as size for the new type
-            const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
-            return std::make_pair(0, LLT::scalar(MemSize));
-          })
+      .narrowScalarIf(isTruncStore(), narrowToMemSize())
+      // Non-power-of-2 stores need to be broken up
+      .lowerIfMemSizeNotPow2()
+      // Extend / truncate the value to a power-of-2 between s8 and s64
+      .clampScalar(0, s8, s64)
       .widenScalarToNextPow2(0);
 
   // G_SEXTLOAD and G_ZEXTLOAD are legal for a 32-bit result type
