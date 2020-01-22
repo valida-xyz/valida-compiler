@@ -73,7 +73,7 @@ static MCSubtargetInfo *
 createTriCoreMCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
   std::string CPUName = CPU;
   if (CPUName.empty())
-    CPUName = "tc162";
+    CPUName = "tc4xx";
   return createTriCoreMCSubtargetInfoImpl(TT, CPUName, FS);
 }
 

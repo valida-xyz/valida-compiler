@@ -92,7 +92,7 @@ def SYSFrm         : Format<39>;
 //===----------------------------------------------------------------------===//
 class InstTriCore<Format fmt, dag outs, dag ins, string mnemonic,
                   string operands, list<dag> pattern>
-    : Instruction
+    : Instruction, PredicateControl
 {
     let Namespace = "TriCore";
     let OutOperandList = outs;
@@ -120,7 +120,7 @@ class T16<Format fmt, dag outs, dag ins, string mnemonic, string operands,
 {
     field bits<16> Inst;
     let Size = 2;
-    list<Predicate> Predicates = [Is16BitAllowed];
+    list<Predicate> FormatPredicates = [Is16BitAllowed];
 }
 
 
@@ -133,7 +133,7 @@ class T32<Format fmt, dag outs, dag ins, string mnemonic, string operands,
 {
     field bits<32> Inst;
     let Size = 4;
-    list<Predicate> Predicates = [Is32BitAllowed];
+    list<Predicate> FormatPredicates = [Is32BitAllowed];
 }
 
 

@@ -38,6 +38,10 @@ protected:
   bool allow16BitInst = true;
   bool allow32BitInst = true;
 
+  bool HasTC161Ops = true;
+  bool HasTC162Ops = true;
+  bool HasTC18Ops = true;
+
   TriCoreFrameLowering FrameLowering;
   TriCoreInstrInfo InstrInfo;
   TriCoreRegisterInfo RegInfo;
@@ -83,6 +87,9 @@ public:
 
   bool isAllow16BitInst() const { return allow16BitInst; }
   bool isAllow32BitInst() const { return allow32BitInst; }
+  bool hasTC161Ops() const { return HasTC161Ops; }
+  bool hasTC162Ops() const { return HasTC162Ops; }
+  bool hasTC18Ops() const { return HasTC18Ops; }
 };
 } // namespace llvm
 

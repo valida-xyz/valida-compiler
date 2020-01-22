@@ -11,75 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-// TriCore special operands.
-//
-// NOTE: Immediate operands should be defined in ascending bit width. This
-//       ensures that the shorter encodings will be preferred by TableGen
-
-// A 16 bit unsigned immediate left-shifted by 3
-def uimm16_shift3 : Operand<OtherVT> {
-  let ParserMatchClass = GenericImmOperand<"UImm16Shift3">;
-  let DecoderMethod = "decodeUImm16Shift3";
-}
-
-//===----------------------------------------------------------------------===//
-// Instruction Class Templates
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-//  Cache Instructions.
-//
-
-let s1_d = 0, hasSideEffects = 1 in {
-  class CACHE_BO<bits<8> opc1, bits<6> opc2, string mnemonic>
-                  : BO<opc1, opc2, (outs),
-                  (ins AddrRegs:$s2, simm10:$off10),
-                  mnemonic, "\t[${s2}], $off10">;
-
-  let Constraints = "$s2 = $dest" in {
-    class CACHE_BO_PRI<bits<8> opc1, bits<6> opc2, string mnemonic>
-                  : BO<opc1, opc2, (outs AddrRegs:$dest),
-                  (ins AddrRegs:$s2, simm10:$off10),
-                  mnemonic, "\t[+${s2}], $off10">;
-
-    class CACHE_BO_POI<bits<8> opc1, bits<6> opc2, string mnemonic>
-                  : BO<opc1, opc2, (outs AddrRegs:$dest),
-                  (ins AddrRegs:$s2, simm10:$off10),
-                  mnemonic, "\t[${s2}+], $off10">;
-  } // Constraints = "$s2 = $dest"
-} // s1_d = 0, hasSideEffects = 1
-
-//===----------------------------------------------------------------------===//
-//  FPU Arithmetic Instructions.
-//
-
-class FPU_ARITH_RR1<bits<8> opc1, bits<8> opc2, string mnemonic,
-                    RegisterClass RC1, RegisterClass RC2>
-                : RR<opc1, opc2, (outs RC1:$d),
-                (ins RC2:$s1, RC2:$s2),
-                mnemonic, "\t$d, $s1, $s2">;
-
-let s2 = 0 in
-class FPU_ARITH_RR2<bits<8> opc1, bits<8> opc2, string mnemonic,
-                    RegisterClass RC>
-                : RR<opc1, opc2, (outs RC:$d),
-                (ins RC:$s1),
-                mnemonic, "\t$d, $s1">;
-                
-//===----------------------------------------------------------------------===//
-//  FPU-conversion Instructions.
-//
-
-let s2 = 0, n = 2, Defs = [PSW] in
-class FPU_CONVERSION_RR<bits<8> opc2, string mnemonic,
-                        RegisterClass RC1, RegisterClass RC2>
-          : RR<0x4B, opc2, (outs RC1:$d), (ins RC2:$s1), mnemonic, "\t$d, $s1">;
-
 
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
+
+let ISAPredicates = [HasTC18] in {
 
 //===----------------------------------------------------------------------===//
 //  Cache Instructions.
@@ -315,3 +252,5 @@ let Defs = [PSW], isCommutable = 1, n = 0 in
 def MULPB_edd       :  RR<0x4B, 0x2B, (outs ExtDataRegs:$d),
                           (ins DataRegs:$s1, DataRegs:$s2), 
                           "mulp.b", "\t$d, $s1, $s2">;
+
+} // ISAPredicates = [HasTC18]

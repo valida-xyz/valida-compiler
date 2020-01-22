@@ -33,7 +33,7 @@ TriCoreSubtarget::initializeSubtargetDependencies(StringRef CPU, StringRef FS) {
   // Determine default and user-specified characteristics
   std::string CPUName = CPU;
   if (CPUName.empty())
-    CPUName = "tc162";
+    CPUName = "tc4xx";
   ParseSubtargetFeatures(CPUName, FS);
   return *this;
 }

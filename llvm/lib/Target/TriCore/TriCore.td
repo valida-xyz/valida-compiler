@@ -21,7 +21,6 @@ include "TriCoreCallingConv.td"
 //===----------------------------------------------------------------------===//
 
 include "TriCoreInstrInfo.td"
-include "TriCoreInstrInfoTC18.td"
 include "TriCoreGISelPattern.td"
 
 def TriCoreInstrInfo : InstrInfo;
@@ -47,12 +46,27 @@ def Allow32BitInstructions : SubtargetFeature<"allow-32bit", "allow32BitInst",
 def Only32BitInstructions : SubtargetFeature<"insn32-only", "allow16BitInst",
                             "false", "Force usage of 32 bit instructions">;
 
+def HasTC161Ops           : SubtargetFeature<"tc161", "HasTC161Ops",
+                            "true", "Support TC161 instructions">;
+
+def HasTC162Ops           : SubtargetFeature<"tc162", "HasTC162Ops",
+                            "true", "Support TC162 instructions", [HasTC161Ops]>;
+
+def HasTC18Ops            : SubtargetFeature<"tc18", "HasTC18Ops",
+                            "true", "Support TC18 instructions", [HasTC162Ops]>;
+
 //===----------------------------------------------------------------------===//
 // Target processors
 //===----------------------------------------------------------------------===//
 
-def : Processor<"tc162", NoItineraries,
-                [Allow16BitInstructions, Allow32BitInstructions]>;
+def : Processor<"tc2xx", NoItineraries,
+                [Allow16BitInstructions, Allow32BitInstructions, HasTC161Ops]>;
+                
+def : Processor<"tc3xx", NoItineraries,
+                [Allow16BitInstructions, Allow32BitInstructions, HasTC162Ops]>;
+                
+def : Processor<"tc4xx", NoItineraries,
+                [Allow16BitInstructions, Allow32BitInstructions, HasTC18Ops]>;
 
 //===----------------------------------------------------------------------===//
 // Target Declaration
