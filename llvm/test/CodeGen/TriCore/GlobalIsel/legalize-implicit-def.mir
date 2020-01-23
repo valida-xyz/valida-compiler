@@ -38,8 +38,7 @@ body:             |
   bb.0.entry:
     ; CHECK-LABEL: name: test_other_implicit_def
     ; CHECK: [[S3:%[0-9]+]]:_(s32) = G_IMPLICIT_DEF
-    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY [[S3]]
-    ; CHECK: $d2 = COPY [[COPY]]
+    ; CHECK: $d2 = COPY [[S3]]
     ; CHECK: [[S192_1:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
     ; CHECK: [[S192_2:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
     ; CHECK: [[S192_3:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF

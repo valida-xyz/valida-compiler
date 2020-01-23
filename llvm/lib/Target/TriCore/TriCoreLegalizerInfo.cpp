@@ -30,8 +30,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // at least one G_IMPLICIT_DEF must be legal. we allow all types
   getActionDefinitionsBuilder(G_IMPLICIT_DEF)
       .legalFor({p0, s1, s8, s16, s32, s64})
-      .clampScalar(0, s1, s64)
-      .widenScalarToNextPow2(0, 32);
+      .clampScalar(0, s8, s64)
+      .widenScalarToNextPow2(0);
 
   // G_PHI should be legal for all consumed types to avoid unnecessary
   // truncations and extensions
