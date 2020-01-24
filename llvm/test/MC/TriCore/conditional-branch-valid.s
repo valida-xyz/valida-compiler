@@ -7121,3 +7121,66 @@ jz.a %a0, 0
 # CHECK: encoding: [0x2e,0x00]
 jz.t %d15, 0, 0
 
+# CHECK-INST: jz %d15, 0
+# CHECK: encoding: [0x6e,0x00]
+jz %d15, 0
+
+# CHECK-INST: jz %d15, 2
+# CHECK: encoding: [0x6e,0x01]
+jz %d15, 2
+
+# CHECK-INST: jz %d15, 28
+# CHECK: encoding: [0x6e,0x0e]
+jz %d15, 28
+
+# CHECK-INST: jz %d15, 30
+# CHECK: encoding: [0x6e,0x0f]
+jz %d15, 30
+
+# CHECK-INST: jz %d0, 0
+# CHECK: encoding: [0x76,0x00]
+jz %d0, 0
+
+# CHECK-INST: jz %d0, 2
+# CHECK: encoding: [0x76,0x01]
+jz %d0, 2
+
+# CHECK-INST: jz %d0, 28
+# CHECK: encoding: [0x76,0x0e]
+jz %d0, 28
+
+# CHECK-INST: jz %d0, 30
+# CHECK: encoding: [0x76,0x0f]
+jz %d0, 30
+
+# CHECK-INST: jz %d1, 0
+# CHECK: encoding: [0x76,0x10]
+jz %d1, 0
+
+# CHECK-INST: jz %d1, 2
+# CHECK: encoding: [0x76,0x11]
+jz %d1, 2
+
+# CHECK-INST: jz %d1, 28
+# CHECK: encoding: [0x76,0x1e]
+jz %d1, 28
+
+# CHECK-INST: jz %d1, 30
+# CHECK: encoding: [0x76,0x1f]
+jz %d1, 30
+
+# CHECK-INST: jz %d14, 0
+# CHECK: encoding: [0x76,0xe0]
+jz %d14, 0
+
+# CHECK-INST: jz %d14, 2
+# CHECK: encoding: [0x76,0xe1]
+jz %d14, 2
+
+# CHECK-INST: jz %d14, 28
+# CHECK: encoding: [0x76,0xee]
+jz %d14, 28
+
+# CHECK-INST: jz %d14, 30
+# CHECK: encoding: [0x76,0xef]
+jz %d14, 30
