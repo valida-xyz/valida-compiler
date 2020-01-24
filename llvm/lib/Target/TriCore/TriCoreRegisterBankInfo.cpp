@@ -342,6 +342,14 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
 
     break;
   }
+  case TargetOpcode::G_SELECT: {
+    assert(NumOperands == 4 && "Expected G_SELECT to have 3 operands");
+    // TriCore only supports the SEL instruction on data registers, hence all
+    // operands must reside on the DataRegBank
+    OpRegBankIdx = {PMI_FirstDataReg, PMI_FirstDataReg, PMI_FirstDataReg,
+                    PMI_FirstDataReg};
+    break;
+  }
   default:
     break;
   }

@@ -16,7 +16,9 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:addrregbank(p0) = COPY $a4
     ; CHECK: [[COPY2:%[0-9]+]]:addrregbank(p0) = COPY $a5
-    ; CHECK: [[SELECT:%[0-9]+]]:addrregbank(p0) = G_SELECT [[COPY]](s32), [[COPY1]], [[COPY2]]
+    ; CHECK: [[COPY3:%[0-9]+]]:dataregbank(p0) = COPY [[COPY1]](p0)
+    ; CHECK: [[COPY4:%[0-9]+]]:dataregbank(p0) = COPY [[COPY2]](p0)
+    ; CHECK: [[SELECT:%[0-9]+]]:dataregbank(p0) = G_SELECT [[COPY]](s32), [[COPY3]], [[COPY4]]
     ; CHECK: $a2 = COPY [[SELECT]](p0)
     %0(s32) = COPY $d4
     %1(p0) = COPY $a4
