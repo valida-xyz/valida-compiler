@@ -92,6 +92,7 @@ private:
   bool selectMerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectSelect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectTrunc(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectUnmerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
 };
@@ -383,6 +384,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectLoadStore(I, MRI);
   case TargetOpcode::G_PTR_ADD:
     return selectPtrAdd(I, MRI);
+  case TargetOpcode::G_SELECT:
+    return selectSelect(I, MRI);
   case TargetOpcode::G_SDIV:
   case TargetOpcode::G_SREM:
     return selectDivRem(I, MRI);
@@ -1465,6 +1468,22 @@ bool TriCoreInstructionSelector::selectDivRem(MachineInstr &I,
   I.removeFromParent();
 
   return true;
+}
+
+bool TriCoreInstructionSelector::selectSelect(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  const LLT DstTy = MRI.getType(I.getOperand(0).getReg());
+  const LLT Src1Ty = MRI.getType(I.getOperand(2).getReg());
+
+  // G_SELECT of scalars is already handled in TableGen
+  if (!checkType(LLT::pointer(0, 32), DstTy, "G_SELECT") ||
+      !checkType(LLT::pointer(0, 32), Src1Ty, "G_SELECT"))
+    return false;
+
+  // Our TriCore instruction uses the exact same operand order, so we only need
+  // to change the opcode
+  I.setDesc(TII.get(TriCore::SEL_dddd));
+  return constrainSelectedInstRegOperands(I, TII, TRI, RBI);
 }
 
 bool TriCoreInstructionSelector::selectTrunc(MachineInstr &I,

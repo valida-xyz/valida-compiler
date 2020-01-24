@@ -79,6 +79,11 @@ def : SimpleBinOpPat<sub, SUB_ddd>;
 
 def : SimpleBinOpPat<mul, MUL_ddd>;
 
+// 2.1.7 Conditional Arithmetic
+
+def : Pat<(i32 (select DataRegs:$cond, DataRegs:$src1, DataRegs:$src2)), 
+    (SEL_dddd DataRegs:$cond, DataRegs:$src1, DataRegs:$src2)>;
+
 // 2.1.8 Logical
 
 def : SimpleBinOpPat<and, AND_ddd>;
