@@ -7043,6 +7043,262 @@ min.hu %d15, %d15, %d14
 .code32
 min.hu %d15, %d15, %d15
 
+# CHECK-INST: sh.h %d0, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x00,0x04]
+sh.h %d0, %d0, %d0
+
+# CHECK-INST: sh.h %d0, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x00,0x04]
+sh.h %d0, %d0, %d1
+
+# CHECK-INST: sh.h %d0, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x00,0x04]
+sh.h %d0, %d0, %d14
+
+# CHECK-INST: sh.h %d0, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x00,0x04]
+sh.h %d0, %d0, %d15
+
+# CHECK-INST: sh.h %d0, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x00,0x04]
+sh.h %d0, %d1, %d0
+
+# CHECK-INST: sh.h %d0, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x00,0x04]
+sh.h %d0, %d1, %d1
+
+# CHECK-INST: sh.h %d0, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x00,0x04]
+sh.h %d0, %d1, %d14
+
+# CHECK-INST: sh.h %d0, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x00,0x04]
+sh.h %d0, %d1, %d15
+
+# CHECK-INST: sh.h %d0, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x00,0x04]
+sh.h %d0, %d14, %d0
+
+# CHECK-INST: sh.h %d0, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x00,0x04]
+sh.h %d0, %d14, %d1
+
+# CHECK-INST: sh.h %d0, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x00,0x04]
+sh.h %d0, %d14, %d14
+
+# CHECK-INST: sh.h %d0, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x00,0x04]
+sh.h %d0, %d14, %d15
+
+# CHECK-INST: sh.h %d0, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x00,0x04]
+sh.h %d0, %d15, %d0
+
+# CHECK-INST: sh.h %d0, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x00,0x04]
+sh.h %d0, %d15, %d1
+
+# CHECK-INST: sh.h %d0, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x00,0x04]
+sh.h %d0, %d15, %d14
+
+# CHECK-INST: sh.h %d0, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x00,0x04]
+sh.h %d0, %d15, %d15
+
+# CHECK-INST: sh.h %d1, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x00,0x14]
+sh.h %d1, %d0, %d0
+
+# CHECK-INST: sh.h %d1, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x00,0x14]
+sh.h %d1, %d0, %d1
+
+# CHECK-INST: sh.h %d1, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x00,0x14]
+sh.h %d1, %d0, %d14
+
+# CHECK-INST: sh.h %d1, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x00,0x14]
+sh.h %d1, %d0, %d15
+
+# CHECK-INST: sh.h %d1, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x00,0x14]
+sh.h %d1, %d1, %d0
+
+# CHECK-INST: sh.h %d1, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x00,0x14]
+sh.h %d1, %d1, %d1
+
+# CHECK-INST: sh.h %d1, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x00,0x14]
+sh.h %d1, %d1, %d14
+
+# CHECK-INST: sh.h %d1, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x00,0x14]
+sh.h %d1, %d1, %d15
+
+# CHECK-INST: sh.h %d1, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x00,0x14]
+sh.h %d1, %d14, %d0
+
+# CHECK-INST: sh.h %d1, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x00,0x14]
+sh.h %d1, %d14, %d1
+
+# CHECK-INST: sh.h %d1, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x00,0x14]
+sh.h %d1, %d14, %d14
+
+# CHECK-INST: sh.h %d1, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x00,0x14]
+sh.h %d1, %d14, %d15
+
+# CHECK-INST: sh.h %d1, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x00,0x14]
+sh.h %d1, %d15, %d0
+
+# CHECK-INST: sh.h %d1, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x00,0x14]
+sh.h %d1, %d15, %d1
+
+# CHECK-INST: sh.h %d1, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x00,0x14]
+sh.h %d1, %d15, %d14
+
+# CHECK-INST: sh.h %d1, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x00,0x14]
+sh.h %d1, %d15, %d15
+
+# CHECK-INST: sh.h %d14, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x00,0xe4]
+sh.h %d14, %d0, %d0
+
+# CHECK-INST: sh.h %d14, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x00,0xe4]
+sh.h %d14, %d0, %d1
+
+# CHECK-INST: sh.h %d14, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x00,0xe4]
+sh.h %d14, %d0, %d14
+
+# CHECK-INST: sh.h %d14, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x00,0xe4]
+sh.h %d14, %d0, %d15
+
+# CHECK-INST: sh.h %d14, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x00,0xe4]
+sh.h %d14, %d1, %d0
+
+# CHECK-INST: sh.h %d14, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x00,0xe4]
+sh.h %d14, %d1, %d1
+
+# CHECK-INST: sh.h %d14, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x00,0xe4]
+sh.h %d14, %d1, %d14
+
+# CHECK-INST: sh.h %d14, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x00,0xe4]
+sh.h %d14, %d1, %d15
+
+# CHECK-INST: sh.h %d14, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x00,0xe4]
+sh.h %d14, %d14, %d0
+
+# CHECK-INST: sh.h %d14, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x00,0xe4]
+sh.h %d14, %d14, %d1
+
+# CHECK-INST: sh.h %d14, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x00,0xe4]
+sh.h %d14, %d14, %d14
+
+# CHECK-INST: sh.h %d14, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x00,0xe4]
+sh.h %d14, %d14, %d15
+
+# CHECK-INST: sh.h %d14, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x00,0xe4]
+sh.h %d14, %d15, %d0
+
+# CHECK-INST: sh.h %d14, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x00,0xe4]
+sh.h %d14, %d15, %d1
+
+# CHECK-INST: sh.h %d14, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x00,0xe4]
+sh.h %d14, %d15, %d14
+
+# CHECK-INST: sh.h %d14, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x00,0xe4]
+sh.h %d14, %d15, %d15
+
+# CHECK-INST: sh.h %d15, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x00,0xf4]
+sh.h %d15, %d0, %d0
+
+# CHECK-INST: sh.h %d15, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x00,0xf4]
+sh.h %d15, %d0, %d1
+
+# CHECK-INST: sh.h %d15, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x00,0xf4]
+sh.h %d15, %d0, %d14
+
+# CHECK-INST: sh.h %d15, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x00,0xf4]
+sh.h %d15, %d0, %d15
+
+# CHECK-INST: sh.h %d15, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x00,0xf4]
+sh.h %d15, %d1, %d0
+
+# CHECK-INST: sh.h %d15, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x00,0xf4]
+sh.h %d15, %d1, %d1
+
+# CHECK-INST: sh.h %d15, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x00,0xf4]
+sh.h %d15, %d1, %d14
+
+# CHECK-INST: sh.h %d15, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x00,0xf4]
+sh.h %d15, %d1, %d15
+
+# CHECK-INST: sh.h %d15, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x00,0xf4]
+sh.h %d15, %d14, %d0
+
+# CHECK-INST: sh.h %d15, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x00,0xf4]
+sh.h %d15, %d14, %d1
+
+# CHECK-INST: sh.h %d15, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x00,0xf4]
+sh.h %d15, %d14, %d14
+
+# CHECK-INST: sh.h %d15, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x00,0xf4]
+sh.h %d15, %d14, %d15
+
+# CHECK-INST: sh.h %d15, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x00,0xf4]
+sh.h %d15, %d15, %d0
+
+# CHECK-INST: sh.h %d15, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x00,0xf4]
+sh.h %d15, %d15, %d1
+
+# CHECK-INST: sh.h %d15, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x00,0xf4]
+sh.h %d15, %d15, %d14
+
+# CHECK-INST: sh.h %d15, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x00,0xf4]
+sh.h %d15, %d15, %d15
+
 # CHECK-INST: sh.h %d0, %d0, -16
 # CHECK: encoding: [0x8f,0x00,0x1f,0x08]
 .code32
@@ -7682,6 +7938,262 @@ sh.h %d15, %d15, 14
 # CHECK: encoding: [0x8f,0xff,0x00,0xf8]
 .code32
 sh.h %d15, %d15, 15
+
+# CHECK-INST: sha.h %d0, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x10,0x04]
+sha.h %d0, %d0, %d0
+
+# CHECK-INST: sha.h %d0, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x10,0x04]
+sha.h %d0, %d0, %d1
+
+# CHECK-INST: sha.h %d0, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x10,0x04]
+sha.h %d0, %d0, %d14
+
+# CHECK-INST: sha.h %d0, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x10,0x04]
+sha.h %d0, %d0, %d15
+
+# CHECK-INST: sha.h %d0, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x10,0x04]
+sha.h %d0, %d1, %d0
+
+# CHECK-INST: sha.h %d0, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x10,0x04]
+sha.h %d0, %d1, %d1
+
+# CHECK-INST: sha.h %d0, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x10,0x04]
+sha.h %d0, %d1, %d14
+
+# CHECK-INST: sha.h %d0, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x10,0x04]
+sha.h %d0, %d1, %d15
+
+# CHECK-INST: sha.h %d0, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x10,0x04]
+sha.h %d0, %d14, %d0
+
+# CHECK-INST: sha.h %d0, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x10,0x04]
+sha.h %d0, %d14, %d1
+
+# CHECK-INST: sha.h %d0, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x10,0x04]
+sha.h %d0, %d14, %d14
+
+# CHECK-INST: sha.h %d0, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x10,0x04]
+sha.h %d0, %d14, %d15
+
+# CHECK-INST: sha.h %d0, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x10,0x04]
+sha.h %d0, %d15, %d0
+
+# CHECK-INST: sha.h %d0, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x10,0x04]
+sha.h %d0, %d15, %d1
+
+# CHECK-INST: sha.h %d0, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x10,0x04]
+sha.h %d0, %d15, %d14
+
+# CHECK-INST: sha.h %d0, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x10,0x04]
+sha.h %d0, %d15, %d15
+
+# CHECK-INST: sha.h %d1, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x10,0x14]
+sha.h %d1, %d0, %d0
+
+# CHECK-INST: sha.h %d1, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x10,0x14]
+sha.h %d1, %d0, %d1
+
+# CHECK-INST: sha.h %d1, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x10,0x14]
+sha.h %d1, %d0, %d14
+
+# CHECK-INST: sha.h %d1, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x10,0x14]
+sha.h %d1, %d0, %d15
+
+# CHECK-INST: sha.h %d1, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x10,0x14]
+sha.h %d1, %d1, %d0
+
+# CHECK-INST: sha.h %d1, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x10,0x14]
+sha.h %d1, %d1, %d1
+
+# CHECK-INST: sha.h %d1, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x10,0x14]
+sha.h %d1, %d1, %d14
+
+# CHECK-INST: sha.h %d1, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x10,0x14]
+sha.h %d1, %d1, %d15
+
+# CHECK-INST: sha.h %d1, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x10,0x14]
+sha.h %d1, %d14, %d0
+
+# CHECK-INST: sha.h %d1, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x10,0x14]
+sha.h %d1, %d14, %d1
+
+# CHECK-INST: sha.h %d1, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x10,0x14]
+sha.h %d1, %d14, %d14
+
+# CHECK-INST: sha.h %d1, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x10,0x14]
+sha.h %d1, %d14, %d15
+
+# CHECK-INST: sha.h %d1, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x10,0x14]
+sha.h %d1, %d15, %d0
+
+# CHECK-INST: sha.h %d1, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x10,0x14]
+sha.h %d1, %d15, %d1
+
+# CHECK-INST: sha.h %d1, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x10,0x14]
+sha.h %d1, %d15, %d14
+
+# CHECK-INST: sha.h %d1, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x10,0x14]
+sha.h %d1, %d15, %d15
+
+# CHECK-INST: sha.h %d14, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x10,0xe4]
+sha.h %d14, %d0, %d0
+
+# CHECK-INST: sha.h %d14, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x10,0xe4]
+sha.h %d14, %d0, %d1
+
+# CHECK-INST: sha.h %d14, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x10,0xe4]
+sha.h %d14, %d0, %d14
+
+# CHECK-INST: sha.h %d14, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x10,0xe4]
+sha.h %d14, %d0, %d15
+
+# CHECK-INST: sha.h %d14, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x10,0xe4]
+sha.h %d14, %d1, %d0
+
+# CHECK-INST: sha.h %d14, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x10,0xe4]
+sha.h %d14, %d1, %d1
+
+# CHECK-INST: sha.h %d14, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x10,0xe4]
+sha.h %d14, %d1, %d14
+
+# CHECK-INST: sha.h %d14, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x10,0xe4]
+sha.h %d14, %d1, %d15
+
+# CHECK-INST: sha.h %d14, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x10,0xe4]
+sha.h %d14, %d14, %d0
+
+# CHECK-INST: sha.h %d14, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x10,0xe4]
+sha.h %d14, %d14, %d1
+
+# CHECK-INST: sha.h %d14, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x10,0xe4]
+sha.h %d14, %d14, %d14
+
+# CHECK-INST: sha.h %d14, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x10,0xe4]
+sha.h %d14, %d14, %d15
+
+# CHECK-INST: sha.h %d14, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x10,0xe4]
+sha.h %d14, %d15, %d0
+
+# CHECK-INST: sha.h %d14, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x10,0xe4]
+sha.h %d14, %d15, %d1
+
+# CHECK-INST: sha.h %d14, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x10,0xe4]
+sha.h %d14, %d15, %d14
+
+# CHECK-INST: sha.h %d14, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x10,0xe4]
+sha.h %d14, %d15, %d15
+
+# CHECK-INST: sha.h %d15, %d0, %d0
+# CHECK: encoding: [0x0f,0x00,0x10,0xf4]
+sha.h %d15, %d0, %d0
+
+# CHECK-INST: sha.h %d15, %d0, %d1
+# CHECK: encoding: [0x0f,0x10,0x10,0xf4]
+sha.h %d15, %d0, %d1
+
+# CHECK-INST: sha.h %d15, %d0, %d14
+# CHECK: encoding: [0x0f,0xe0,0x10,0xf4]
+sha.h %d15, %d0, %d14
+
+# CHECK-INST: sha.h %d15, %d0, %d15
+# CHECK: encoding: [0x0f,0xf0,0x10,0xf4]
+sha.h %d15, %d0, %d15
+
+# CHECK-INST: sha.h %d15, %d1, %d0
+# CHECK: encoding: [0x0f,0x01,0x10,0xf4]
+sha.h %d15, %d1, %d0
+
+# CHECK-INST: sha.h %d15, %d1, %d1
+# CHECK: encoding: [0x0f,0x11,0x10,0xf4]
+sha.h %d15, %d1, %d1
+
+# CHECK-INST: sha.h %d15, %d1, %d14
+# CHECK: encoding: [0x0f,0xe1,0x10,0xf4]
+sha.h %d15, %d1, %d14
+
+# CHECK-INST: sha.h %d15, %d1, %d15
+# CHECK: encoding: [0x0f,0xf1,0x10,0xf4]
+sha.h %d15, %d1, %d15
+
+# CHECK-INST: sha.h %d15, %d14, %d0
+# CHECK: encoding: [0x0f,0x0e,0x10,0xf4]
+sha.h %d15, %d14, %d0
+
+# CHECK-INST: sha.h %d15, %d14, %d1
+# CHECK: encoding: [0x0f,0x1e,0x10,0xf4]
+sha.h %d15, %d14, %d1
+
+# CHECK-INST: sha.h %d15, %d14, %d14
+# CHECK: encoding: [0x0f,0xee,0x10,0xf4]
+sha.h %d15, %d14, %d14
+
+# CHECK-INST: sha.h %d15, %d14, %d15
+# CHECK: encoding: [0x0f,0xfe,0x10,0xf4]
+sha.h %d15, %d14, %d15
+
+# CHECK-INST: sha.h %d15, %d15, %d0
+# CHECK: encoding: [0x0f,0x0f,0x10,0xf4]
+sha.h %d15, %d15, %d0
+
+# CHECK-INST: sha.h %d15, %d15, %d1
+# CHECK: encoding: [0x0f,0x1f,0x10,0xf4]
+sha.h %d15, %d15, %d1
+
+# CHECK-INST: sha.h %d15, %d15, %d14
+# CHECK: encoding: [0x0f,0xef,0x10,0xf4]
+sha.h %d15, %d15, %d14
+
+# CHECK-INST: sha.h %d15, %d15, %d15
+# CHECK: encoding: [0x0f,0xff,0x10,0xf4]
+sha.h %d15, %d15, %d15
 
 # CHECK-INST: sha.h %d0, %d0, -16
 # CHECK: encoding: [0x8f,0x00,0x3f,0x08]
