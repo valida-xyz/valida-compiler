@@ -9,15 +9,13 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a4
     ; CHECK: [[COPY2:%[0-9]+]]:_(p0) = COPY $a5
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
-    ; CHECK: [[SELECT:%[0-9]+]]:_(p0) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: [[SELECT:%[0-9]+]]:_(p0) = G_SELECT [[COPY]](s32), [[COPY1]], [[COPY2]]
     ; CHECK: $a2 = COPY [[SELECT]](p0)
     %0:_(s32) = COPY $d4
     %1:_(p0) = COPY $a4
     %2:_(p0) = COPY $a5
-    %3:_(s1) = G_TRUNC %0(s32)
-    %4:_(p0) = G_SELECT %3(s1), %1, %2
-    $a2 = COPY %4(p0)
+    %3:_(p0) = G_SELECT %0(s32), %1, %2
+    $a2 = COPY %3(p0)
 ...
 
 ---
@@ -28,15 +26,13 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
     ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
-    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY]](s32), [[COPY1]], [[COPY2]]
     ; CHECK: $d2 = COPY [[SELECT]](s32)
     %0:_(s32) = COPY $d4
     %1:_(s32) = COPY $d5
     %2:_(s32) = COPY $d6
-    %3:_(s1) = G_TRUNC %0(s32)
-    %4:_(s32) =G_SELECT %3(s1), %1, %2
-    $d2 = COPY %4(s32)
+    %3:_(s32) = G_SELECT %0(s32), %1, %2
+    $d2 = COPY %3(s32)
 ...
 
 ---
@@ -47,15 +43,13 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
     ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
-    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[COPY1]], [[COPY2]]
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY]](s32), [[COPY1]], [[COPY2]]
     ; CHECK: $d2 = COPY [[SELECT]](s32)
     %0:_(s32) = COPY $d4
     %1:_(s32) = COPY $d5
     %2:_(s32) = COPY $d6
-    %3:_(s1) = G_TRUNC %0(s32)
-    %4:_(s32) =G_SELECT %3(s1), %1, %2
-    $d2 = COPY %4(s32)
+    %3:_(s32) = G_SELECT %0(s32), %1, %2
+    $d2 = COPY %3(s32)
 ...
 
 ---
@@ -66,17 +60,34 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
     ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e8
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
     ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
     ; CHECK: [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY2]](s64)
-    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[UV]], [[UV2]]
-    ; CHECK: [[SELECT1:%[0-9]+]]:_(s32) = G_SELECT [[TRUNC]](s1), [[UV1]], [[UV3]]
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY]](s32), [[UV]], [[UV2]]
+    ; CHECK: [[SELECT1:%[0-9]+]]:_(s32) = G_SELECT [[COPY]](s32), [[UV1]], [[UV3]]
     ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[SELECT]](s32), [[SELECT1]](s32)
     ; CHECK: $e2 = COPY [[MV]](s64)
     %0:_(s32) = COPY $d4
     %1:_(s64) = COPY $e6
     %2:_(s64) = COPY $e8
+    %3:_(s64) = G_SELECT %0(s32), %1, %2
+    $e2 = COPY %3(s64)
+...
+
+---
+name:            test_select_s32_s1
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_select_s32_s1
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY3]](s32), [[COPY1]], [[COPY2]]
+    ; CHECK: $d2 = COPY [[SELECT]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s32) = COPY $d6
     %3:_(s1) = G_TRUNC %0(s32)
-    %4:_(s64) =G_SELECT %3(s1), %1, %2
-    $e2 = COPY %4(s64)
+    %4:_(s32) = G_SELECT %3(s1), %1, %2
+    $d2 = COPY %4(s32)
 ...

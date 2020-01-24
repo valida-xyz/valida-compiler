@@ -151,10 +151,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(1, s32, s32)
       .clampScalar(0, s32, s32);
 
-  // G_SELECT is only valid for 32-bit and pointer types. Condition is s1.
+  // G_SELECT is only valid for 32-bit and pointer types. Condition is s32.
   getActionDefinitionsBuilder(G_SELECT)
-      .legalFor({{s32, s1}, {p0, s1}})
-      .clampScalar(0, s32, s32);
+      .legalFor({{s32, s32}, {p0, s32}})
+      .clampScalar(0, s32, s32)
+      .clampScalar(1, s32, s32);
 
   // Extensions
 
