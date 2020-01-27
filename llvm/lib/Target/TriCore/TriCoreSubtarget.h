@@ -38,9 +38,9 @@ protected:
   bool allow16BitInst = true;
   bool allow32BitInst = true;
 
-  bool HasTC161Ops = true;
-  bool HasTC162Ops = true;
-  bool HasTC18Ops = true;
+  bool HasTC161Ops = false;
+  bool HasTC162Ops = false;
+  bool HasTC18Ops = false;
 
   TriCoreFrameLowering FrameLowering;
   TriCoreInstrInfo InstrInfo;
