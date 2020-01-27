@@ -99,7 +99,7 @@ def BTV  : TriCoreReg<0,  "BTV">,  DwarfRegNum<[49]>;
 // Register classes
 //===----------------------------------------------------------------------===//
 
-def DataRegs : RegisterClass<"TriCore", [i32], 32, (add D15,
+def DataRegs : RegisterClass<"TriCore", [i32, f32], 32, (add D15,
                                                    (sequence "D%u", 0, 14)
                             )>;
 
@@ -111,13 +111,13 @@ def AddrRegs : RegisterClass<"TriCore", [i32], 32, (add A15,
                                                       (sequence "A%u", 8, 9)
                                 )>;
 
-def ExtDataRegs : RegisterClass<"TriCore", [i64], 32, (add E0, E2, E4, E6, E8,
-                                                            E10, E12, E14)>;
+def ExtDataRegs : RegisterClass<"TriCore", [i64, f64], 32, (add E0, E2, E4, E6,
+                                                            E8, E10, E12, E14)>;
 
 def ExtAddrRegs : RegisterClass<"TriCore", [i64], 32, (add P0, P2, P4, P6, P8,
                                                             P10, P12, P14)>;
 
-def ImplDataReg : RegisterClass<"TriCore", [i32], 32, (add D15)>;
+def ImplDataReg : RegisterClass<"TriCore", [i32, f32], 32, (add D15)>;
 
 def ImplAddrReg : RegisterClass<"TriCore", [i32], 32, (add A15)>;
 

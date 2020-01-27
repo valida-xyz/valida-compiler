@@ -44,7 +44,11 @@ class match_truncstore<ValueType ty, DAGOperand ValClass>
     : PatFrag<(ops), (store (ty (trunc ValClass:$val)), AddrRegs:$addr)>;
 
 // Pattern to select store of any type
-class StorePat<DAGOperand ValClass, Instruction INSTR, ValueType immTy = i16>
+class StorePat<ValueType Ty, Instruction INSTR, ValueType immTy = i16>
+    : Pat<(store Ty:$val, AddrRegs:$addr),
+          (emit_store<INSTR, immTy> AddrRegs:$addr, Ty:$val)>;
+
+class StorePatAddr<DAGOperand ValClass, Instruction INSTR, ValueType immTy = i16>
     : Pat<(store ValClass:$val, AddrRegs:$addr),
           (emit_store<INSTR, immTy> AddrRegs:$addr, ValClass:$val)>;
 
@@ -129,10 +133,10 @@ def : Load32Pat<zextloadi8,     LDBU_dalc>;
 def : Load32Pat<zextloadi16,    LDHU_dalc>;
 
 // 32 and 64-bit stores
-def : StorePat<DataRegs,    STW_alcd>;
-def : StorePat<ExtDataRegs, STD_ace,    i32>;
-def : StorePat<AddrRegs,    STA_alca>;
-def : StorePat<ExtAddrRegs, STDA_acp,   i32>;
+def : StorePat<i32, STW_alcd>;
+def : StorePat<i64, STD_ace,    i32>;
+def : StorePatAddr<AddrRegs,    STA_alca>;
+def : StorePatAddr<ExtAddrRegs, STDA_acp,   i32>;
 
 // Byte and half-word stores with trunc
 // 32-bit
