@@ -96,6 +96,7 @@ multiclass DivRem<SDPatternOperator divOp, SDPatternOperator remOp,
 }
 
 defm : DivRem<sdiv, srem, DIV_edd>;
+defm : DivRem<udiv, urem, DIVU_edd>;
 
 // 2.1.7 Conditional Arithmetic
 

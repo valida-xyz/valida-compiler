@@ -259,3 +259,54 @@ body:             |
     %2(s32) = G_SREM %0, %1
     $d4 = COPY %2(s32)
 ...
+---
+name:            udiv_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: udiv_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[DIVU_edd:%[0-9]+]]:extdataregs = DIVU_edd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY [[DIVU_edd]].dsub0
+    ; CHECK: $d4 = COPY [[COPY2]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_UDIV %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            urem_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: urem_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[DIVU_edd:%[0-9]+]]:extdataregs = DIVU_edd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY [[DIVU_edd]].dsub1
+    ; CHECK: $d4 = COPY [[COPY2]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_UREM %0, %1
+    $d4 = COPY %2(s32)
+...
