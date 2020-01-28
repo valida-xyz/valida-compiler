@@ -13,7 +13,10 @@
 #ifndef LLVM_LIB_TARGET_TRICORE_TRICOREMACHINELEGALIZER_H
 #define LLVM_LIB_TARGET_TRICORE_TRICOREMACHINELEGALIZER_H
 
+#include "llvm/ADT/IndexedMap.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
+#include "llvm/CodeGen/RuntimeLibcalls.h"
+#include "llvm/IR/Instructions.h"
 
 namespace llvm {
 
@@ -26,6 +29,36 @@ public:
 
   bool legalizeIntrinsic(MachineInstr &MI, MachineIRBuilder &MIRBuilder,
                          GISelChangeObserver &Observer) const override;
+
+  bool legalizeCustom(MachineInstr &MI, MachineRegisterInfo &MRI,
+                      MachineIRBuilder &MIRBuilder,
+                      GISelChangeObserver &Observer) const override;
+
+private:
+  bool legalizeFCmp(MachineInstr &MI, MachineRegisterInfo &MRI,
+                    MachineIRBuilder &MIRBuilder) const;
+  void setFCmpLibcalls();
+
+  struct FCmpLibcallInfo {
+    // Which libcall this is.
+    RTLIB::Libcall LibcallID;
+
+    // The predicate to be used when comparing the value returned by the
+    // function with a relevant constant (currently hard-coded to zero). This is
+    // necessary because often the libcall will return e.g. a value greater than
+    // 0 to represent 'true' and anything negative to represent 'false', or
+    // maybe 0 to represent 'true' and non-zero for 'false'. If no comparison is
+    // needed, this should be CmpInst::BAD_ICMP_PREDICATE.
+    CmpInst::Predicate Predicate;
+  };
+  using FCmpLibcallsList = SmallVector<FCmpLibcallInfo, 2>;
+
+  // Map from each FCmp predicate to the corresponding libcall infos. A FCmp
+  // instruction may be lowered to one or two libcalls, which is why we need a
+  // list. If two libcalls are needed, their results will be OR'ed.
+  using FCmpLibcallsMapTy = IndexedMap<FCmpLibcallsList>;
+
+  FCmpLibcallsMapTy FCmp64Libcalls;
 };
 } // end namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREMACHINELEGALIZER_H

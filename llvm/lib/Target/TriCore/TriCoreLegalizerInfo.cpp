@@ -179,6 +179,21 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(1, s32, s32)
       .clampScalar(0, s32, s32);
 
+  // G_FCMP is always legal for s32, but depending on the subtarget feature
+  // needs a libcall for s64
+  auto &FPCMPActions = getActionDefinitionsBuilder(G_FCMP)
+                           .legalFor({{s32, s32}})
+                           .clampScalar(1, s32, s64)
+                           .widenScalarToNextPow2(1)
+                           .clampScalar(0, s32, s32);
+
+  if (ST.hasTC18Ops()) {
+    FPCMPActions.legalFor({s32, s64});
+  } else {
+    setFCmpLibcalls();
+    FPCMPActions.customFor({s32, s64});
+  }
+
   // G_SELECT is only valid for 32-bit and pointer types. Condition is s32.
   getActionDefinitionsBuilder(G_SELECT)
       .legalFor({{s32, s32}, {p0, s32}})
@@ -368,6 +383,42 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   verify(*ST.getInstrInfo());
 }
 
+void TriCoreLegalizerInfo::setFCmpLibcalls() {
+  // FCMP_TRUE and FCMP_FALSE don't need libcalls, they should be
+  // default-initialized.
+  FCmp64Libcalls.resize(CmpInst::LAST_FCMP_PREDICATE + 1);
+  FCmp64Libcalls[CmpInst::FCMP_OEQ] = {{RTLIB::OEQ_F64, CmpInst::ICMP_EQ}};
+  FCmp64Libcalls[CmpInst::FCMP_OGE] = {{RTLIB::OGE_F64, CmpInst::ICMP_SGE}};
+  FCmp64Libcalls[CmpInst::FCMP_OGT] = {{RTLIB::OGT_F64, CmpInst::ICMP_SGT}};
+  FCmp64Libcalls[CmpInst::FCMP_OLE] = {{RTLIB::OLE_F64, CmpInst::ICMP_SLE}};
+  FCmp64Libcalls[CmpInst::FCMP_OLT] = {{RTLIB::OLT_F64, CmpInst::ICMP_SLT}};
+  FCmp64Libcalls[CmpInst::FCMP_ORD] = {{RTLIB::UO_F64, CmpInst::ICMP_EQ}};
+  FCmp64Libcalls[CmpInst::FCMP_UGE] = {{RTLIB::OLT_F64, CmpInst::ICMP_SGE}};
+  FCmp64Libcalls[CmpInst::FCMP_UGT] = {{RTLIB::OLE_F64, CmpInst::ICMP_SGT}};
+  FCmp64Libcalls[CmpInst::FCMP_ULE] = {{RTLIB::OGT_F64, CmpInst::ICMP_SLE}};
+  FCmp64Libcalls[CmpInst::FCMP_ULT] = {{RTLIB::OGE_F64, CmpInst::ICMP_SLT}};
+  FCmp64Libcalls[CmpInst::FCMP_UNE] = {{RTLIB::UNE_F64, CmpInst::ICMP_NE}};
+  FCmp64Libcalls[CmpInst::FCMP_UNO] = {{RTLIB::UO_F64, CmpInst::ICMP_NE}};
+  FCmp64Libcalls[CmpInst::FCMP_ONE] = {{RTLIB::OGT_F64, CmpInst::ICMP_SGT},
+                                       {RTLIB::OLT_F64, CmpInst::ICMP_SLT}};
+  FCmp64Libcalls[CmpInst::FCMP_UEQ] = {{RTLIB::OEQ_F64, CmpInst::ICMP_EQ},
+                                       {RTLIB::UO_F64, CmpInst::ICMP_NE}};
+}
+
+bool TriCoreLegalizerInfo::legalizeCustom(MachineInstr &MI,
+                                          MachineRegisterInfo &MRI,
+                                          MachineIRBuilder &MIRBuilder,
+                                          GISelChangeObserver &Observer) const {
+  switch (MI.getOpcode()) {
+  default:
+    // No idea what to do.
+    return false;
+  case TargetOpcode::G_FCMP:
+    return legalizeFCmp(MI, MRI, MIRBuilder);
+  }
+  llvm_unreachable("expected switch to return");
+}
+
 bool TriCoreLegalizerInfo::legalizeIntrinsic(
     MachineInstr &MI, MachineIRBuilder &MIRBuilder,
     GISelChangeObserver &Observer) const {
@@ -383,5 +434,78 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
   default:
     break;
   }
+  return true;
+}
+
+bool TriCoreLegalizerInfo::legalizeFCmp(MachineInstr &MI,
+                                        MachineRegisterInfo &MRI,
+                                        MachineIRBuilder &MIRBuilder) const {
+  Register Src1Reg = MI.getOperand(2).getReg();
+  Register Src2Reg = MI.getOperand(3).getReg();
+
+  assert(MRI.getType(Src1Reg) == MRI.getType(Src2Reg) &&
+         MRI.getType(Src1Reg) == LLT::scalar(64) &&
+         "Expected double float types");
+
+  MIRBuilder.setInstr(MI);
+  LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
+
+  auto OriginalResult = MI.getOperand(0).getReg();
+  auto Predicate =
+      static_cast<CmpInst::Predicate>(MI.getOperand(1).getPredicate());
+
+  if (Predicate == FCmpInst::FCMP_TRUE || Predicate == FCmpInst::FCMP_FALSE) {
+    // True and false predicates always return a constant
+    MIRBuilder.buildConstant(OriginalResult,
+                             Predicate == FCmpInst::FCMP_TRUE ? 1 : 0);
+    MI.eraseFromParent();
+    return true;
+  }
+
+  // Get the necessary libary calls for the given predicate. Double lib calls
+  // always have the signature (double,double) -> int
+  auto Libcalls = FCmp64Libcalls[Predicate];
+  auto *RetTy = Type::getInt32Ty(Ctx);
+  auto *ArgTy = Type::getDoubleTy(Ctx);
+
+  SmallVector<Register, 2> Results;
+  for (auto Libcall : Libcalls) {
+    auto LibcallResult = MRI.createGenericVirtualRegister(LLT::scalar(32));
+    auto Status =
+        createLibcall(MIRBuilder, Libcall.LibcallID, {LibcallResult, RetTy},
+                      {{Src1Reg, ArgTy}, {Src2Reg, ArgTy}});
+
+    if (Status != LegalizerHelper::Legalized)
+      return false;
+
+    auto ProcessedResult =
+        Libcalls.size() == 1
+            ? OriginalResult
+            : MRI.createGenericVirtualRegister(MRI.getType(OriginalResult));
+
+    // We have a result, but we need to transform it into a proper 1-bit 0 or
+    // 1, taking into account the different peculiarities of the values
+    // returned by the comparison functions.
+    CmpInst::Predicate ResultPred = Libcall.Predicate;
+    if (ResultPred == CmpInst::BAD_ICMP_PREDICATE) {
+      // We have a nice 0 or 1, and we just need to truncate it back to 1 bit
+      // to keep the types consistent.
+      MIRBuilder.buildTrunc(ProcessedResult, LibcallResult);
+    } else {
+      // We need to compare against 0.
+      assert(CmpInst::isIntPredicate(ResultPred) && "Unsupported predicate");
+      auto Zero = MRI.createGenericVirtualRegister(LLT::scalar(32));
+      MIRBuilder.buildConstant(Zero, 0);
+      MIRBuilder.buildICmp(ResultPred, ProcessedResult, LibcallResult, Zero);
+    }
+    Results.push_back(ProcessedResult);
+  }
+
+  if (Results.size() != 1) {
+    assert(Results.size() == 2 && "Unexpected number of results");
+    MIRBuilder.buildOr(OriginalResult, Results[0], Results[1]);
+  }
+
+  MI.eraseFromParent();
   return true;
 }
