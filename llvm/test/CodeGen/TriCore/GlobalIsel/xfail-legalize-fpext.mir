@@ -1,0 +1,15 @@
+# RUN: llc -mtriple=tricore -mcpu=tc2xx -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
+# XFAIL: *
+
+# The "lower" action is not supported at the moment in GlobalISel
+
+---
+name: test_fpext_f16_to_f64
+body: |
+  bb.0:
+    ; CHECK-NOT: LLVM ERROR: unable to legalize instruction: {{%[0-9]+}}:_({{s[0-9]+}}) = G_FPEXT
+    %0:_(s32) = COPY $d4
+    %1:_(s16) = G_TRUNC %0
+    %2:_(s64) = G_FPEXT %1
+    $e2 = COPY %2
+...

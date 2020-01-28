@@ -127,6 +127,19 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({{p0, s32}})
       .clampScalar(1, s32, s32);
 
+  // Floating point Ops
+
+  // G_FPEXT needs to convert from half to single, single to double and half to
+  // double precision
+  auto &FPExtActions = getActionDefinitionsBuilder(G_FPEXT)
+                           .legalFor({{s32, s16}})
+                           .lowerFor({{s64, s16}}); // FIXME: implement lower
+
+  if (ST.hasTC18Ops())
+    FPExtActions.legalFor({{s64, s32}});
+  else
+    FPExtActions.libcallFor({{s64, s32}});
+
   // Overflow Ops
 
   // All variants of add/sub /w carry must produce an s32 result and an s1 carry
