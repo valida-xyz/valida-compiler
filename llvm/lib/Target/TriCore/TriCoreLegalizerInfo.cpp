@@ -110,16 +110,20 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
-  // G_SDIV is only legal for 32 bit types and has to be lowered for 64 bit type
-  getActionDefinitionsBuilder(G_SDIV)
+  // G_SDIV, G_UDIV is only legal for 32 bit types and has to be lowered for
+  // 64-bit type
+  getActionDefinitionsBuilder({G_SDIV, G_UDIV})
       .legalFor({s32})
-      .minScalar(0, s32)
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0)
       .libcallFor({s64});
 
-  // G_SREM is only legal for 32 bit types and has to be lowered for 64 bit type
-  getActionDefinitionsBuilder(G_SREM)
+  // G_SREM, G_UREM is only legal for 32 bit types and has to be lowered for
+  // 64-bit type
+  getActionDefinitionsBuilder({G_SREM, G_UREM})
       .legalFor({s32})
-      .minScalar(0, s32)
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0)
       .lowerFor({s64});
 
   // G_PTR_ADD must take a p0 and s32 operand
