@@ -140,6 +140,17 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   else
     FPExtActions.libcallFor({{s64, s32}});
 
+  // G_FPTRUNC needs to convert from double to single, single to half and double
+  // to single precision
+  auto &FPTruncActions = getActionDefinitionsBuilder(G_FPTRUNC)
+                             .legalFor({{s16, s32}})
+                             .lowerFor({{s16, s64}}); // FIXME: implement lower
+
+  if (ST.hasTC18Ops())
+    FPTruncActions.legalFor({{s32, s64}});
+  else
+    FPTruncActions.libcallFor({{s32, s64}});
+
   // Overflow Ops
 
   // All variants of add/sub /w carry must produce an s32 result and an s1 carry
