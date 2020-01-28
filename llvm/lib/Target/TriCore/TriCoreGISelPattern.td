@@ -83,6 +83,20 @@ def : SimpleBinOpPat<sub, SUB_ddd>;
 
 def : SimpleBinOpPat<mul, MUL_ddd>;
 
+// 2.1.4 Division
+
+class DivRemBase<SDPatternOperator op, Instruction INSTR, SubRegIndex SubIdx>
+    : Pat<(op DataRegs:$s1, DataRegs:$s2),
+        (subreg_i32 (INSTR DataRegs:$s1, DataRegs:$s2), SubIdx)>;
+
+multiclass DivRem<SDPatternOperator divOp, SDPatternOperator remOp,
+        Instruction INSTR> {
+    def _Div : DivRemBase<divOp, INSTR, dsub0>;
+    def _Rem : DivRemBase<remOp, INSTR, dsub1>;
+}
+
+defm : DivRem<sdiv, srem, DIV_edd>;
+
 // 2.1.7 Conditional Arithmetic
 
 def : Pat<(i32 (select DataRegs:$cond, DataRegs:$src1, DataRegs:$src2)), 
