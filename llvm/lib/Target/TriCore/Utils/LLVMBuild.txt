@@ -1,4 +1,4 @@
-;===- ./lib/Target/TriCore/InstPrinter/LLVMBuild.txt -----------*- Conf -*--===;
+;===- ./lib/Target/TriCore/Utils/LLVMBuild.txt -----------------*- Conf -*--===;
 ;
 ; Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 ; See https://llvm.org/LICENSE.txt for license information.
@@ -16,7 +16,7 @@
 
 [component_0]
 type = Library
-name = TriCoreAsmPrinter
+name = TriCoreUtils
 parent = TriCore
-required_libraries = MC Support TriCoreUtils
+required_libraries = Support
 add_to_library_groups = TriCore

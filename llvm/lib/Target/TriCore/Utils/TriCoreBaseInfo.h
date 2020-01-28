@@ -13,6 +13,7 @@
 #ifndef LLVM_LIB_TARGET_TRICORE_MCTARGETDESC_TRICOREBASEINFO_H
 #define LLVM_LIB_TARGET_TRICORE_MCTARGETDESC_TRICOREBASEINFO_H
 
+#include "llvm/MC/SubtargetFeature.h"
 namespace llvm {
 
 // TriCoreII - This namespace holds all of the target specific flags that
@@ -82,6 +83,23 @@ enum TOF {
   MO_LO = 2,
 };
 } // namespace TriCoreII
+
+namespace TriCoreSysReg {
+struct SysReg {
+  const char *Name;
+  unsigned Encoding;
+  bool Readable;
+  bool Writeable;
+  FeatureBitset FeaturesRequired;
+
+  bool haveFeatures(FeatureBitset ActiveFeatures) const {
+    return (FeaturesRequired & ActiveFeatures) == FeaturesRequired;
+  }
+};
+
+#define GET_SYSREG_DECL
+#include "TriCoreGenSystemOperands.inc"
+} // namespace TriCoreSysReg
 
 } // namespace llvm
 #endif

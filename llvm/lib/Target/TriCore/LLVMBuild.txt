@@ -15,7 +15,7 @@
 ;===------------------------------------------------------------------------===;
 
 [common]
-subdirectories = AsmParser Disassembler InstPrinter TargetInfo MCTargetDesc
+subdirectories = AsmParser Disassembler InstPrinter TargetInfo MCTargetDesc Utils
 
 [component_0]
 type = TargetGroup
@@ -29,5 +29,5 @@ has_disassembler = 1
 type = Library
 name = TriCoreCodeGen
 parent = TriCore
-required_libraries = AsmPrinter Core CodeGen MC TriCoreAsmPrinter TriCoreDesc TriCoreInfo Support Target SelectionDAG GlobalISel
+required_libraries = AsmPrinter Core CodeGen MC TriCoreAsmPrinter TriCoreDesc TriCoreInfo TriCoreUtils Support Target SelectionDAG GlobalISel
 add_to_library_groups = TriCore

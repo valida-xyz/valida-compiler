@@ -2749,6 +2749,11 @@ addih %d15, %d15, 65534
 # CHECK: encoding: [0x9b,0xff,0xff,0xff]
 .code32
 addih %d15, %d15, 65535
+
+# CHECK-INST: addih %d15, %d15, 65028
+# CHECK: encoding: [0x9b,0x4f,0xe0,0xff]
+.code32
+addih %d15, %d15, $psw
  
 # CHECK-INST: adds %d0, %d0
 # CHECK: encoding: [0x22,0x00]

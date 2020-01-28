@@ -90,9 +90,17 @@ def uimm2_l : Operand<OtherVT> {
 def uimm3 : GenericUnsignedImmediate<3>;
 
 // A 16 bit unsigned immediate left-shifted by 3
-def uimm16_shift3 : Operand<OtherVT> {
-  let ParserMatchClass = GenericImmOperand<"UImm16Shift3">;
-  let DecoderMethod = "decodeUImm16Shift3";
+def sysreg : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"SysReg">;
+  let DecoderMethod = "decodeSysReg";
+  let PrintMethod = "printSystemRegister";
+}
+
+// A 16 bit unsigned immediate left-shifted by 3
+def double_sysreg : Operand<OtherVT> {
+  let ParserMatchClass = GenericImmOperand<"DoubleSysReg">;
+  let DecoderMethod = "decodeSysReg";
+  let PrintMethod = "printSystemRegister";
 }
 
 // A 4-bit signed immediate.

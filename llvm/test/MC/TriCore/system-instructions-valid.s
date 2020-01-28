@@ -152,80 +152,90 @@ updfl %d15
 .code32
 mfcr %d0, 0
 
-# CHECK-INST: mfcr %d0, 1
-# CHECK: encoding: [0x4d,0x10,0x00,0x00]
+# CHECK-INST: mfcr %d0, 4
+# CHECK: encoding: [0x4d,0x40,0x00,0x00]
 .code32
-mfcr %d0, 1
+mfcr %d0, 4
 
-# CHECK-INST: mfcr %d0, 65534
-# CHECK: encoding: [0x4d,0xe0,0xff,0x0f]
+# CHECK-INST: mfcr %d0, 65528
+# CHECK: encoding: [0x4d,0x80,0xff,0x0f]
 .code32
-mfcr %d0, 65534
+mfcr %d0, 65528
 
-# CHECK-INST: mfcr %d0, 65535
-# CHECK: encoding: [0x4d,0xf0,0xff,0x0f]
+# CHECK-INST: mfcr %d0, 65532
+# CHECK: encoding: [0x4d,0xc0,0xff,0x0f]
 .code32
-mfcr %d0, 65535
+mfcr %d0, 65532
 
 # CHECK-INST: mfcr %d1, 0
 # CHECK: encoding: [0x4d,0x00,0x00,0x10]
 .code32
 mfcr %d1, 0
 
-# CHECK-INST: mfcr %d1, 1
-# CHECK: encoding: [0x4d,0x10,0x00,0x10]
+# CHECK-INST: mfcr %d1, 4
+# CHECK: encoding: [0x4d,0x40,0x00,0x10]
 .code32
-mfcr %d1, 1
+mfcr %d1, 4
 
-# CHECK-INST: mfcr %d1, 65534
-# CHECK: encoding: [0x4d,0xe0,0xff,0x1f]
+# CHECK-INST: mfcr %d1, 65528
+# CHECK: encoding: [0x4d,0x80,0xff,0x1f]
 .code32
-mfcr %d1, 65534
+mfcr %d1, 65528
 
-# CHECK-INST: mfcr %d1, 65535
-# CHECK: encoding: [0x4d,0xf0,0xff,0x1f]
+# CHECK-INST: mfcr %d1, 65532
+# CHECK: encoding: [0x4d,0xc0,0xff,0x1f]
 .code32
-mfcr %d1, 65535
+mfcr %d1, 65532
 
 # CHECK-INST: mfcr %d14, 0
 # CHECK: encoding: [0x4d,0x00,0x00,0xe0]
 .code32
 mfcr %d14, 0
 
-# CHECK-INST: mfcr %d14, 1
-# CHECK: encoding: [0x4d,0x10,0x00,0xe0]
+# CHECK-INST: mfcr %d14, 4
+# CHECK: encoding: [0x4d,0x40,0x00,0xe0]
 .code32
-mfcr %d14, 1
+mfcr %d14, 4
 
-# CHECK-INST: mfcr %d14, 65534
-# CHECK: encoding: [0x4d,0xe0,0xff,0xef]
+# CHECK-INST: mfcr %d14, 65528
+# CHECK: encoding: [0x4d,0x80,0xff,0xef]
 .code32
-mfcr %d14, 65534
+mfcr %d14, 65528
 
-# CHECK-INST: mfcr %d14, 65535
-# CHECK: encoding: [0x4d,0xf0,0xff,0xef]
+# CHECK-INST: mfcr %d14, 65532
+# CHECK: encoding: [0x4d,0xc0,0xff,0xef]
 .code32
-mfcr %d14, 65535
+mfcr %d14, 65532
 
 # CHECK-INST: mfcr %d15, 0
 # CHECK: encoding: [0x4d,0x00,0x00,0xf0]
 .code32
 mfcr %d15, 0
 
-# CHECK-INST: mfcr %d15, 1
-# CHECK: encoding: [0x4d,0x10,0x00,0xf0]
+# CHECK-INST: mfcr %d15, 4
+# CHECK: encoding: [0x4d,0x40,0x00,0xf0]
 .code32
-mfcr %d15, 1
+mfcr %d15, 4
 
-# CHECK-INST: mfcr %d15, 65534
-# CHECK: encoding: [0x4d,0xe0,0xff,0xff]
+# CHECK-INST: mfcr %d15, 65528
+# CHECK: encoding: [0x4d,0x80,0xff,0xff]
 .code32
-mfcr %d15, 65534
+mfcr %d15, 65528
 
-# CHECK-INST: mfcr %d15, 65535
-# CHECK: encoding: [0x4d,0xf0,0xff,0xff]
+# CHECK-INST: mfcr %d15, 65532
+# CHECK: encoding: [0x4d,0xc0,0xff,0xff]
 .code32
-mfcr %d15, 65535
+mfcr %d15, 65532
+
+# CHECK-INST: mfcr %d0, $psw
+# CHECK: encoding: [0x4d,0x40,0xe0,0x0f]
+.code32
+mfcr %d0, $psw
+
+# CHECK-INST: mfcr %d0, $psw
+# CHECK: encoding: [0x4d,0x40,0xe0,0x0f]
+.code32
+mfcr %d0, 0xFE04
 
 # CHECK-INST: mtcr 0, %d0
 # CHECK: encoding: [0xcd,0x00,0x00,0x00]
@@ -247,62 +257,72 @@ mtcr 0, %d14
 .code32
 mtcr 0, %d15
 
-# CHECK-INST: mtcr 1, %d0
-# CHECK: encoding: [0xcd,0x10,0x00,0x00]
+# CHECK-INST: mtcr 4, %d0
+# CHECK: encoding: [0xcd,0x40,0x00,0x00]
 .code32
-mtcr 1, %d0
+mtcr 4, %d0
 
-# CHECK-INST: mtcr 1, %d1
-# CHECK: encoding: [0xcd,0x11,0x00,0x00]
+# CHECK-INST: mtcr 4, %d1
+# CHECK: encoding: [0xcd,0x41,0x00,0x00]
 .code32
-mtcr 1, %d1
+mtcr 4, %d1
 
-# CHECK-INST: mtcr 1, %d14
-# CHECK: encoding: [0xcd,0x1e,0x00,0x00]
+# CHECK-INST: mtcr 4, %d14
+# CHECK: encoding: [0xcd,0x4e,0x00,0x00]
 .code32
-mtcr 1, %d14
+mtcr 4, %d14
 
-# CHECK-INST: mtcr 1, %d15
-# CHECK: encoding: [0xcd,0x1f,0x00,0x00]
+# CHECK-INST: mtcr 4, %d15
+# CHECK: encoding: [0xcd,0x4f,0x00,0x00]
 .code32
-mtcr 1, %d15
+mtcr 4, %d15
 
-# CHECK-INST: mtcr 65534, %d0
-# CHECK: encoding: [0xcd,0xe0,0xff,0x0f]
+# CHECK-INST: mtcr 65528, %d0
+# CHECK: encoding: [0xcd,0x80,0xff,0x0f]
 .code32
-mtcr 65534, %d0
+mtcr 65528, %d0
 
-# CHECK-INST: mtcr 65534, %d1
-# CHECK: encoding: [0xcd,0xe1,0xff,0x0f]
+# CHECK-INST: mtcr 65528, %d1
+# CHECK: encoding: [0xcd,0x81,0xff,0x0f]
 .code32
-mtcr 65534, %d1
+mtcr 65528, %d1
 
-# CHECK-INST: mtcr 65534, %d14
-# CHECK: encoding: [0xcd,0xee,0xff,0x0f]
+# CHECK-INST: mtcr 65528, %d14
+# CHECK: encoding: [0xcd,0x8e,0xff,0x0f]
 .code32
-mtcr 65534, %d14
+mtcr 65528, %d14
 
-# CHECK-INST: mtcr 65534, %d15
-# CHECK: encoding: [0xcd,0xef,0xff,0x0f]
+# CHECK-INST: mtcr 65528, %d15
+# CHECK: encoding: [0xcd,0x8f,0xff,0x0f]
 .code32
-mtcr 65534, %d15
+mtcr 65528, %d15
 
-# CHECK-INST: mtcr 65535, %d0
-# CHECK: encoding: [0xcd,0xf0,0xff,0x0f]
+# CHECK-INST: mtcr 65532, %d0
+# CHECK: encoding: [0xcd,0xc0,0xff,0x0f]
 .code32
-mtcr 65535, %d0
+mtcr 65532, %d0
 
-# CHECK-INST: mtcr 65535, %d1
-# CHECK: encoding: [0xcd,0xf1,0xff,0x0f]
+# CHECK-INST: mtcr 65532, %d1
+# CHECK: encoding: [0xcd,0xc1,0xff,0x0f]
 .code32
-mtcr 65535, %d1
+mtcr 65532, %d1
 
-# CHECK-INST: mtcr 65535, %d14
-# CHECK: encoding: [0xcd,0xfe,0xff,0x0f]
+# CHECK-INST: mtcr 65532, %d14
+# CHECK: encoding: [0xcd,0xce,0xff,0x0f]
 .code32
-mtcr 65535, %d14
+mtcr 65532, %d14
 
-# CHECK-INST: mtcr 65535, %d15
-# CHECK: encoding: [0xcd,0xff,0xff,0x0f]
+# CHECK-INST: mtcr 65532, %d15
+# CHECK: encoding: [0xcd,0xcf,0xff,0x0f]
 .code32
-mtcr 65535, %d15
+mtcr 65532, %d15
+
+# CHECK-INST: mtcr $psw, %d0
+# CHECK: encoding: [0xcd,0x40,0xe0,0x0f]
+.code32
+mtcr $psw, %d0
+
+# CHECK-INST: mtcr $psw, %d0
+# CHECK: encoding: [0xcd,0x40,0xe0,0x0f]
+.code32
+mtcr 0xfe04, %d0

@@ -982,6 +982,10 @@ addih.a %a15, %a15, 65534
 .code32
 addih.a %a15, %a15, 65535
 
+# CHECK-INST: addih.a %a15, %a15, 65028
+# CHECK: encoding: [0x11,0x4f,0xe0,0xff]
+.code32
+addih.a %a15, %a15, $psw
 
 # CHECK-INST: addsc.a %a0, %a0, %d15, 0
 # CHECK: encoding: [0x10,0x00]

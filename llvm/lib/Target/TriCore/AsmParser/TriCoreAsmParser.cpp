@@ -10,6 +10,7 @@
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/MC/MCContext.h"
@@ -47,6 +48,9 @@ class TriCoreAsmParser : public MCTargetAsmParser {
 
   bool ParseDirective(AsmToken DirectiveID) override;
 
+  bool validateInstruction(MCInst &Inst, SMLoc &IDLoc,
+                           SmallVectorImpl<SMLoc> &OpLoc);
+
 // Auto-generated instruction matching functions
 #define GET_ASSEMBLER_HEADER
 #include "TriCoreGenAsmMatcher.inc"
@@ -55,6 +59,8 @@ class TriCoreAsmParser : public MCTargetAsmParser {
   OperandMatchResultTy parseRegister(OperandVector &Operands);
   OperandMatchResultTy parseMemOpBaseReg(OperandVector &Operands);
   OperandMatchResultTy parseOperandWithModifier(OperandVector &Operands);
+  OperandMatchResultTy parseSystemRegister(OperandVector &Operands,
+                                           const SMLoc &S, const SMLoc &E);
 
   bool parseOperand(OperandVector &Operands);
 
@@ -372,8 +378,7 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
-  // checking if in the range of 16 bit unsigned immediate
-  bool isUImm16Shift3() const {
+  template <unsigned S> bool isUImm16ShiftS() const {
     int64_t Imm;
     TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
     bool IsValid;
@@ -386,10 +391,16 @@ public:
     if (!IsConstantImm)
       IsValid = false; // symbols for this operand type is not allowed yet
     else
-      IsValid = isShiftedUInt<13, 3>(Imm);
+      IsValid = isShiftedUInt<16 - S, S>(Imm);
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
+
+  // checking if in the range of 16 bit unsigned immediate
+  bool isSysReg() const { return isUImm16ShiftS<2>(); }
+
+  // checking if in the range of 16 bit unsigned immediate
+  bool isDoubleSysReg() const { return isUImm16ShiftS<3>(); }
 
   // checking if in the range of 2 bit unsigned immediate
   bool isUImm2_l() const {
@@ -517,6 +528,63 @@ bool TriCoreAsmParser::generateImmOutOfRangeError(
   return Error(ErrorLoc, Msg + " [" + Twine(Lower) + ", " + Twine(Upper) + "]");
 }
 
+bool isReadableSysReg(uint16_t Encoding) {
+  const auto *SysReg = TriCoreSysReg::lookupSysRegByEncoding(Encoding);
+
+  // Cannot say anything if unnamed system register
+  if (!SysReg)
+    return true;
+
+  return SysReg->Readable;
+}
+
+bool isWriteableSysReg(uint16_t Encoding) {
+  const auto *SysReg = TriCoreSysReg::lookupSysRegByEncoding(Encoding);
+
+  // Cannot say anything if unnamed system register
+  if (!SysReg)
+    return true;
+
+  return SysReg->Writeable;
+}
+
+bool TriCoreAsmParser::validateInstruction(MCInst &Inst, SMLoc &IDLoc,
+                                           SmallVectorImpl<SMLoc> &OpLoc) {
+  const unsigned OpCode = Inst.getOpcode();
+  switch (OpCode) {
+  default:
+    return false;
+  case TriCore::MFCR_dc:
+  case TriCore::MTCR_dc:
+  case TriCore::MFDCR_ec:
+  case TriCore::MTDCR_ce: {
+    const bool ReadsReg =
+        OpCode == TriCore::MFCR_dc || OpCode == TriCore::MFDCR_ec;
+    const bool IsDouble =
+        OpCode == TriCore::MFDCR_ec || OpCode == TriCore::MTDCR_ce;
+
+    const unsigned ImmIdx = ReadsReg ? 1 : 0;
+    const unsigned Encoding = Inst.getOperand(ImmIdx).getImm();
+
+    // Check if the immediate operand is a readable/writeable system register
+    for (unsigned i = 0, e = IsDouble ? 4 : 0; i <= e; i += 4) {
+      if (ReadsReg && !isReadableSysReg(Encoding + i))
+        return Error(
+            OpLoc[ImmIdx],
+            "MFCR instructions require system register to be readable");
+
+      if (!ReadsReg && !isWriteableSysReg(Encoding + i))
+        return Error(
+            OpLoc[ImmIdx],
+            "MTCR instructions require system register to be writeable");
+    }
+
+    // All operands valid
+    return false;
+  }
+  }
+}
+
 bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                                OperandVector &Operands,
                                                MCStreamer &Out,
@@ -528,7 +596,16 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   switch (MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm)) {
   default:
     break;
-  case Match_Success:
+  case Match_Success: {
+    // Perform semantic validations
+    SmallVector<SMLoc, 8> OperandLocs;
+    const unsigned NumOperands = Operands.size();
+    for (unsigned i = 1; i < NumOperands; ++i)
+      OperandLocs.push_back(Operands[i]->getStartLoc());
+
+    if (validateInstruction(Inst, IDLoc, OperandLocs))
+      return true;
+
     Inst.setLoc(IDLoc);
     Out.EmitInstruction(Inst, getSTI());
     if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
@@ -536,6 +613,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
       setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
     }
     return false;
+  }
   case Match_MissingFeature:
     return Error(IDLoc, "instruction use requires an option to be enabled");
   case Match_MnemonicFail:
@@ -606,10 +684,16 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         Operands, ErrorInfo, -(1 << 4), (1 << 4) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
-  case Match_InvalidUImm16Shift3:
+  case Match_InvalidSysReg:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 16) - 4,
+        "Operand must be a valid system register or a 4-aligned integer and "
+        "in the range");
+  case Match_InvalidDoubleSysReg:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 16) - 8,
-        "Operand must be an 8-aligned integer and in the range");
+        "Operand must be a valid system register or an 8-aligned integer and "
+        "in the range");
   case Match_InvalidSImm10:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 9), (1 << 9) - 1,
@@ -623,11 +707,6 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm16_RLC:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 1,
-        "Operand must be a valid symbol with optional operand prefix lo or hi "
-        "OR it must be an the integer in the range");
-  case Match_InvalidUImm16_RLC:
-    return generateImmOutOfRangeError(
-        Operands, ErrorInfo, 0, (1 << 16) - 1,
         "Operand must be a valid symbol with optional operand prefix lo or hi "
         "OR it must be an the integer in the range");
   case Match_InvalidUImm4_Lsb1:
@@ -754,6 +833,41 @@ OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
   return MatchOperand_Success;
 }
 
+// $<identifier>, e.g. $psw
+OperandMatchResultTy
+TriCoreAsmParser::parseSystemRegister(OperandVector &Operands, const SMLoc &S,
+                                      const SMLoc &E) {
+  if (getLexer().peekTok(false).isNot(AsmToken::Identifier))
+    return MatchOperand_NoMatch;
+
+  // Consume $
+  getLexer().Lex();
+
+  assert(getLexer().getTok().is(AsmToken::Identifier));
+  StringRef Identifier;
+  if (getParser().parseIdentifier(Identifier))
+    return MatchOperand_ParseFail;
+
+  // Try to find a system register by this name, ignoring case
+  const auto *SysReg = TriCoreSysReg::lookupSysRegByName(Identifier.lower());
+
+  // Error if no system register by this name is known
+  if (!SysReg) {
+    Error(S, "operand must be a valid system register name or an immediate");
+    return MatchOperand_ParseFail;
+  }
+
+  // Check if required features are available
+  if (!SysReg->haveFeatures(getSTI().getFeatureBits())) {
+    Error(S, "system register use requires an option to be enabled");
+    return MatchOperand_ParseFail;
+  }
+
+  const auto *CE = MCConstantExpr::create(SysReg->Encoding, getContext(), true);
+  Operands.push_back(TriCoreOperand::createImm(CE, S, E));
+  return MatchOperand_Success;
+}
+
 OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
   const MCExpr *IdVal;
   SMLoc S = getLoc();
@@ -772,6 +886,10 @@ OperandMatchResultTy TriCoreAsmParser::parseImmediate(OperandVector &Operands) {
     if (!parseOperandWithModifier(Operands))
       return MatchOperand_Success;
     break;
+  case AsmToken::Dollar:
+    // System registers begin with a dollar sign and are short-hands for
+    // immediates. Try to parse one
+    return parseSystemRegister(Operands, S, E);
   }
 
   if (getParser().parseExpression(IdVal))

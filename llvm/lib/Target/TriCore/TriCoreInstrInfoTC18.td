@@ -236,15 +236,15 @@ def RFH             :  SYS<0x0D, 0x17, (outs), (ins),
                           "rfh", "">;
 
 // MFDCR
-let isMoveReg = 1, s1 = 0, Uses = [PSW] in
+let isMoveReg = 1, s1 = 0 in
 def MFDCR_ec        :  RLC<0x4F, (outs ExtDataRegs:$d),
-                          (ins uimm16_shift3:$const16),
+                          (ins double_sysreg:$const16),
                           "mfdcr", "\t$d, $const16">;
 
 // MTDCR
-let isMoveReg = 1, d = 0, Defs = [PSW] in
+let isMoveReg = 1, d = 0 in
 def MTDCR_ce        :  RLC<0xCF, (outs),
-                          (ins uimm16_shift3:$const16, ExtDataRegs:$s1),
+                          (ins double_sysreg:$const16, ExtDataRegs:$s1),
                           "mtdcr", "\t$const16, $s1">;
 
 // MULP.B

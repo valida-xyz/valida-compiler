@@ -2211,13 +2211,13 @@ let hasSideEffects = 1 in {
                    "updfl", "\t$s1">;
 
   // MFCR
-  let s1 = 0, Uses = [PSW] in
-  def MFCR_dc : RLC<0x4D, (outs DataRegs:$d), (ins uimm16_RLC:$const16),
+  let s1 = 0 in
+  def MFCR_dc : RLC<0x4D, (outs DataRegs:$d), (ins sysreg:$const16),
                     "mfcr", "\t$d, $const16">;
 
   // MTCR
-  let d = 0, Defs = [PSW] in
-  def MTCR_dc : RLC<0xCD, (outs), (ins uimm16_RLC:$const16, DataRegs:$s1),
+  let d = 0 in
+  def MTCR_dc : RLC<0xCD, (outs), (ins sysreg:$const16, DataRegs:$s1),
                     "mtcr", "\t$const16, $s1">;
 } // hasSideEffects = 1
 

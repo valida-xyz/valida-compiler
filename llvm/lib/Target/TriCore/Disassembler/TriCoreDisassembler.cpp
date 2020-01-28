@@ -78,10 +78,10 @@ static DecodeStatus decodeSImm9Shift(MCInst &Inst, uint64_t Imm,
                                      int64_t Address, const void *Decoder);
 
 static DecodeStatus decodeSImm9Shift5(MCInst &Inst, uint64_t Imm,
-                                     int64_t Address, const void *Decoder);
+                                      int64_t Address, const void *Decoder);
 
-static DecodeStatus decodeUImm16Shift3(MCInst &Inst, uint64_t Imm,
-                                     int64_t Address, const void *Decoder);
+static DecodeStatus decodeSysReg(MCInst &Inst, uint64_t Imm, int64_t Address,
+                                 const void *Decoder);
 
 static DecodeStatus decodeOff18Abs(MCInst &Inst, uint64_t Imm, int64_t Address,
                                    const void *Decoder);
@@ -295,8 +295,8 @@ static DecodeStatus decodeSImm9Shift5(MCInst &Inst, uint64_t Imm,
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeUImm16Shift3(MCInst &Inst, uint64_t Imm,
-                                     int64_t Address, const void *Decoder) {
+static DecodeStatus decodeSysReg(MCInst &Inst, uint64_t Imm, int64_t Address,
+                                 const void *Decoder) {
   assert(isUInt<16>(Imm) && "Invalid unsigned 16 bit shift value");
   Inst.addOperand(MCOperand::createImm(Imm));
   return MCDisassembler::Success;

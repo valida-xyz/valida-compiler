@@ -12,15 +12,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreInstPrinter.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
+
 using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
@@ -57,4 +58,16 @@ void TriCoreInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
 
   assert(MO.isExpr() && "Unknown operand kind in printOperand");
   MO.getExpr()->print(O, &MAI);
+}
+
+void TriCoreInstPrinter::printSystemRegister(const MCInst *MI,
+                                             unsigned int OpNo,
+                                             const MCSubtargetInfo &STI,
+                                             raw_ostream &O) {
+  const unsigned Imm = MI->getOperand(OpNo).getImm();
+  const auto *SysReg = TriCoreSysReg::lookupSysRegByEncoding(Imm);
+  if (SysReg && SysReg->haveFeatures(STI.getFeatureBits()))
+    O << '$' << SysReg->Name;
+  else
+    O << Imm;
 }
