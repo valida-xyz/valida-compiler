@@ -1,4 +1,4 @@
-# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
 # XFAIL: *
 
 # To legalize this test we require legality of the G_INSERT instruction, which
