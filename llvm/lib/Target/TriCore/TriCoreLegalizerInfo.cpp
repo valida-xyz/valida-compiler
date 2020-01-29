@@ -207,6 +207,21 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
+  // Floating Point Conversions
+
+  // G_FPTOSI is legal for s32 and s64 combinations, except for {s64, s32} 
+  auto &FPConvActions = getActionDefinitionsBuilder(G_FPTOSI)
+                            .legalFor({{s32, s32}})
+                            .clampScalar(0, s32, s64)
+                            .widenScalarToNextPow2(0)
+                            .clampScalar(1, s32, s64)
+                            .widenScalarToNextPow2(1);
+
+  if (ST.hasTC18Ops())
+    FPConvActions.legalFor({{s32, s64}, {s64, s64}});
+  else
+    FPConvActions.libcallFor({{s32, s64}, {s64, s64}});
+
   // Load & Store
 
   // G_LOAD is legal for 32 and 64-bit scalar and pointer types.
