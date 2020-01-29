@@ -146,3 +146,13 @@ def : TruncStorePat<i16,    STH_alcd>;
 // 64-bit
 def : Trunc64StorePat<i8,   STB_alcd>;
 def : Trunc64StorePat<i16,  STH_alcd>;
+
+//===----------------------------------------------------------------------===//
+// Others
+//===----------------------------------------------------------------------===//
+def : Pat<(i32 (fp_to_sint f32:$src)), (i32 (FTOIZ_dd DataRegs:$src))>;
+
+let Predicates = [HasTC18] in {
+def : Pat<(i32 (fp_to_sint f64:$src)), (i32 (DFTOIZ_de ExtDataRegs:$src))>;
+def : Pat<(i64 (fp_to_sint f64:$src)), (i64 (DFTOLZ_ee ExtDataRegs:$src))>;
+}
