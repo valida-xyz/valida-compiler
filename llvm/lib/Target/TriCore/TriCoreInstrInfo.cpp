@@ -11,10 +11,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreInstrInfo.h"
-#include "MCTargetDesc/TriCoreBaseInfo.h"
 #include "TriCore.h"
 #include "TriCoreSubtarget.h"
 #include "TriCoreTargetMachine.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"

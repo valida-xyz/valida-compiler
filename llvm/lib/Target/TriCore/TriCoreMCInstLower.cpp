@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreMCInstLower.h"
-#include "MCTargetDesc/TriCoreBaseInfo.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineInstr.h"

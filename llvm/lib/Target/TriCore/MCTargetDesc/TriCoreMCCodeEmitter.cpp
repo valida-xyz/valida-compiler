@@ -10,10 +10,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MCTargetDesc/TriCoreBaseInfo.h"
 #include "MCTargetDesc/TriCoreFixupKinds.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
