@@ -161,19 +161,6 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
 
-  // Floating Point Binary ops.
-
-  // G_FADD
-  auto &FPAddActions = getActionDefinitionsBuilder(G_FADD)
-                           .legalFor({s32})
-                           .clampScalar(0, s32, s64)
-                           .widenScalarToNextPow2(0);
-
-  if (ST.hasTC18Ops())
-    FPAddActions.legalFor({s64});
-  else
-    FPAddActions.libcallFor({s64});
-
   // Shifts
 
   // G_SHL, G_LSHR and G_ASHR always produce the same type as their src type
@@ -259,6 +246,19 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({s32, s64})
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
+      
+  // Floating Point Binary ops.
+
+  // Floating point binary operators is legal for s32 except in double float.
+  auto &FPArithmActions = getActionDefinitionsBuilder({G_FADD, G_FSUB})
+                              .legalFor({s32})
+                              .clampScalar(0, s32, s64)
+                              .widenScalarToNextPow2(0);
+
+  if (ST.hasTC18Ops())
+    FPArithmActions.legalFor({s64});
+  else
+    FPArithmActions.libcallFor({s64});
 
   // Load & Store
 
