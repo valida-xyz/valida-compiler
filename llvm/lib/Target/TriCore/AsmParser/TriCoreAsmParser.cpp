@@ -781,7 +781,6 @@ bool TriCoreAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
 }
 
 OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
-  bool isSuffixFound = false;
   SMLoc S = getLoc();
   SMLoc E = SMLoc::getFromPointer(S.getPointer() - 1);
 
