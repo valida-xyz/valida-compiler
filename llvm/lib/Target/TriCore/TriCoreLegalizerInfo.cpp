@@ -211,7 +211,7 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
-  // Floating Point Conversions
+  // Floating Point Unary Ops
 
   // G_FPTOSI and G_FPTOUI are legal for s32 and s64 combinations, except for
   // {s64, s32}
@@ -240,6 +240,12 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
     IntToFPConvActions.legalFor({{s64, s32}, {s64, s64}});
   else
     IntToFPConvActions.libcallFor({{s64, s32}, {s64, s64}});
+
+  // G_FABS legal for s32 and s64
+  getActionDefinitionsBuilder(G_FABS)
+      .legalFor({s32, s64})
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0);
 
   // Load & Store
 
