@@ -198,6 +198,24 @@ TEST_F(SerialSnippetGeneratorTest, LAHF) {
   }
 }
 
+TEST_F(SerialSnippetGeneratorTest, VCVTUSI642SDZrrb_Int) {
+  // - VCVTUSI642SDZrrb_Int
+  // - Op0 Explicit Def RegClass(VR128X)
+  // - Op1 Explicit Use RegClass(VR128X)
+  // - Op2 Explicit Use STATIC_ROUNDING
+  // - Op2 Explicit Use RegClass(GR64)
+  // - Op4 Implicit Use Reg(MXSCR)
+  const unsigned Opcode = X86::VCVTUSI642SDZrrb_Int;
+  const Instruction &Instr = State.getIC().getInstr(Opcode);
+  auto Configs =
+      Generator.generateConfigurations(Instr, State.getRATC().emptyRegisters());
+  ASSERT_FALSE(Configs.takeError());
+  ASSERT_THAT(*Configs, SizeIs(1));
+  const BenchmarkCode &BC = (*Configs)[0];
+  ASSERT_THAT(BC.Key.Instructions, SizeIs(1));
+  ASSERT_TRUE(BC.Key.Instructions[0].getOperand(3).isImm());
+}
+
 TEST_F(ParallelSnippetGeneratorTest, ParallelInstruction) {
   // - BNDCL32rr
   // - Op0 Explicit Use RegClass(BNDR)
@@ -334,6 +352,17 @@ TEST_F(ParallelSnippetGeneratorTest, MemoryUse) {
   EXPECT_EQ(IT.getVariableValues()[3].getReg(), 0u);
   EXPECT_EQ(IT.getVariableValues()[4].getImm(), 0);
   EXPECT_EQ(IT.getVariableValues()[5].getReg(), 0u);
+}
+
+TEST_F(ParallelSnippetGeneratorTest, MOV16ms) {
+  const unsigned Opcode = X86::MOV16ms;
+  const Instruction &Instr = State.getIC().getInstr(Opcode);
+  auto Err =
+      Generator.generateConfigurations(Instr, State.getRATC().emptyRegisters())
+          .takeError();
+  EXPECT_TRUE((bool)Err);
+  EXPECT_THAT(toString(std::move(Err)),
+              testing::HasSubstr("no available registers"));
 }
 
 class FakeSnippetGenerator : public SnippetGenerator {

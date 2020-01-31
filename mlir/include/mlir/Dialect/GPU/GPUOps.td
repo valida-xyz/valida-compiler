@@ -1,6 +1,6 @@
 //===-- GPUOps.td - GPU dialect operation definitions ------*- tablegen -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -472,8 +472,24 @@ def GPU_LaunchOp : GPU_Op<"launch", [IsolatedFromAbove]>,
   let verifier = [{ return ::verify(*this); }];
 }
 
-def GPU_ReturnOp : GPU_Op<"return", [Terminator]>, Arguments<(ins)>,
-    Results<(outs)> {
+def GPU_ReturnOp : GPU_Op<"return", [HasParent<"GPUFuncOp">, Terminator]>,
+    Arguments<(ins Variadic<AnyType>:$operands)>, Results<(outs)> {
+  let summary = "Terminator for GPU functions.";
+  let description = [{
+    A terminator operation for regions that appear in the body of  `gpu.func`
+    functions. The operands to the `gpu.return` are the result values returned
+    by an incovation of the `gpu.func`.
+  }];
+
+  let builders = [OpBuilder<"Builder *builder, OperationState &result", " // empty">];
+
+  let parser = [{ return parseReturnOp(parser, result); }];
+  let printer = [{ p << getOperationName(); }];
+  let verifier = [{ return ::verify(*this); }];
+}
+
+def GPU_TerminatorOp : GPU_Op<"terminator", [HasParent<"LaunchOp">, Terminator]>,
+    Arguments<(ins)>, Results<(outs)> {
   let summary = "Terminator for GPU launch regions.";
   let description = [{
     A terminator operation for regions that appear in the body of `gpu.launch`
@@ -594,6 +610,58 @@ def GPU_BarrierOp : GPU_Op<"barrier"> {
     Either none or all work items of a workgroup need to execute this op
     in convergence.
   }];
+  let parser = [{ return success(); }];
+  let printer = [{ p << getOperationName(); }];
+}
+
+def GPU_GPUModuleOp : GPU_Op<"module", [
+  IsolatedFromAbove, SymbolTable, Symbol,
+  SingleBlockImplicitTerminator<"ModuleEndOp">
+]> {
+  let summary = "A top level compilation unit containing code to be run on a GPU.";
+  let description = [{
+    GPU module contains code that is intended to be run on a GPU. A host device
+    can launch this code through a gpu.launc_func that creates a fully
+    qualified symbol through the gpu.module's symbol and a gpu.func symbol
+    contained in the gpu.module.
+
+    The module's top-level scope is modeled by a single region with a single
+    block. GPU modules are required to have a name that is used for symbol
+    resolution by the gpu.launch_func operation.
+
+    Using an op with a region to define a GPU module enables "embedding" GPU
+    modules with SIMT execution models in other dialects in a clean manner and
+    allows filtering of code regions to execute passes on only code intended to
+    or not intended to be run on the separate device.
+
+    ```
+      gpu.module @symbol_name {
+      gpu.func {}
+        ...
+      gpu.module_end
+    }
+
+    ```
+  }];
+  let builders = [OpBuilder<"Builder *builder, OperationState &result, "
+                            "StringRef name">];
+  let parser = [{ return ::parseGPUModuleOp(parser, result); }];
+  let printer = [{ return ::print(p, *this); }];
+  let regions = (region SizedRegion<1>:$body);
+
+  // We need to ensure the block inside the region is properly terminated;
+  // the auto-generated builders do not guarantee that.
+  let skipDefaultBuilders = 1;
+}
+
+def GPU_ModuleEndOp : GPU_Op<"module_end", [
+  Terminator, HasParent<"GPUModuleOp">
+]> {
+  let summary = "A pseudo op that marks the end of a gpu.module.";
+  let description = [{
+    This op terminates the only block inside the only region of a `gpu.module`.
+  }];
+
   let parser = [{ return success(); }];
   let printer = [{ p << getOperationName(); }];
 }

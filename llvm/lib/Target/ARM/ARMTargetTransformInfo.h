@@ -158,7 +158,9 @@ public:
 
   bool isLegalMaskedGather(Type *Ty, MaybeAlign Alignment);
 
-  bool isLegalMaskedScatter(Type *Ty, MaybeAlign Alignment) { return false; }
+  bool isLegalMaskedScatter(Type *Ty, MaybeAlign Alignment) {
+    return isLegalMaskedGather(Ty, Alignment);
+  }
 
   int getMemcpyCost(const Instruction *I);
 
@@ -168,7 +170,16 @@ public:
                              TTI::ReductionFlags Flags) const;
 
   bool shouldExpandReduction(const IntrinsicInst *II) const {
-    return false;
+    switch (II->getIntrinsicID()) {
+    case Intrinsic::experimental_vector_reduce_v2_fadd:
+    case Intrinsic::experimental_vector_reduce_v2_fmul:
+      // We don't have legalization support for ordered FP reductions.
+      return !II->getFastMathFlags().allowReassoc();
+
+    default:
+      // Don't expand anything else, let legalization deal with it.
+      return false;
+    }
   }
 
   int getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
@@ -199,6 +210,9 @@ public:
                                  unsigned AddressSpace,
                                  bool UseMaskForCond = false,
                                  bool UseMaskForGaps = false);
+
+  unsigned getGatherScatterOpCost(unsigned Opcode, Type *DataTy, Value *Ptr,
+                                  bool VariableMask, unsigned Alignment);
 
   bool isLoweredToCall(const Function *F);
   bool isHardwareLoopProfitable(Loop *L, ScalarEvolution &SE,

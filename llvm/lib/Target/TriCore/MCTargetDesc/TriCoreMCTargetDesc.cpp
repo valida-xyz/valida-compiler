@@ -71,7 +71,7 @@ static MCInstPrinter *createTriCoreMCInstPrinter(const Triple &T,
 
 static MCSubtargetInfo *
 createTriCoreMCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
-  std::string CPUName = CPU;
+  std::string CPUName = std::string(CPU);
   if (CPUName.empty())
     CPUName = "tc4xx";
   return createTriCoreMCSubtargetInfoImpl(TT, CPUName, FS);

@@ -1,6 +1,6 @@
 //===- GPUDialect.cpp - MLIR Dialect for GPU Kernels implementation -------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -72,15 +72,10 @@ LogicalResult GPUDialect::verifyOperationAttribute(Operation *op,
 
     // Check that `launch_func` refers to a well-formed GPU kernel module.
     StringRef kernelModuleName = launchOp.getKernelModuleName();
-    auto kernelModule = module.lookupSymbol<ModuleOp>(kernelModuleName);
+    auto kernelModule = module.lookupSymbol<GPUModuleOp>(kernelModuleName);
     if (!kernelModule)
       return launchOp.emitOpError()
              << "kernel module '" << kernelModuleName << "' is undefined";
-    if (!kernelModule.getAttrOfType<UnitAttr>(
-            GPUDialect::getKernelModuleAttrName()))
-      return launchOp.emitOpError("module '")
-             << kernelModuleName << "' is missing the '"
-             << GPUDialect::getKernelModuleAttrName() << "' attribute";
 
     // Check that `launch_func` refers to a well-formed kernel function.
     StringRef kernelName = launchOp.kernel();
@@ -275,18 +270,19 @@ static LogicalResult verify(LaunchOp op) {
   }
 
   // Block terminators without successors are expected to exit the kernel region
-  // and must be `gpu.launch`.
+  // and must be `gpu.terminator`.
   for (Block &block : op.body()) {
     if (block.empty())
       continue;
     if (block.back().getNumSuccessors() != 0)
       continue;
-    if (!isa<gpu::ReturnOp>(&block.back())) {
+    if (!isa<gpu::TerminatorOp>(&block.back())) {
       return block.back()
-                 .emitError("expected 'gpu.terminator' or a terminator with "
-                            "successors")
-                 .attachNote(op.getLoc())
-             << "in '" << LaunchOp::getOperationName() << "' body region";
+          .emitError()
+          .append("expected '", gpu::TerminatorOp::getOperationName(),
+                  "' or a terminator with successors")
+          .attachNote(op.getLoc())
+          .append("in '", LaunchOp::getOperationName(), "' body region");
     }
   }
 
@@ -517,10 +513,9 @@ void LaunchFuncOp::build(Builder *builder, OperationState &result,
   result.addOperands(kernelOperands);
   result.addAttribute(getKernelAttrName(),
                       builder->getStringAttr(kernelFunc.getName()));
-  auto kernelModule = kernelFunc.getParentOfType<ModuleOp>();
-  if (Optional<StringRef> kernelModuleName = kernelModule.getName())
-    result.addAttribute(getKernelModuleAttrName(),
-                        builder->getSymbolRefAttr(*kernelModuleName));
+  auto kernelModule = kernelFunc.getParentOfType<GPUModuleOp>();
+  result.addAttribute(getKernelModuleAttrName(),
+                      builder->getSymbolRefAttr(kernelModule.getName()));
 }
 
 void LaunchFuncOp::build(Builder *builder, OperationState &result,
@@ -686,7 +681,7 @@ static ParseResult parseGPUFuncOp(OpAsmParser &parser, OperationState &result) {
            << "gpu.func requires named arguments";
 
   // Construct the function type. More types will be added to the region, but
-  // not to the functiont type.
+  // not to the function type.
   Builder &builder = parser.getBuilder();
   auto type = builder.getFunctionType(argTypes, resultTypes);
   result.addAttribute(GPUFuncOp::getTypeAttrName(), TypeAttr::get(type));
@@ -773,6 +768,10 @@ LogicalResult GPUFuncOp::verifyType() {
   if (!type.isa<FunctionType>())
     return emitOpError("requires '" + getTypeAttrName() +
                        "' attribute of function type");
+
+  if (isKernel() && getType().getNumResults() != 0)
+    return emitOpError() << "expected void return type for kernel function";
+
   return success();
 }
 
@@ -818,6 +817,86 @@ LogicalResult GPUFuncOp::verifyBody() {
     return failure();
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseReturnOp(OpAsmParser &parser, OperationState &result) {
+  llvm::SmallVector<OpAsmParser::OperandType, 4> operands;
+  llvm::SmallVector<Type, 4> types;
+  if (parser.parseOperandList(operands) ||
+      parser.parseOptionalColonTypeList(types) ||
+      parser.resolveOperands(operands, types, parser.getCurrentLocation(),
+                             result.operands))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(gpu::ReturnOp returnOp) {
+  GPUFuncOp function = returnOp.getParentOfType<GPUFuncOp>();
+
+  FunctionType funType = function.getType();
+
+  if (funType.getNumResults() != returnOp.operands().size())
+    return returnOp.emitOpError()
+        .append("expected ", funType.getNumResults(), " result operands")
+        .attachNote(function.getLoc())
+        .append("return type declared here");
+
+  for (auto pair : llvm::enumerate(
+           llvm::zip(function.getType().getResults(), returnOp.operands()))) {
+    Type type;
+    Value operand;
+    std::tie(type, operand) = pair.value();
+    if (type != operand.getType())
+      return returnOp.emitOpError() << "unexpected type `" << operand.getType()
+                                    << "' for operand #" << pair.index();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GPUModuleOp
+//===----------------------------------------------------------------------===//
+
+void GPUModuleOp::build(Builder *builder, OperationState &result,
+                        StringRef name) {
+  ensureTerminator(*result.addRegion(), *builder, result.location);
+  result.attributes.push_back(builder->getNamedAttr(
+      ::mlir::SymbolTable::getSymbolAttrName(), builder->getStringAttr(name)));
+}
+
+static ParseResult parseGPUModuleOp(OpAsmParser &parser,
+                                    OperationState &result) {
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, SymbolTable::getSymbolAttrName(),
+                             result.attributes))
+    return failure();
+
+  // If module attributes are present, parse them.
+  if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
+    return failure();
+
+  // Parse the module body.
+  auto *body = result.addRegion();
+  if (parser.parseRegion(*body, None, None))
+    return failure();
+
+  // Ensure that this module has a valid terminator.
+  GPUModuleOp::ensureTerminator(*body, parser.getBuilder(), result.location);
+  return success();
+}
+
+static void print(OpAsmPrinter &p, GPUModuleOp op) {
+  p << op.getOperationName() << ' ';
+  p.printSymbolName(op.getName());
+  p.printOptionalAttrDictWithKeyword(op.getAttrs(),
+                                     {SymbolTable::getSymbolAttrName()});
+  p.printRegion(op.getOperation()->getRegion(0), /*printEntryBlockArgs=*/false,
+                /*printBlockTerminators=*/false);
 }
 
 // Namespace avoids ambiguous ReturnOpOperandAdaptor.

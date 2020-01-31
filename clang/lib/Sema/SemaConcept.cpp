@@ -167,9 +167,8 @@ calculateConstraintSatisfaction(Sema &S, const Expr *ConstraintExpr,
   return false;
 }
 
-template <typename TemplateDeclT>
 static bool calculateConstraintSatisfaction(
-    Sema &S, TemplateDeclT *Template, ArrayRef<TemplateArgument> TemplateArgs,
+    Sema &S, const NamedDecl *Template, ArrayRef<TemplateArgument> TemplateArgs,
     SourceLocation TemplateNameLoc, MultiLevelTemplateArgumentList &MLTAL,
     const Expr *ConstraintExpr, ConstraintSatisfaction &Satisfaction) {
   return calculateConstraintSatisfaction(
@@ -182,8 +181,9 @@ static bool calculateConstraintSatisfaction(
         {
           TemplateDeductionInfo Info(TemplateNameLoc);
           Sema::InstantiatingTemplate Inst(S, AtomicExpr->getBeginLoc(),
-              Sema::InstantiatingTemplate::ConstraintSubstitution{}, Template,
-              Info, AtomicExpr->getSourceRange());
+              Sema::InstantiatingTemplate::ConstraintSubstitution{},
+              const_cast<NamedDecl *>(Template), Info,
+              AtomicExpr->getSourceRange());
           if (Inst.isInvalid())
             return ExprError();
           // We do not want error diagnostics escaping here.
@@ -230,8 +230,7 @@ static bool calculateConstraintSatisfaction(
       });
 }
 
-template<typename TemplateDeclT>
-static bool CheckConstraintSatisfaction(Sema &S, TemplateDeclT *Template,
+static bool CheckConstraintSatisfaction(Sema &S, const NamedDecl *Template,
                                         ArrayRef<const Expr *> ConstraintExprs,
                                         ArrayRef<TemplateArgument> TemplateArgs,
                                         SourceRange TemplateIDRange,
@@ -249,8 +248,8 @@ static bool CheckConstraintSatisfaction(Sema &S, TemplateDeclT *Template,
     }
 
   Sema::InstantiatingTemplate Inst(S, TemplateIDRange.getBegin(),
-      Sema::InstantiatingTemplate::ConstraintsCheck{}, Template, TemplateArgs,
-      TemplateIDRange);
+      Sema::InstantiatingTemplate::ConstraintsCheck{},
+      const_cast<NamedDecl *>(Template), TemplateArgs, TemplateIDRange);
   if (Inst.isInvalid())
     return true;
 
@@ -272,36 +271,45 @@ static bool CheckConstraintSatisfaction(Sema &S, TemplateDeclT *Template,
   return false;
 }
 
-bool Sema::CheckConstraintSatisfaction(TemplateDecl *Template,
-                                       ArrayRef<const Expr *> ConstraintExprs,
-                                       ArrayRef<TemplateArgument> TemplateArgs,
-                                       SourceRange TemplateIDRange,
-                                       ConstraintSatisfaction &Satisfaction) {
-  return ::CheckConstraintSatisfaction(*this, Template, ConstraintExprs,
-                                       TemplateArgs, TemplateIDRange,
-                                       Satisfaction);
-}
+bool Sema::CheckConstraintSatisfaction(
+    const NamedDecl *Template, ArrayRef<const Expr *> ConstraintExprs,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange TemplateIDRange,
+    ConstraintSatisfaction &OutSatisfaction) {
+  if (ConstraintExprs.empty()) {
+    OutSatisfaction.IsSatisfied = true;
+    return false;
+  }
 
-bool
-Sema::CheckConstraintSatisfaction(ClassTemplatePartialSpecializationDecl* Part,
-                                  ArrayRef<const Expr *> ConstraintExprs,
-                                  ArrayRef<TemplateArgument> TemplateArgs,
-                                  SourceRange TemplateIDRange,
-                                  ConstraintSatisfaction &Satisfaction) {
-  return ::CheckConstraintSatisfaction(*this, Part, ConstraintExprs,
-                                       TemplateArgs, TemplateIDRange,
-                                       Satisfaction);
-}
+  llvm::FoldingSetNodeID ID;
+  void *InsertPos;
+  ConstraintSatisfaction *Satisfaction = nullptr;
+  bool ShouldCache = LangOpts.ConceptSatisfactionCaching && Template;
+  if (ShouldCache) {
+    ConstraintSatisfaction::Profile(ID, Context, Template, TemplateArgs);
+    Satisfaction = SatisfactionCache.FindNodeOrInsertPos(ID, InsertPos);
+    if (Satisfaction) {
+      OutSatisfaction = *Satisfaction;
+      return false;
+    }
+    Satisfaction = new ConstraintSatisfaction(Template, TemplateArgs);
+  } else {
+    Satisfaction = &OutSatisfaction;
+  }
+  if (::CheckConstraintSatisfaction(*this, Template, ConstraintExprs,
+                                    TemplateArgs, TemplateIDRange,
+                                    *Satisfaction)) {
+    if (ShouldCache)
+      delete Satisfaction;
+    return true;
+  }
 
-bool
-Sema::CheckConstraintSatisfaction(VarTemplatePartialSpecializationDecl* Partial,
-                                  ArrayRef<const Expr *> ConstraintExprs,
-                                  ArrayRef<TemplateArgument> TemplateArgs,
-                                  SourceRange TemplateIDRange,
-                                  ConstraintSatisfaction &Satisfaction) {
-  return ::CheckConstraintSatisfaction(*this, Partial, ConstraintExprs,
-                                       TemplateArgs, TemplateIDRange,
-                                       Satisfaction);
+  if (ShouldCache) {
+    // We cannot use InsertNode here because CheckConstraintSatisfaction might
+    // have invalidated it.
+    SatisfactionCache.InsertNode(Satisfaction);
+    OutSatisfaction = *Satisfaction;
+  }
+  return false;
 }
 
 bool Sema::CheckConstraintSatisfaction(const Expr *ConstraintExpr,
@@ -311,6 +319,23 @@ bool Sema::CheckConstraintSatisfaction(const Expr *ConstraintExpr,
       [](const Expr *AtomicExpr) -> ExprResult {
         return ExprResult(const_cast<Expr *>(AtomicExpr));
       });
+}
+
+bool Sema::CheckFunctionConstraints(const FunctionDecl *FD,
+                                    ConstraintSatisfaction &Satisfaction,
+                                    SourceLocation UsageLoc) {
+  const Expr *RC = FD->getTrailingRequiresClause();
+  if (RC->isInstantiationDependent()) {
+    Satisfaction.IsSatisfied = true;
+    return false;
+  }
+  // We substitute with empty arguments in order to rebuild the atomic
+  // constraint in a constant-evaluated context.
+  // FIXME: Should this be a dedicated TreeTransform?
+  return CheckConstraintSatisfaction(
+      FD, {RC}, /*TemplateArgs=*/{},
+      SourceRange(UsageLoc.isValid() ? UsageLoc : FD->getLocation()),
+      Satisfaction);
 }
 
 bool Sema::EnsureTemplateArgumentListConstraints(
