@@ -19,12 +19,13 @@ class SimpleBinOpPat<SDPatternOperator op, Instruction INSTR>
     : Pat<(op DataRegs:$s1, DataRegs:$s2), (INSTR DataRegs:$s1, DataRegs:$s2)>;
 
 // Get 32-bit subregister
-def subreg_i32 : OutPatFrag<(ops node:$R, node:$SubIdx),
-                            (i32 (EXTRACT_SUBREG $R, $SubIdx))>;
+class subreg_32b<ValueType ty>
+    : OutPatFrag<(ops node:$R, node:$SubIdx),
+                 (ty (EXTRACT_SUBREG $R, $SubIdx))>;
 
 // Truncate to 32-bit
-def trunc_i32_data : OutPatFrag<(ops node:$R), (subreg_i32 $R, dsub0)>;
-def trunc_i32_addr : OutPatFrag<(ops node:$R), (subreg_i32 $R, asub0)>;
+def trunc_i32_data : OutPatFrag<(ops node:$R), (subreg_32b<i32> $R, dsub0)>;
+def trunc_i32_addr : OutPatFrag<(ops node:$R), (subreg_32b<i32> $R, asub0)>;
 
 // Common load patterns: load any, load 32 bit
 class LoadPat<ValueType ty, SDPatternOperator loadOp, Instruction INSTR,
@@ -87,7 +88,7 @@ def : SimpleBinOpPat<mul, MUL_ddd>;
 
 class DivRemBase<SDPatternOperator op, Instruction INSTR, SubRegIndex SubIdx>
     : Pat<(op DataRegs:$s1, DataRegs:$s2),
-        (subreg_i32 (INSTR DataRegs:$s1, DataRegs:$s2), SubIdx)>;
+        (subreg_32b<i32> (INSTR DataRegs:$s1, DataRegs:$s2), SubIdx)>;
 
 multiclass DivRem<SDPatternOperator divOp, SDPatternOperator remOp,
         Instruction INSTR> {
@@ -195,3 +196,17 @@ let Predicates = [HasTC18] in {
 def : Pat<(f64 (uint_to_fp i32:$src)), (f64 (UTODF_ed DataRegs:$src))>;
 def : Pat<(f64 (uint_to_fp i64:$src)), (f64 (ULTODF_ee ExtDataRegs:$src))>;
 } // Predicates = [HasTC18]
+
+// Absolute value for Float/Double
+let Predicates = [HasTC18] in {
+def : Pat<(f32 (fabs f32:$src)), (f32 (ABSF_dd DataRegs:$src))>;
+def : Pat<(f64 (fabs f64:$src)), (f64 (ABSDF_ee ExtDataRegs:$src))>;
+} // Predicates = [HasTC18]
+
+// Removing sign bit with INSERT if target do not support tc18 operations
+def : Pat<(f32 (fabs f32:$src)), 
+          (f32 (INSERT_ddccc DataRegs:$src, (i32 0), (i32 31), (i32 1)))>;
+
+def : Pat<(f64 (fabs f64:$src)), (f64 (INSERT_SUBREG ExtDataRegs:$src, 
+                (f32 (INSERT_ddccc (subreg_32b<f32> ExtDataRegs:$src, dsub1),
+                                        (i32 0), (i32 31), (i32 1))), dsub1 ))>;
