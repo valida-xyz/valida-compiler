@@ -227,13 +227,14 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   else
     FPConvActions.libcallFor({{s32, s64}, {s64, s64}});
 
-  // G_SITOFP is legal for s32 and s64 combinations, except for {s32, s64} 
-  auto &IntToFPConvActions = getActionDefinitionsBuilder(G_SITOFP)
-                            .legalFor({{s32, s32}})
-                            .clampScalar(0, s32, s64)
-                            .widenScalarToNextPow2(0)
-                            .clampScalar(1, s32, s64)
-                            .widenScalarToNextPow2(1);
+  // G_SITOFP and G_UITOFP are legal for s32 and s64 combinations, except for
+  // {s32, s64}
+  auto &IntToFPConvActions = getActionDefinitionsBuilder({G_SITOFP, G_UITOFP})
+                                 .legalFor({{s32, s32}})
+                                 .clampScalar(0, s32, s64)
+                                 .widenScalarToNextPow2(0)
+                                 .clampScalar(1, s32, s64)
+                                 .widenScalarToNextPow2(1);
 
   if (ST.hasTC18Ops())
     IntToFPConvActions.legalFor({{s64, s32}, {s64, s64}});
