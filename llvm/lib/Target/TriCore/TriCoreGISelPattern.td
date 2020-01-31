@@ -187,3 +187,11 @@ let Predicates = [HasTC18] in {
 def : Pat<(i32 (fp_to_uint f64:$src)), (i32 (DFTOUZ_de ExtDataRegs:$src))>;
 def : Pat<(i64 (fp_to_uint f64:$src)), (i64 (DFTOULZ_ee ExtDataRegs:$src))>;
 } // Predicates = [HasTC18]
+
+// Unsigned Int/Long to Float/Double conversions
+def : Pat<(f32 (uint_to_fp i32:$src)), (f32 (UTOF_dd DataRegs:$src))>;
+
+let Predicates = [HasTC18] in {
+def : Pat<(f64 (uint_to_fp i32:$src)), (f64 (UTODF_ed DataRegs:$src))>;
+def : Pat<(f64 (uint_to_fp i64:$src)), (f64 (ULTODF_ee ExtDataRegs:$src))>;
+} // Predicates = [HasTC18]
