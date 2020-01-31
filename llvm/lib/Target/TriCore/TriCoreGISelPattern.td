@@ -164,6 +164,52 @@ def : TruncStorePat<i16,    STH_alcd>;
 def : Trunc64StorePat<i8,   STB_alcd>;
 def : Trunc64StorePat<i16,  STH_alcd>;
 
+
+//===----------------------------------------------------------------------===//
+// Floating point instructions
+//===----------------------------------------------------------------------===//
+
+// Unfortunately we cannot handle all predicates in TableGen. The other
+// predicates need instructions requiring temporaries with multiple uses, which
+// is not supported.
+def COND_OEQ : PatFrags<(ops), [(OtherVT SETOEQ), (OtherVT SETEQ)]>;
+def COND_OGT : PatFrags<(ops), [(OtherVT SETOGT), (OtherVT SETGT)]>;
+def COND_OLT : PatFrags<(ops), [(OtherVT SETOLT), (OtherVT SETLT)]>;
+def COND_UO  : PatFrags<(ops), [(OtherVT SETUO)]>;
+
+def COND_UNE : PatFrag<(ops), (OtherVT SETUNE)>;
+def COND_UGE : PatFrag<(ops), (OtherVT SETUGE)>;
+def COND_ULE : PatFrag<(ops), (OtherVT SETULE)>;
+
+
+class FCmp_Pat_Eq<ValueType ty, PatFrags CondCode, DAGOperand ValClass,
+                  Instruction INSTR, int pos>
+    : Pat<(i32 (setcc ty:$src1, ty:$src2, CondCode)),
+          (EXTRU_ddcc (INSTR ValClass:$src1, ValClass:$src2), pos, 1)>;
+
+class FCmp_Pat_Ne<ValueType ty, PatFrags CondCode, DAGOperand ValClass,
+                  Instruction INSTR, int mask>
+    : Pat<(i32 (setcc ty:$src1, ty:$src2, CondCode)),
+          (NE_ddc (AND_ddc (INSTR ValClass:$src1, ValClass:$src2), mask), 0)>;
+
+def : FCmp_Pat_Eq<f32, COND_OEQ, DataRegs, CMPF_ddd, 1>;
+def : FCmp_Pat_Eq<f32, COND_OGT, DataRegs, CMPF_ddd, 2>;
+def : FCmp_Pat_Eq<f32, COND_OLT, DataRegs, CMPF_ddd, 0>;
+def : FCmp_Pat_Eq<f32, COND_UO,  DataRegs, CMPF_ddd, 3>;
+
+def : FCmp_Pat_Ne<f32, COND_UNE,  DataRegs, CMPF_ddd, 0b1101>;
+def : FCmp_Pat_Ne<f32, COND_UGE,  DataRegs, CMPF_ddd, 0b1110>;
+def : FCmp_Pat_Ne<f32, COND_ULE,  DataRegs, CMPF_ddd, 0b1011>;
+
+def : FCmp_Pat_Eq<f64, COND_OEQ, ExtDataRegs, CMPDF_dee, 1>;
+def : FCmp_Pat_Eq<f64, COND_OGT, ExtDataRegs, CMPDF_dee, 2>;
+def : FCmp_Pat_Eq<f64, COND_OLT, ExtDataRegs, CMPDF_dee, 0>;
+def : FCmp_Pat_Eq<f64, COND_UO,  ExtDataRegs, CMPDF_dee, 3>;
+
+def : FCmp_Pat_Ne<f64, COND_UNE,  ExtDataRegs, CMPDF_dee, 0b1101>;
+def : FCmp_Pat_Ne<f64, COND_UGE,  ExtDataRegs, CMPDF_dee, 0b1110>;
+def : FCmp_Pat_Ne<f64, COND_ULE,  ExtDataRegs, CMPDF_dee, 0b1011>;
+
 //===----------------------------------------------------------------------===//
 // Floating Point Arithmetic
 //===----------------------------------------------------------------------===//

@@ -87,6 +87,7 @@ private:
                      unsigned DstSize, unsigned SrcSize) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectMerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -253,6 +254,36 @@ static unsigned getBranchOpCodeForPredicate(CmpInst::Predicate Predicate,
   return getOpCodeForPredicate(Predicate, RB, SwapOperands, OpcTable);
 }
 
+struct FCmpConstants {
+  // The opcode used to extract the result bits from the comparison result
+  unsigned SelectResultOpcode;
+  // The bit-offset from the first bit to extract
+  unsigned FirstBitOffset;
+  // The bit-offset from the second bit to extract
+  unsigned SecondBitOffset;
+};
+
+static FCmpConstants getFCmpConstants(CmpInst::Predicate Pred) {
+  switch (Pred) {
+  default:
+    llvm_unreachable("FCMP predicate can be handled by TableGen.");
+  case CmpInst::FCMP_ONE:
+    return {TriCore::ORT_ddcdc, 2, 0};
+  case CmpInst::FCMP_OLE:
+    return {TriCore::ORT_ddcdc, 1, 0};
+  case CmpInst::FCMP_OGE:
+    return {TriCore::ORT_ddcdc, 2, 1};
+  case CmpInst::FCMP_ORD:
+    return {TriCore::NORT_ddcdc, 3, 3};
+  case CmpInst::FCMP_UEQ:
+    return {TriCore::ORT_ddcdc, 3, 1};
+  case CmpInst::FCMP_UGT:
+    return {TriCore::ORT_ddcdc, 3, 2};
+  case CmpInst::FCMP_ULT:
+    return {TriCore::ORT_ddcdc, 3, 0};
+  }
+}
+
 static unsigned getLoadStoreOpCode(const unsigned Opc,
                                    const unsigned MemorySizeInBits) {
   if (Opc == TargetOpcode::G_LOAD) {
@@ -367,6 +398,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectBrIndirect(I, MRI);
   case TargetOpcode::G_CONSTANT:
     return selectConstant(I, MRI);
+  case TargetOpcode::G_FCMP:
+    return selectFCmp(I, MRI);
   case TargetOpcode::G_FRAME_INDEX:
     return selectFrameIndex(I, MRI);
   case TargetOpcode::G_GLOBAL_VALUE:
@@ -1143,6 +1176,65 @@ bool TriCoreInstructionSelector::selectGlobalValue(
 
   constrainSelectedInstRegOperands(*MovHA, TII, TRI, RBI);
   constrainSelectedInstRegOperands(*Lea, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectFCmp(MachineInstr &I,
+                                            MachineRegisterInfo &MRI) const {
+
+  // Check for the correct type
+  Register DstReg = I.getOperand(0).getReg();
+  const LLT &Ty = MRI.getType(DstReg);
+  if (!checkType(LLT::scalar(32), Ty, "G_FCMP")) {
+    return false;
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+  CmpInst::Predicate Pred =
+      static_cast<CmpInst::Predicate>(I.getOperand(1).getPredicate());
+
+  if (Pred == CmpInst::FCMP_TRUE || Pred == CmpInst::FCMP_FALSE) {
+    // If we encounter the constant predicates, simply materialize the
+    // respective constant.
+    auto ConstInstr = MIRBuilder.buildInstr(TriCore::MOVU_dc)
+                          .addDef(DstReg)
+                          .addImm(Pred == CmpInst::FCMP_TRUE ? 1 : 0);
+    I.eraseFromParent();
+    return constrainSelectedInstRegOperands(*ConstInstr, TII, TRI, RBI);
+  }
+
+  // First create the floating point comparison instruction. It will output the
+  // result in the lower 6 bits in the following way
+  // bit [0] D[a] < D[b]
+  // bit [1] D[a] == D[b]
+  // bit [2] D[a] > D[b]
+  // bit [3] Unordered
+  // bit [4] D[a] is denormal
+  // bit [5] D[b] is denormal
+  LLT SrcTy = MRI.getType(I.getOperand(2).getReg());
+  assert((SrcTy == LLT::scalar(32) || SrcTy == LLT::scalar(64)) &&
+         "Only 32 and 64-bit floats are supported");
+  unsigned Opcode =
+      SrcTy == LLT::scalar(32) ? TriCore::CMPF_ddd : TriCore::CMPDF_dee;
+  Register CmpReg = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+  auto FCmpInstr = MIRBuilder.buildInstr(Opcode)
+                       .addDef(CmpReg)
+                       .addUse(I.getOperand(2).getReg())
+                       .addUse(I.getOperand(3).getReg());
+
+  // Get the opcode and the bits to look at
+  FCmpConstants CmpCnsts = getFCmpConstants(Pred);
+  auto ResInstr = MIRBuilder.buildInstr(CmpCnsts.SelectResultOpcode)
+                      .addDef(DstReg)
+                      .addUse(CmpReg)
+                      .addImm(CmpCnsts.FirstBitOffset)
+                      .addUse(CmpReg)
+                      .addImm(CmpCnsts.SecondBitOffset);
+
+  constrainSelectedInstRegOperands(*ResInstr, TII, TRI, RBI);
+  constrainSelectedInstRegOperands(*FCmpInstr, TII, TRI, RBI);
 
   I.removeFromParent();
   return true;
