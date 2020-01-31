@@ -213,8 +213,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Floating Point Conversions
 
-  // G_FPTOSI is legal for s32 and s64 combinations, except for {s64, s32} 
-  auto &FPConvActions = getActionDefinitionsBuilder(G_FPTOSI)
+  // G_FPTOSI and G_FPTOUI are legal for s32 and s64 combinations, except for
+  // {s64, s32}
+  auto &FPConvActions = getActionDefinitionsBuilder({G_FPTOSI, G_FPTOUI})
                             .legalFor({{s32, s32}})
                             .clampScalar(0, s32, s64)
                             .widenScalarToNextPow2(0)
