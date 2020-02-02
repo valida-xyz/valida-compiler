@@ -174,6 +174,8 @@ def : SimpleBinOpPat<fsub, SUBF_ddd>;
 def : SimpleBinOpPat<fsub, SUBDF_eee, ExtDataRegs>;
 def : SimpleBinOpPat<fmul, MULF_ddd>;
 def : SimpleBinOpPat<fmul, MULDF_eee, ExtDataRegs>;
+def : SimpleBinOpPat<fdiv, DIVF_ddd>;
+def : SimpleBinOpPat<fdiv, DIVDF_eee, ExtDataRegs>;
 
 //===----------------------------------------------------------------------===//
 // Others
