@@ -252,7 +252,7 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // Floating Point arithmetic instructions are legal for s32 for all target. 
   // Also legal for s64 if the target supports tc18 instructions, otherwise 
   // library call needed.
-  auto &FPArithmActions = getActionDefinitionsBuilder({G_FADD, G_FSUB, G_FMUL})
+  auto &FPArithmActions = getActionDefinitionsBuilder({G_FADD, G_FSUB, G_FMUL, G_FDIV})
                               .legalFor({s32})
                               .clampScalar(0, s32, s64)
                               .widenScalarToNextPow2(0);
