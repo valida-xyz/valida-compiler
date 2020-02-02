@@ -317,3 +317,33 @@ body: |
     %0(s64) = COPY $e4
     %1(s64) = G_FMUL %0, %0
 ...
+
+---
+name:            test_fdiv_f32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_fdiv_f32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[FDIV:%[0-9]+]]:dataregbank(s32) = G_FDIV [[COPY]], [[COPY]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_FDIV %0, %0
+...
+
+---
+name:            test_fdiv_f64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_fdiv_f64
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s64) = COPY $e4
+    ; CHECK: [[FDIV:%[0-9]+]]:dataregbank(s64) = G_FDIV [[COPY]], [[COPY]]
+    %0(s64) = COPY $e4
+    %1(s64) = G_FDIV %0, %0
+...
