@@ -165,6 +165,15 @@ def : Trunc64StorePat<i8,   STB_alcd>;
 def : Trunc64StorePat<i16,  STH_alcd>;
 
 //===----------------------------------------------------------------------===//
+// Floating Point Arithmetic
+//===----------------------------------------------------------------------===//
+
+def : SimpleBinOpPat<fadd, ADDF_ddd>;
+def : SimpleBinOpPat<fadd, ADDDF_eee, ExtDataRegs>;
+def : SimpleBinOpPat<fsub, SUBF_ddd>;
+def : SimpleBinOpPat<fsub, SUBDF_eee, ExtDataRegs>;
+
+//===----------------------------------------------------------------------===//
 // Others
 //===----------------------------------------------------------------------===//
 def : Pat<(i32 (fp_to_sint f32:$src)), (i32 (FTOIZ_dd DataRegs:$src))>;
@@ -211,10 +220,3 @@ def : Pat<(f32 (fabs f32:$src)),
 def : Pat<(f64 (fabs f64:$src)), (f64 (INSERT_SUBREG ExtDataRegs:$src, 
                 (f32 (INSERT_ddccc (subreg_32b<f32> ExtDataRegs:$src, dsub1),
                                         (i32 0), (i32 31), (i32 1))), dsub1 ))>;
-
-//===----------------------------------------------------------------------===//
-// Floating Point Arithmetic
-//===----------------------------------------------------------------------===//
-
-def : SimpleBinOpPat<fadd, ADDF_ddd>;
-def : SimpleBinOpPat<fadd, ADDDF_eee, ExtDataRegs>;

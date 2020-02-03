@@ -360,3 +360,54 @@ body:             |
     %2(s64) = G_FADD %0, %1
     $e4 = COPY %2(s64)
 ...
+
+---
+name:            fsub_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: fsub_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[SUBF:%[0-9]+]]:dataregs = SUBF_ddd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[SUBF]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_FSUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            fsub_s64
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $e4, $e6
+
+    ; CHECK-LABEL: name: fsub_s64
+    ; CHECK: [[COPY:%[0-9]+]]:extdataregs = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:extdataregs = COPY $e6
+    ; CHECK: [[SUBDF:%[0-9]+]]:extdataregs = SUBDF_eee [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: $e4 = COPY [[SUBDF]]
+    %0(s64) = COPY $e4
+    %1(s64) = COPY $e6
+    %2(s64) = G_FSUB %0, %1
+    $e4 = COPY %2(s64)
+...
+
