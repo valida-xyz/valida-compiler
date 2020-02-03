@@ -15,8 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 // Simple binary op pattern
-class SimpleBinOpPat<SDPatternOperator op, Instruction INSTR>
-    : Pat<(op DataRegs:$s1, DataRegs:$s2), (INSTR DataRegs:$s1, DataRegs:$s2)>;
+class SimpleBinOpPat<SDPatternOperator op, Instruction INSTR,
+                     RegisterClass RC = DataRegs>
+    : Pat<(op RC:$s1, RC:$s2), (INSTR RC:$s1, RC:$s2)>;
 
 // Get 32-bit subregister
 class subreg_32b<ValueType ty>
@@ -210,3 +211,10 @@ def : Pat<(f32 (fabs f32:$src)),
 def : Pat<(f64 (fabs f64:$src)), (f64 (INSERT_SUBREG ExtDataRegs:$src, 
                 (f32 (INSERT_ddccc (subreg_32b<f32> ExtDataRegs:$src, dsub1),
                                         (i32 0), (i32 31), (i32 1))), dsub1 ))>;
+
+//===----------------------------------------------------------------------===//
+// Floating Point Arithmetic
+//===----------------------------------------------------------------------===//
+
+def : SimpleBinOpPat<fadd, ADDF_ddd>;
+def : SimpleBinOpPat<fadd, ADDDF_eee, ExtDataRegs>;
