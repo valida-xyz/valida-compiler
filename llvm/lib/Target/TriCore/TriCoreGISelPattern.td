@@ -270,3 +270,11 @@ def : Pat<(f32 (fabs f32:$src)),
 def : Pat<(f64 (fabs f64:$src)), (f64 (INSERT_SUBREG ExtDataRegs:$src, 
                 (f32 (INSERT_ddccc (subreg_32b<f32> ExtDataRegs:$src, dsub1),
                                         (i32 0), (i32 31), (i32 1))), dsub1 ))>;
+
+// Floating point extensions and truncations
+// Operations involving f16 need to be handled in C++ for now, since none of our
+// register classes are capable of holding an f16 type.
+let Predicates = [HasTC18] in {
+def : Pat<(f64 (fpextend f32:$src)), (f64 (FTODF_ed DataRegs:$src))>;
+def : Pat<(f32 (fpround f64:$src)), (f32 (DFTOF_de ExtDataRegs:$src))>;
+}

@@ -85,6 +85,8 @@ private:
                      unsigned DstSize, unsigned SrcSize) const;
   bool selectExtZero(MachineInstr &I, MachineRegisterInfo &MRI,
                      unsigned DstSize, unsigned SrcSize) const;
+  bool selectFPExt(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectFPTrunc(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI) const;
@@ -400,6 +402,10 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectConstant(I, MRI);
   case TargetOpcode::G_FCMP:
     return selectFCmp(I, MRI);
+  case TargetOpcode::G_FPEXT:
+    return selectFPExt(I, MRI);
+  case TargetOpcode::G_FPTRUNC:
+    return selectFPTrunc(I, MRI);
   case TargetOpcode::G_FRAME_INDEX:
     return selectFrameIndex(I, MRI);
   case TargetOpcode::G_GLOBAL_VALUE:
@@ -1150,6 +1156,46 @@ bool TriCoreInstructionSelector::selectFrameIndex(
   I.setDesc(TII.get(TriCore::LEA_aac));
   I.addOperand(MachineOperand::CreateImm(0));
   constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectFPExt(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  Register DestReg = I.getOperand(0).getReg();
+  Register SrcReg = I.getOperand(1).getReg();
+
+  LLT DestTy = MRI.getType(DestReg);
+  LLT SrcTy = MRI.getType(SrcReg);
+  assert(DestTy == LLT::scalar(32) && SrcTy == LLT::scalar(16) &&
+         "Single/Double precision extensions should have been handled in "
+         "TableGen");
+
+  MachineIRBuilder MIRBuilder(I);
+  auto ConvInstr =
+      MIRBuilder.buildInstr(TriCore::HPTOF_dd).addDef(DestReg).addUse(SrcReg);
+
+  constrainSelectedInstRegOperands(*ConvInstr, TII, TRI, RBI);
+  I.eraseFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectFPTrunc(
+    MachineInstr &I, const MachineRegisterInfo &MRI) const {
+  Register DestReg = I.getOperand(0).getReg();
+  Register SrcReg = I.getOperand(1).getReg();
+
+  LLT DestTy = MRI.getType(DestReg);
+  LLT SrcTy = MRI.getType(SrcReg);
+  assert(DestTy == LLT::scalar(16) && SrcTy == LLT::scalar(32) &&
+         "Single/Double precision truncations should have been handled in "
+         "TableGen");
+
+  MachineIRBuilder MIRBuilder(I);
+  auto ConvInstr =
+      MIRBuilder.buildInstr(TriCore::FTOHP_dd).addDef(DestReg).addUse(SrcReg);
+
+  constrainSelectedInstRegOperands(*ConvInstr, TII, TRI, RBI);
+  I.eraseFromParent();
   return true;
 }
 
