@@ -86,6 +86,28 @@ entry:
   ret i32 %i
 }
 
+define float @ret_float(float %i) {
+  ; CHECK-LABEL: name: ret_float
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $d4
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+  ; CHECK:   $d2 = COPY [[COPY]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  ret float %i
+}
+
+define double @ret_double(double %i) {
+  ; CHECK-LABEL: name: ret_double
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $e4
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+  ; CHECK:   $e2 = COPY [[COPY]](s64)
+  ; CHECK:   RET implicit $a11, implicit $e2
+entry:
+  ret double %i
+}
+
 define i32 @args_i32(i32 %d4, i32 %d5, i32 %d6, i32 %d7) {
   ; CHECK-LABEL: name: args_i32
   ; CHECK: bb.1.entry:

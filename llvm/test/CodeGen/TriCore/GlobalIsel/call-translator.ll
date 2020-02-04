@@ -46,6 +46,22 @@ entry:
   ret void
 }
 
+declare void @simple_double_arg_callee(double %in)
+define void @test_simple_double_arg(double %in) {
+  ; CHECK-LABEL: name: test_simple_double_arg
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $e4
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+  ; CHECK:   ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   $e4 = COPY [[COPY]](s64)
+  ; CHECK:   CALL @simple_double_arg_callee, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4
+  ; CHECK:   ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   RET implicit $a11
+entry:
+  call void @simple_double_arg_callee(double %in)
+  ret void
+}
+
 define void @test_indirect_call(void()* %func) {
   ; Make sure the register feeding the indirect call is properly constrained.
   ; CHECK-LABEL: name: test_indirect_call
