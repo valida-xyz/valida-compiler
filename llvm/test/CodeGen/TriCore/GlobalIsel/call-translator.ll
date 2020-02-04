@@ -30,6 +30,24 @@ entry:
   ret void
 }
 
+declare void @simple_half_arg_callee(half %in)
+define void @test_simple_half_arg(half %in) {
+  ; CHECK-LABEL: name: test_simple_half_arg
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $d4
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[TRUNC]](s16)
+  ; CHECK:   $d4 = COPY [[ANYEXT]](s32)
+  ; CHECK:   CALL @simple_half_arg_callee, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4
+  ; CHECK:   ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   RET implicit $a11
+entry:
+  call void @simple_half_arg_callee(half %in)
+  ret void
+}
+
 declare void @simple_float_arg_callee(float %in)
 define void @test_simple_float_arg(float %in) {
   ; CHECK-LABEL: name: test_simple_float_arg
@@ -95,21 +113,24 @@ entry:
   ret void
 }
 
-declare void @multiple_float_args_callee(float, double)
+declare void @multiple_float_args_callee(half, float, double)
 define void @test_multiple_float_args(double %in) {
   ; CHECK-LABEL: name: test_multiple_float_args
   ; CHECK: bb.1.entry:
   ; CHECK:   liveins: $e4
   ; CHECK:   [[COPY:%[0-9]+]]:_(s64) = COPY $e4
-  ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_FCONSTANT float 4.200000e+01
+  ; CHECK:   [[C:%[0-9]+]]:_(s16) = G_FCONSTANT half 0xH3C00
+  ; CHECK:   [[C1:%[0-9]+]]:_(s32) = G_FCONSTANT float 4.200000e+01
   ; CHECK:   ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
-  ; CHECK:   $d4 = COPY [[C]](s32)
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[C]](s16)
+  ; CHECK:   $d4 = COPY [[ANYEXT]](s32)
+  ; CHECK:   $d5 = COPY [[C1]](s32)
   ; CHECK:   $e6 = COPY [[COPY]](s64)
-  ; CHECK:   CALL @multiple_float_args_callee, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4, implicit $e6
+  ; CHECK:   CALL @multiple_float_args_callee, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4, implicit $d5, implicit $e6
   ; CHECK:   ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
   ; CHECK:   RET implicit $a11
 entry:
-  call void @multiple_float_args_callee(float 42.0, double %in)
+  call void @multiple_float_args_callee(half 1.0, float 42.0, double %in)
   ret void
 }
 
@@ -299,7 +320,7 @@ entry:
   ret void
 }
 
-declare void @test_stack_slots_mixed(i64 %e4, i64 %e6, i32 %stack1, float %stack2,i64 %stack3, double %stack4, i32* %a4, i32* %a5, i32* %a6, i32* %a7, i32* %ptr)
+declare void @test_stack_slots_mixed(i64 %e4, i64 %e6, i32 %stack1, half %stack2, float %stack3, i64 %stack4, double %stack5, i32* %a4, i32* %a5, i32* %a6, i32* %a7, i32* %ptr)
 define void @test_call_stack_mixed(i64 %e4, i64 %e6) {
   ; CHECK-LABEL: name: test_call_stack_mixed
   ; CHECK: bb.1.entry:
@@ -307,43 +328,48 @@ define void @test_call_stack_mixed(i64 %e4, i64 %e6) {
   ; CHECK:   [[COPY:%[0-9]+]]:_(s64) = COPY $e4
   ; CHECK:   [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
   ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 42
-  ; CHECK:   [[C1:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
-  ; CHECK:   [[C2:%[0-9]+]]:_(s64) = G_CONSTANT i64 12
-  ; CHECK:   [[C3:%[0-9]+]]:_(s64) = G_FCONSTANT double 3.000000e+00
-  ; CHECK:   [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
-  ; CHECK:   [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[C4]](s32)
-  ; CHECK:   ADJCALLSTACKDOWN 28, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   [[C1:%[0-9]+]]:_(s16) = G_FCONSTANT half 0xH3C00
+  ; CHECK:   [[C2:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
+  ; CHECK:   [[C3:%[0-9]+]]:_(s64) = G_CONSTANT i64 12
+  ; CHECK:   [[C4:%[0-9]+]]:_(s64) = G_FCONSTANT double 3.000000e+00
+  ; CHECK:   [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; CHECK:   [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[C5]](s32)
+  ; CHECK:   ADJCALLSTACKDOWN 32, 0, implicit-def $a10, implicit $a10
   ; CHECK:   $e4 = COPY [[COPY]](s64)
   ; CHECK:   $e6 = COPY [[COPY1]](s64)
   ; CHECK:   [[COPY2:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
-  ; CHECK:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY2]], [[C5]](s32)
+  ; CHECK:   [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; CHECK:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY2]], [[C6]](s32)
   ; CHECK:   G_STORE [[C]](s32), [[PTR_ADD]](p0) :: (store 4 into stack, align 1)
   ; CHECK:   [[COPY3:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
-  ; CHECK:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY3]], [[C6]](s32)
-  ; CHECK:   G_STORE [[C1]](s32), [[PTR_ADD1]](p0) :: (store 4 into stack + 4, align 1)
+  ; CHECK:   [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+  ; CHECK:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY3]], [[C7]](s32)
+  ; CHECK:   G_STORE [[C1]](s16), [[PTR_ADD1]](p0) :: (store 2 into stack + 4, align 1)
   ; CHECK:   [[COPY4:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
-  ; CHECK:   [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY4]], [[C7]](s32)
-  ; CHECK:   G_STORE [[C2]](s64), [[PTR_ADD2]](p0) :: (store 8 into stack + 8, align 1)
+  ; CHECK:   [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+  ; CHECK:   [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY4]], [[C8]](s32)
+  ; CHECK:   G_STORE [[C2]](s32), [[PTR_ADD2]](p0) :: (store 4 into stack + 8, align 1)
   ; CHECK:   [[COPY5:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
-  ; CHECK:   [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY5]], [[C8]](s32)
-  ; CHECK:   G_STORE [[C3]](s64), [[PTR_ADD3]](p0) :: (store 8 into stack + 16, align 1)
+  ; CHECK:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
+  ; CHECK:   [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY5]], [[C9]](s32)
+  ; CHECK:   G_STORE [[C3]](s64), [[PTR_ADD3]](p0) :: (store 8 into stack + 12, align 1)
+  ; CHECK:   [[COPY6:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK:   [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 20
+  ; CHECK:   [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY6]], [[C10]](s32)
+  ; CHECK:   G_STORE [[C4]](s64), [[PTR_ADD4]](p0) :: (store 8 into stack + 20, align 1)
   ; CHECK:   $a4 = COPY [[INTTOPTR]](p0)
   ; CHECK:   $a5 = COPY [[INTTOPTR]](p0)
   ; CHECK:   $a6 = COPY [[INTTOPTR]](p0)
   ; CHECK:   $a7 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   [[COPY6:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
-  ; CHECK:   [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY6]], [[C9]](s32)
-  ; CHECK:   G_STORE [[INTTOPTR]](p0), [[PTR_ADD4]](p0) :: (store 4 into stack + 24, align 1)
+  ; CHECK:   [[COPY7:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK:   [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 28
+  ; CHECK:   [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY7]], [[C11]](s32)
+  ; CHECK:   G_STORE [[INTTOPTR]](p0), [[PTR_ADD5]](p0) :: (store 4 into stack + 28, align 1)
   ; CHECK:   CALL @test_stack_slots_mixed, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit $e6, implicit $a4, implicit $a5, implicit $a6, implicit $a7
-  ; CHECK:   ADJCALLSTACKUP 28, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   ADJCALLSTACKUP 32, 0, implicit-def $a10, implicit $a10
   ; CHECK:   RET implicit $a11
 entry:
-  call void @test_stack_slots_mixed(i64 %e4, i64 %e6, i32 42, float 2.0, i64 12, double 3.0, i32* null, i32* null, i32* null, i32* null, i32* null)
+  call void @test_stack_slots_mixed(i64 %e4, i64 %e6, i32 42, half 1.0, float 2.0, i64 12, double 3.0, i32* null, i32* null, i32* null, i32* null, i32* null)
   ret void
 }
 
@@ -422,6 +448,23 @@ entry:
   ret double %res
 }
 
+declare half @simple_return_callee6()
+define half @test_simple_return6() {
+  ; CHECK-LABEL: name: test_simple_return6
+  ; CHECK: bb.1.entry:
+  ; CHECK:   ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   CALL @simple_return_callee6, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit-def $d2
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d2
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[TRUNC]](s16)
+  ; CHECK:   $d2 = COPY [[ANYEXT]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  %res = call half @simple_return_callee6()
+  ret half %res
+}
+
 declare [2 x i32] @ret_struct()
 define i32 @test_struct_return() {
   ; CHECK-LABEL: name: test_struct_return
@@ -437,6 +480,26 @@ entry:
   %res = call [2 x i32] @ret_struct()
   %res.extract = extractvalue [2 x i32] %res, 0
   ret i32 %res.extract
+}
+
+declare [2 x half] @ret_half_struct()
+define half @test_half_struct_return() {
+  ; CHECK-LABEL: name: test_half_struct_return
+  ; CHECK: bb.1.entry:
+  ; CHECK:   ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   CALL @ret_half_struct, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit-def $d2, implicit-def $d3
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d2
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d3
+  ; CHECK:   [[TRUNC1:%[0-9]+]]:_(s16) = G_TRUNC [[COPY1]](s32)
+  ; CHECK:   ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[TRUNC]](s16)
+  ; CHECK:   $d2 = COPY [[ANYEXT]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  %res = call [2 x half] @ret_half_struct()
+  %res.extract = extractvalue [2 x half] %res, 0
+  ret half %res.extract
 }
 
 declare [2 x float] @ret_float_struct()
@@ -466,38 +529,43 @@ define void @test_varargs() {
   ; CHECK:   [[C3:%[0-9]+]]:_(s16) = G_CONSTANT i16 2
   ; CHECK:   [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
   ; CHECK:   [[C5:%[0-9]+]]:_(s64) = G_CONSTANT i64 4
-  ; CHECK:   [[C6:%[0-9]+]]:_(s32) = G_FCONSTANT float 5.000000e+00
-  ; CHECK:   [[C7:%[0-9]+]]:_(s64) = G_FCONSTANT double 6.000000e+00
-  ; CHECK:   ADJCALLSTACKDOWN 32, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   [[C6:%[0-9]+]]:_(s16) = G_FCONSTANT half 0xH3C00
+  ; CHECK:   [[C7:%[0-9]+]]:_(s32) = G_FCONSTANT float 5.000000e+00
+  ; CHECK:   [[C8:%[0-9]+]]:_(s64) = G_FCONSTANT double 6.000000e+00
+  ; CHECK:   ADJCALLSTACKDOWN 36, 0, implicit-def $a10, implicit $a10
   ; CHECK:   $e4 = COPY [[C]](s64)
   ; CHECK:   $d6 = COPY [[C1]](s32)
   ; CHECK:   [[COPY:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
-  ; CHECK:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C8]](s32)
+  ; CHECK:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+  ; CHECK:   [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
   ; CHECK:   G_STORE [[C2]](s8), [[PTR_ADD]](p0) :: (store 1 into stack)
   ; CHECK:   [[COPY1:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
-  ; CHECK:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY1]], [[C9]](s32)
+  ; CHECK:   [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+  ; CHECK:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY1]], [[C10]](s32)
   ; CHECK:   G_STORE [[C3]](s16), [[PTR_ADD1]](p0) :: (store 2 into stack + 4, align 1)
   ; CHECK:   [[COPY2:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
-  ; CHECK:   [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY2]], [[C10]](s32)
+  ; CHECK:   [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+  ; CHECK:   [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY2]], [[C11]](s32)
   ; CHECK:   G_STORE [[C4]](s32), [[PTR_ADD2]](p0) :: (store 4 into stack + 8, align 1)
   ; CHECK:   [[COPY3:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
-  ; CHECK:   [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY3]], [[C11]](s32)
+  ; CHECK:   [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
+  ; CHECK:   [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY3]], [[C12]](s32)
   ; CHECK:   G_STORE [[C5]](s64), [[PTR_ADD3]](p0) :: (store 8 into stack + 12, align 1)
   ; CHECK:   [[COPY4:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 20
-  ; CHECK:   [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY4]], [[C12]](s32)
-  ; CHECK:   G_STORE [[C6]](s32), [[PTR_ADD4]](p0) :: (store 4 into stack + 20, align 1)
+  ; CHECK:   [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 20
+  ; CHECK:   [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY4]], [[C13]](s32)
+  ; CHECK:   G_STORE [[C6]](s16), [[PTR_ADD4]](p0) :: (store 2 into stack + 20, align 1)
   ; CHECK:   [[COPY5:%[0-9]+]]:_(p0) = COPY $a10
-  ; CHECK:   [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
-  ; CHECK:   [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY5]], [[C13]](s32)
-  ; CHECK:   G_STORE [[C7]](s64), [[PTR_ADD5]](p0) :: (store 8 into stack + 24, align 1)
+  ; CHECK:   [[C14:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+  ; CHECK:   [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY5]], [[C14]](s32)
+  ; CHECK:   G_STORE [[C7]](s32), [[PTR_ADD5]](p0) :: (store 4 into stack + 24, align 1)
+  ; CHECK:   [[COPY6:%[0-9]+]]:_(p0) = COPY $a10
+  ; CHECK:   [[C15:%[0-9]+]]:_(s32) = G_CONSTANT i32 28
+  ; CHECK:   [[PTR_ADD6:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY6]], [[C15]](s32)
+  ; CHECK:   G_STORE [[C8]](s64), [[PTR_ADD6]](p0) :: (store 8 into stack + 28, align 1)
   ; CHECK:   CALL @varargs, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit $d6
-  ; CHECK:   ADJCALLSTACKUP 32, 0, implicit-def $a10, implicit $a10
+  ; CHECK:   ADJCALLSTACKUP 36, 0, implicit-def $a10, implicit $a10
   ; CHECK:   RET implicit $a11
-  call void(i64, i32, ...) @varargs(i64 42, i32 12, i8 1, i16 2, i32 3, i64 4, float 5.0, double 6.0)
+  call void(i64, i32, ...) @varargs(i64 42, i32 12, i8 1, i16 2, i32 3, i64 4, half 1.0, float 5.0, double 6.0)
   ret void
 }

@@ -116,6 +116,17 @@ S64 f_s64_return(void) {
   return (S64) { 0 };
 }
 
+
+typedef struct struct_f16_f16 {
+  __fp16 a, b;
+} S_F16_F16;
+
+// CHECK-LABEL: define [1 x i32] @f_struct_f16_f16([1 x i32] %x.coerce)
+S_F16_F16 f_struct_f16_f16(S_F16_F16 x) {
+  return x;
+}
+
+
 typedef struct struct_stack {
   int x; int y; int z;
 } STACK;

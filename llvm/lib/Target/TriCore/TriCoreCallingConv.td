@@ -23,6 +23,9 @@ def CC_TriCore : CallingConv<[
   // Integer types smaller than 32-bits are promoted
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
 
+  // We pass half-float types as simple float types
+  CCIfType<[f16], CCPromoteToType<f32>>,
+
   // Try to find a free scalar argument register
   CCIfType<[i32, f32], CCAssignToReg<[D4, D5, D6, D7]>>,
   CCIfType<[i64, f64], CCAssignToReg<[E4, E6]>>,
@@ -44,6 +47,7 @@ def CC_TriCore_VarArg : CallingConv<[
   // Everything is on the stack.
   CCIfPtr<CCBitConvertToType<i32>>,
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
+  CCIfType<[f16], CCPromoteToType<f32>>,
   CCIfType<[i32, f32], CCAssignToStack<4, 4>>,
   CCIfType<[i64, f64], CCAssignToStack<8, 4>>,
 ]>;
@@ -53,6 +57,9 @@ def CC_TriCore_VarArg : CallingConv<[
 
   // Integer types smaller than 32-bits are promoted
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
+
+  // We pass half-float types as simple float types
+  CCIfType<[f16], CCPromoteToType<f32>>,
 
   // Try to find a free scalar return register
   CCIfType<[i32, f32], CCAssignToReg<[D2, D3]>>,

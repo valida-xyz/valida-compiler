@@ -86,6 +86,19 @@ entry:
   ret i32 %i
 }
 
+define half @ret_half(half %i) {
+  ; CHECK-LABEL: name: ret_half
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $d4
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[TRUNC]](s16)
+  ; CHECK:   $d2 = COPY [[ANYEXT]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  ret half %i
+}
+
 define float @ret_float(float %i) {
   ; CHECK-LABEL: name: ret_float
   ; CHECK: bb.1.entry:
@@ -193,6 +206,20 @@ define i32* @args_ptr(i32* %a4, i32* %a5, i32* %a6, i32* %a7) {
   ; CHECK:   RET implicit $a11, implicit $a2
 entry:
   ret i32* %a4
+}
+
+define float @args_floats(half %d4, float %d5, double %e6) {
+  ; CHECK-LABEL: name: args_floats
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $d4, $d5, $e6
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+  ; CHECK:   [[COPY2:%[0-9]+]]:_(s64) = COPY $e6
+  ; CHECK:   $d2 = COPY [[COPY1]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  ret float %d5
 }
 
 define i32 @args_struct_1([1 x i32] %d4) {
@@ -347,4 +374,25 @@ define zeroext i8 @args_stack_mixed(i32 %d4, i32 %d5, i32 %d6, i32 %d7, i1 zeroe
   ; CHECK:   RET implicit $a11, implicit $d2
 entry:
   ret i8 %stack2
+}
+
+define half @args_stack_floats_mixed(half %d4, float %d5, double %e6, half %stack1, float %stack2, double %stack3) {
+  ; CHECK-LABEL: name: args_stack_floats_mixed
+  ; CHECK: bb.1.entry:
+  ; CHECK:   liveins: $d4, $d5, $e6
+  ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+  ; CHECK:   [[COPY2:%[0-9]+]]:_(s64) = COPY $e6
+  ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.2
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s16) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 2 from %fixed-stack.2, align 1)
+  ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[FRAME_INDEX2:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
+  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s64) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 8 from %fixed-stack.0, align 1)
+  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[LOAD]](s16)
+  ; CHECK:   $d2 = COPY [[ANYEXT]](s32)
+  ; CHECK:   RET implicit $a11, implicit $d2
+entry:
+  ret half %stack1
 }

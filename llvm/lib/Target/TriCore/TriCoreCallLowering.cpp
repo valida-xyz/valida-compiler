@@ -55,7 +55,8 @@ struct IncomingArgHandler : public CallLowering::ValueHandler {
       break;
     case CCValAssign::LocInfo::SExt:
     case CCValAssign::LocInfo::ZExt:
-    case CCValAssign::LocInfo::AExt: {
+    case CCValAssign::LocInfo::AExt:
+    case CCValAssign::FPExt: {
       auto Copy = MIRBuilder.buildCopy(LLT{VA.getLocVT()}, PhysReg);
       MIRBuilder.buildTrunc(ValVReg, Copy);
       break;
@@ -153,7 +154,16 @@ struct OutgoingValueHandler : public CallLowering::ValueHandler {
   void assignValueToReg(Register ValVReg, Register PhysReg,
                         CCValAssign &VA) override {
     MIB.addUse(PhysReg, RegState::Implicit);
-    Register ExtReg = extendRegister(ValVReg, VA);
+    Register ExtReg;
+    if (VA.getLocInfo() ==  CCValAssign::FPExt) {
+      // Awful hack for floating point extensions.
+      assert(MRI.getType(ValVReg) == LLT::scalar(16) &&
+      "Floating point conversion only expected from half to single precision");
+      ExtReg = MRI.createGenericVirtualRegister(LLT::scalar(32));
+      MIRBuilder.buildAnyExt(ExtReg, ValVReg);
+    } else {
+      ExtReg = extendRegister(ValVReg, VA);
+    }
     MIRBuilder.buildCopy(PhysReg, ExtReg);
   }
 
