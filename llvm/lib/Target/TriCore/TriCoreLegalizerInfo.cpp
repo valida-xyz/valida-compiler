@@ -136,24 +136,28 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_FPEXT needs to convert from half to single, single to double and half to
   // double precision
   auto &FPExtActions = getActionDefinitionsBuilder(G_FPEXT)
-                           .legalFor({{s32, s16}})
                            .lowerFor({{s64, s16}}); // FIXME: implement lower
 
   if (ST.hasTC18Ops())
-    FPExtActions.legalFor({{s64, s32}});
+    FPExtActions.legalFor({{s32, s16}, {s64, s32}});
+  else if (ST.hasTC162Ops())
+    FPExtActions.legalFor({{s32, s16}})
+                .libcallFor({{s64, s32}});
   else
-    FPExtActions.libcallFor({{s64, s32}});
+    FPExtActions.libcallFor({{s32, s16}, {s64, s32}});
 
   // G_FPTRUNC needs to convert from double to single, single to half and double
   // to single precision
   auto &FPTruncActions = getActionDefinitionsBuilder(G_FPTRUNC)
-                             .legalFor({{s16, s32}})
                              .lowerFor({{s16, s64}}); // FIXME: implement lower
 
   if (ST.hasTC18Ops())
-    FPTruncActions.legalFor({{s32, s64}});
+    FPTruncActions.legalFor({{s16, s32}, {s32, s64}});
+  else if (ST.hasTC162Ops())
+    FPTruncActions.legalFor({{s16, s32}})
+                  .libcallFor({{s32, s64}});
   else
-    FPTruncActions.libcallFor({{s32, s64}});
+    FPTruncActions.libcallFor({{s16, s32}, {s32, s64}});
 
   // Overflow Ops
 
