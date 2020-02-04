@@ -277,6 +277,12 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   else
     FPArithmActions.libcallFor({s64});
 
+  // G_FFLOOR requires a libcall s32 and s64
+  getActionDefinitionsBuilder(G_FFLOOR)
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0)
+      .libcallFor({s32, s64});
+
   // Load & Store
 
   // G_LOAD is legal for 32 and 64-bit scalar and pointer types.
