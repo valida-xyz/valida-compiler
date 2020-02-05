@@ -1,0 +1,36 @@
+# RUN: (not llc -mtriple=tricore -global-isel -run-pass=postrapseudos -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+
+# Check that an implicit definition of $psw between a usage of $psw_c causes a
+# spill of $psw_c.
+# This should then cause an error due to pseudo-register COPYs not being
+# supported
+
+---
+name:            psw_c_spill
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+registers:
+  - { id: 0, class: dataregs, preferred-register: '' }
+  - { id: 1, class: dataregs, preferred-register: '' }
+  - { id: 2, class: dataregs, preferred-register: '' }
+  - { id: 3, class: dataregs, preferred-register: '' }
+  - { id: 4, class: dataregs, preferred-register: '' }
+  - { id: 5, class: dataregs, preferred-register: '' }
+  - { id: 6, class: dataregs, preferred-register: '' }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    ; ERROR: unimplemented reg-to-reg copy
+    %0 = COPY $d4
+    %1 = COPY $d5
+    %2 = ADDX_ddd %0, %1, implicit-def $psw
+    %3 = COPY $psw_c
+    %4 = ADDC_ddd %2, %2, implicit-def $psw, implicit $psw
+    $psw_c = COPY %3
+    %5 = ADDC_ddd %2, %2, implicit-def $psw, implicit $psw
+    %6 = COPY $psw_c
+    $d4 = COPY %5
+    $d5 = COPY %4
+...

@@ -1,0 +1,12 @@
+# RUN: (not llc -mtriple=tricore -global-isel -run-pass=postrapseudos -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+
+# Check that we abort when trying to copy a pseudo register
+
+---
+name:            copy_psw_c_d
+body:             |
+  bb.0:
+    liveins: $d4
+    ; ERROR:  unimplemented reg-to-reg copy
+    $psw_c = COPY $d4
+...

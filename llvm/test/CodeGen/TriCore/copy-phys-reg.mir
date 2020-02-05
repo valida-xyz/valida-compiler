@@ -205,3 +205,15 @@ body:             |
     ; CHECK: $a3 = MOVA_ad killed $d5
     $p2 = COPY killed $e4
 ...
+
+---
+name:            copy_d_psw_c
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; CHECK-LABEL: name: copy_d_psw_c
+    ; CHECK: $d2 = MFCR_dc 65028, implicit $psw
+    ; CHECK: $d2 = EXTRU_ddcc $d2, 31, 1
+    $d2 = COPY $psw_c
+...

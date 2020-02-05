@@ -57,6 +57,20 @@ void TriCoreInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                    MCRegister SrcReg, bool KillSrc) const {
 
   if (TriCore::DataRegsRegClass.contains(DestReg)) {
+    // Copy from status register PSW.C to data register
+    if (SrcReg == TriCore::PSW_C) {
+      // Move status register PSW to a data register
+      BuildMI(MBB, MI, DL, get(TriCore::MFCR_dc), DestReg)
+          .addImm(TriCoreSysReg::psw)
+          .addUse(TriCore::PSW, RegState::Implicit);
+
+      // Extract carry bit (bit #31)
+      BuildMI(MBB, MI, DL, get(TriCore::EXTRU_ddcc), DestReg)
+          .addUse(DestReg)
+          .addImm(31)
+          .addImm(1);
+      return;
+    }
 
     // Copy from data register to data register -> MOV_dd
     if (TriCore::DataRegsRegClass.contains(SrcReg)) {

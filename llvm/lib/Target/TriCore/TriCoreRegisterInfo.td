@@ -58,6 +58,7 @@ let Namespace = "TriCore" in {
   def dsub1 : SubRegIndex<32, 32>;
   def asub0 : SubRegIndex<32>;
   def asub1 : SubRegIndex<32, 32>;
+  def psw_c : SubRegIndex<1, 31>;
 }
 // Extended data registers
 let SubRegIndices = [dsub0, dsub1] in {
@@ -83,17 +84,21 @@ let SubRegIndices = [asub0, asub1] in {
     def P14 : TriCoreReg<14,  "p14", [A14,A15]>;
 }
 
+// Pseudo carry-bit register used for code-gen only. Should never be emitted.
+def PSW_C : TriCoreReg<0, "PSW.C">;
+
 // Control registers
-def PSW  : TriCoreReg<0,  "PSW">,  DwarfRegNum<[40]>;
-def PCXI : TriCoreReg<0,  "PCXI">, DwarfRegNum<[41]>;
-def PC   : TriCoreReg<0,  "PC">,   DwarfRegNum<[42]>;
-def FCX  : TriCoreReg<0,  "FCX">,  DwarfRegNum<[43]>;
-def LCX  : TriCoreReg<0,  "LCX">,  DwarfRegNum<[44]>;
-def ISP  : TriCoreReg<0,  "ISP">,  DwarfRegNum<[45]>;
-def ICR  : TriCoreReg<0,  "ICR">,  DwarfRegNum<[46]>;
-def PIPN : TriCoreReg<0,  "PIPN">, DwarfRegNum<[47]>;
-def BIV  : TriCoreReg<0,  "BIV">,  DwarfRegNum<[48]>;
-def BTV  : TriCoreReg<0,  "BTV">,  DwarfRegNum<[49]>;
+let SubRegIndices = [psw_c] in
+def PSW  : TriCoreReg<0,  "PSW", [PSW_C]>, DwarfRegNum<[40]>;
+def PCXI : TriCoreReg<0,  "PCXI"        >, DwarfRegNum<[41]>;
+def PC   : TriCoreReg<0,  "PC"          >, DwarfRegNum<[42]>;
+def FCX  : TriCoreReg<0,  "FCX"         >, DwarfRegNum<[43]>;
+def LCX  : TriCoreReg<0,  "LCX"         >, DwarfRegNum<[44]>;
+def ISP  : TriCoreReg<0,  "ISP"         >, DwarfRegNum<[45]>;
+def ICR  : TriCoreReg<0,  "ICR"         >, DwarfRegNum<[46]>;
+def PIPN : TriCoreReg<0,  "PIPN"        >, DwarfRegNum<[47]>;
+def BIV  : TriCoreReg<0,  "BIV"         >, DwarfRegNum<[48]>;
+def BTV  : TriCoreReg<0,  "BTV"         >, DwarfRegNum<[49]>;
 
 //===----------------------------------------------------------------------===//
 // Register classes

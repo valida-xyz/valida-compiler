@@ -37,6 +37,11 @@ void TriCoreInstPrinter::printInst(const MCInst *MI, uint64_t Address,
 }
 
 void TriCoreInstPrinter::printRegName(raw_ostream &O, unsigned RegNo) const {
+#ifndef NDEBUG
+  if (RegNo == TriCore::PSW_C)
+    llvm_unreachable("Pseudo-register should never be emitted");
+#endif
+
   O << "%" << getRegisterName(RegNo);
 }
 
