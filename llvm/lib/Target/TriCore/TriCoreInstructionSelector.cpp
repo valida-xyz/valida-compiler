@@ -72,6 +72,8 @@ private:
                           const Register &DestReg,
                           MachineRegisterInfo &MRI) const;
 
+  bool selectAddSubE(MachineInstr &I, MachineRegisterInfo &MRI) const;
+  bool selectAddSubO(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectBrIndirect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
@@ -346,6 +348,18 @@ getRegClassForTypeOnBank(const LLT Ty, const RegisterBank &RB) {
   return nullptr;
 }
 
+static bool isCarryOutProducer(const MachineInstr &I) {
+  switch (I.getOpcode()) {
+  default:
+    return false;
+  case TargetOpcode::G_UADDO:
+  case TargetOpcode::G_UADDE:
+  case TargetOpcode::G_USUBO:
+  case TargetOpcode::G_USUBE:
+    return true;
+  }
+}
+
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
   assert(I.getParent() && "Instruction should be in a basic block!");
   assert(I.getParent()->getParent() && "Instruction should be in a function!");
@@ -426,6 +440,12 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectSelect(I, MRI);
   case TargetOpcode::G_TRUNC:
     return selectTrunc(I, MRI);
+  case TargetOpcode::G_UADDE:
+  case TargetOpcode::G_USUBE:
+    return selectAddSubE(I, MRI);
+  case TargetOpcode::G_UADDO:
+  case TargetOpcode::G_USUBO:
+    return selectAddSubO(I, MRI);
   case TargetOpcode::G_UNMERGE_VALUES:
     return selectUnmerge(I, MRI);
   default:
@@ -589,6 +609,151 @@ void TriCoreInstructionSelector::materializePointer(
 
   constrainSelectedInstRegOperands(*MovMI, TII, TRI, RBI);
   constrainSelectedInstRegOperands(*LeaMI, TII, TRI, RBI);
+}
+
+bool TriCoreInstructionSelector::selectAddSubE(MachineInstr &I,
+                                               MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_UADDE ||
+         I.getOpcode() == TargetOpcode::G_USUBE);
+
+  const bool IsAdd = I.getOpcode() == TargetOpcode::G_UADDE;
+
+  const Register &DstReg = I.getOperand(0).getReg();
+  const Register &CarryOutReg = I.getOperand(1).getReg();
+  const Register &Src1Reg = I.getOperand(2).getReg();
+  const Register &Src2Reg = I.getOperand(3).getReg();
+  Register CarryInReg = I.getOperand(4).getReg();
+
+  const LLT DstTy = MRI.getType(DstReg);
+  const LLT CarryTy = MRI.getType(CarryOutReg);
+
+  // Add/sub /w carry requires 32-bit operands with 1-bit carries
+  const std::string OpStr = IsAdd ? "G_UADDO" : "G_USUBO";
+  if (!checkType(LLT::scalar(32), DstTy, OpStr) ||
+      !checkType(LLT::scalar(1), CarryTy, OpStr))
+    return false;
+
+  // We have no way to simply materialize the carry bit in the PSW. Therefore
+  // we must make sure that the carry-in comes from a carry-out producing
+  // instruction. If that is not the case, the carry-in must be the constant
+  // 0, since we can use a simple ADDX/SUBX instruction to handle this case.
+  //
+  // We expect that there are no instructions clobbering the PSW are scheduled
+  // between this and the carry-out producing instruction. If that expectation
+  // turns out to be wrong, the COPY for the carry-in would get materialized,
+  // which is unsupported and fails in the TriCoreInstrInfo::copyPhysReg
+
+  // Look for the definition of the carry-in register, skipping truncations
+  const MachineInstr *Def = MRI.getVRegDef(CarryInReg);
+  while (Def->getOpcode() == TargetOpcode::G_TRUNC) {
+    CarryInReg = Def->getOperand(1).getReg();
+    Def = MRI.getVRegDef(CarryInReg);
+  }
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Check if the carry in register comes from a carry-out producing
+  // instruction or is a constant
+  unsigned Opc;
+  if (isCarryOutProducer(*Def)) {
+    // Copy carry-in to pseudo-register PSW_C. This COPY should get eliminated
+    // in the register allocator
+    MIRBuilder.buildInstr(TargetOpcode::COPY)
+        .addDef(TriCore::PSW_C)
+        .addUse(CarryInReg);
+
+    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+            CarryInReg, TriCore::DataRegsRegClass, MRI)) {
+      LLVM_DEBUG(dbgs() << "Failed to constrain carry-in register for " << OpStr
+                        << '\n');
+      return false;
+    }
+
+    Opc = IsAdd ? TriCore::ADDC_ddd : TriCore::SUBC_ddd;
+
+  } else if (auto CarryInVal = getConstantVRegVal(CarryInReg, MRI)) {
+    // Carry-in is a constant. Check if it is 0
+    if (*CarryInVal != 0) {
+      LLVM_DEBUG(
+          dbgs() << OpStr
+                 << " with constant non-zero carry-in is not supported\n");
+      return false;
+    }
+
+    Opc = IsAdd ? TriCore::ADDX_ddd : TriCore::SUBX_ddd;
+
+  } else {
+    // Carry-in comes from an unsupported source
+    LLVM_DEBUG(
+        dbgs()
+        << "Carry-in from " << OpStr
+        << " must be from carry-out producing instruction or constant 0\n");
+    return false;
+  }
+
+  // Build target instruction and copy PSW_C to carry-out
+  const auto AddSubMI =
+      MIRBuilder.buildInstr(Opc).addDef(DstReg).addUse(Src1Reg).addUse(Src2Reg);
+
+  MIRBuilder.buildInstr(TargetOpcode::COPY)
+      .addDef(CarryOutReg)
+      .addUse(TriCore::PSW_C);
+
+  if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+          CarryOutReg, TriCore::DataRegsRegClass, MRI)) {
+    LLVM_DEBUG(dbgs() << "Failed to constrain carry-out register for " << OpStr
+                      << '\n');
+    return false;
+  }
+
+  constrainSelectedInstRegOperands(*AddSubMI, TII, TRI, RBI);
+
+  I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectAddSubO(MachineInstr &I,
+                                               MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_UADDO ||
+         I.getOpcode() == TargetOpcode::G_USUBO);
+
+  const bool IsAdd = I.getOpcode() == TargetOpcode::G_UADDO;
+
+  const Register &DstReg = I.getOperand(0).getReg();
+  const Register &CarryReg = I.getOperand(1).getReg();
+  const Register &Src1Reg = I.getOperand(2).getReg();
+  const Register &Src2Reg = I.getOperand(3).getReg();
+
+  const LLT DstTy = MRI.getType(DstReg);
+  const LLT CarryTy = MRI.getType(CarryReg);
+
+  // Add/sub /w carry requires 32-bit operands with 1-bit carry
+  const std::string OpStr = IsAdd ? "G_UADDO" : "G_USUBO";
+  if (!checkType(LLT::scalar(32), DstTy, OpStr) ||
+      !checkType(LLT::scalar(1), CarryTy, OpStr))
+    return false;
+
+  // Emit ADDX/SUBX and use COPY from PSW_C for the carry-out
+  MachineIRBuilder MIRBuilder(I);
+
+  const unsigned Opc = IsAdd ? TriCore::ADDX_ddd : TriCore::SUBX_ddd;
+  const auto AddSubMI =
+      MIRBuilder.buildInstr(Opc).addDef(DstReg).addUse(Src1Reg).addUse(Src2Reg);
+
+  MIRBuilder.buildInstr(TargetOpcode::COPY)
+      .addDef(CarryReg)
+      .addUse(TriCore::PSW_C);
+
+  constrainSelectedInstRegOperands(*AddSubMI, TII, TRI, RBI);
+  if (!TriCoreRegisterBankInfo::constrainGenericRegister(
+          CarryReg, TriCore::DataRegsRegClass, MRI)) {
+    LLVM_DEBUG(dbgs() << "Failed to constrain carry register for " << OpStr
+                      << '\n');
+    return false;
+  }
+
+  I.removeFromParent();
+  return true;
 }
 
 bool TriCoreInstructionSelector::selectBrCond(

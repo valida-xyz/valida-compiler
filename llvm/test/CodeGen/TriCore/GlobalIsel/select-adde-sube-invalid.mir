@@ -1,0 +1,99 @@
+# RUN: llc -mtriple=tricore -global-isel -global-isel-abort=2 \
+# RUN:     -pass-remarks-missed='gisel*' -run-pass=instruction-select \
+# RUN:     -verify-machineinstrs %s -o /dev/null 2>&1 \
+# RUN: | FileCheck %s --check-prefix=ERROR
+
+# ERROR-NOT: remark:
+# ERROR: remark: <unknown>:0:0: cannot select: %4:dataregbank(s32), %5:dataregbank(s1) = G_UADDE %0:dataregbank, %1:dataregbank, %3:dataregbank (in function: adde_const_non_zero)
+# ERROR: remark: <unknown>:0:0: cannot select: %4:dataregbank(s32), %5:dataregbank(s1) = G_UADDE %0:dataregbank, %1:dataregbank, %3:dataregbank (in function: adde_unknown_carry_in)
+# ERROR: remark: <unknown>:0:0: cannot select: %4:dataregbank(s32), %5:dataregbank(s1) = G_USUBE %0:dataregbank, %1:dataregbank, %3:dataregbank (in function: sube_const_non_zero)
+# ERROR: remark: <unknown>:0:0: cannot select: %4:dataregbank(s32), %5:dataregbank(s1) = G_USUBE %0:dataregbank, %1:dataregbank, %3:dataregbank (in function: sube_unknown_carry_in)
+# ERROR-NOT: remark:
+
+---
+name:            adde_const_non_zero
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: dataregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_CONSTANT i32 1
+    %3(s1) = G_TRUNC %2(s32)
+    %4(s32), %5(s1) = G_UADDE %0, %1, %3
+    $d4 = COPY %4(s32)
+...
+
+---
+name:            adde_unknown_carry_in
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: dataregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = COPY $d6
+    %3(s1) = G_TRUNC %2(s32)
+    %4(s32), %5(s1) = G_UADDE %0, %1, %3
+    $d4 = COPY %4(s32)
+...
+
+---
+name:            sube_const_non_zero
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: dataregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = G_CONSTANT i32 1
+    %3(s1) = G_TRUNC %2(s32)
+    %4(s32), %5(s1) = G_USUBE %0, %1, %3
+    $d4 = COPY %4(s32)
+...
+
+---
+name:            sube_unknown_carry_in
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: dataregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32) = COPY $d6
+    %3(s1) = G_TRUNC %2(s32)
+    %4(s32), %5(s1) = G_USUBE %0, %1, %3
+    $d4 = COPY %4(s32)
+...
