@@ -397,6 +397,7 @@ void ScalarBitSetTraits<ELFYAML::ELF_EF>::bitset(IO &IO,
     BCase(EF_TRICORE_V1_6);
     BCase(EF_TRICORE_V1_6_1);
     BCase(EF_TRICORE_V1_6_2);
+    BCase(EF_TRICORE_V1_8);
     BCase(EF_TRICORE_PCP);
     BCase(EF_TRICORE_PCP2);
     break;

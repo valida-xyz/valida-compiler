@@ -1765,10 +1765,10 @@ static const EnumEntry<unsigned> ElfHeaderTriCoreFlags[] = {
   ENUM_ENT(EF_TRICORE_V1_6, "TriCore V1.6"),
   ENUM_ENT(EF_TRICORE_V1_6_1, "TriCore V1.6.1"),
   ENUM_ENT(EF_TRICORE_V1_6_2, "TriCore V1.6.2"),
+  ENUM_ENT(EF_TRICORE_V1_8, "TriCore V1.8"),
   ENUM_ENT(EF_TRICORE_PCP, "PCP"),
   ENUM_ENT(EF_TRICORE_PCP2, "PCP2")
 };
-
 
 static const EnumEntry<unsigned> ElfSymOtherFlags[] = {
   LLVM_READOBJ_ENUM_ENT(ELF, STV_INTERNAL),

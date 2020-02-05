@@ -2,7 +2,7 @@
 # RUN: llvm-readobj --file-headers %t | FileCheck -check-prefix=OBJ %s
 # RUN: obj2yaml %t | FileCheck -check-prefix=YAML %s
 
-# OBJ: Flags [ (0x63F00000)
+# OBJ: Flags [ (0x63F80000)
 # OBJ-NEXT:   EF_TRICORE_PCP (0x1000000)
 # OBJ-NEXT:   EF_TRICORE_PCP2 (0x2000000)
 # OBJ-NEXT:   EF_TRICORE_V1_2 (0x40000000)
@@ -11,6 +11,7 @@
 # OBJ-NEXT:   EF_TRICORE_V1_6 (0x400000)
 # OBJ-NEXT:   EF_TRICORE_V1_6_1 (0x200000)
 # OBJ-NEXT:   EF_TRICORE_V1_6_2 (0x100000)
+# OBJ-NEXT:   EF_TRICORE_V1_8 (0x80000)
 # OBJ-NEXT: ]
 
 # YAML:      FileHeader:
@@ -19,7 +20,7 @@
 # YAML-NEXT:   Type:            ET_EXEC
 # YAML-NEXT:   Machine:         EM_TRICORE
 # YAML-NEXT:   Flags:           [ EF_TRICORE_V1_2, EF_TRICORE_V1_3, EF_TRICORE_V1_3_1, EF_TRICORE_V1_6,
-#                                 EF_TRICORE_V1_6_1, EF_TRICORE_V1_6_2, EF_TRICORE_PCP, EF_TRICORE_PCP2 ]
+# YAML-SAME:                      EF_TRICORE_V1_6_1, EF_TRICORE_V1_6_2, EF_TRICORE_V1_8, EF_TRICORE_PCP, EF_TRICORE_PCP2 ]
 
 --- !ELF
 FileHeader:
@@ -28,4 +29,4 @@ FileHeader:
   Type:            ET_EXEC
   Machine:         EM_TRICORE
   Flags:           [ EF_TRICORE_V1_2, EF_TRICORE_V1_3, EF_TRICORE_V1_3_1, EF_TRICORE_V1_6,
-                     EF_TRICORE_V1_6_1, EF_TRICORE_V1_6_2, EF_TRICORE_PCP, EF_TRICORE_PCP2 ]
+                     EF_TRICORE_V1_6_1, EF_TRICORE_V1_6_2, EF_TRICORE_V1_8, EF_TRICORE_PCP, EF_TRICORE_PCP2 ]
