@@ -16,7 +16,7 @@
 # TC:   Type: Relocatable (0x1)
 # TC:   Machine: EM_TRICORE (0x2C)
 # TC:   Version: 1
-# TC:   Flags [ (0x200000)
-# TC:     EF_TRICORE_V1_6_1 (0x200000)
+# TC:   Flags [ (0x80000)
+# TC:     EF_TRICORE_V1_8 (0x80000)
 # TC:   ]
 # TC: }

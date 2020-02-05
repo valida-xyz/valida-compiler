@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCoreELFStreamer.h"
+#include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 
@@ -26,11 +27,15 @@ TriCoreTargetELFStreamer::TriCoreTargetELFStreamer(MCStreamer &S,
   unsigned EFlags = MCA.getELFHeaderEFlags();
   assert((EFlags == 0) && "expected e_flags to be 0");
 
-  // FIXME: Once we support different architectures via subtarget-features,
-  //        we need to check the selected architecture here and emit the
-  //        correct e_flag
-
-  EFlags |= ELF::EF_TRICORE_V1_6_1;
+  // Select E_FLAG based on the selected architecture
+  if (STI.hasFeature(TriCore::HasTC18Ops))
+    EFlags |= ELF::EF_TRICORE_V1_8;
+  else if (STI.hasFeature(TriCore::HasTC162Ops))
+    EFlags |= ELF::EF_TRICORE_V1_6_2;
+  else if (STI.hasFeature(TriCore::HasTC161Ops))
+    EFlags |= ELF::EF_TRICORE_V1_6_1;
+  else
+    llvm_unreachable("Unknown subtarget");
 
   MCA.setELFHeaderEFlags(EFlags);
 }
