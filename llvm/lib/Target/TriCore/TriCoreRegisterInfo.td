@@ -54,9 +54,9 @@ def A14 : TriCoreReg<14, "a14">, DwarfRegNum<[30]>;
 def A15 : TriCoreReg<15, "a15">, DwarfRegNum<[31]>;
 
 let Namespace = "TriCore" in {
-  def dsub0: SubRegIndex<32>;
+  def dsub0 : SubRegIndex<32>;
   def dsub1 : SubRegIndex<32, 32>;
-  def asub0: SubRegIndex<32>;
+  def asub0 : SubRegIndex<32>;
   def asub1 : SubRegIndex<32, 32>;
 }
 // Extended data registers
