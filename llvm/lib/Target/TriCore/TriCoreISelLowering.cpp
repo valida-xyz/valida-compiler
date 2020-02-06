@@ -44,6 +44,10 @@ TriCoreTargetLowering::TriCoreTargetLowering(const TargetMachine &TM,
   addRegisterClass(MVT::i32, &TriCore::DataRegsRegClass);
   addRegisterClass(MVT::i64, &TriCore::ExtDataRegsRegClass);
 
+  // Set up the stack pointer register
+  setStackPointerRegisterToSaveRestore(
+      STI.getRegisterInfo()->getStackRegister());
+
   // Compute derived properties from the register classes
   computeRegisterProperties(STI.getRegisterInfo());
 }
