@@ -31,7 +31,7 @@ using namespace llvm;
 void TriCoreInstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                    StringRef Annot, const MCSubtargetInfo &STI,
                                    raw_ostream &O) {
-  printInstruction(MI, Address, O);
+  printInstruction(MI, Address, STI, O);
   printAnnotation(O, Annot);
 }
 
@@ -40,6 +40,7 @@ void TriCoreInstPrinter::printRegName(raw_ostream &O, unsigned RegNo) const {
 }
 
 void TriCoreInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
+                                      const MCSubtargetInfo &STI,
                                       raw_ostream &O, const char *Modifier) {
   assert((Modifier == 0 || Modifier[0] == 0) && "No modifiers supported");
   const MCOperand &MO = MI->getOperand(OpNo);

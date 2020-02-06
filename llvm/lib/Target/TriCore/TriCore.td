@@ -72,7 +72,12 @@ def : Processor<"tc4xx", NoItineraries,
 // Target Declaration
 //===----------------------------------------------------------------------===//
 
+def TriCoreAsmWriter : AsmWriter {
+  let PassSubtarget = 1;
+}
+
 def TriCore : Target {
   let InstructionSet = TriCoreInstrInfo;
   let AssemblyParsers = [TriCoreAsmParser];
+  let AssemblyWriters = [TriCoreAsmWriter];
 }
