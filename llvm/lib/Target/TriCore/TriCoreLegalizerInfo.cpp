@@ -105,8 +105,7 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // Binary Ops
 
   // Simple binary operators are only legal for s32 types.
-  getActionDefinitionsBuilder(
-      {G_ADD, G_SUB, G_AND, G_OR, G_XOR, G_MUL, G_UMULH})
+  getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR, G_MUL})
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
@@ -164,6 +163,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // All variants of add/sub /w carry must produce an s32 result and an s1 carry
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
+
+  // G_UMULH is a legalization artifact which has the correct type already
+  getActionDefinitionsBuilder(G_UMULH).legalFor({s32});
 
   // Shifts
 
