@@ -260,6 +260,7 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   case TargetOpcode::G_ADD:
   case TargetOpcode::G_SUB:
   case TargetOpcode::G_MUL:
+  case TargetOpcode::G_UMULH:
   case TargetOpcode::G_SDIV:
   case TargetOpcode::G_SREM:
   case TargetOpcode::G_UDIV:
