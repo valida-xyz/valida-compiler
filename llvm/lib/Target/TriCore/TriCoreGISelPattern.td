@@ -84,6 +84,8 @@ def : SimpleBinOpPat<sub, SUB_ddd>;
 // 2.1.3 Multiply and Multiply-Add
 
 def : SimpleBinOpPat<mul, MUL_ddd>;
+def : Pat<(i32 (mulhu i32:$src1, i32:$src2)),
+    (subreg_32b<i32> (MULU_edd DataRegs:$src1, DataRegs:$src2), dsub1)>;
 
 // 2.1.4 Division
 
