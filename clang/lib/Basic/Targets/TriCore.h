@@ -23,6 +23,24 @@ namespace targets {
 
 class TriCoreTargetInfo : public TargetInfo {
 
+  enum DerivativeKind {
+    DK_Invalid,
+    DK_TC21XX,
+    DK_TC22XX,
+    DK_TC23XX,
+    DK_TC26XX,
+    DK_TC27XX,
+    DK_TC29XX,
+    DK_TC2D5D,
+    DK_TC35XX,
+    DK_TC37XX,
+    DK_TC38XX,
+    DK_TC39XX,
+    DK_TC4XX,
+  } Derivative = DK_Invalid;
+
+  bool parseAndSetDerivative(const std::string &Feature);
+
 public:
   TriCoreTargetInfo(const llvm::Triple &Triple, const TargetOptions &)
       : TargetInfo(Triple) {
@@ -38,8 +56,21 @@ public:
     TLSSupported = false;
   }
 
+  bool isValidCPUName(StringRef Name) const override;
+  void fillValidCPUList(SmallVectorImpl<StringRef> &Values) const override;
+  bool setCPU(const std::string &Name) override;
+
+  void getTargetDefinesTC161(const LangOptions &Opts,
+                             MacroBuilder &Builder) const;
+  void getTargetDefinesTC162(const LangOptions &Opts,
+                             MacroBuilder &Builder) const;
+  void getTargetDefinesTC18(const LangOptions &Opts,
+                            MacroBuilder &Builder) const;
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override;
+
+  bool handleTargetFeatures(std::vector<std::string> &Features,
+                            DiagnosticsEngine &Diags) override;
 
   ArrayRef<Builtin::Info> getTargetBuiltins() const override { return None; }
 

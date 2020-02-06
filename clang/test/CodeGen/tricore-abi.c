@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -triple tricore -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple tricore -target-feature +tc27xx -emit-llvm %s -o - | FileCheck %s
 
 #include <stddef.h>
 #include <stdint.h>

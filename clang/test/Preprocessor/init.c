@@ -9755,7 +9755,7 @@
 // RISCV64-LINUX: #define linux 1
 // RISCV64-LINUX: #define unix 1
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=tricore < /dev/null \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=tricore -target-feature +tc27xx < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix=TRICORE %s
 //
 // TRICORE: #define _ILP32 1

@@ -12,6 +12,7 @@
 #include "Arch/Mips.h"
 #include "Arch/PPC.h"
 #include "Arch/SystemZ.h"
+#include "Arch/TriCore.h"
 #include "Arch/X86.h"
 #include "HIP.h"
 #include "Hexagon.h"
@@ -313,6 +314,9 @@ std::string tools::getCPUName(const ArgList &Args, const llvm::Triple &T,
     if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
       return A->getValue();
     return "";
+
+  case llvm::Triple::tricore:
+    return tricore::getTriCoreTargetCPU(Args, A);
 
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:

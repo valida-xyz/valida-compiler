@@ -279,6 +279,10 @@ def err_opt_not_valid_without_opt : Error<
   "option '%0' cannot be specified without '%1'">;
 def err_opt_not_valid_on_target : Error<
   "option '%0' cannot be specified on this target">;
+def err_target_tricore_derivative_missing : Error<
+  "tricore derivative not specified, please use -target-feature">;
+def note_target_tricore_valid_derivatives : Note<
+  "valid derivative values are: %0">;
 
 // Source manager
 def err_cannot_open_file : Error<"cannot open file '%0': %1">, DefaultFatal;

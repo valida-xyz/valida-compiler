@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -emit-llvm-only -triple tricore -fdump-record-layouts %s 2>/dev/null \
+// RUN: %clang_cc1 -emit-llvm-only -triple tricore -target-feature +tc27xx -fdump-record-layouts %s 2>/dev/null \
 // RUN:            | FileCheck %s
 
 struct bits_0 {

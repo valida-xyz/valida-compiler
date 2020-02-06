@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -emit-llvm-only -triple tricore -fdump-record-layouts -Werror %s \
+// RUN: %clang_cc1 -emit-llvm-only -triple tricore -target-feature +tc27xx -fdump-record-layouts -Werror %s \
 // RUN:            | FileCheck %s
 
-// RUN: %clang_cc1 -emit-llvm-only -triple tricore -fdump-record-layouts -Wpadded -verify %s \
+// RUN: %clang_cc1 -emit-llvm-only -triple tricore -target-feature +tc27xx -fdump-record-layouts -Wpadded -verify %s \
 // RUN:            | FileCheck %s
 
 struct bits_0 {

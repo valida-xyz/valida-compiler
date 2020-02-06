@@ -14,6 +14,7 @@
 #include "Arch/RISCV.h"
 #include "Arch/Sparc.h"
 #include "Arch/SystemZ.h"
+#include "Arch/TriCore.h"
 #include "Arch/X86.h"
 #include "AMDGPU.h"
 #include "CommonArgs.h"
@@ -344,6 +345,9 @@ static void getTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   case llvm::Triple::aarch64_32:
   case llvm::Triple::aarch64_be:
     aarch64::getAArch64TargetFeatures(D, Triple, Args, Features);
+    break;
+  case llvm::Triple::tricore:
+    tricore::getTriCoreTargetFeatures(D, Args, Features);
     break;
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:
