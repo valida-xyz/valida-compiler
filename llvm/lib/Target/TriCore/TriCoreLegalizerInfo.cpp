@@ -102,6 +102,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
+  // Stack allocation
+
+  // G_DYN_STACKALLOC should be lowered to a stack pointer subtraction
+  getActionDefinitionsBuilder(G_DYN_STACKALLOC).lowerFor({{p0, s32}});
+
   // Binary Ops
 
   // Simple binary operators are only legal for s32 types.
