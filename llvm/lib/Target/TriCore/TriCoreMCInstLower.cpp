@@ -34,6 +34,11 @@ TriCoreMCInstLower::GetGlobalAddressSymbol(const MachineOperand &MO) const {
   return Printer.getSymbol(GV);
 }
 
+MCSymbol *
+TriCoreMCInstLower::GetExternalSymbolSymbol(const MachineOperand &MO) const {
+  return Printer.GetExternalSymbolSymbol(MO.getSymbolName());
+}
+
 MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
                                                  MCSymbol *Sym) const {
   assert(Printer.TM.getTargetTriple().isOSBinFormatELF() &&
@@ -87,6 +92,9 @@ void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       break;
     case MachineOperand::MO_GlobalAddress:
       MCOp = LowerSymbolOperand(MO, GetGlobalAddressSymbol(MO));
+      break;
+    case MachineOperand::MO_ExternalSymbol:
+      MCOp = LowerSymbolOperand(MO, GetExternalSymbolSymbol(MO));
       break;
     case MachineOperand::MO_MachineBasicBlock:
       MCOp = MCOperand::createExpr(
