@@ -414,6 +414,7 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_BRINDIRECT:
     return selectBrIndirect(I, MRI);
   case TargetOpcode::G_CONSTANT:
+  case TargetOpcode::G_FCONSTANT:
     return selectConstant(I, MRI);
   case TargetOpcode::G_FCMP:
     return selectFCmp(I, MRI);
@@ -819,19 +820,29 @@ bool TriCoreInstructionSelector::selectBrIndirect(
 bool TriCoreInstructionSelector::selectConstant(
     MachineInstr &I, MachineRegisterInfo &MRI) const {
 
+  const bool IsFloat = I.getOpcode() == TargetOpcode::G_FCONSTANT;
+
   const LLT Ty = MRI.getType(I.getOperand(0).getReg());
   const unsigned DefSize = Ty.getSizeInBits();
 
-  if (DefSize != 32 && DefSize != 64) {
+  if (DefSize != 16 && DefSize != 32 && DefSize != 64) {
     LLVM_DEBUG(dbgs() << "Constant with unsupported size.\n");
     return false;
   }
 
   // Get the concrete value of this constant.
   const MachineOperand &ImmOp = I.getOperand(1);
-  uint64_t Val =
-      ImmOp.isImm() ? ImmOp.getImm() : ImmOp.getCImm()->getZExtValue();
-
+  uint64_t Val;
+  if (IsFloat) {
+    Val = ImmOp.getFPImm()->getValueAPF().bitcastToAPInt().getLimitedValue();
+  } else if (ImmOp.isCImm()) {
+    Val = ImmOp.getCImm()->getZExtValue();
+  } else if (ImmOp.isImm()) {
+    Val = ImmOp.getImm();
+  } else {
+    LLVM_DEBUG(dbgs() << "Unsupported immediate type.\n");
+    return false;
+  }
   MachineIRBuilder MIRBuilder(I);
 
   if (Ty.isPointer()) {
