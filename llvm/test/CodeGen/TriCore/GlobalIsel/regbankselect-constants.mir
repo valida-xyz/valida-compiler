@@ -13,6 +13,18 @@
   entry:
     ret void
   }
+  define void @test_fconstant_s16() {
+  entry:
+    ret void
+  }
+  define void @test_fconstant_s32() {
+  entry:
+    ret void
+  }
+  define void @test_fconstant_s64() {
+  entry:
+    ret void
+  }
   @var = global i8 0
   define i8* @test_global() {
   entry:
@@ -54,6 +66,42 @@ body: |
     ; CHECK-LABEL: name: test_constant_p0
     ; CHECK: [[C:%[0-9]+]]:addrregbank(p0) = G_CONSTANT i32 123
     %0(p0) = G_CONSTANT i32 123
+...
+
+---
+name:            test_fconstant_s16
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_fconstant_s16
+    ; CHECK: [[C:%[0-9]+]]:dataregbank(s16) = G_FCONSTANT half 0xH0000
+    %0(s16) = G_FCONSTANT half 0.0
+...
+
+---
+name:            test_fconstant_s32
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_fconstant_s32
+    ; CHECK: [[C:%[0-9]+]]:dataregbank(s32) = G_FCONSTANT float 1.000000e+00
+    %0(s32) = G_FCONSTANT float 1.0
+...
+
+---
+name:            test_fconstant_s64
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_fconstant_s64
+    ; CHECK: [[C:%[0-9]+]]:dataregbank(s64) = G_FCONSTANT double 1.000000e+00
+    %0(s64) = G_FCONSTANT double 1.0
 ...
 
 ---
