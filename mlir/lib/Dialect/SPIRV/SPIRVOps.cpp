@@ -43,13 +43,11 @@ static constexpr const char kInitializerAttrName[] = "initializer";
 static constexpr const char kInterfaceAttrName[] = "interface";
 static constexpr const char kMemoryScopeAttrName[] = "memory_scope";
 static constexpr const char kSemanticsAttrName[] = "semantics";
-static constexpr const char kSpecConstAttrName[] = "spec_const";
 static constexpr const char kSpecIdAttrName[] = "spec_id";
 static constexpr const char kTypeAttrName[] = "type";
 static constexpr const char kUnequalSemanticsAttrName[] = "unequal_semantics";
 static constexpr const char kValueAttrName[] = "value";
 static constexpr const char kValuesAttrName[] = "values";
-static constexpr const char kVariableAttrName[] = "variable";
 
 //===----------------------------------------------------------------------===//
 // Common utility functions
@@ -490,41 +488,6 @@ namespace {
 // Common parsers and printers
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseBitFieldExtractOp(OpAsmParser &parser,
-                                          OperationState &state) {
-  SmallVector<OpAsmParser::OperandType, 3> operandInfo;
-  Type baseType;
-  Type offsetType;
-  Type countType;
-  auto loc = parser.getCurrentLocation();
-
-  if (parser.parseOperandList(operandInfo, 3) || parser.parseColon() ||
-      parser.parseType(baseType) || parser.parseComma() ||
-      parser.parseType(offsetType) || parser.parseComma() ||
-      parser.parseType(countType) ||
-      parser.resolveOperands(operandInfo, {baseType, offsetType, countType},
-                             loc, state.operands)) {
-    return failure();
-  }
-  state.addTypes(baseType);
-  return success();
-}
-
-static void printBitFieldExtractOp(Operation *op, OpAsmPrinter &printer) {
-  printer << op->getName() << ' ' << op->getOperands() << " : "
-          << op->getOperandTypes();
-}
-
-static LogicalResult verifyBitFieldExtractOp(Operation *op) {
-  if (op->getOperand(0).getType() != op->getResult(0).getType()) {
-    return op->emitError("expected the same type for the first operand and "
-                         "result, but provided ")
-           << op->getOperand(0).getType() << " and "
-           << op->getResult(0).getType();
-  }
-  return success();
-}
-
 // Parses an atomic update op. If the update op does not take a value (like
 // AtomicIIncrement) `hasValue` must be false.
 static ParseResult parseAtomicUpdateOp(OpAsmParser &parser,
@@ -668,19 +631,6 @@ static LogicalResult verifyGroupNonUniformArithmeticOp(Operation *groupOp) {
           "cluster size operand must be a power of two");
   }
   return success();
-}
-
-// Parses an op that has no inputs and no outputs.
-static ParseResult parseNoIOOp(OpAsmParser &parser, OperationState &state) {
-  if (parser.parseOptionalAttrDict(state.attributes))
-    return failure();
-  return success();
-}
-
-// Prints an op that has no inputs and no outputs.
-static void printNoIOOp(Operation *op, OpAsmPrinter &printer) {
-  printer << op->getName();
-  printer.printOptionalAttrDict(op->getAttrs());
 }
 
 static ParseResult parseUnaryOp(OpAsmParser &parser, OperationState &state) {
@@ -1065,54 +1015,6 @@ static LogicalResult verify(spirv::BitcastOp bitcastOp) {
 void spirv::BitcastOp::getCanonicalizationPatterns(
     OwningRewritePatternList &results, MLIRContext *context) {
   results.insert<ConvertChainedBitcast>(context);
-}
-
-//===----------------------------------------------------------------------===//
-// spv.BitFieldInsert
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseBitFieldInsertOp(OpAsmParser &parser,
-                                         OperationState &state) {
-  SmallVector<OpAsmParser::OperandType, 4> operandInfo;
-  Type baseType;
-  Type offsetType;
-  Type countType;
-  auto loc = parser.getCurrentLocation();
-
-  if (parser.parseOperandList(operandInfo, 4) || parser.parseColon() ||
-      parser.parseType(baseType) || parser.parseComma() ||
-      parser.parseType(offsetType) || parser.parseComma() ||
-      parser.parseType(countType) ||
-      parser.resolveOperands(operandInfo,
-                             {baseType, baseType, offsetType, countType}, loc,
-                             state.operands)) {
-    return failure();
-  }
-  state.addTypes(baseType);
-  return success();
-}
-
-static void print(spirv::BitFieldInsertOp bitFieldInsertOp,
-                  OpAsmPrinter &printer) {
-  printer << spirv::BitFieldInsertOp::getOperationName() << ' '
-          << bitFieldInsertOp.getOperands() << " : "
-          << bitFieldInsertOp.base().getType() << ", "
-          << bitFieldInsertOp.offset().getType() << ", "
-          << bitFieldInsertOp.count().getType();
-}
-
-static LogicalResult verify(spirv::BitFieldInsertOp bitFieldOp) {
-  auto baseType = bitFieldOp.base().getType();
-  auto insertType = bitFieldOp.insert().getType();
-  auto resultType = bitFieldOp.getResult().getType();
-
-  if ((baseType != insertType) || (baseType != resultType)) {
-    return bitFieldOp.emitError("expected the same type for the base operand, "
-                                "insert operand, and "
-                                "result, but provided ")
-           << baseType << ", " << insertType << " and " << resultType;
-  }
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2524,42 +2426,9 @@ void spirv::SelectOp::build(Builder *builder, OperationState &state, Value cond,
   build(builder, state, trueValue.getType(), cond, trueValue, falseValue);
 }
 
-static ParseResult parseSelectOp(OpAsmParser &parser, OperationState &state) {
-  OpAsmParser::OperandType condition;
-  SmallVector<OpAsmParser::OperandType, 2> operands;
-  SmallVector<Type, 2> types;
-  auto loc = parser.getCurrentLocation();
-  if (parser.parseOperand(condition) || parser.parseComma() ||
-      parser.parseOperandList(operands, 2) ||
-      parser.parseColonTypeList(types)) {
-    return failure();
-  }
-  if (types.size() != 2) {
-    return parser.emitError(
-        loc, "need exactly two trailing types for select condition and object");
-  }
-  if (parser.resolveOperand(condition, types[0], state.operands) ||
-      parser.resolveOperands(operands, types[1], state.operands)) {
-    return failure();
-  }
-  return parser.addTypesToList(types[1], state.types);
-}
-
-static void print(spirv::SelectOp op, OpAsmPrinter &printer) {
-  printer << spirv::SelectOp::getOperationName() << " " << op.getOperands()
-          << " : " << op.condition().getType() << ", " << op.result().getType();
-}
-
 static LogicalResult verify(spirv::SelectOp op) {
-  auto resultTy = op.result().getType();
-  if (op.true_value().getType() != resultTy) {
-    return op.emitOpError("result type and true value type must be the same");
-  }
-  if (op.false_value().getType() != resultTy) {
-    return op.emitOpError("result type and false value type must be the same");
-  }
   if (auto conditionTy = op.condition().getType().dyn_cast<VectorType>()) {
-    auto resultVectorTy = resultTy.dyn_cast<VectorType>();
+    auto resultVectorTy = op.result().getType().dyn_cast<VectorType>();
     if (!resultVectorTy) {
       return op.emitOpError("result expected to be of vector type when "
                             "condition is of vector type");
@@ -2657,6 +2526,38 @@ void spirv::SelectionOp::addMergeBlock() {
 
   // Add a spv._merge op into the merge block.
   builder.create<spirv::MergeOp>(getLoc());
+}
+
+spirv::SelectionOp spirv::SelectionOp::createIfThen(
+    Location loc, Value condition,
+    function_ref<void(OpBuilder *builder)> thenBody, OpBuilder *builder) {
+  auto selectionControl = builder->getI32IntegerAttr(
+      static_cast<uint32_t>(spirv::SelectionControl::None));
+  auto selectionOp = builder->create<spirv::SelectionOp>(loc, selectionControl);
+
+  selectionOp.addMergeBlock();
+  Block *mergeBlock = selectionOp.getMergeBlock();
+  Block *thenBlock = nullptr;
+
+  // Build the "then" block.
+  {
+    OpBuilder::InsertionGuard guard(*builder);
+    thenBlock = builder->createBlock(mergeBlock);
+    thenBody(builder);
+    builder->create<spirv::BranchOp>(loc, mergeBlock);
+  }
+
+  // Build the header block.
+  {
+    OpBuilder::InsertionGuard guard(*builder);
+    builder->createBlock(thenBlock);
+    builder->create<spirv::BranchConditionalOp>(
+        loc, condition, thenBlock,
+        /*trueArguments=*/ArrayRef<Value>(), mergeBlock,
+        /*falseArguments=*/ArrayRef<Value>());
+  }
+
+  return selectionOp;
 }
 
 namespace {

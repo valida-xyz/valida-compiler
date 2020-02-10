@@ -155,7 +155,7 @@ public:
                                     StringRef StringValue = "");
   virtual void emitFPU(unsigned FPU);
   virtual void emitArch(ARM::ArchKind Arch);
-  virtual void emitArchExtension(unsigned ArchExt);
+  virtual void emitArchExtension(uint64_t ArchExt);
   virtual void emitObjectArch(ARM::ArchKind Arch);
   void emitTargetAttributes(const MCSubtargetInfo &STI);
   virtual void finishAttributeSection();
@@ -660,6 +660,13 @@ public:
   /// in a MCExpr for constant integers & prints in Hex format for certain
   /// modes.
   virtual void EmitIntValueInHex(uint64_t Value, unsigned Size) {
+    EmitIntValue(Value, Size);
+  }
+
+  /// Special case of EmitValue that avoids the client having to pass
+  /// in a MCExpr for constant integers & prints in Hex format for certain
+  /// modes, pads the field with leading zeros to Size width
+  virtual void EmitIntValueInHexWithPadding(uint64_t Value, unsigned Size) {
     EmitIntValue(Value, Size);
   }
 

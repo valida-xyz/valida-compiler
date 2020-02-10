@@ -732,12 +732,6 @@ def : GCNPat<
 >;
 
 def : Pat <
-  // -1.0 as i32 (LowerINTRINSIC_VOID converts all other constants to -1.0)
-  (AMDGPUkill (i32 -1082130432)),
-  (SI_KILL_I1_PSEUDO (i1 0), 0)
->;
-
-def : Pat <
   (int_amdgcn_kill i1:$src),
   (SI_KILL_I1_PSEUDO SCSrc_i1:$src, 0)
 >;
@@ -745,11 +739,6 @@ def : Pat <
 def : Pat <
   (int_amdgcn_kill (i1 (not i1:$src))),
   (SI_KILL_I1_PSEUDO SCSrc_i1:$src, -1)
->;
-
-def : Pat <
-  (AMDGPUkill i32:$src),
-  (SI_KILL_F32_COND_IMM_PSEUDO VSrc_b32:$src, 0, 3) // 3 means SETOGE
 >;
 
 def : Pat <
@@ -1990,6 +1979,11 @@ let SubtargetPredicate = isGFX6 in {
 //    fract(x) = isnan(x) ? x : min(V_FRACT(x), 0.99999999999999999)
 
 // Convert floor(x) to (x - fract(x))
+
+// Don't bother handling this for GlobalISel, it's handled during
+// lowering.
+//
+// FIXME: DAG should also custom lower this.
 def : GCNPat <
   (f64 (ffloor (f64 (VOP3Mods f64:$x, i32:$mods)))),
   (V_ADD_F64
@@ -2205,6 +2199,18 @@ def G_AMDGPU_BUFFER_STORE_FORMAT_D16 : BufferStoreGenericInstruction;
 def G_AMDGPU_TBUFFER_STORE_FORMAT : TBufferStoreGenericInstruction;
 def G_AMDGPU_TBUFFER_STORE_FORMAT_D16 : TBufferStoreGenericInstruction;
 
+def G_AMDGPU_FMIN_LEGACY : AMDGPUGenericInstruction {
+  let OutOperandList = (outs type0:$dst);
+  let InOperandList = (ins type0:$src0, type0:$src1);
+  let hasSideEffects = 0;
+}
+
+def G_AMDGPU_FMAX_LEGACY : AMDGPUGenericInstruction {
+  let OutOperandList = (outs type0:$dst);
+  let InOperandList = (ins type0:$src0, type0:$src1);
+  let hasSideEffects = 0;
+}
+
 // Atomic cmpxchg. $cmpval ad $newval are packed in a single vector
 // operand Expects a MachineMemOperand in addition to explicit
 // operands.
@@ -2252,4 +2258,15 @@ def G_AMDGPU_BUFFER_ATOMIC_CMPSWAP : AMDGPUGenericInstruction {
   let hasSideEffects = 0;
   let mayLoad = 1;
   let mayStore = 1;
+}
+
+// Wrapper around llvm.amdgcn.s.buffer.load. This is mostly needed as
+// a workaround for the intrinsic being defined as readnone, but
+// really needs a memory operand.
+def G_AMDGPU_S_BUFFER_LOAD : AMDGPUGenericInstruction {
+  let OutOperandList = (outs type0:$dst);
+  let InOperandList = (ins type1:$rsrc, type2:$offset, untyped_imm_0:$cachepolicy);
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 0;
 }

@@ -855,38 +855,33 @@ static bool shouldLowerMemFuncForSize(const MachineFunction &MF) {
 
 // Returns a list of types to use for memory op lowering in MemOps. A partial
 // port of findOptimalMemOpLowering in TargetLowering.
-static bool findGISelOptimalMemOpLowering(
-    std::vector<LLT> &MemOps, unsigned Limit, uint64_t Size, unsigned DstAlign,
-    unsigned SrcAlign, bool IsMemset, bool ZeroMemset, bool MemcpyStrSrc,
-    bool AllowOverlap, unsigned DstAS, unsigned SrcAS,
-    const AttributeList &FuncAttributes, const TargetLowering &TLI) {
-  // If 'SrcAlign' is zero, that means the memory operation does not need to
-  // load the value, i.e. memset or memcpy from constant string. Otherwise,
-  // it's the inferred alignment of the source. 'DstAlign', on the other hand,
-  // is the specified alignment of the memory operation. If it is zero, that
-  // means it's possible to change the alignment of the destination.
-  // 'MemcpyStrSrc' indicates whether the memcpy source is constant so it does
-  // not need to be loaded.
-  if (SrcAlign != 0 && SrcAlign < DstAlign)
+static bool findGISelOptimalMemOpLowering(std::vector<LLT> &MemOps,
+                                          unsigned Limit, const MemOp &Op,
+                                          unsigned DstAS, unsigned SrcAS,
+                                          const AttributeList &FuncAttributes,
+                                          const TargetLowering &TLI) {
+  if (Op.isMemcpyWithFixedDstAlign() && Op.getSrcAlign() < Op.getDstAlign())
     return false;
 
-  LLT Ty = TLI.getOptimalMemOpLLT(Size, DstAlign, SrcAlign, IsMemset,
-                                  ZeroMemset, MemcpyStrSrc, FuncAttributes);
+  LLT Ty = TLI.getOptimalMemOpLLT(Op, FuncAttributes);
 
   if (Ty == LLT()) {
     // Use the largest scalar type whose alignment constraints are satisfied.
     // We only need to check DstAlign here as SrcAlign is always greater or
     // equal to DstAlign (or zero).
     Ty = LLT::scalar(64);
-    while (DstAlign && DstAlign < Ty.getSizeInBytes() &&
-           !TLI.allowsMisalignedMemoryAccesses(Ty, DstAS, DstAlign))
-      Ty = LLT::scalar(Ty.getSizeInBytes());
+    if (Op.isFixedDstAlign())
+      while (Op.getDstAlign() < Ty.getSizeInBytes() &&
+             !TLI.allowsMisalignedMemoryAccesses(Ty, DstAS,
+                                                 Op.getDstAlign().value()))
+        Ty = LLT::scalar(Ty.getSizeInBytes());
     assert(Ty.getSizeInBits() > 0 && "Could not find valid type");
     // FIXME: check for the largest legal type we can load/store to.
   }
 
   unsigned NumMemOps = 0;
-  while (Size != 0) {
+  uint64_t Size = Op.size();
+  while (Size) {
     unsigned TySize = Ty.getSizeInBytes();
     while (TySize > Size) {
       // For now, only use non-vector load / store's for the left-over pieces.
@@ -904,9 +899,10 @@ static bool findGISelOptimalMemOpLowering(
       bool Fast;
       // Need to get a VT equivalent for allowMisalignedMemoryAccesses().
       MVT VT = getMVTForLLT(Ty);
-      if (NumMemOps && AllowOverlap && NewTySize < Size &&
+      if (NumMemOps && Op.allowOverlap() && NewTySize < Size &&
           TLI.allowsMisalignedMemoryAccesses(
-              VT, DstAS, DstAlign, MachineMemOperand::MONone, &Fast) &&
+              VT, DstAS, Op.isFixedDstAlign() ? Op.getDstAlign().value() : 0,
+              MachineMemOperand::MONone, &Fast) &&
           Fast)
         TySize = Size;
       else {
@@ -961,9 +957,9 @@ static Register getMemsetValue(Register Val, LLT Ty, MachineIRBuilder &MIB) {
   return Val;
 }
 
-bool CombinerHelper::optimizeMemset(MachineInstr &MI, Register Dst, Register Val,
-                                    unsigned KnownLen, unsigned Align,
-                                    bool IsVolatile) {
+bool CombinerHelper::optimizeMemset(MachineInstr &MI, Register Dst,
+                                    Register Val, unsigned KnownLen,
+                                    Align Alignment, bool IsVolatile) {
   auto &MF = *MI.getParent()->getParent();
   const auto &TLI = *MF.getSubtarget().getTargetLowering();
   auto &DL = MF.getDataLayout();
@@ -988,24 +984,25 @@ bool CombinerHelper::optimizeMemset(MachineInstr &MI, Register Dst, Register Val
   auto ValVRegAndVal = getConstantVRegValWithLookThrough(Val, MRI);
   bool IsZeroVal = ValVRegAndVal && ValVRegAndVal->Value == 0;
 
-  if (!findGISelOptimalMemOpLowering(
-          MemOps, Limit, KnownLen, (DstAlignCanChange ? 0 : Align), 0,
-          /*IsMemset=*/true,
-          /*ZeroMemset=*/IsZeroVal, /*MemcpyStrSrc=*/false,
-          /*AllowOverlap=*/!IsVolatile, DstPtrInfo.getAddrSpace(), ~0u,
-          MF.getFunction().getAttributes(), TLI))
+  if (!findGISelOptimalMemOpLowering(MemOps, Limit,
+                                     MemOp::Set(KnownLen, DstAlignCanChange,
+                                                Alignment,
+                                                /*IsZeroMemset=*/IsZeroVal,
+                                                /*IsVolatile=*/IsVolatile),
+                                     DstPtrInfo.getAddrSpace(), ~0u,
+                                     MF.getFunction().getAttributes(), TLI))
     return false;
 
   if (DstAlignCanChange) {
     // Get an estimate of the type from the LLT.
     Type *IRTy = getTypeForLLT(MemOps[0], C);
-    unsigned NewAlign = (unsigned)DL.getABITypeAlignment(IRTy);
-    if (NewAlign > Align) {
-      Align = NewAlign;
+    Align NewAlign = DL.getABITypeAlign(IRTy);
+    if (NewAlign > Alignment) {
+      Alignment = NewAlign;
       unsigned FI = FIDef->getOperand(1).getIndex();
       // Give the stack frame object a larger alignment if needed.
-      if (MFI.getObjectAlignment(FI) < Align)
-        MFI.setObjectAlignment(FI, Align);
+      if (MFI.getObjectAlign(FI) < Alignment)
+        MFI.setObjectAlignment(FI, Alignment);
     }
   }
 
@@ -1073,10 +1070,9 @@ bool CombinerHelper::optimizeMemset(MachineInstr &MI, Register Dst, Register Val
   return true;
 }
 
-
 bool CombinerHelper::optimizeMemcpy(MachineInstr &MI, Register Dst,
                                     Register Src, unsigned KnownLen,
-                                    unsigned DstAlign, unsigned SrcAlign,
+                                    Align DstAlign, Align SrcAlign,
                                     bool IsVolatile) {
   auto &MF = *MI.getParent()->getParent();
   const auto &TLI = *MF.getSubtarget().getTargetLowering();
@@ -1088,7 +1084,7 @@ bool CombinerHelper::optimizeMemcpy(MachineInstr &MI, Register Dst,
   bool DstAlignCanChange = false;
   MachineFrameInfo &MFI = MF.getFrameInfo();
   bool OptSize = shouldLowerMemFuncForSize(MF);
-  unsigned Alignment = MinAlign(DstAlign, SrcAlign);
+  Align Alignment = commonAlignment(DstAlign, SrcAlign);
 
   MachineInstr *FIDef = getOpcodeDef(TargetOpcode::G_FRAME_INDEX, Dst, MRI);
   if (FIDef && !MFI.isFixedObjectIndex(FIDef->getOperand(1).getIndex()))
@@ -1107,32 +1103,30 @@ bool CombinerHelper::optimizeMemcpy(MachineInstr &MI, Register Dst,
   MachinePointerInfo SrcPtrInfo = SrcMMO.getPointerInfo();
 
   if (!findGISelOptimalMemOpLowering(
-          MemOps, Limit, KnownLen, (DstAlignCanChange ? 0 : Alignment),
-          SrcAlign,
-          /*IsMemset=*/false,
-          /*ZeroMemset=*/false, /*MemcpyStrSrc=*/false,
-          /*AllowOverlap=*/!IsVolatile, DstPtrInfo.getAddrSpace(),
-          SrcPtrInfo.getAddrSpace(), MF.getFunction().getAttributes(), TLI))
+          MemOps, Limit,
+          MemOp::Copy(KnownLen, DstAlignCanChange, Alignment, SrcAlign,
+                      IsVolatile),
+          DstPtrInfo.getAddrSpace(), SrcPtrInfo.getAddrSpace(),
+          MF.getFunction().getAttributes(), TLI))
     return false;
 
   if (DstAlignCanChange) {
     // Get an estimate of the type from the LLT.
     Type *IRTy = getTypeForLLT(MemOps[0], C);
-    unsigned NewAlign = (unsigned)DL.getABITypeAlignment(IRTy);
+    Align NewAlign = DL.getABITypeAlign(IRTy);
 
     // Don't promote to an alignment that would require dynamic stack
     // realignment.
     const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
     if (!TRI->needsStackRealignment(MF))
-      while (NewAlign > Alignment &&
-             DL.exceedsNaturalStackAlignment(Align(NewAlign)))
-        NewAlign /= 2;
+      while (NewAlign > Alignment && DL.exceedsNaturalStackAlignment(NewAlign))
+        NewAlign = NewAlign / 2;
 
     if (NewAlign > Alignment) {
       Alignment = NewAlign;
       unsigned FI = FIDef->getOperand(1).getIndex();
       // Give the stack frame object a larger alignment if needed.
-      if (MFI.getObjectAlignment(FI) < Alignment)
+      if (MFI.getObjectAlign(FI) < Alignment)
         MFI.setObjectAlignment(FI, Alignment);
     }
   }
@@ -1183,9 +1177,9 @@ bool CombinerHelper::optimizeMemcpy(MachineInstr &MI, Register Dst,
 }
 
 bool CombinerHelper::optimizeMemmove(MachineInstr &MI, Register Dst,
-                                    Register Src, unsigned KnownLen,
-                                    unsigned DstAlign, unsigned SrcAlign,
-                                    bool IsVolatile) {
+                                     Register Src, unsigned KnownLen,
+                                     Align DstAlign, Align SrcAlign,
+                                     bool IsVolatile) {
   auto &MF = *MI.getParent()->getParent();
   const auto &TLI = *MF.getSubtarget().getTargetLowering();
   auto &DL = MF.getDataLayout();
@@ -1196,7 +1190,7 @@ bool CombinerHelper::optimizeMemmove(MachineInstr &MI, Register Dst,
   bool DstAlignCanChange = false;
   MachineFrameInfo &MFI = MF.getFrameInfo();
   bool OptSize = shouldLowerMemFuncForSize(MF);
-  unsigned Alignment = MinAlign(DstAlign, SrcAlign);
+  Align Alignment = commonAlignment(DstAlign, SrcAlign);
 
   MachineInstr *FIDef = getOpcodeDef(TargetOpcode::G_FRAME_INDEX, Dst, MRI);
   if (FIDef && !MFI.isFixedObjectIndex(FIDef->getOperand(1).getIndex()))
@@ -1214,32 +1208,30 @@ bool CombinerHelper::optimizeMemmove(MachineInstr &MI, Register Dst,
   // to a bug in it's findOptimalMemOpLowering implementation. For now do the
   // same thing here.
   if (!findGISelOptimalMemOpLowering(
-          MemOps, Limit, KnownLen, (DstAlignCanChange ? 0 : Alignment),
-          SrcAlign,
-          /*IsMemset=*/false,
-          /*ZeroMemset=*/false, /*MemcpyStrSrc=*/false,
-          /*AllowOverlap=*/false, DstPtrInfo.getAddrSpace(),
-          SrcPtrInfo.getAddrSpace(), MF.getFunction().getAttributes(), TLI))
+          MemOps, Limit,
+          MemOp::Copy(KnownLen, DstAlignCanChange, Alignment, SrcAlign,
+                      /*IsVolatile*/ true),
+          DstPtrInfo.getAddrSpace(), SrcPtrInfo.getAddrSpace(),
+          MF.getFunction().getAttributes(), TLI))
     return false;
 
   if (DstAlignCanChange) {
     // Get an estimate of the type from the LLT.
     Type *IRTy = getTypeForLLT(MemOps[0], C);
-    unsigned NewAlign = (unsigned)DL.getABITypeAlignment(IRTy);
+    Align NewAlign = DL.getABITypeAlign(IRTy);
 
     // Don't promote to an alignment that would require dynamic stack
     // realignment.
     const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
     if (!TRI->needsStackRealignment(MF))
-      while (NewAlign > Alignment &&
-             DL.exceedsNaturalStackAlignment(Align(NewAlign)))
-        NewAlign /= 2;
+      while (NewAlign > Alignment && DL.exceedsNaturalStackAlignment(NewAlign))
+        NewAlign = NewAlign / 2;
 
     if (NewAlign > Alignment) {
       Alignment = NewAlign;
       unsigned FI = FIDef->getOperand(1).getIndex();
       // Give the stack frame object a larger alignment if needed.
-      if (MFI.getObjectAlignment(FI) < Alignment)
+      if (MFI.getObjectAlign(FI) < Alignment)
         MFI.setObjectAlignment(FI, Alignment);
     }
   }
@@ -1305,8 +1297,8 @@ bool CombinerHelper::tryCombineMemCpyFamily(MachineInstr &MI, unsigned MaxLen) {
   if (IsVolatile)
     return false;
 
-  unsigned DstAlign = MemOp->getBaseAlignment();
-  unsigned SrcAlign = 0;
+  Align DstAlign(MemOp->getBaseAlignment());
+  Align SrcAlign;
   Register Dst = MI.getOperand(1).getReg();
   Register Src = MI.getOperand(2).getReg();
   Register Len = MI.getOperand(3).getReg();
@@ -1314,7 +1306,7 @@ bool CombinerHelper::tryCombineMemCpyFamily(MachineInstr &MI, unsigned MaxLen) {
   if (ID != Intrinsic::memset) {
     assert(MMOIt != MI.memoperands_end() && "Expected a second MMO on MI");
     MemOp = *(++MMOIt);
-    SrcAlign = MemOp->getBaseAlignment();
+    SrcAlign = Align(MemOp->getBaseAlignment());
   }
 
   // See if this is a constant length copy

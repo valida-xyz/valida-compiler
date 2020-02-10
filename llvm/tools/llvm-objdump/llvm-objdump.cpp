@@ -338,7 +338,7 @@ static cl::extrahelp
     HelpResponse("\nPass @FILE as argument to read options from FILE.\n");
 
 static StringSet<> DisasmFuncsSet;
-static StringSet<> FoundSectionSet;
+StringSet<> FoundSectionSet;
 static StringRef ToolName;
 
 typedef std::vector<std::tuple<uint64_t, StringRef, uint8_t>> SectionSymbolsTy;
@@ -1430,6 +1430,14 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
                       outs(), "", *STI, &SP, Obj->getFileName(), &Rels);
         outs() << CommentStream.str();
         Comments.clear();
+
+        // If disassembly has failed, continue with the next instruction, to
+        // avoid analysing invalid/incomplete instruction information.
+        if (!Disassembled) {
+          outs() << "\n";
+          Index += Size;
+          continue;
+        }
 
         // Try to resolve the target of a call, tail call, etc. to a specific
         // symbol.

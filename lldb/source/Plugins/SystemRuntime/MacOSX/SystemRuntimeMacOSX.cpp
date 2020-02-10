@@ -7,12 +7,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Plugins/Process/Utility/HistoryThread.h"
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Section.h"
-#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/Process.h"
@@ -33,6 +33,8 @@
 
 using namespace lldb;
 using namespace lldb_private;
+
+LLDB_PLUGIN(SystemRuntimeMacOSX);
 
 // Create an instance of this class. This function is filled into the plugin
 // info class that gets handed out by the plugin factory and allows the lldb to

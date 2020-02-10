@@ -2234,6 +2234,8 @@ void OMPClauseEnqueue::VisitOMPCaptureClause(const OMPCaptureClause *) {}
 
 void OMPClauseEnqueue::VisitOMPSeqCstClause(const OMPSeqCstClause *) {}
 
+void OMPClauseEnqueue::VisitOMPAcqRelClause(const OMPAcqRelClause *) {}
+
 void OMPClauseEnqueue::VisitOMPThreadsClause(const OMPThreadsClause *) {}
 
 void OMPClauseEnqueue::VisitOMPSIMDClause(const OMPSIMDClause *) {}
@@ -2466,6 +2468,7 @@ void OMPClauseEnqueue::VisitOMPNontemporalClause(
   for (const auto *E : C->private_refs())
     Visitor->AddStmt(E);
 }
+void OMPClauseEnqueue::VisitOMPOrderClause(const OMPOrderClause *C) {}
 }
 
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {

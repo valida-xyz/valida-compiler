@@ -138,6 +138,56 @@ let params = !listconcat(T.Int16, T.Int32) in {
     (select $pred, (or $v, (splat (Scalar $imm))), $v)>;
 }
 
+let params = T.Usual in {
+  let pnt = PNT_None in
+    def vdupq_n: Intrinsic<Vector, (args unpromoted<Scalar>:$s), (splat $s)>;
+
+  defm vdupq: IntrinsicMX<
+      Vector, (args unpromoted<Scalar>:$s, Predicate:$pred),
+      (select $pred, (splat $s), $inactive), 1, "_n", PNT_NType, PNT_None>;
+}
+
+multiclass vxdup_mc<dag paramsIn, dag paramsOut> {
+  defvar UnpredInt     = IRInt<NAME, [Vector]>;
+  defvar PredInt       = IRInt<NAME # "_predicated", [Vector, Predicate]>;
+  defvar UnpredIntCall = !con((UnpredInt $base), paramsOut);
+  defvar PredIntCall   = !con((PredInt $inactive, $base), paramsOut, (? $pred));
+
+  // Straightforward case with neither writeback nor predication
+  let pnt = PNT_N in
+    def q_n: Intrinsic<Vector, !con((args u32:$base), paramsIn),
+                       (xval UnpredIntCall, 0)>;
+
+  // Predicated form without writeback
+  defm q: IntrinsicMX<
+      Vector, !con((args u32:$base), paramsIn, (? Predicate:$pred)),
+      (xval PredIntCall, 0), 1, "_n", PNT_NType, PNT_N>;
+
+  // Writeback without predication
+  let pnt = PNT_WB in
+    def q_wb: Intrinsic<
+      Vector, !con((args Ptr<u32>:$baseaddr), paramsIn),
+      (seq (load $baseaddr):$base,
+           UnpredIntCall:$pair,
+           (store (xval $pair, 1), $baseaddr),
+           (xval $pair, 0))>;
+
+  // Both writeback and predicated
+  defm q: IntrinsicMX<
+      Vector, !con((args Ptr<u32>:$baseaddr), paramsIn, (? Predicate:$pred)),
+      (seq (load $baseaddr):$base,
+           PredIntCall:$pair,
+           (store (xval $pair, 1), $baseaddr),
+           (xval $pair, 0)), 1, "_wb", PNT_WBType, PNT_WB>;
+}
+
+let params = T.Unsigned in {
+  defm vidup:  vxdup_mc<(?             imm_1248:$step), (?         $step)>;
+  defm vddup:  vxdup_mc<(?             imm_1248:$step), (?         $step)>;
+  defm viwdup: vxdup_mc<(? u32:$limit, imm_1248:$step), (? $limit, $step)>;
+  defm vdwdup: vxdup_mc<(? u32:$limit, imm_1248:$step), (? $limit, $step)>;
+}
+
 // The bitcasting below is not overcomplicating the IR because while
 // Vector and UVector may be different vector types at the C level i.e.
 // vectors of same size signed/unsigned ints. Once they're lowered
@@ -1013,7 +1063,7 @@ foreach desttype = T.All in {
       !if(!eq(!cast<string>(desttype),!cast<string>(srctype)),[],[srctype])))
   in {
     def "vreinterpretq_" # desttype: Intrinsic<
-        VecOf<desttype>, (args Vector:$x), (bitcast $x, VecOf<desttype>)>;
+        VecOf<desttype>, (args Vector:$x), (vreinterpret $x, VecOf<desttype>)>;
   }
 }
 
@@ -1047,4 +1097,30 @@ let params = T.All in {
                             (xelt_var $v, $lane)>;
   def vsetq_lane: Intrinsic<Vector, (args unpromoted<Scalar>:$e, Vector:$v, imm_lane:$lane),
                             (ielt_var $v, $e, $lane)>;
+}
+
+foreach desttype = !listconcat(T.Int16, T.Int32, T.Float) in {
+  defvar is_dest_float = !eq(desttype.kind, "f");
+  defvar is_dest_unsigned = !eq(desttype.kind, "u");
+  // First immediate operand of the LLVM intrinsic
+  defvar unsigned_flag = !if(is_dest_float, (unsignedflag Scalar),
+                             !if(is_dest_unsigned, V.True, V.False));
+  // For float->int conversions _n and _x_n intrinsics are not polymorphic
+  // because the signedness of the destination type cannot be inferred.
+  defvar pnt_nx = !if(is_dest_float, PNT_2Type, PNT_None);
+
+  let params = !if(is_dest_float,
+                   !if(!eq(desttype.size, 16), T.Int16, T.Int32),
+                   !if(!eq(desttype.size, 16), [f16], [f32])) in {
+    let pnt = pnt_nx in
+      def "vcvtq_n_"#desttype : Intrinsic<VecOf<desttype>,
+        (args Vector:$a, imm_1toN:$b),
+        (IRInt<"vcvt_fix", [VecOf<desttype>, Vector]> unsigned_flag, $a, $b)>;
+
+    defm "vcvtq" : IntrinsicMX<VecOf<desttype>,
+      (args Vector:$a, imm_1toN:$b, Predicate:$p),
+      (IRInt<"vcvt_fix_predicated", [VecOf<desttype>, Vector, Predicate]>
+             unsigned_flag, $inactive, $a, $b, $p),
+      1, "_n_"#desttype, PNT_2Type, pnt_nx>;
+  }
 }

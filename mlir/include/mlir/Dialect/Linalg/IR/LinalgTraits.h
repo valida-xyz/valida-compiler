@@ -93,6 +93,12 @@ public:
         cast<ConcreteType>(this->getOperation()).iterator_types());
   }
 
+  bool hasSingleReductionLoop() {
+    auto iterators = cast<ConcreteType>(this->getOperation()).iterator_types();
+    return iterators.size() == 1 &&
+           getNumIterators(getReductionIteratorTypeName(), iterators);
+  }
+
   //==========================================================================//
   // Input arguments handling.
   //==========================================================================//
@@ -213,6 +219,15 @@ public:
     return this->getOperation()->getNumResults() == 0 &&
            llvm::all_of(getInputs(),
                         [](Value v) { return v.getType().isa<MemRefType>(); });
+  }
+
+  /// Query whether the op has only tensor inputs and outputs.
+  bool hasTensorSemantics() {
+    auto isTensorType = [](Value v) {
+      return v.getType().isa<RankedTensorType>();
+    };
+    return llvm::all_of(getInputs(), isTensorType) &&
+           llvm::all_of(this->getOperation()->getResults(), isTensorType);
   }
 
   //==========================================================================//

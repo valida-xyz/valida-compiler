@@ -399,11 +399,8 @@ Instruction *InstCombiner::visitExtractElementInst(ExtractElementInst &EI) {
         return replaceInstUsesWith(EI, IE->getOperand(1));
       // If the inserted and extracted elements are constants, they must not
       // be the same value, extract from the pre-inserted value instead.
-      if (isa<Constant>(IE->getOperand(2)) && IndexC) {
-        Worklist.AddValue(SrcVec);
-        EI.setOperand(0, IE->getOperand(0));
-        return &EI;
-      }
+      if (isa<Constant>(IE->getOperand(2)) && IndexC)
+        return replaceOperand(EI, 0, IE->getOperand(0));
     } else if (auto *SVI = dyn_cast<ShuffleVectorInst>(I)) {
       // If this is extracting an element from a shufflevector, figure out where
       // it came from and extract from the appropriate input element instead.
@@ -1920,10 +1917,8 @@ Instruction *InstCombiner::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
       else
         Elts.push_back(ConstantInt::get(Int32Ty, Mask[i] % LHSWidth));
     }
-    SVI.setOperand(0, SVI.getOperand(1));
-    SVI.setOperand(1, UndefValue::get(RHS->getType()));
-    SVI.setOperand(2, ConstantVector::get(Elts));
-    return &SVI;
+    return new ShuffleVectorInst(LHS, UndefValue::get(RHS->getType()),
+                                 ConstantVector::get(Elts));
   }
 
   // shuffle undef, x, mask --> shuffle x, undef, mask'

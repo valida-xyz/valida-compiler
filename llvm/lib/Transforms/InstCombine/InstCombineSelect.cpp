@@ -1013,6 +1013,12 @@ canonicalizeMinMaxWithConstant(SelectInst &Sel, ICmpInst &Cmp,
       Cmp.getPredicate() == CanonicalPred)
     return nullptr;
 
+  // Bail out on unsimplified X-0 operand (due to some worklist management bug),
+  // as this may cause an infinite combine loop. Let the sub be folded first.
+  if (match(LHS, m_Sub(m_Value(), m_Zero())) ||
+      match(RHS, m_Sub(m_Value(), m_Zero())))
+    return nullptr;
+
   // Create the canonical compare and plug it into the select.
   Sel.setCondition(Builder.CreateICmp(CanonicalPred, LHS, RHS));
 
@@ -2401,10 +2407,9 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
     // Swap true/false values and condition.
     CmpInst *Cond = cast<CmpInst>(CondVal);
     Cond->setPredicate(CmpInst::getInversePredicate(Pred));
-    SI.setOperand(1, FalseVal);
-    SI.setOperand(2, TrueVal);
+    SI.swapValues();
     SI.swapProfMetadata();
-    Worklist.Add(Cond);
+    Worklist.push(Cond);
     return &SI;
   }
 
@@ -2747,14 +2752,14 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
     if (auto *TrueBOSI = dyn_cast<SelectInst>(TrueBO->getOperand(0))) {
       if (TrueBOSI->getCondition() == CondVal) {
         TrueBO->setOperand(0, TrueBOSI->getTrueValue());
-        Worklist.Add(TrueBO);
+        Worklist.push(TrueBO);
         return &SI;
       }
     }
     if (auto *TrueBOSI = dyn_cast<SelectInst>(TrueBO->getOperand(1))) {
       if (TrueBOSI->getCondition() == CondVal) {
         TrueBO->setOperand(1, TrueBOSI->getTrueValue());
-        Worklist.Add(TrueBO);
+        Worklist.push(TrueBO);
         return &SI;
       }
     }
@@ -2767,14 +2772,14 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
     if (auto *FalseBOSI = dyn_cast<SelectInst>(FalseBO->getOperand(0))) {
       if (FalseBOSI->getCondition() == CondVal) {
         FalseBO->setOperand(0, FalseBOSI->getFalseValue());
-        Worklist.Add(FalseBO);
+        Worklist.push(FalseBO);
         return &SI;
       }
     }
     if (auto *FalseBOSI = dyn_cast<SelectInst>(FalseBO->getOperand(1))) {
       if (FalseBOSI->getCondition() == CondVal) {
         FalseBO->setOperand(1, FalseBOSI->getFalseValue());
-        Worklist.Add(FalseBO);
+        Worklist.push(FalseBO);
         return &SI;
       }
     }
@@ -2783,8 +2788,7 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
   Value *NotCond;
   if (match(CondVal, m_Not(m_Value(NotCond)))) {
     SI.setOperand(0, NotCond);
-    SI.setOperand(1, FalseVal);
-    SI.setOperand(2, TrueVal);
+    SI.swapValues();
     SI.swapProfMetadata();
     return &SI;
   }

@@ -392,8 +392,8 @@ private:
 
     // Limit this to being an access modifier that follows.
     if (AttrTok->isOneOf(tok::kw_public, tok::kw_private, tok::kw_protected,
-                         tok::kw_class, tok::kw_static, tok::l_square,
-                         Keywords.kw_internal)) {
+                         tok::comment, tok::kw_class, tok::kw_static,
+                         tok::l_square, Keywords.kw_internal)) {
       return true;
     }
 
@@ -2873,6 +2873,13 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
       if (Left.is(tok::kw_using))
         return Style.SpaceBeforeParens == FormatStyle::SBPO_ControlStatements ||
                spaceRequiredBeforeParens(Right);
+    // space between ']' and '{'
+    if (Left.is(tok::r_square) && Right.is(tok::l_brace))
+      return true;
+    // space before '{' in "new MyType {"
+    if (Right.is(tok::l_brace) && Left.Previous &&
+        Left.Previous->is(tok::kw_new))
+      return true;
   } else if (Style.Language == FormatStyle::LK_JavaScript) {
     if (Left.is(TT_JsFatArrow))
       return true;

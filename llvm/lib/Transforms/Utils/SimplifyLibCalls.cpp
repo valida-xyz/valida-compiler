@@ -138,7 +138,7 @@ static Value *convertStrToNumber(CallInst *CI, StringRef &Str, int64_t Base) {
   return ConstantInt::get(CI->getType(), Result);
 }
 
-static bool isLocallyOpenedFile(Value *File, CallInst *CI, IRBuilder<> &B,
+static bool isLocallyOpenedFile(Value *File, CallInst *CI,
                                 const TargetLibraryInfo *TLI) {
   CallInst *FOpen = dyn_cast<CallInst>(File);
   if (!FOpen)
@@ -2750,7 +2750,7 @@ Value *LibCallSimplifier::optimizeFWrite(CallInst *CI, IRBuilder<> &B) {
     }
   }
 
-  if (isLocallyOpenedFile(CI->getArgOperand(3), CI, B, TLI))
+  if (isLocallyOpenedFile(CI->getArgOperand(3), CI, TLI))
     return emitFWriteUnlocked(CI->getArgOperand(0), CI->getArgOperand(1),
                               CI->getArgOperand(2), CI->getArgOperand(3), B, DL,
                               TLI);
@@ -2771,7 +2771,7 @@ Value *LibCallSimplifier::optimizeFPuts(CallInst *CI, IRBuilder<> &B) {
 
   // Check if has any use
   if (!CI->use_empty()) {
-    if (isLocallyOpenedFile(CI->getArgOperand(1), CI, B, TLI))
+    if (isLocallyOpenedFile(CI->getArgOperand(1), CI, TLI))
       return emitFPutSUnlocked(CI->getArgOperand(0), CI->getArgOperand(1), B,
                                TLI);
     else
@@ -2794,7 +2794,7 @@ Value *LibCallSimplifier::optimizeFPuts(CallInst *CI, IRBuilder<> &B) {
 Value *LibCallSimplifier::optimizeFPutc(CallInst *CI, IRBuilder<> &B) {
   optimizeErrorReporting(CI, B, 1);
 
-  if (isLocallyOpenedFile(CI->getArgOperand(1), CI, B, TLI))
+  if (isLocallyOpenedFile(CI->getArgOperand(1), CI, TLI))
     return emitFPutCUnlocked(CI->getArgOperand(0), CI->getArgOperand(1), B,
                              TLI);
 
@@ -2802,14 +2802,14 @@ Value *LibCallSimplifier::optimizeFPutc(CallInst *CI, IRBuilder<> &B) {
 }
 
 Value *LibCallSimplifier::optimizeFGetc(CallInst *CI, IRBuilder<> &B) {
-  if (isLocallyOpenedFile(CI->getArgOperand(0), CI, B, TLI))
+  if (isLocallyOpenedFile(CI->getArgOperand(0), CI, TLI))
     return emitFGetCUnlocked(CI->getArgOperand(0), B, TLI);
 
   return nullptr;
 }
 
 Value *LibCallSimplifier::optimizeFGets(CallInst *CI, IRBuilder<> &B) {
-  if (isLocallyOpenedFile(CI->getArgOperand(2), CI, B, TLI))
+  if (isLocallyOpenedFile(CI->getArgOperand(2), CI, TLI))
     return emitFGetSUnlocked(CI->getArgOperand(0), CI->getArgOperand(1),
                              CI->getArgOperand(2), B, TLI);
 
@@ -2817,7 +2817,7 @@ Value *LibCallSimplifier::optimizeFGets(CallInst *CI, IRBuilder<> &B) {
 }
 
 Value *LibCallSimplifier::optimizeFRead(CallInst *CI, IRBuilder<> &B) {
-  if (isLocallyOpenedFile(CI->getArgOperand(3), CI, B, TLI))
+  if (isLocallyOpenedFile(CI->getArgOperand(3), CI, TLI))
     return emitFReadUnlocked(CI->getArgOperand(0), CI->getArgOperand(1),
                              CI->getArgOperand(2), CI->getArgOperand(3), B, DL,
                              TLI);
@@ -3093,6 +3093,10 @@ Value *LibCallSimplifier::optimizeCall(CallInst *CI) {
     // Try to further simplify the result.
     CallInst *SimplifiedCI = dyn_cast<CallInst>(SimplifiedFortifiedCI);
     if (SimplifiedCI && SimplifiedCI->getCalledFunction()) {
+      // Ensure that SimplifiedCI's uses are complete, since some calls have
+      // their uses analyzed.
+      replaceAllUsesWith(CI, SimplifiedCI);
+
       // Use an IR Builder from SimplifiedCI if available instead of CI
       // to guarantee we reach all uses we might replace later on.
       IRBuilder<> TmpBuilder(SimplifiedCI);
@@ -3354,6 +3358,14 @@ Value *FortifiedLibCallSimplifier::optimizeStrpCpyChk(CallInst *CI,
   return Ret;
 }
 
+Value *FortifiedLibCallSimplifier::optimizeStrLenChk(CallInst *CI,
+                                                     IRBuilder<> &B) {
+  if (isFortifiedCallFoldable(CI, 1, None, 0))
+    return emitStrLen(CI->getArgOperand(0), B, CI->getModule()->getDataLayout(),
+                      TLI);
+  return nullptr;
+}
+
 Value *FortifiedLibCallSimplifier::optimizeStrpNCpyChk(CallInst *CI,
                                                        IRBuilder<> &B,
                                                        LibFunc Func) {
@@ -3494,6 +3506,8 @@ Value *FortifiedLibCallSimplifier::optimizeCall(CallInst *CI) {
   case LibFunc_stpcpy_chk:
   case LibFunc_strcpy_chk:
     return optimizeStrpCpyChk(CI, Builder, Func);
+  case LibFunc_strlen_chk:
+    return optimizeStrLenChk(CI, Builder);
   case LibFunc_stpncpy_chk:
   case LibFunc_strncpy_chk:
     return optimizeStrpNCpyChk(CI, Builder, Func);

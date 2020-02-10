@@ -89,7 +89,7 @@ void ManualDWARFIndex::Index() {
 
 void ManualDWARFIndex::IndexUnit(DWARFUnit &unit, IndexSet &set) {
   assert(
-      !unit.GetSymbolFileDWARF().GetBaseCompileUnit() &&
+      !unit.IsDWOUnit() &&
       "DWARFUnit associated with .dwo or .dwp should not be indexed directly");
 
   Log *log = LogChannelDWARF::GetLogIfAll(DWARF_LOG_LOOKUPS);
@@ -100,7 +100,7 @@ void ManualDWARFIndex::IndexUnit(DWARFUnit &unit, IndexSet &set) {
         unit.GetOffset());
   }
 
-  const LanguageType cu_language = unit.GetLanguageType();
+  const LanguageType cu_language = SymbolFileDWARF::GetLanguage(unit);
 
   IndexUnitImpl(unit, cu_language, set);
 

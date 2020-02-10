@@ -13,9 +13,9 @@
 
 #include "clang/Lex/Lexer.h"
 
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
-#include "lldb/Symbol/TypeSystemClang.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/LineTable.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -57,6 +57,8 @@
 using namespace lldb;
 using namespace lldb_private;
 using namespace llvm::pdb;
+
+LLDB_PLUGIN(SymbolFilePDB);
 
 char SymbolFilePDB::ID;
 
@@ -636,7 +638,7 @@ lldb_private::CompilerDecl SymbolFilePDB::GetDeclForUID(lldb::user_id_t uid) {
   if (!decl)
     return CompilerDecl();
 
-  return CompilerDecl(clang_ast_ctx, decl);
+  return clang_ast_ctx->GetCompilerDecl(decl);
 }
 
 lldb_private::CompilerDeclContext

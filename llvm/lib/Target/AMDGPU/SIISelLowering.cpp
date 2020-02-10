@@ -97,12 +97,12 @@ static cl::opt<bool> DisableLoopAlignment(
 
 static bool hasFP32Denormals(const MachineFunction &MF) {
   const SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
-  return Info->getMode().FP32Denormals;
+  return Info->getMode().allFP32Denormals();
 }
 
 static bool hasFP64FP16Denormals(const MachineFunction &MF) {
   const SIMachineFunctionInfo *Info = MF.getInfo<SIMachineFunctionInfo>();
-  return Info->getMode().FP64FP16Denormals;
+  return Info->getMode().allFP64FP16Denormals();
 }
 
 static unsigned findFirstFreeSGPR(CCState &CCInfo) {
@@ -783,6 +783,7 @@ bool SITargetLowering::isFPExtFoldable(const SelectionDAG &DAG, unsigned Opcode,
           (Opcode == ISD::FMA && Subtarget->hasFmaMixInsts())) &&
     DestVT.getScalarType() == MVT::f32 &&
     SrcVT.getScalarType() == MVT::f16 &&
+    // TODO: This probably only requires no input flushing?
     !hasFP32Denormals(DAG.getMachineFunction());
 }
 
@@ -877,45 +878,20 @@ unsigned SITargetLowering::getVectorTypeBreakdownForCallingConv(
     Context, CC, VT, IntermediateVT, NumIntermediates, RegisterVT);
 }
 
-static MVT memVTFromAggregate(Type *Ty) {
+// Peek through TFE struct returns to only use the data size.
+static EVT memVTFromImageReturn(Type *Ty) {
+  auto *ST = dyn_cast<StructType>(Ty);
+  if (!ST)
+    return EVT::getEVT(Ty, true);
+
+  // Some intrinsics return an aggregate type - special case to work out the
+  // correct memVT.
+  //
   // Only limited forms of aggregate type currently expected.
-  assert(Ty->isStructTy() && "Expected struct type");
-
-
-  Type *ElementType = nullptr;
-  unsigned NumElts;
-  if (Ty->getContainedType(0)->isVectorTy()) {
-    VectorType *VecComponent = cast<VectorType>(Ty->getContainedType(0));
-    ElementType = VecComponent->getElementType();
-    NumElts = VecComponent->getNumElements();
-  } else {
-    ElementType = Ty->getContainedType(0);
-    NumElts = 1;
-  }
-
-  assert((Ty->getContainedType(1) && Ty->getContainedType(1)->isIntegerTy(32)) && "Expected int32 type");
-
-  // Calculate the size of the memVT type from the aggregate
-  unsigned Pow2Elts = 0;
-  unsigned ElementSize;
-  switch (ElementType->getTypeID()) {
-    default:
-      llvm_unreachable("Unknown type!");
-    case Type::IntegerTyID:
-      ElementSize = cast<IntegerType>(ElementType)->getBitWidth();
-      break;
-    case Type::HalfTyID:
-      ElementSize = 16;
-      break;
-    case Type::FloatTyID:
-      ElementSize = 32;
-      break;
-  }
-  unsigned AdditionalElts = ElementSize == 16 ? 2 : 1;
-  Pow2Elts = 1 << Log2_32_Ceil(NumElts + AdditionalElts);
-
-  return MVT::getVectorVT(MVT::getVT(ElementType, false),
-                          Pow2Elts);
+  if (ST->getNumContainedTypes() != 2 ||
+      !ST->getContainedType(1)->isIntegerTy(32))
+    return EVT();
+  return EVT::getEVT(ST->getContainedType(0));
 }
 
 bool SITargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
@@ -945,12 +921,8 @@ bool SITargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.flags = MachineMemOperand::MODereferenceable;
     if (Attr.hasFnAttribute(Attribute::ReadOnly)) {
       Info.opc = ISD::INTRINSIC_W_CHAIN;
-      Info.memVT = MVT::getVT(CI.getType(), true);
-      if (Info.memVT == MVT::Other) {
-        // Some intrinsics return an aggregate type - special case to work out
-        // the correct memVT
-        Info.memVT = memVTFromAggregate(CI.getType());
-      }
+      // TODO: Account for dmask reducing loaded size.
+      Info.memVT = memVTFromImageReturn(CI.getType());
       Info.flags |= MachineMemOperand::MOLoad;
     } else if (Attr.hasFnAttribute(Attribute::WriteOnly)) {
       Info.opc = ISD::INTRINSIC_VOID;
@@ -1320,18 +1292,17 @@ bool SITargetLowering::allowsMisalignedMemoryAccesses(
 }
 
 EVT SITargetLowering::getOptimalMemOpType(
-    uint64_t Size, unsigned DstAlign, unsigned SrcAlign, bool IsMemset,
-    bool ZeroMemset, bool MemcpyStrSrc,
-    const AttributeList &FuncAttributes) const {
+    const MemOp &Op, const AttributeList &FuncAttributes) const {
   // FIXME: Should account for address space here.
 
   // The default fallback uses the private pointer size as a guess for a type to
   // use. Make sure we switch these to 64-bit accesses.
 
-  if (Size >= 16 && DstAlign >= 4) // XXX: Should only do for global
+  if (Op.size() >= 16 &&
+      Op.isDstAligned(Align(4))) // XXX: Should only do for global
     return MVT::v4i32;
 
-  if (Size >= 8 && DstAlign >= 4)
+  if (Op.size() >= 8 && Op.isDstAligned(Align(4)))
     return MVT::v2i32;
 
   // Use the default.
@@ -2837,7 +2808,7 @@ SDValue SITargetLowering::LowerCall(CallLoweringInfo &CLI,
         // FIXME: We can have better than the minimum byval required alignment.
         Alignment =
             Flags.isByVal()
-                ? MaybeAlign(Flags.getByValAlign())
+                ? Flags.getNonZeroByValAlign()
                 : commonAlignment(Subtarget->getStackAlignment(), Offset);
 
         Offset = Offset + FPDiff;
@@ -2864,11 +2835,12 @@ SDValue SITargetLowering::LowerCall(CallLoweringInfo &CLI,
       if (Outs[i].Flags.isByVal()) {
         SDValue SizeNode =
             DAG.getConstant(Outs[i].Flags.getByValSize(), DL, MVT::i32);
-        SDValue Cpy = DAG.getMemcpy(
-            Chain, DL, DstAddr, Arg, SizeNode, Outs[i].Flags.getByValAlign(),
-            /*isVol = */ false, /*AlwaysInline = */ true,
-            /*isTailCall = */ false, DstInfo,
-            MachinePointerInfo(AMDGPUAS::PRIVATE_ADDRESS));
+        SDValue Cpy =
+            DAG.getMemcpy(Chain, DL, DstAddr, Arg, SizeNode,
+                          Outs[i].Flags.getNonZeroByValAlign(),
+                          /*isVol = */ false, /*AlwaysInline = */ true,
+                          /*isTailCall = */ false, DstInfo,
+                          MachinePointerInfo(AMDGPUAS::PRIVATE_ADDRESS));
 
         MemOpChains.push_back(Cpy);
       } else {
@@ -3331,7 +3303,7 @@ computeIndirectRegAndOffset(const SIRegisterInfo &TRI,
   if (Offset >= NumElts || Offset < 0)
     return std::make_pair(AMDGPU::sub0, Offset);
 
-  return std::make_pair(AMDGPU::sub0 + Offset, 0);
+  return std::make_pair(AMDGPURegisterInfo::getSubRegFromChannel(Offset), 0);
 }
 
 // Return true if the index is an SGPR and was set.
@@ -5147,6 +5119,9 @@ static SDValue getBuildDwordsVector(SelectionDAG &DAG, SDLoc DL,
   } else if (Elts.size() == 2) {
     Type = MVT::v2f32;
     NumElts = 2;
+  } else if (Elts.size() == 3) {
+    Type = MVT::v3f32;
+    NumElts = 3;
   } else if (Elts.size() <= 4) {
     Type = MVT::v4f32;
     NumElts = 4;
@@ -5432,26 +5407,27 @@ SDValue SITargetLowering::lowerImage(SDValue Op,
     IsA16 = true;
     const MVT VectorVT = VAddrScalarVT == MVT::f16 ? MVT::v2f16 : MVT::v2i16;
     for (unsigned i = AddrIdx; i < (AddrIdx + NumMIVAddrs); ++i) {
-      SDValue AddrLo, AddrHi;
+      SDValue AddrLo;
       // Push back extra arguments.
       if (i < DimIdx) {
         AddrLo = Op.getOperand(i);
       } else {
-        AddrLo = Op.getOperand(i);
         // Dz/dh, dz/dv and the last odd coord are packed with undef. Also,
         // in 1D, derivatives dx/dh and dx/dv are packed with undef.
         if (((i + 1) >= (AddrIdx + NumMIVAddrs)) ||
             ((NumGradients / 2) % 2 == 1 &&
             (i == DimIdx + (NumGradients / 2) - 1 ||
              i == DimIdx + NumGradients - 1))) {
-          AddrHi = DAG.getUNDEF(MVT::f16);
+          AddrLo = Op.getOperand(i);
+          if (AddrLo.getValueType() != MVT::i16)
+            AddrLo = DAG.getBitcast(MVT::i16, Op.getOperand(i));
+          AddrLo = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i32, AddrLo);
         } else {
-          AddrHi = Op.getOperand(i + 1);
+          AddrLo = DAG.getBuildVector(VectorVT, DL,
+                                      {Op.getOperand(i), Op.getOperand(i + 1)});
           i++;
         }
-        AddrLo = DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, VectorVT,
-                             {AddrLo, AddrHi});
-        AddrLo = DAG.getBitcast(MVT::i32, AddrLo);
+        AddrLo = DAG.getBitcast(MVT::f32, AddrLo);
       }
       VAddrs.push_back(AddrLo);
     }
@@ -5670,7 +5646,7 @@ SDValue SITargetLowering::lowerSBuffer(EVT VT, SDLoc DL, SDValue Rsrc,
 
   if (NumElts == 8 || NumElts == 16) {
     NumLoads = NumElts / 4;
-    LoadVT = MVT::v4i32;
+    LoadVT = MVT::getVectorVT(LoadVT.getScalarType(), 4);
   }
 
   SDVTList VTList = DAG.getVTList({LoadVT, MVT::Glue});
@@ -5696,7 +5672,7 @@ SDValue SITargetLowering::lowerSBuffer(EVT VT, SDLoc DL, SDValue Rsrc,
                                         LoadVT, MMO, DAG));
   }
 
-  if (VT == MVT::v8i32 || VT == MVT::v16i32)
+  if (NumElts == 8 || NumElts == 16)
     return DAG.getNode(ISD::CONCAT_VECTORS, DL, VT, Loads);
 
   return Loads[0];
@@ -7442,19 +7418,12 @@ SDValue SITargetLowering::lowerFastUnsafeFDIV(SDValue Op,
   EVT VT = Op.getValueType();
   const SDNodeFlags Flags = Op->getFlags();
 
-  bool FastUnsafeRcpLegal = DAG.getTarget().Options.UnsafeFPMath ||
-         (Flags.hasAllowReciprocal() &&
-          ((VT == MVT::f32 && hasFP32Denormals(DAG.getMachineFunction())) ||
-            VT == MVT::f16 ||
-            Flags.hasApproximateFuncs()));
+  bool AllowInaccurateRcp = DAG.getTarget().Options.UnsafeFPMath ||
+                            Flags.hasApproximateFuncs();
 
-  // Do rcp optimization only when fast unsafe rcp is legal here.
-  // NOTE: We already performed RCP optimization to insert intrinsics in
-  // AMDGPUCodeGenPrepare. Ideally there should have no opportunity here to
-  // rcp optimization.
-  //   However, there are cases like FREM, which is expended into a sequence
-  // of instructions including FDIV, which may expose new opportunities.
-  if (!FastUnsafeRcpLegal)
+  // Without !fpmath accuracy information, we can't do more because we don't
+  // know exactly whether rcp is accurate enough to meet !fpmath requirement.
+  if (!AllowInaccurateRcp)
     return SDValue();
 
   if (const ConstantFPSDNode *CLHS = dyn_cast<ConstantFPSDNode>(LHS)) {
@@ -10587,6 +10556,8 @@ SITargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
         return std::make_pair(RC->getRegister(Idx), RC);
     }
   }
+
+  // FIXME: Returns VS_32 for physical SGPR constraints
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
 
@@ -10890,7 +10861,15 @@ SITargetLowering::getRegClassFor(MVT VT, bool isDivergent) const {
   return RC;
 }
 
-static bool hasCFUser(const Value *V, SmallPtrSet<const Value *, 16> &Visited) {
+static bool hasCFUser(const Value *V, SmallPtrSet<const Value *, 16> &Visited,
+                      unsigned WaveSize) {
+  // FIXME: We asssume we never cast the mask results of a control flow
+  // intrinsic.
+  // Early exit if the type won't be consistent as a compile time hack.
+  IntegerType *IT = dyn_cast<IntegerType>(V->getType());
+  if (!IT || IT->getBitWidth() != WaveSize)
+    return false;
+
   if (!isa<Instruction>(V))
     return false;
   if (!Visited.insert(V).second)
@@ -10922,7 +10901,7 @@ static bool hasCFUser(const Value *V, SmallPtrSet<const Value *, 16> &Visited) {
         }
       }
     } else {
-      Result = hasCFUser(U, Visited);
+      Result = hasCFUser(U, Visited, WaveSize);
     }
     if (Result)
       break;
@@ -10981,5 +10960,5 @@ bool SITargetLowering::requiresUniformRegister(MachineFunction &MF,
     }
   }
   SmallPtrSet<const Value *, 16> Visited;
-  return hasCFUser(V, Visited);
+  return hasCFUser(V, Visited, Subtarget->getWavefrontSize());
 }

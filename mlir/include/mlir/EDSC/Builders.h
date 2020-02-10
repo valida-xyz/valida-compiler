@@ -17,6 +17,7 @@
 #include "mlir/Dialect/AffineOps/AffineOps.h"
 #include "mlir/Dialect/LoopOps/LoopOps.h"
 #include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Transforms/FoldUtils.h"
 
@@ -155,6 +156,13 @@ public:
   static LoopBuilder makeAffine(ValueHandle *iv,
                                 ArrayRef<ValueHandle> lbHandles,
                                 ArrayRef<ValueHandle> ubHandles, int64_t step);
+  /// Constructs a new loop::ParallelOp and captures the associated induction
+  /// variables. An array of ValueHandle pointers is passed as the first
+  /// argument and is the *only* way to capture loop induction variables.
+  static LoopBuilder makeParallel(ArrayRef<ValueHandle *> ivs,
+                                  ArrayRef<ValueHandle> lbHandles,
+                                  ArrayRef<ValueHandle> ubHandles,
+                                  ArrayRef<ValueHandle> steps);
   /// Constructs a new loop::ForOp and captures the associated induction
   /// variable. A ValueHandle pointer is passed as the first argument and is the
   /// *only* way to capture the loop induction variable.
@@ -207,6 +215,20 @@ public:
                         ArrayRef<ValueHandle> ubs, int64_t step);
   AffineLoopNestBuilder(ArrayRef<ValueHandle *> ivs, ArrayRef<ValueHandle> lbs,
                         ArrayRef<ValueHandle> ubs, ArrayRef<int64_t> steps);
+
+  void operator()(function_ref<void(void)> fun = nullptr);
+
+private:
+  SmallVector<LoopBuilder, 4> loops;
+};
+
+/// Helper class to sugar building loop.parallel loop nests from lower/upper
+/// bounds and step sizes.
+class ParallelLoopNestBuilder {
+public:
+  ParallelLoopNestBuilder(ArrayRef<ValueHandle *> ivs,
+                          ArrayRef<ValueHandle> lbs, ArrayRef<ValueHandle> ubs,
+                          ArrayRef<ValueHandle> steps);
 
   void operator()(function_ref<void(void)> fun = nullptr);
 
@@ -470,6 +492,46 @@ public:
 
 private:
   mlir::Block *block;
+};
+
+/// A StructuredIndexed represents an indexable quantity that is either:
+/// 1. a captured value, which is suitable for buffer and tensor operands, or;
+/// 2. a captured type, which is suitable for tensor return values.
+///
+/// A StructuredIndexed itself is indexed and passed to `makeGenericLinalgOp`.
+/// It enable an idiomatic syntax for index expressions such as:
+///
+/// ```
+///      StructuredIndexed A(buffer_or_tensor_value), B(buffer_or_tensor_value),
+///        C(buffer_value_or_tensor_type);
+///      makeGenericLinalgOp({A({m, n}), B({k, n})}, {C({m, n})}, ... );
+/// ```
+struct StructuredIndexed : public ValueHandle {
+  StructuredIndexed(Type type) : ValueHandle(type) {}
+  StructuredIndexed(Value value) : ValueHandle(value) {}
+  StructuredIndexed(ValueHandle valueHandle) : ValueHandle(valueHandle) {}
+  StructuredIndexed operator()(ArrayRef<AffineExpr> indexings) {
+    return this->hasValue() ? StructuredIndexed(this->getValue(), indexings)
+                            : StructuredIndexed(this->getType(), indexings);
+  }
+
+  StructuredIndexed(Type t, ArrayRef<AffineExpr> indexings)
+      : ValueHandle(t), exprs(indexings.begin(), indexings.end()) {
+    assert(t.isa<RankedTensorType>() && "RankedTensor expected");
+  }
+  StructuredIndexed(Value v, ArrayRef<AffineExpr> indexings)
+      : ValueHandle(v), exprs(indexings.begin(), indexings.end()) {
+    assert((v.getType().isa<MemRefType>() ||
+            v.getType().isa<RankedTensorType>()) &&
+           "MemRef or RankedTensor expected");
+  }
+  StructuredIndexed(ValueHandle vh, ArrayRef<AffineExpr> indexings)
+      : ValueHandle(vh), exprs(indexings.begin(), indexings.end()) {}
+
+  ArrayRef<AffineExpr> getExprs() { return exprs; }
+
+private:
+  SmallVector<AffineExpr, 4> exprs;
 };
 
 template <typename Op, typename... Args>

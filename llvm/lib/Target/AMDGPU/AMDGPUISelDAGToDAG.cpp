@@ -1771,27 +1771,31 @@ bool AMDGPUDAGToDAGISel::SelectSMRDOffset(SDValue ByteOffsetNode,
 
   SDLoc SL(ByteOffsetNode);
   GCNSubtarget::Generation Gen = Subtarget->getGeneration();
-  int64_t ByteOffset = C->getSExtValue();
-  int64_t EncodedOffset = AMDGPU::getSMRDEncodedOffset(*Subtarget, ByteOffset);
-
-  if (AMDGPU::isLegalSMRDImmOffset(*Subtarget, ByteOffset)) {
-    Offset = CurDAG->getTargetConstant(EncodedOffset, SL, MVT::i32);
+  uint64_t ByteOffset = C->getZExtValue();
+  Optional<int64_t> EncodedOffset =
+      AMDGPU::getSMRDEncodedOffset(*Subtarget, ByteOffset);
+  if (EncodedOffset) {
+    Offset = CurDAG->getTargetConstant(*EncodedOffset, SL, MVT::i32);
     Imm = true;
     return true;
   }
 
-  if (!isUInt<32>(EncodedOffset) || !isUInt<32>(ByteOffset))
+  if (Gen == AMDGPUSubtarget::SEA_ISLANDS) {
+    EncodedOffset =
+        AMDGPU::getSMRDEncodedLiteralOffset32(*Subtarget, ByteOffset);
+    if (EncodedOffset) {
+      Offset = CurDAG->getTargetConstant(*EncodedOffset, SL, MVT::i32);
+      return true;
+    }
+  }
+
+  if (!isUInt<32>(ByteOffset) && !isInt<32>(ByteOffset))
     return false;
 
-  if (Gen == AMDGPUSubtarget::SEA_ISLANDS && isUInt<32>(EncodedOffset)) {
-    // 32-bit Immediates are supported on Sea Islands.
-    Offset = CurDAG->getTargetConstant(EncodedOffset, SL, MVT::i32);
-  } else {
-    SDValue C32Bit = CurDAG->getTargetConstant(ByteOffset, SL, MVT::i32);
-    Offset = SDValue(CurDAG->getMachineNode(AMDGPU::S_MOV_B32, SL, MVT::i32,
-                                            C32Bit), 0);
-  }
-  Imm = false;
+  SDValue C32Bit = CurDAG->getTargetConstant(ByteOffset, SL, MVT::i32);
+  Offset = SDValue(
+      CurDAG->getMachineNode(AMDGPU::S_MOV_B32, SL, MVT::i32, C32Bit), 0);
+
   return true;
 }
 
@@ -1845,7 +1849,7 @@ bool AMDGPUDAGToDAGISel::SelectSMRD(SDValue Addr, SDValue &SBase,
 
 bool AMDGPUDAGToDAGISel::SelectSMRDImm(SDValue Addr, SDValue &SBase,
                                        SDValue &Offset) const {
-  bool Imm;
+  bool Imm = false;
   return SelectSMRD(Addr, SBase, Offset, Imm) && Imm;
 }
 
@@ -1854,7 +1858,7 @@ bool AMDGPUDAGToDAGISel::SelectSMRDImm32(SDValue Addr, SDValue &SBase,
 
   assert(Subtarget->getGeneration() == AMDGPUSubtarget::SEA_ISLANDS);
 
-  bool Imm;
+  bool Imm = false;
   if (!SelectSMRD(Addr, SBase, Offset, Imm))
     return false;
 
@@ -1863,26 +1867,37 @@ bool AMDGPUDAGToDAGISel::SelectSMRDImm32(SDValue Addr, SDValue &SBase,
 
 bool AMDGPUDAGToDAGISel::SelectSMRDSgpr(SDValue Addr, SDValue &SBase,
                                         SDValue &Offset) const {
-  bool Imm;
+  bool Imm = false;
   return SelectSMRD(Addr, SBase, Offset, Imm) && !Imm &&
          !isa<ConstantSDNode>(Offset);
 }
 
 bool AMDGPUDAGToDAGISel::SelectSMRDBufferImm(SDValue Addr,
                                              SDValue &Offset) const {
-  bool Imm;
-  return SelectSMRDOffset(Addr, Offset, Imm) && Imm;
+  if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Addr)) {
+    if (auto Imm = AMDGPU::getSMRDEncodedOffset(*Subtarget,
+                                                C->getZExtValue())) {
+      Offset = CurDAG->getTargetConstant(*Imm, SDLoc(Addr), MVT::i32);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool AMDGPUDAGToDAGISel::SelectSMRDBufferImm32(SDValue Addr,
                                                SDValue &Offset) const {
   assert(Subtarget->getGeneration() == AMDGPUSubtarget::SEA_ISLANDS);
 
-  bool Imm;
-  if (!SelectSMRDOffset(Addr, Offset, Imm))
-    return false;
+  if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Addr)) {
+    if (auto Imm = AMDGPU::getSMRDEncodedLiteralOffset32(*Subtarget,
+                                                         C->getZExtValue())) {
+      Offset = CurDAG->getTargetConstant(*Imm, SDLoc(Addr), MVT::i32);
+      return true;
+    }
+  }
 
-  return !Imm && isa<ConstantSDNode>(Offset);
+  return false;
 }
 
 bool AMDGPUDAGToDAGISel::SelectMOVRELOffset(SDValue Index,
@@ -2121,7 +2136,7 @@ void AMDGPUDAGToDAGISel::SelectFMAD_FMA(SDNode *N) {
   bool Sel1 = SelectVOP3PMadMixModsImpl(Src1, Src1, Src1Mods);
   bool Sel2 = SelectVOP3PMadMixModsImpl(Src2, Src2, Src2Mods);
 
-  assert((IsFMA || !Mode.FP32Denormals) &&
+  assert((IsFMA || !Mode.allFP32Denormals()) &&
          "fmad selected with denormals enabled");
   // TODO: We can select this with f32 denormals enabled if all the sources are
   // converted from f16 (in which case fmad isn't legal).
