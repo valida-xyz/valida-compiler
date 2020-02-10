@@ -102,6 +102,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
+  // G_FCONSTANT is legal for 16/32/64 bit types
+  getActionDefinitionsBuilder(G_FCONSTANT)
+      .legalFor({s16, s32, s64})
+      .clampScalar(0, s16, s64);
+
   // Stack allocation
 
   // G_DYN_STACKALLOC should be lowered to a stack pointer subtraction
