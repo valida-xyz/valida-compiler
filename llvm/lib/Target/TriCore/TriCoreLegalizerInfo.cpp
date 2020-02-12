@@ -422,6 +422,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_BRINDIRECT is valid for p0 types.
   getActionDefinitionsBuilder(G_BRINDIRECT).legalFor({p0});
 
+  // Variadic Arguments
+
+  // G_VASTART is legal for pointer type
+  getActionDefinitionsBuilder(G_VASTART).legalFor({p0});
+
   computeTables();
   verify(*ST.getInstrInfo());
 }
