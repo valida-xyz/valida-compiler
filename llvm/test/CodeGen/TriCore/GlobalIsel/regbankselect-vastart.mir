@@ -1,0 +1,35 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=regbankselect \
+# RUN:   -verify-machineinstrs %s -o - | FileCheck %s
+
+
+--- |
+  define dso_local void @vastart_test(i32 %n, ...) {
+  entry:
+    %vl = alloca i8*, align 4
+    %vl1 = bitcast i8** %vl to i8*
+    call void @llvm.va_start(i8* %vl1)
+    ret void
+  }
+  
+  declare void @llvm.va_start(i8*)
+...
+---
+name:            vastart_test
+legalized:       true
+regBankSelected: false
+stack:
+  - { id: 0, name: vl, type: default, offset: 0, size: 4, alignment: 4 }
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[FI:%[0-9]+]]:addrregbank(p0) = G_FRAME_INDEX %stack.0.vl
+    ; CHECK: G_VASTART [[FI]](p0) :: (store 4 into %ir.vl1, align 1)
+    ; CHECK: RET implicit $a11
+    %0:_(s32) = COPY $d4
+    %1:_(p0) = G_FRAME_INDEX %stack.0.vl
+    G_VASTART %1(p0) :: (store 4 into %ir.vl1, align 1)
+    RET implicit $a11
+
+...
