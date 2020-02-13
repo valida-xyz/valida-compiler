@@ -388,6 +388,19 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
         });
   }
 
+  // G_INSERT is legal for s32 and p0 for type index 0 and s1-s32 and p0 for
+  // type index 1. We need to ensure that type index 0 is always s32, while
+  // type index 1 can be anything from s1 to s32.
+  getActionDefinitionsBuilder(G_INSERT)
+      .legalIf([=](const LegalityQuery &Query) {
+        const LLT Ty0 = Query.Types[0];
+        const LLT Ty1 = Query.Types[1];
+
+        return (Ty0.getSizeInBits() == 32 && Ty1.getSizeInBits() <= 32);
+      })
+      .clampScalar(0, s32, s32)
+      .maxScalar(1, s32);
+
   // Branches
 
   // G_BRCOND is valid for s1 and s32 scalars.
