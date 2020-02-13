@@ -357,6 +357,13 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
                     PMI_FirstDataReg};
     break;
   }
+  case TargetOpcode::G_INSERT: {
+    assert(NumOperands == 4 && "Expected G_INSERT to have 4 operands");
+    // TriCore only supports INSERT on data registers, hence all
+    // operands must reside on the DataRegBank
+    OpRegBankIdx = {PMI_FirstDataReg, PMI_FirstDataReg, PMI_FirstDataReg};
+    break;
+  }
   default:
     break;
   }
