@@ -119,6 +119,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
+  // G_SADDO and G_SSUBO should be always lowered
+  getActionDefinitionsBuilder({G_SADDO, G_SSUBO}).lower();
+
   // G_SDIV, G_UDIV is only legal for 32 bit types and has to be lowered for
   // 64-bit type
   getActionDefinitionsBuilder({G_SDIV, G_UDIV})
