@@ -77,6 +77,8 @@ private:
   bool selectAddSubO(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectBrIndirect(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectBrJumpTable(MachineInstr &I, MachineRegisterInfo &MRI,
+                         const MachineFunction &MF) const;
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
                         MachineIRBuilder &MIRBuilder) const;
@@ -416,6 +418,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectBrCond(I, MRI);
   case TargetOpcode::G_BRINDIRECT:
     return selectBrIndirect(I, MRI);
+  case TargetOpcode::G_BRJT:
+    return selectBrJumpTable(I, MRI, MF);
   case TargetOpcode::G_CONSTANT:
   case TargetOpcode::G_FCONSTANT:
     return selectConstant(I, MRI);
@@ -819,6 +823,112 @@ bool TriCoreInstructionSelector::selectBrIndirect(
   // Change to JI
   I.setDesc(TII.get(TriCore::JI));
   constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectBrJumpTable(
+    MachineInstr &I, MachineRegisterInfo &MRI,
+    const MachineFunction &MF) const {
+  assert(I.getOpcode() == TargetOpcode::G_BRJT);
+  assert(I.getOperand(1).isJTI() &&
+         "Expected operand 1 of G_BRJT to be a jump table index");
+
+  // G_BRJT jumps to the jump table at the specified index. The first register
+  // is a pointer to the beginning of the jump table while the third register
+  // is a scalar offset inside the jump table.
+  // The second operand is a jump table index operand. It is present since
+  // some targets can use it for easier optimization.
+  //
+  // The pointer input for G_BRJT should always be a G_JUMP_TABLE. We want to
+  // combine both of them into a single pseudo instruction. Therefore we need to
+  // check that our assumption is true.
+  //
+  // G_BRJT is lowered to a pseudo instruction which calculates the address of
+  // and jumps to the jump table
+  const Register PtrReg = I.getOperand(0).getReg();
+  const Register OffReg = I.getOperand(2).getReg();
+  const int JTI = I.getOperand(1).getIndex();
+
+  // Check that the PtrReg is coming from a G_JUMP_TABLE instruction
+  MachineInstr *PtrDef = MRI.getVRegDef(PtrReg);
+  while (PtrDef) {
+    const Register PtrDefReg = PtrDef->getOperand(0).getReg();
+
+    // Make sure that we have only one usage, then continue
+    if (!MRI.hasOneUse(PtrDefReg)) {
+      LLVM_DEBUG(
+          dbgs() << "Pointer input to G_BRJT must have exactly one usage\n");
+      return false;
+    }
+
+    if (PtrDef->getOpcode() == TargetOpcode::G_JUMP_TABLE) {
+      // We should have the same JTI
+      assert((PtrDef->getOperand(1).getIndex()) == JTI &&
+             "Jump table index of G_BRJT and G_JUMP_TABLE do not match?!");
+      break;
+    }
+
+    // Ignore COPYs
+    if (PtrDef->getOpcode() == TargetOpcode::COPY)
+      PtrDef = MRI.getVRegDef(PtrDef->getOperand(1).getReg());
+    else {
+      // No idea what input we have
+      LLVM_DEBUG(dbgs() << "Unknown pointer input to G_BRJT:\n" << *PtrDef);
+      return false;
+    }
+  }
+
+  const LLT PtrTy = MRI.getType(PtrReg);
+  const LLT OffTy = MRI.getType(OffReg);
+
+  const std::string OpcString = "G_BRJT";
+  if (!checkType(LLT::pointer(0, 32), PtrTy, OpcString) ||
+      !checkType(LLT::scalar(32), OffTy, OpcString))
+    return false;
+
+  // Check register bank
+  const RegisterBank &PtrRB = *RBI.getRegBank(PtrReg, MRI, TRI);
+  const RegisterBank &OffRB = *RBI.getRegBank(OffReg, MRI, TRI);
+
+  if (PtrRB.getID() != TriCore::AddrRegBankID ||
+      OffRB.getID() != TriCore::DataRegBankID) {
+    LLVM_DEBUG(dbgs() << "Unexpected regbank for G_BRJT. PtrRB: " << PtrRB
+                      << ", OffRB: " << OffRB << '\n');
+    return false;
+  }
+
+  const bool IsPIC = MF.getTarget().isPositionIndependent();
+  const bool HasJRI = MF.getSubtarget<TriCoreSubtarget>().hasTC18Ops();
+
+  // We need to use a different pseudo if we have PIC and the JRI instruction is
+  // not available
+  const unsigned Opcode =
+      IsPIC && !HasJRI ? TriCore::JIJumpTableTC16XPIC : TriCore::JIJumpTable;
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Scratch registers
+  const Register PtrOffReg =
+      MRI.createVirtualRegister(&TriCore::AddrRegsRegClass);
+
+  // Emit JIJumpTable pseudo, which is later lowered to ADDSC.A + JI
+  const auto JiMI = MIRBuilder.buildInstr(Opcode).addDef(PtrOffReg);
+
+  // We need a second def register if JIJumpTableTC16XPIC is used
+  if (Opcode == TriCore::JIJumpTableTC16XPIC) {
+    const Register ScratchReg =
+        MRI.createVirtualRegister(&TriCore::AddrRegsRegClass);
+    JiMI.addDef(ScratchReg);
+  }
+
+  // Add the index and the jump table operand
+  JiMI.addUse(OffReg)
+      .addJumpTableIndex(JTI, TriCoreII::MO_HI)
+      .addJumpTableIndex(JTI, TriCoreII::MO_LO);
+
+  constrainSelectedInstRegOperands(*JiMI, TII, TRI, RBI);
+
+  I.removeFromParent();
   return true;
 }
 

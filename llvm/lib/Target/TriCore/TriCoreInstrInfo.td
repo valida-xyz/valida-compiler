@@ -50,6 +50,24 @@ def ADJCALLSTACKDOWN : PseudoInst<(outs), (ins i32imm:$amt1, i32imm:$amt2)>;
 def ADJCALLSTACKUP : PseudoInst<(outs), (ins i32imm:$amt1, i32imm:$amt2)>;
 } // Defs = [A10], Uses = [A10], hasSideEffects = 1, isCodeGenOnly = 1
 
+// Jump to branch table
+// This instruction is emitted during instruction selection to jump to the jump
+// table. This pseudo instruction is needed for the jump table placement pass
+// and is later lowered to ADDSCA_aadc + JI.
+let isCodeGenOnly = 1, isBranch = 1, isTerminator = 1, isBarrier = 1,
+    isIndirectBranch = 1 in {
+
+let Size = 16 in
+def JIJumpTable
+    : PseudoInst<(outs AddrRegs:$dst),
+                 (ins DataRegs:$idx, i32imm:$hi, i32imm:$lo)>;
+
+let Size = 44 in
+def JIJumpTableTC16XPIC
+    : PseudoInst<(outs AddrRegs:$dst, AddrRegs:$scratch),
+                 (ins DataRegs:$idx, i32imm:$hi, i32imm:$lo)>;
+}
+
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//
