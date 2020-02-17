@@ -107,6 +107,11 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({s16, s32, s64})
       .clampScalar(0, s16, s64);
 
+  // Jump table calculation
+
+  // G_JUMP_TABLE is only legal for pointers
+  getActionDefinitionsBuilder(G_JUMP_TABLE).legalFor({p0});
+
   // Stack allocation
 
   // G_DYN_STACKALLOC should be lowered to a stack pointer subtraction
@@ -432,6 +437,12 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // G_BRINDIRECT is valid for p0 types.
   getActionDefinitionsBuilder(G_BRINDIRECT).legalFor({p0});
+
+  // G_BRJT requires a pointer type destination, a jump table index immediate
+  // and a s32 entry
+  getActionDefinitionsBuilder(G_BRJT).legalIf([=](const LegalityQuery &Query) {
+    return Query.Types[0] == p0 && Query.Types[1] == s32;
+  });
 
   // Variadic Arguments
 
