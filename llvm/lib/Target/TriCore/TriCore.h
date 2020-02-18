@@ -21,7 +21,12 @@ namespace llvm {
 class TriCoreRegisterBankInfo;
 class TriCoreSubtarget;
 class TriCoreTargetMachine;
+class FunctionPass;
 class InstructionSelector;
+
+FunctionPass *createTriCoreJumpTablePass();
+
+void initializeTriCoreJumpTablesPass(PassRegistry &);
 
 InstructionSelector *
 createTriCoreInstructionSelector(const TriCoreTargetMachine &,

@@ -68,6 +68,14 @@ def JIJumpTableTC16XPIC
                  (ins DataRegs:$idx, i32imm:$hi, i32imm:$lo)>;
 }
 
+// Jump table placement marker
+// This instruction is emitted during the jump table placement pass to mark
+// where the jump table referenced by this instruction should be inserted. The
+// second operand gives the size of the jump table in bytes and also gives the
+// size of this pseudo instruction.
+let isCodeGenOnly = 1 in
+def JUMPTABLE_INSTS : PseudoInst<(outs), (ins i32imm:$jti, i32imm:$size)>;
+
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//

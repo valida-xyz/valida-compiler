@@ -22,6 +22,7 @@ add_llvm_target(TriCoreCodeGen
   TriCoreInstrInfo.cpp
   TriCoreInstructionSelector.cpp
   TriCoreISelLowering.cpp
+  TriCoreJumpTablePass.cpp
   TriCoreLegalizerInfo.cpp
   TriCoreMCInstLower.cpp
   TriCoreRegisterBankInfo.cpp
