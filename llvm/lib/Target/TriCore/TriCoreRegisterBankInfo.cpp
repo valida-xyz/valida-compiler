@@ -315,14 +315,11 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     // cross-bank. As a default we use the less costly same-bank variant.
     // The RegBank of the src register is preferred to try to avoid a redundant
     // cross-bank copy
-    assert(NumOperands == 2 &&
-           "Expected G_INTTOPTR/G_PTRTOINT to have 2 operands");
     OpRegBankIdx[0] = OpRegBankIdx[1];
     break;
   }
   case TargetOpcode::G_PTR_ADD: {
     // G_PTR_ADD operands must all be one the same regbank
-    assert(NumOperands == 3 && "Expected G_PTR_ADD to have 3 operands.");
     OpRegBankIdx = {PMI_FirstAddrReg, PMI_FirstAddrReg, PMI_FirstAddrReg};
     break;
   }
@@ -350,7 +347,6 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     break;
   }
   case TargetOpcode::G_SELECT: {
-    assert(NumOperands == 4 && "Expected G_SELECT to have 3 operands");
     // TriCore only supports the SEL instruction on data registers, hence all
     // operands must reside on the DataRegBank
     OpRegBankIdx = {PMI_FirstDataReg, PMI_FirstDataReg, PMI_FirstDataReg,
@@ -358,7 +354,6 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     break;
   }
   case TargetOpcode::G_INSERT: {
-    assert(NumOperands == 4 && "Expected G_INSERT to have 4 operands");
     // TriCore only supports INSERT on data registers, hence all
     // operands must reside on the DataRegBank
     OpRegBankIdx = {PMI_FirstDataReg, PMI_FirstDataReg, PMI_FirstDataReg};
