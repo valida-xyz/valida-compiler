@@ -1,0 +1,134 @@
+# RUN: llc -O0 -mtriple=tricore -mattr=-tc18 -global-isel -start-after=tricore-jump-tables --relocation-model=pic -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
+
+# CHECK-LABEL:   .text
+# CHECK:         .file  "lower-jump-table-pic-tc16x.mir"
+# CHECK:         .globl  jt_test                # -- Begin function jt_test
+# CHECK:         .type  jt_test,@function
+# CHECK-LABEL: jt_test:                         # @jt_test
+# CHECK:         .cfi_startproc
+# CHECK:       # %bb.0:                         # %entry
+# CHECK:         mov.aa  %a14, %a10             # encoding: [0x01,0xa0,0x00,0xe0]
+# CHECK:         mov.aa  %a2, %a11              # encoding: [0x01,0xb0,0x00,0x20]
+# CHECK:         jl  .LPICOFF                   # encoding: [0x5d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LPICOFF, kind: fixup_24rel
+# CHECK:       .LPICOFF:
+# CHECK:         movh.a  %a15, hi:.LPICOFF      # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# CHECK:                                        #   fixup A - offset: 0, value: hi:.LPICOFF, kind: fixup_hi
+# CHECK:         lea  %a15, [%a15], lo:.LPICOFF # encoding: [0xd9,0xff,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: lo:.LPICOFF, kind: fixup_lo2
+# CHECK:         sub.a  %a11, %a11, %a15        # encoding: [0x01,0xfb,0x20,0xb0]
+# CHECK:         movh.a  %a15, hi:.LJTI0_0      # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# CHECK:                                        #   fixup A - offset: 0, value: hi:.LJTI0_0, kind: fixup_hi
+# CHECK:         lea  %a15, [%a15], lo:.LJTI0_0 # encoding: [0xd9,0xff,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: lo:.LJTI0_0, kind: fixup_lo2
+# CHECK:         add.a  %a15, %a15, %a11        # encoding: [0x01,0xbf,0x10,0xf0]
+# CHECK:         mov.aa  %a11, %a2              # encoding: [0x01,0x20,0x00,0xb0]
+# CHECK:         addsc.a  %a15, %a15, %d4, 2    # encoding: [0x01,0xf4,0x02,0xf6]
+# CHECK:         ji  %a15                       # encoding: [0x2d,0x0f,0x30,0x00]
+# CHECK:       # %bb.1:
+# CHECK:         .p2align  2
+# CHECK:       .LJTI0_0:
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_3                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_3                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_3                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_3                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_3                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_4                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_4                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# CHECK:         .code32
+# CHECK-NEXT:    j  .LBB0_4                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# CHECK:       # %bb.2:                         # %entry
+# CHECK:         j  .LBB0_5                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# CHECK:       # %bb.3:                         # %sw.bb
+# CHECK:         j  .LBB0_5                     # encoding: [0x1d,A,A,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# CHECK:       .LBB0_4:                         # %sw.bb1
+# CHECK:       .LBB0_5:                         # %return
+# CHECK:         ret                            # encoding: [0x0d,0x00,0x80,0x01]
+# CHECK-LABEL: .Lfunc_end0:
+# CHECK:         .size  jt_test, .Lfunc_end0-jt_test
+# CHECK:         .cfi_endproc
+# CHECK:                                        # -- End function
+# CHECK:         .section  ".note.GNU-stack","",@progbits
+
+--- |
+  define i32 @jt_test(i32 %x) {
+  entry:
+    switch i32 %x, label %return [
+      i32 0, label %sw.bb
+      i32 1, label %sw.bb
+      i32 2, label %sw.bb
+      i32 3, label %sw.bb
+      i32 4, label %sw.bb
+      i32 5, label %sw.bb1
+      i32 6, label %sw.bb1
+      i32 7, label %sw.bb1
+    ]
+
+  sw.bb:                                            ; preds = %entry, %entry, %entry, %entry, %entry
+    %add = add nsw i32 %x, 42
+    br label %return
+
+  sw.bb1:                                           ; preds = %entry, %entry, %entry
+    %mul = mul nsw i32 %x, 3
+    br label %return
+
+  return:                                           ; preds = %sw.bb1, %sw.bb, %entry
+    %retval.0 = phi i32 [ %mul, %sw.bb1 ], [ %add, %sw.bb ], [ 0, %entry ]
+    ret i32 %retval.0
+  }
+
+...
+---
+name:            jt_test
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+jumpTable:
+  kind:            inline
+  entries:
+    - id:              0
+      blocks:          [ '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.3',
+                         '%bb.3', '%bb.3' ]
+body:             |
+  bb.0.entry:
+    liveins: $d4
+    $a14 = frame-setup MOVAA_aa $a10
+    $a15, $a2 = JIJumpTableTC16XPIC killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+
+  bb.5:
+    successors:
+    JUMPTABLE_INSTS %jump-table.0, 32
+
+  bb.1.entry:
+    successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
+    J %bb.4
+  bb.2.sw.bb:
+
+    successors: %bb.4(0x80000000)
+    J %bb.4
+  bb.3.sw.bb1:
+
+    successors: %bb.4(0x80000000)
+
+  bb.4.return:
+    RET implicit $a11
+
+...

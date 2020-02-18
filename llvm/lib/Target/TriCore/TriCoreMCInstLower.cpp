@@ -103,6 +103,9 @@ bool TriCoreMCInstLower::LowerOperand(const MachineOperand &MO,
     MCOp = MCOperand::createExpr(
         MCSymbolRefExpr::create(MO.getMBB()->getSymbol(), Ctx));
     break;
+  case MachineOperand::MO_JumpTableIndex:
+    MCOp = LowerSymbolOperand(MO, Printer.GetJTISymbol(MO.getIndex()));
+    break;
   }
 
   return true;

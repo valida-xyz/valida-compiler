@@ -1,0 +1,182 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s --check-prefix=STATIC
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables --relocation-model=pic -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s --check-prefix=PIC
+
+# STATIC-LABEL:     .text
+# STATIC:           .file    "lower-jump-table.mir"
+# STATIC:           .globl    jt_test                # -- Begin function jt_test
+# STATIC:           .type    jt_test,@function
+# STATIC-LABEL: jt_test:                             # @jt_test
+# STATIC:           .cfi_startproc
+# STATIC:       # %bb.0:                             # %entry
+# STATIC:           mov.aa    %a14, %a10             # encoding: [0x01,0xa0,0x00,0xe0]
+# STATIC:           movh.a    %a15, hi:.LJTI0_0      # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# STATIC:                                            #   fixup A - offset: 0, value: hi:.LJTI0_0, kind: fixup_hi
+# STATIC:           lea    %a15, [%a15], lo:.LJTI0_0 # encoding: [0xd9,0xff,A,A]
+# STATIC:                                            #   fixup A - offset: 0, value: lo:.LJTI0_0, kind: fixup_lo2
+# STATIC:           addsc.a    %a15, %a15, %d4, 2    # encoding: [0x01,0xf4,0x02,0xf6]
+# STATIC:           ji    %a15                       # encoding: [0x2d,0x0f,0x30,0x00]
+# STATIC:       # %bb.1:
+# STATIC:           .p2align    2
+# STATIC-NEXT:  .LJTI0_0:
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_3                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_3                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_3                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_3                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_3                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_4                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_4                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# STATIC:           .code32
+# STATIC-NEXT:      j    .LBB0_4                     # encoding: [0x1d,A,A,A]
+# STATIC-NEXT:                                       #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# STATIC:       # %bb.2:                             # %entry
+# STATIC:           j    .LBB0_5                     # encoding: [0x1d,A,A,A]
+# STATIC:                                            #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# STATIC:       # %bb.3:                             # %sw.bb
+# STATIC:           j    .LBB0_5                     # encoding: [0x1d,A,A,A]
+# STATIC:                                            #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# STATIC:       .LBB0_4:                             # %sw.bb1
+# STATIC:       .LBB0_5:                             # %return
+# STATIC:           ret                              # encoding: [0x0d,0x00,0x80,0x01]
+# STATIC-LABEL: .Lfunc_end0:
+# STATIC:           .size    jt_test, .Lfunc_end0-jt_test
+# STATIC:           .cfi_endproc
+# STATIC:                                            # -- End function
+# STATIC:           .section    ".note.GNU-stack","",@progbits
+
+
+# PIC-LABEL:     .text
+# PIC:           .file    "lower-jump-table.mir"
+# PIC:           .globl    jt_test                         # -- Begin function jt_test
+# PIC:           .type    jt_test,@function
+# PIC-LABEL: jt_test:                                      # @jt_test
+# PIC:           .cfi_startproc
+# PIC:       # %bb.0:                                      # %entry
+# PIC:           mov.aa    %a14, %a10                      # encoding: [0x01,0xa0,0x00,0xe0]
+# PIC:           movh.a    %a15, hi:.LJTI0_0-.LPICOFF      # encoding: [0x91,0bAAAA0000,A,0b1111AAAA]
+# PIC:                                                     #   fixup A - offset: 0, value: hi:.LJTI0_0-.LPICOFF, kind: fixup_hi
+# PIC:           lea    %a15, [%a15], lo:.LJTI0_0-.LPICOFF # encoding: [0xd9,0xff,A,A]
+# PIC:                                                     #   fixup A - offset: 0, value: lo:.LJTI0_0-.LPICOFF, kind: fixup_lo2
+# PIC:           addsc.a    %a15, %a15, %d4, 2             # encoding: [0x01,0xf4,0x02,0xf6]
+# PIC:       .LPICOFF:
+# PIC:           jri    %a15                               # encoding: [0x2d,0x0f,0x30,0x01]
+# PIC:       # %bb.1:
+# PIC:           .p2align    2
+# PIC:       .LJTI0_0:
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_3                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_3                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_3                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_3                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_3                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_3, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_4                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_4                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# PIC:           .code32
+# PIC-NEXT:      j    .LBB0_4                              # encoding: [0x1d,A,A,A]
+# PIC-NEXT:                                                #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
+# PIC:       # %bb.2:                                      # %entry
+# PIC:           j    .LBB0_5                              # encoding: [0x1d,A,A,A]
+# PIC:                                                     #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# PIC:       # %bb.3:                                      # %sw.bb
+# PIC:           j    .LBB0_5                              # encoding: [0x1d,A,A,A]
+# PIC:                                                     #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# PIC:       .LBB0_4:                                      # %sw.bb1
+# PIC:       .LBB0_5:                                      # %return
+# PIC:           ret                                       # encoding: [0x0d,0x00,0x80,0x01]
+# PIC-LABEL: .Lfunc_end0:
+# PIC:           .size    jt_test, .Lfunc_end0-jt_test
+# PIC:           .cfi_endproc
+# PIC:                                                     # -- End function
+# PIC:           .section    ".note.GNU-stack","",@progbits
+
+--- |
+  define i32 @jt_test(i32 %x) {
+  entry:
+    switch i32 %x, label %return [
+      i32 0, label %sw.bb
+      i32 1, label %sw.bb
+      i32 2, label %sw.bb
+      i32 3, label %sw.bb
+      i32 4, label %sw.bb
+      i32 5, label %sw.bb1
+      i32 6, label %sw.bb1
+      i32 7, label %sw.bb1
+    ]
+
+  sw.bb:                                            ; preds = %entry, %entry, %entry, %entry, %entry
+    %add = add nsw i32 %x, 42
+    br label %return
+
+  sw.bb1:                                           ; preds = %entry, %entry, %entry
+    %mul = mul nsw i32 %x, 3
+    br label %return
+
+  return:                                           ; preds = %sw.bb1, %sw.bb, %entry
+    %retval.0 = phi i32 [ %mul, %sw.bb1 ], [ %add, %sw.bb ], [ 0, %entry ]
+    ret i32 %retval.0
+  }
+
+...
+---
+name:            jt_test
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+jumpTable:
+  kind:            inline
+  entries:
+    - id:              0
+      blocks:          [ '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.3',
+                         '%bb.3', '%bb.3' ]
+body:             |
+  bb.0.entry:
+    liveins: $d4
+    $a14 = frame-setup MOVAA_aa $a10
+    $a15 = JIJumpTable killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+
+  bb.5:
+    successors:
+    JUMPTABLE_INSTS %jump-table.0, 32
+
+  bb.1.entry:
+    successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
+    J %bb.4
+  bb.2.sw.bb:
+
+    successors: %bb.4(0x80000000)
+    J %bb.4
+  bb.3.sw.bb1:
+
+    successors: %bb.4(0x80000000)
+
+  bb.4.return:
+    RET implicit $a11
+
+...
