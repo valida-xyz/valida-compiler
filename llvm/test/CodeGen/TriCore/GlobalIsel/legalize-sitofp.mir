@@ -120,3 +120,30 @@ body:             |
     %2:_(s64) = G_SITOFP %1
     $e4 = COPY %2
 ...
+
+---
+name:            sitofp_s32_s64
+body:             |
+  bb.0:
+    liveins: $e4
+
+    ; TC4XX-LABEL: name: sitofp_s32_s64
+    ; TC4XX: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; TC4XX: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; TC4XX: $e4 = COPY [[COPY]](s64)
+    ; TC4XX: CALL &__floatdisf, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit-def $d2
+    ; TC4XX: [[COPY1:%[0-9]+]]:_(s32) = COPY $d2
+    ; TC4XX: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; TC4XX: $d2 = COPY [[COPY1]](s32)
+    ; TC3XX-LABEL: name: sitofp_s32_s64
+    ; TC3XX: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; TC3XX: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; TC3XX: $e4 = COPY [[COPY]](s64)
+    ; TC3XX: CALL &__floatdisf, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit-def $d2
+    ; TC3XX: [[COPY1:%[0-9]+]]:_(s32) = COPY $d2
+    ; TC3XX: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; TC3XX: $d2 = COPY [[COPY1]](s32)
+    %0:_(s64) = COPY $e4
+    %1:_(s32) = G_SITOFP %0
+    $d2 = COPY %1
+...

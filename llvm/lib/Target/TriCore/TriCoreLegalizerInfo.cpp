@@ -247,28 +247,33 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Floating Point Unary Ops
 
-  // G_FPTOSI and G_FPTOUI are legal for s32 and s64 combinations, except for
-  // {s64, s32}
+  // G_FPTOSI and G_FPTOUI are always legal for f32->s32 conversions.
+  // f32->s64 always requires a libcall, the other combinations depend on the
+  // enabled subtarget feature
   auto &FPConvActions = getActionDefinitionsBuilder({G_FPTOSI, G_FPTOUI})
                             .legalFor({{s32, s32}})
                             .clampScalar(0, s32, s64)
                             .widenScalarToNextPow2(0)
                             .clampScalar(1, s32, s64)
-                            .widenScalarToNextPow2(1);
+                            .widenScalarToNextPow2(1)
+                            .libcallFor({{s64, s32}});
 
   if (ST.hasTC18Ops())
     FPConvActions.legalFor({{s32, s64}, {s64, s64}});
   else
     FPConvActions.libcallFor({{s32, s64}, {s64, s64}});
 
-  // G_SITOFP and G_UITOFP are legal for s32 and s64 combinations, except for
-  // {s32, s64}
+  // G_SITOFP and G_UITOFP are always legal for s32->f32 conversions.
+  // s64->f32 always requires a libcall, the other combinations depend on the
+  // enabled subtarget feature
   auto &IntToFPConvActions = getActionDefinitionsBuilder({G_SITOFP, G_UITOFP})
                                  .legalFor({{s32, s32}})
                                  .clampScalar(0, s32, s64)
                                  .widenScalarToNextPow2(0)
                                  .clampScalar(1, s32, s64)
-                                 .widenScalarToNextPow2(1);
+                                 .widenScalarToNextPow2(1)
+                                 .libcallFor({{s32, s64}});
+
 
   if (ST.hasTC18Ops())
     IntToFPConvActions.legalFor({{s64, s32}, {s64, s64}});

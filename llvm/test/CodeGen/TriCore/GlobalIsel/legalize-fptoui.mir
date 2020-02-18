@@ -116,3 +116,30 @@ body:             |
     %2:_(s64) = G_ANYEXT %1
     $e4 = COPY %2
 ...
+
+---
+name:            fptoui_s64_s32
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; TC18OPS-LABEL: name: fptoui_s64_s32
+    ; TC18OPS: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; TC18OPS: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; TC18OPS: $d4 = COPY [[COPY]](s32)
+    ; TC18OPS: CALL &__fixunssfdi, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4, implicit-def $e2
+    ; TC18OPS: [[COPY1:%[0-9]+]]:_(s64) = COPY $e2
+    ; TC18OPS: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; TC18OPS: $e4 = COPY [[COPY1]](s64)
+    ; NOTC18OPS-LABEL: name: fptoui_s64_s32
+    ; NOTC18OPS: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; NOTC18OPS: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; NOTC18OPS: $d4 = COPY [[COPY]](s32)
+    ; NOTC18OPS: CALL &__fixunssfdi, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4, implicit-def $e2
+    ; NOTC18OPS: [[COPY1:%[0-9]+]]:_(s64) = COPY $e2
+    ; NOTC18OPS: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; NOTC18OPS: $e4 = COPY [[COPY1]](s64)
+    %0:_(s32) = COPY $d4
+    %1:_(s64) = G_FPTOUI %0
+    $e4 = COPY %1
+...
