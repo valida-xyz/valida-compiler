@@ -16,6 +16,7 @@
 #include "TriCoreRegisterInfo.h"
 #include "TriCoreSubtarget.h"
 #include "TriCoreTargetMachine.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/ValueTypes.h"
@@ -45,4 +46,8 @@ TriCoreTargetLowering::TriCoreTargetLowering(const TargetMachine &TM,
 bool TriCoreTargetLowering::functionArgumentNeedsConsecutiveRegisters(
     Type *Ty, CallingConv::ID CallConv, bool isVarArg) const {
   return Ty->isArrayTy();
+}
+
+unsigned int TriCoreTargetLowering::getJumpTableEncoding() const {
+  return MachineJumpTableInfo::EK_Inline;
 }

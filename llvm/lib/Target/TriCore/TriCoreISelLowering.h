@@ -29,6 +29,7 @@ public:
   bool functionArgumentNeedsConsecutiveRegisters(Type *Ty,
                                                  CallingConv::ID CallConv,
                                                  bool isVarArg) const override;
+  unsigned int getJumpTableEncoding() const override;
 };
 } // namespace llvm
 
