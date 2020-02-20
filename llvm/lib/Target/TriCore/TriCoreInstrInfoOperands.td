@@ -156,7 +156,7 @@ def simm9 : GenericSignedImmediate<9, i32>,
 
 // A 9-bit unsigned immediate.
 def uimm9 : GenericUnsignedImmediate<9, i32>,
-            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 511; }]>;
+            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 512; }]>;
 
 // A 16-bit signed immediate of BOL format
 // It is defined earlier than simm10 to enforce generating BOL versions
@@ -173,8 +173,8 @@ def simm10 : GenericSignedImmediate<10, i32>,
              ImmLeaf<i32, [{ return Imm >= -512 && Imm < 512; }]>;
 
 // A 16-bit signed immediate of RLC format
-def simm16_RLC : Operand<i16>,
-                 ImmLeaf<i16, [{ return Imm >= -32768 && Imm < 32768; }]> {
+def simm16_RLC : Operand<i32>,
+                 ImmLeaf<i32, [{ return Imm >= -32768 && Imm < 32768; }]> {
   let ParserMatchClass = GenericImmOperand<"SImm16_RLC">;
   let DecoderMethod = "decodeSignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";

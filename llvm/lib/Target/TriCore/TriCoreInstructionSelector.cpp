@@ -46,6 +46,10 @@ private:
   const TriCoreRegisterInfo &TRI;
   const TriCoreRegisterBankInfo &RBI;
 
+  // Global ISel renderer functions for TableGen //
+  void renderNegImm(MachineInstrBuilder &MIB, const MachineInstr &MI,
+                    int) const;
+
 #define GET_GLOBALISEL_PREDICATES_DECL
 #include "TriCoreGenGlobalISel.inc"
 #undef GET_GLOBALISEL_PREDICATES_DECL
@@ -2128,6 +2132,17 @@ bool TriCoreInstructionSelector::selectVaStart(MachineInstr &I,
 
   I.eraseFromParent();
   return true;
+}
+
+void TriCoreInstructionSelector::renderNegImm(MachineInstrBuilder &MIB,
+                                              const MachineInstr &MI,
+                                              int OpIdx) const {
+  const MachineRegisterInfo &MRI = MI.getParent()->getParent()->getRegInfo();
+  assert(MI.getOpcode() == TargetOpcode::G_CONSTANT && OpIdx == -1 &&
+         "Expected G_CONSTANT");
+  Optional<int64_t> CstVal = getConstantVRegVal(MI.getOperand(0).getReg(), MRI);
+  assert(CstVal && "Expected constant value");
+  MIB.addImm(-CstVal.getValue());
 }
 
 namespace llvm {

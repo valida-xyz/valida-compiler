@@ -29,6 +29,106 @@ body:             |
 ...
 
 ---
+name:            add_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: add_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -32768, implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADDI_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32768
+    %2(s32) = G_ADD %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            add_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: add_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], 32767, implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADDI_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32767
+    %2(s32) = G_ADD %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            add_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: add_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[ADD_ddd:%[0-9]+]]:dataregs = ADD_ddd [[COPY]], [[ADDIH_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADD_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32769
+    %2(s32) = G_ADD %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            add_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: add_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32768
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[ADD_ddd:%[0-9]+]]:dataregs = ADD_ddd [[COPY]], [[ADDIH_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADD_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32768
+    %2(s32) = G_ADD %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
 # Same as add_s32, for G_SUB operations.
 name:            sub_s32
 legalized:       true
@@ -50,6 +150,106 @@ body:             |
     ; CHECK: $d4 = COPY [[SUB_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
+    %2(s32) = G_SUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            sub_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: sub_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], 32767, implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADDI_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32767
+    %2(s32) = G_SUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            sub_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: sub_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -32768, implicit-def $psw
+    ; CHECK: $d4 = COPY [[ADDI_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32768
+    %2(s32) = G_SUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            sub_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: sub_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32768
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[SUB_ddd:%[0-9]+]]:dataregs = SUB_ddd [[COPY]], [[ADDIH_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[SUB_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32768
+    %2(s32) = G_SUB %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            sub_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: sub_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32769
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[SUB_ddd:%[0-9]+]]:dataregs = SUB_ddd [[COPY]], [[ADDIH_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[SUB_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32769
     %2(s32) = G_SUB %0, %1
     $d4 = COPY %2(s32)
 ...
@@ -81,6 +281,106 @@ body:             |
 ...
 
 ---
+name:            and_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: and_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[AND_ddc:%[0-9]+]]:dataregs = AND_ddc [[COPY]], 0
+    ; CHECK: $d4 = COPY [[AND_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 0
+    %2(s32) = G_AND %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            and_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: and_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[AND_ddc:%[0-9]+]]:dataregs = AND_ddc [[COPY]], 511
+    ; CHECK: $d4 = COPY [[AND_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 511
+    %2(s32) = G_AND %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            and_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: and_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[AND_ddd:%[0-9]+]]:dataregs = AND_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[AND_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -1
+    %2(s32) = G_AND %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            and_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: and_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 512
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[AND_ddd:%[0-9]+]]:dataregs = AND_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[AND_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 512
+    %2(s32) = G_AND %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
 # Same as add_s32, for G_OR operations.
 name:            or
 legalized:       true
@@ -107,6 +407,106 @@ body:             |
 ...
 
 ---
+name:            or_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: or_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[OR_ddc:%[0-9]+]]:dataregs = OR_ddc [[COPY]], 0
+    ; CHECK: $d4 = COPY [[OR_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 0
+    %2(s32) = G_OR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            or_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: or_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[OR_ddc:%[0-9]+]]:dataregs = OR_ddc [[COPY]], 511
+    ; CHECK: $d4 = COPY [[OR_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 511
+    %2(s32) = G_OR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            or_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: or_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[OR_ddd:%[0-9]+]]:dataregs = OR_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[OR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -1
+    %2(s32) = G_OR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            or_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: or_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 512
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[OR_ddd:%[0-9]+]]:dataregs = OR_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[OR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 512
+    %2(s32) = G_OR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
 # Same as add_s32, for G_XOR operations.
 name:            xor
 legalized:       true
@@ -128,6 +528,106 @@ body:             |
     ; CHECK: $d4 = COPY [[XOR_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
+    %2(s32) = G_XOR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            xor_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: xor_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[XOR_ddc:%[0-9]+]]:dataregs = XOR_ddc [[COPY]], 0
+    ; CHECK: $d4 = COPY [[XOR_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 0
+    %2(s32) = G_XOR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            xor_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: xor_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[XOR_ddc:%[0-9]+]]:dataregs = XOR_ddc [[COPY]], 511
+    ; CHECK: $d4 = COPY [[XOR_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 511
+    %2(s32) = G_XOR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            xor_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: xor_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65535
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[XOR_ddd:%[0-9]+]]:dataregs = XOR_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[XOR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -1
+    %2(s32) = G_XOR %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            xor_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: xor_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 512
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[XOR_ddd:%[0-9]+]]:dataregs = XOR_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[XOR_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 512
     %2(s32) = G_XOR %0, %1
     $d4 = COPY %2(s32)
 ...
@@ -207,6 +707,80 @@ body:             |
     %2:dataregbank(s32) = G_MUL %0, %1
     $d2 = COPY %2(s32)
     RET implicit $a11, implicit $d2
+...
+
+---
+name:            mul_imm_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mul_imm_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MUL_ddc:%[0-9]+]]:dataregs = MUL_ddc [[COPY]], 255, implicit-def $psw
+    ; CHECK: $d4 = COPY [[MUL_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 255
+    %2(s32) = G_MUL %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            mul_imm_neg_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mul_imm_neg_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MUL_ddc:%[0-9]+]]:dataregs = MUL_ddc [[COPY]], -256, implicit-def $psw
+    ; CHECK: $d4 = COPY [[MUL_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -256
+    %2(s32) = G_MUL %0, %1
+    $d4 = COPY %2(s32)
+...
+
+---
+name:            mul_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: mul_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 256
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[MUL_ddd:%[0-9]+]]:dataregs = MUL_ddd [[COPY]], [[ADDIH_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[MUL_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 256
+    %2(s32) = G_MUL %0, %1
+    $d4 = COPY %2(s32)
 ...
 
 ---

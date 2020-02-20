@@ -19,6 +19,10 @@ class SimpleBinOpPat<SDPatternOperator op, Instruction INSTR,
                      RegisterClass RC = DataRegs>
     : Pat<(op RC:$s1, RC:$s2), (INSTR RC:$s1, RC:$s2)>;
 
+class SimpleBinOpImmPat<SDPatternOperator op, Instruction INSTR,
+                          RegisterClass RC, ImmLeaf immTy>
+    : Pat<(op RC:$s1, immTy:$imm), (INSTR RC:$s1, immTy:$imm)>;
+
 // Get 32-bit subregister
 class subreg_32b<ValueType ty>
     : OutPatFrag<(ops node:$R, node:$SubIdx),
@@ -79,11 +83,25 @@ def : Pat<(i32 (trunc ExtAddrRegs:$src)), (trunc_i32_addr ExtAddrRegs:$src)>;
 // 2.1.2 Addition and Subtraction
 
 def : SimpleBinOpPat<add, ADD_ddd>;
+def : SimpleBinOpImmPat<add, ADDI_ddc, DataRegs, simm16_RLC>;
+
 def : SimpleBinOpPat<sub, SUB_ddd>;
+
+// Subtracting a number is the same as adding the negated number
+// However we have to be careful at the boundaries.
+def neg_simm16 : ImmLeaf<i32, [{ return Imm >= -32767 && Imm <= 32768; }]>;
+def NEG_IMM : SDNodeXForm<imm, [{}]>;
+def gi_NEG_LO16 : GICustomOperandRenderer<"renderNegImm">,
+                  GISDNodeXFormEquiv<NEG_IMM>;
+
+def : Pat<(i32 (sub DataRegs:$src, neg_simm16:$imm)),
+                (ADDI_ddc DataRegs:$src, (NEG_IMM $imm))>;
+
 
 // 2.1.3 Multiply and Multiply-Add
 
 def : SimpleBinOpPat<mul, MUL_ddd>;
+def : SimpleBinOpImmPat<mul, MUL_ddc, DataRegs, simm9>;
 def : Pat<(i32 (mulhu i32:$src1, i32:$src2)),
     (subreg_32b<i32> (MULU_edd DataRegs:$src1, DataRegs:$src2), dsub1)>;
 
@@ -110,8 +128,13 @@ def : Pat<(i32 (select DataRegs:$cond, DataRegs:$src1, DataRegs:$src2)),
 // 2.1.8 Logical
 
 def : SimpleBinOpPat<and, AND_ddd>;
+def : SimpleBinOpImmPat<and, AND_ddc, DataRegs, uimm9>;
+
 def : SimpleBinOpPat<or,  OR_ddd>;
+def : SimpleBinOpImmPat<or, OR_ddc, DataRegs, uimm9>;
+
 def : SimpleBinOpPat<xor, XOR_ddd>;
+def : SimpleBinOpImmPat<xor, XOR_ddc, DataRegs, uimm9>;
 
 // 2.1.9 Count Leading Zeros, Ones and Signs
 
