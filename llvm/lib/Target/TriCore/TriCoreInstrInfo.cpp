@@ -335,3 +335,33 @@ bool TriCoreInstrInfo::doesOffsetFitInOffsetOperand(unsigned Opcode,
   unsigned Bits = getOffsetBits(Opcode);
   return isIntN(Bits, Offset);
 }
+unsigned int
+TriCoreInstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
+  // Meta-instructions emit no code.
+  if (MI.isMetaInstruction())
+    return 0;
+
+  unsigned NumBytes = 0;
+  const MCInstrDesc &Desc = MI.getDesc();
+  switch (Desc.getOpcode()) {
+  default:
+    // Anything not explicitly designated otherwise is a normal 4-byte
+    // instruction
+    NumBytes = 4;
+    break;
+  case TriCore::JIJumpTable:
+    // JIJumpTable expands to four 4-byte instructions
+    NumBytes = 16;
+    break;
+  case TriCore::JIJumpTableTC16XPIC:
+    // JIJumpTableTC16XPIC expands to a total of 11 4-byte instructions
+    NumBytes = 44;
+    break;
+  case TriCore::JUMPTABLE_INSTS:
+    // The size of JUMPTABLE_INSTS is given in operand #1
+    NumBytes = MI.getOperand(1).getImm();
+    break;
+  }
+
+  return NumBytes;
+}

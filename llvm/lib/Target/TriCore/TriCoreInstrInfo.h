@@ -30,6 +30,8 @@ public:
   std::pair<unsigned int, unsigned int>
   decomposeMachineOperandsTargetFlags(unsigned int TF) const override;
 
+  unsigned int getInstSizeInBytes(const MachineInstr &MI) const override;
+
   ArrayRef<std::pair<unsigned int, const char *>>
   getSerializableDirectMachineOperandTargetFlags() const override;
 
