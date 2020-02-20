@@ -34,6 +34,7 @@ class LLVM_LIBRARY_VISIBILITY TriCoreMCInstLower {
 public:
   TriCoreMCInstLower(MCContext &Ctx, AsmPrinter &Printer);
 
+  bool LowerOperand(const MachineOperand &MO, MCOperand &MCOp) const;
   void Lower(const MachineInstr *MI, MCInst &OutMI) const;
 
   MCOperand LowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym) const;

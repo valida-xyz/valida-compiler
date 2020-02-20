@@ -69,39 +69,45 @@ MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   return MCOperand::createExpr(Expr);
 }
 
+bool TriCoreMCInstLower::LowerOperand(const MachineOperand &MO,
+                                      MCOperand &MCOp) const {
+  switch (MO.getType()) {
+  default:
+    report_fatal_error(
+        "LowerTriCoreMachineInstrToMCInst: unknown operand type");
+  case MachineOperand::MO_Register:
+    // Ignore all implicit register operands.
+    if (MO.isImplicit())
+      return false;
+    MCOp = MCOperand::createReg(MO.getReg());
+    break;
+  case MachineOperand::MO_RegisterMask:
+    // Regmasks are like implicit defs.
+    return false;
+  case MachineOperand::MO_Immediate:
+    MCOp = MCOperand::createImm(MO.getImm());
+    break;
+  case MachineOperand::MO_GlobalAddress:
+    MCOp = LowerSymbolOperand(MO, GetGlobalAddressSymbol(MO));
+    break;
+  case MachineOperand::MO_ExternalSymbol:
+    MCOp = LowerSymbolOperand(MO, GetExternalSymbolSymbol(MO));
+    break;
+  case MachineOperand::MO_MachineBasicBlock:
+    MCOp = MCOperand::createExpr(
+        MCSymbolRefExpr::create(MO.getMBB()->getSymbol(), Ctx));
+    break;
+  }
+
+  return true;
+}
+
 void TriCoreMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
 
   for (const MachineOperand &MO : MI->operands()) {
     MCOperand MCOp;
-    switch (MO.getType()) {
-    default:
-      report_fatal_error(
-          "LowerTriCoreMachineInstrToMCInst: unknown operand type");
-    case MachineOperand::MO_Register:
-      // Ignore all implicit register operands.
-      if (MO.isImplicit())
-        continue;
-      MCOp = MCOperand::createReg(MO.getReg());
-      break;
-    case MachineOperand::MO_RegisterMask:
-      // Regmasks are like implicit defs.
-      continue;
-    case MachineOperand::MO_Immediate:
-      MCOp = MCOperand::createImm(MO.getImm());
-      break;
-    case MachineOperand::MO_GlobalAddress:
-      MCOp = LowerSymbolOperand(MO, GetGlobalAddressSymbol(MO));
-      break;
-    case MachineOperand::MO_ExternalSymbol:
-      MCOp = LowerSymbolOperand(MO, GetExternalSymbolSymbol(MO));
-      break;
-    case MachineOperand::MO_MachineBasicBlock:
-      MCOp = MCOperand::createExpr(
-          MCSymbolRefExpr::create(MO.getMBB()->getSymbol(), Ctx));
-      break;
-    }
-
-    OutMI.addOperand(MCOp);
+    if (LowerOperand(MO, MCOp))
+      OutMI.addOperand(MCOp);
   }
 }
