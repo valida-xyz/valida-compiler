@@ -230,6 +230,13 @@ def HVCALL_c        :  RC<0xAD, 0x02, (outs),
                           (ins uimm9:$const9),
                           "hvcall", "\t$const9">;
 
+// JRI
+let d = 0, n = 0, s2 = 0, isBranch = 1, isTerminator = 1, isBarrier = 1,
+    isIndirectBranch = 1 in
+def JRI             :  RR<0x2D, 0x13, (outs),
+                          (ins AddrRegs:$s1), 
+                          "jri", "\t$s1">;
+
 // RFH
 let s1_d = 0, isReturn = 1, Defs = [PSW, PCXI], Uses = [PSW, PCXI] in
 def RFH             :  SYS<0x0D, 0x17, (outs), (ins),
