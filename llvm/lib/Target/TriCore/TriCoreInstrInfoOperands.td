@@ -139,7 +139,8 @@ def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
 def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2>;
 
 // A 6 bit signed immediate encoded in 9 bit
-def simm9_shift : Operand<OtherVT> {
+def simm9_shift : Operand<i32>,
+                  ImmLeaf<i32, [{ return Imm >= -32 && Imm < 32; }]>{
   let ParserMatchClass = GenericImmOperand<"SImm9Shift">;
   let DecoderMethod = "decodeSImm9Shift";
 }

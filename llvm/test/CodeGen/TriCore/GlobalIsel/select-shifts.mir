@@ -26,6 +26,102 @@ body:             |
     $d4 = COPY %2(s32)
 ...
 ---
+name:            shl_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: shl_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SH_ddc:%[0-9]+]]:dataregs = SH_ddc [[COPY]], -32
+    ; CHECK: $d4 = COPY [[SH_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32
+    %2(s32) = G_SHL %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            shl_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: shl_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SH_ddc:%[0-9]+]]:dataregs = SH_ddc [[COPY]], 31
+    ; CHECK: $d4 = COPY [[SH_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 31
+    %2(s32) = G_SHL %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            shl_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: shl_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65503
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[SH_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -33
+    %2(s32) = G_SHL %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            shl_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: shl_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: $d4 = COPY [[SH_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32
+    %2(s32) = G_SHL %0, %1
+    $d4 = COPY %2(s32)
+...
+---
 name:            lshr_s32
 legalized:       true
 regBankSelected: true
@@ -51,6 +147,104 @@ body:             |
     $d4 = COPY %2(s32)
 ...
 ---
+name:            lshr_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: lshr_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SH_ddc:%[0-9]+]]:dataregs = SH_ddc [[COPY]], 31
+    ; CHECK: $d4 = COPY [[SH_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -31
+    %2(s32) = G_LSHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            lshr_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: lshr_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SH_ddc:%[0-9]+]]:dataregs = SH_ddc [[COPY]], -32
+    ; CHECK: $d4 = COPY [[SH_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32
+    %2(s32) = G_LSHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            lshr_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: lshr_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65504
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[RSUB_ddc]]
+    ; CHECK: $d4 = COPY [[SH_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32
+    %2(s32) = G_LSHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            lshr_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: lshr_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 33
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[RSUB_ddc]]
+    ; CHECK: $d4 = COPY [[SH_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 33
+    %2(s32) = G_LSHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
 name:            ashr_s32
 legalized:       true
 regBankSelected: true
@@ -72,6 +266,104 @@ body:             |
     ; CHECK: $d4 = COPY [[SHAS_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
+    %2(s32) = G_ASHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            ashr_imm_min_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: ashr_imm_min_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SHA_ddc:%[0-9]+]]:dataregs = SHA_ddc [[COPY]], 31, implicit-def $psw
+    ; CHECK: $d4 = COPY [[SHA_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -31
+    %2(s32) = G_ASHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            ashr_imm_max_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: ashr_imm_max_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[SHA_ddc:%[0-9]+]]:dataregs = SHA_ddc [[COPY]], -32, implicit-def $psw
+    ; CHECK: $d4 = COPY [[SHA_ddc]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 32
+    %2(s32) = G_ASHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            ashr_imm_too_small_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: ashr_imm_too_small_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65504
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[SHAS_ddd:%[0-9]+]]:dataregs = SHAS_ddd [[COPY]], [[RSUB_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[SHAS_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 -32
+    %2(s32) = G_ASHR %0, %1
+    $d4 = COPY %2(s32)
+...
+---
+name:            ashr_imm_too_big_s32
+legalized:       true
+regBankSelected: true
+
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+
+body:             |
+  bb.0:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: ashr_imm_too_big_s32
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 33
+    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[SHAS_ddd:%[0-9]+]]:dataregs = SHAS_ddd [[COPY]], [[RSUB_ddc]], implicit-def $psw
+    ; CHECK: $d4 = COPY [[SHAS_ddd]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_CONSTANT i32 33
     %2(s32) = G_ASHR %0, %1
     $d4 = COPY %2(s32)
 ...

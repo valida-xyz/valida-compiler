@@ -147,10 +147,19 @@ def : Pat<(i32 (ctpop i32:$src)), (i32 (POPCNTW_dd DataRegs:$src))>;
 // 2.1.10 Shift.
 
 def : SimpleBinOpPat<shl, SH_ddd>;
+def : SimpleBinOpImmPat<shl, SH_ddc, DataRegs, simm9_shift>;
+
 def : Pat<(srl DataRegs:$src, DataRegs:$amt), (SH_ddd DataRegs:$src, 
     (RSUB_ddc DataRegs:$amt, (i32 0)))>;
+
+def neg_simm9 : ImmLeaf<i32, [{ return Imm >= -31 && Imm <= 32; }]>;
+def : Pat<(i32 (srl DataRegs:$src, neg_simm9:$amt)),
+          (SH_ddc DataRegs:$src, (NEG_IMM $amt))>;
+
 def : Pat<(sra DataRegs:$src, DataRegs:$amt), (SHAS_ddd DataRegs:$src, 
     (RSUB_ddc DataRegs:$amt, (i32 0)))>;
+def : Pat<(i32 (sra DataRegs:$src, neg_simm9:$amt)),
+          (SHA_ddc DataRegs:$src, (NEG_IMM $amt))>;
 
 //===----------------------------------------------------------------------===//
 // 2.9 Branch Instructions
