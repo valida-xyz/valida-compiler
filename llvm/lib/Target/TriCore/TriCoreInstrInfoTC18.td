@@ -36,9 +36,9 @@ def CACHEAWVM_ac_pri    :  CACHE_BO_PRI<0x49, 0x1C, "cachea.w.vm">;
 
 // CACHEA.WI.VM
 
-def CACHEAWIV_ac       :  CACHE_BO<0x49, 0x2D, "cachea.wi.vm">;
-def CACHEAWIV_ac_poi   :  CACHE_BO_POI<0x49, 0x0D, "cachea.wi.vm">;
-def CACHEAWIV_ac_pri   :  CACHE_BO_PRI<0x49, 0x1D, "cachea.wi.vm">;
+def CACHEAWIVM_ac       :  CACHE_BO<0x49, 0x2D, "cachea.wi.vm">;
+def CACHEAWIVM_ac_poi   :  CACHE_BO_POI<0x49, 0x0D, "cachea.wi.vm">;
+def CACHEAWIVM_ac_pri   :  CACHE_BO_PRI<0x49, 0x1D, "cachea.wi.vm">;
 
 // CACHEI.I.VM
 
@@ -54,9 +54,9 @@ def CACHEIWVM_ac_pri   :  CACHE_BO_PRI<0x49, 0x1B, "cachei.w.vm">;
 
 // CACHEI.WI.VM
 
-def CACHEIWIV_ac      :  CACHE_BO<0x49, 0x2F, "cachei.wi.vm">;
-def CACHEIWIV_ac_poi  :  CACHE_BO_POI<0x49, 0x0F, "cachei.wi.vm">;
-def CACHEIWIV_ac_pri  :  CACHE_BO_PRI<0x49, 0x1F, "cachei.wi.vm">;
+def CACHEIWIVM_ac      :  CACHE_BO<0x49, 0x2F, "cachei.wi.vm">;
+def CACHEIWIVM_ac_poi  :  CACHE_BO_POI<0x49, 0x0F, "cachei.wi.vm">;
+def CACHEIWIVM_ac_pri  :  CACHE_BO_PRI<0x49, 0x1F, "cachei.wi.vm">;
 
 //===----------------------------------------------------------------------===//
 //  FPU Arithmetic Instructions.
