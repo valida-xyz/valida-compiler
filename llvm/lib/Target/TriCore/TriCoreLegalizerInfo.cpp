@@ -180,6 +180,15 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_UMULH is a legalization artifact which has the correct type already
   getActionDefinitionsBuilder(G_UMULH).legalFor({s32});
 
+  // G_CTLZ is only legal for s32 types
+  getActionDefinitionsBuilder(G_CTLZ)
+      .legalFor({{s32, s32}})
+      .clampScalar(1, s32, s32)
+      .clampScalar(0, s32, s32);
+
+  // G_CTLZ_ZERO_UNDEF produces a defined result, lower it to G_CTLZ
+  getActionDefinitionsBuilder(G_CTLZ_ZERO_UNDEF).lower();
+
   // Shifts
 
   // G_SHL, G_LSHR and G_ASHR always produce the same type as their src type
