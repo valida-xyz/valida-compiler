@@ -15,6 +15,7 @@
 #include "TriCoreCallLowering.h"
 #include "TriCoreCallingConvention.h"
 #include "TriCoreISelLowering.h"
+#include "TriCoreMachineFunctionInfo.h"
 #include "TriCoreSubtarget.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
@@ -343,6 +344,17 @@ bool TriCoreCallLowering::lowerFormalArguments(
   FormalArgHandler Handler(MIRBuilder, MRI, AssignFn);
   if (!handleAssignments(MIRBuilder, SplitArgs, Handler))
     return false;
+
+  if (F.isVarArg()) {
+    TriCoreFunctionInfo *FuncInfo = MF.getInfo<TriCoreFunctionInfo>();
+    // We pass all varargs at 4-byte alignment
+    uint64_t StackOffset = alignTo(Handler.StackUsed, 4);
+
+    auto &MFI = MIRBuilder.getMF().getFrameInfo();
+
+    // save the stack index of the vararg to be able to use at instr selection
+    FuncInfo->setVarArgsFrameIndex(MFI.CreateFixedObject(4, StackOffset, true));
+  }
 
   // Move back to the end of the basic block.
   MIRBuilder.setMBB(MBB);
