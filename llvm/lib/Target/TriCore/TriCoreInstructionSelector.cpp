@@ -298,21 +298,35 @@ static FCmpConstants getFCmpConstants(CmpInst::Predicate Pred) {
   }
 }
 
-static unsigned getLoadStoreOpCode(const unsigned Opc,
+static unsigned getLoadStoreOpCode(const unsigned Opc, const unsigned RegBankID,
                                    const unsigned MemorySizeInBits) {
-  if (Opc == TargetOpcode::G_LOAD) {
-    if (MemorySizeInBits == 32)
-      return TriCore::LDA_aalc;
+  const bool IsStore = Opc == TargetOpcode::G_STORE;
+  const bool IsZextLoad = Opc == TargetOpcode::G_ZEXTLOAD;
 
-    if (MemorySizeInBits == 64)
-      return TriCore::LDDA_pac;
-  } else if (Opc == TargetOpcode::G_STORE) {
-    if (MemorySizeInBits == 32)
-      return TriCore::STA_alca;
+  switch (RegBankID) {
+  case TriCore::DataRegBankID:
+    switch (MemorySizeInBits) {
+    case 8:
+      return IsStore ? TriCore::STB_alcd
+                     : IsZextLoad ? TriCore::LDBU_dalc : TriCore::LDB_dalc;
+    case 16:
+      return IsStore ? TriCore::STH_alcd
+                     : IsZextLoad ? TriCore::LDHU_dalc : TriCore::LDH_dalc;
+    case 32:
+      return IsStore ? TriCore::STW_alcd : TriCore::LDW_dalc;
+    case 64:
+      return IsStore ? TriCore::STD_ace : TriCore::LDD_eac;
+    }
+  case TriCore::AddrRegBankID:
+    switch (MemorySizeInBits) {
+    case 32:
+      return IsStore ? TriCore::STA_alca : TriCore::LDA_aalc;
+    case 64:
+      return IsStore ? TriCore::STDA_acp : TriCore::LDDA_pac;
+    }
   }
 
-  llvm_unreachable("Unknown Opc or Opc/MemSize combination should have been "
-                   "handled by TableGen!");
+  return Opc;
 }
 
 static const TargetRegisterClass *
@@ -447,6 +461,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
   case TargetOpcode::G_MERGE_VALUES:
     return selectMerge(I, MRI);
   case TargetOpcode::G_LOAD:
+  case TargetOpcode::G_SEXTLOAD:
+  case TargetOpcode::G_ZEXTLOAD:
   case TargetOpcode::G_STORE:
     return selectLoadStore(I, MRI);
   case TargetOpcode::G_PTR_ADD:
@@ -1811,30 +1827,20 @@ bool TriCoreInstructionSelector::selectMerge(MachineInstr &I,
 
 bool TriCoreInstructionSelector::selectLoadStore(
     MachineInstr &I, const MachineRegisterInfo &MRI) const {
-  // Make sure that TableGen caught our supported cases
+
   const Register &ValReg = I.getOperand(0).getReg();
   const Register &PtrReg = I.getOperand(1).getReg();
-
   const RegisterBank &DstRB = *RBI.getRegBank(ValReg, MRI, TRI);
 
-  if (DstRB.getID() != TriCore::AddrRegBankID)
-    llvm_unreachable(
-        "G_LOAD/G_STORE on DataRegBank can be handled by TableGen.");
-
-  // Make sure that we have the correct memory size
   auto &MemOp = **I.memoperands_begin();
-  const unsigned MemSizeInBits = MemOp.getSize() * 8;
 
-  const bool IsLoad = I.getOpcode() == TargetOpcode::G_LOAD;
-  const bool IsNot32Bit = MemSizeInBits != 32;
-  const bool IsNot64Bit = MemSizeInBits != 64;
-
-  // G_LOAD needs to be handled for both 32 and 64 bits
-  if ((!IsLoad && IsNot32Bit) || (IsNot32Bit && IsNot64Bit)) {
-    LLVM_DEBUG(dbgs() << "G_LOAD/G_STORE has memory size: " << MemSizeInBits
-                      << "-bit, expected 32-bit load/store or 64-bit load.\n");
+  if (MemOp.isAtomic()) {
+    LLVM_DEBUG(dbgs() << "Atomic load/store not supported yet\n");
     return false;
   }
+
+  const unsigned MemSizeInBits = MemOp.getSize() * 8;
+  const bool IsStore = I.getOpcode() == TargetOpcode::G_STORE;
 
 #ifndef NDEBUG
   // Sanity check that we have a pointer as address
@@ -1845,17 +1851,27 @@ bool TriCoreInstructionSelector::selectLoadStore(
          "Load/Store pointer operand is not a pointer");
 #endif
 
-  const unsigned NewOpc = getLoadStoreOpCode(I.getOpcode(), MemSizeInBits);
+  const unsigned NewOpc =
+      getLoadStoreOpCode(I.getOpcode(), DstRB.getID(), MemSizeInBits);
+
+  // If we couldn't find a matching opcode for the combination of regbank and
+  // access size, bail out
+  if (NewOpc == I.getOpcode()) {
+    LLVM_DEBUG(dbgs() << "No load/store operation available for the given "
+                         "combination of regbank and memory size. RB: "
+                      << DstRB << ", MemSize: " << MemSizeInBits << "\n");
+    return false;
+  }
 
   // Build load/store
   MachineIRBuilder MIRBuilder(I);
   auto MemMI = MIRBuilder.buildInstr(NewOpc);
 
-  if (IsLoad)
+  if (!IsStore)
     MemMI = MemMI.addDef(ValReg);
 
   MemMI = MemMI.addUse(PtrReg).addImm(0);
-  if (!IsLoad)
+  if (IsStore)
     MemMI = MemMI.addUse(ValReg);
 
   MemMI = MemMI.addMemOperand(&MemOp);

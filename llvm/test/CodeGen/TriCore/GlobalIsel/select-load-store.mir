@@ -67,6 +67,8 @@ body:             |
     ; CHECK: [[COPY2:%[0-9]+]]:extdataregs = COPY $e4
     ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[COPY1]]
     ; CHECK: [[COPY4:%[0-9]+]]:extaddrregs = COPY [[COPY2]]
+    ; CHECK: STB_alcd [[COPY]], 0, [[COPY1]] :: (store 1)
+    ; CHECK: STH_alcd [[COPY]], 0, [[COPY1]] :: (store 2)
     ; CHECK: STW_alcd [[COPY]], 0, [[COPY1]] :: (store 4)
     ; CHECK: STA_alca [[COPY]], 0, [[COPY3]] :: (store 4)
     ; CHECK: STD_ace [[COPY]], 0, [[COPY2]] :: (store 8)
@@ -77,6 +79,8 @@ body:             |
     %2(s64) = COPY $e4
     %3(s32) = COPY %1(s32)
     %4(s64) = COPY %2(s64)
+    G_STORE %1(s32), %0(p0) :: (store 1)
+    G_STORE %1(s32), %0(p0) :: (store 2)
     G_STORE %1(s32), %0(p0) :: (store 4)
     G_STORE %3(s32), %0(p0) :: (store 4)
     G_STORE %2(s64), %0(p0) :: (store 8)
