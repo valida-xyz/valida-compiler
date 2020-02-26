@@ -44,15 +44,8 @@ MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   assert(Printer.TM.getTargetTriple().isOSBinFormatELF() &&
          "Invalid target for TriCore");
 
-  uint32_t RefFlags = 0;
   const unsigned TargetFlags = MO.getTargetFlags();
-
-  if (TargetFlags == TriCoreII::MO_NO_FLAG)
-    RefFlags = TriCoreMCExpr::VK_TRICORE_None;
-  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_HI)
-    RefFlags |= TriCoreMCExpr::VK_TRICORE_HI;
-  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_LO)
-    RefFlags |= TriCoreMCExpr::VK_TRICORE_LO;
+  const unsigned RefFlags = LowerTargetFlags(TargetFlags);
 
   const MCExpr *Expr =
       MCSymbolRefExpr::create(Sym, MCSymbolRefExpr::VK_None, Ctx);
@@ -67,6 +60,19 @@ MCOperand TriCoreMCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   }
 
   return MCOperand::createExpr(Expr);
+}
+
+unsigned
+TriCoreMCInstLower::LowerTargetFlags(const unsigned TargetFlags) const {
+  unsigned RefFlags = 0;
+  if (TargetFlags == TriCoreII::MO_NO_FLAG)
+    RefFlags = TriCoreMCExpr::VK_TRICORE_None;
+  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_HI)
+    RefFlags |= TriCoreMCExpr::VK_TRICORE_HI;
+  else if ((TargetFlags & TriCoreII::MO_FRAGMENT) == TriCoreII::MO_LO)
+    RefFlags |= TriCoreMCExpr::VK_TRICORE_LO;
+
+  return RefFlags;
 }
 
 bool TriCoreMCInstLower::LowerOperand(const MachineOperand &MO,
