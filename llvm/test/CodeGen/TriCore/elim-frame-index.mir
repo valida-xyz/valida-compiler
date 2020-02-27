@@ -17,6 +17,13 @@
     unreachable
   }
 
+  define dso_local void @test_10bit_imms() {
+  entry:
+    %ptr0 = alloca [65536 x i32], align 4
+    %ptr1 = alloca [65536 x i32], align 4
+    ret void
+  }
+
 ...
 ---
 name:            test_local_vars
@@ -107,5 +114,49 @@ body:             |
     $d15 = LDW_dalc %fixed-stack.2, 0 :: (invariant load 4 from %fixed-stack.2, align 1)
     $d8 = LDW_dalc %fixed-stack.1, 0 :: (invariant load 4 from %fixed-stack.1, align 1)
     $d9 = LDW_dalc %fixed-stack.0, 0 :: (invariant load 4 from %fixed-stack.0, align 1)
+
+...
+---
+name:            test_10bit_imms
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+stack:
+  - { id: 0, name: ptr0, type: default, offset: 0, size: 512, alignment: 4 }
+  - { id: 1, name: ptr1, type: default, offset: 0, size: 1, alignment: 4 }
+body:             |
+  bb.0.entry:
+    liveins: $e4, $p4
+    ; Tests that frame index operands inside instructions, which only take
+    ; 10-bit immediates, are handled correctly
+
+    ; CHECK-LABEL: name: test_10bit_imms
+    ; CHECK:      id: 0, name: ptr0, type: default, offset: -512, size: 512
+    ; CHECK:      id: 1, name: ptr1, type: default, offset: -516, size: 1
+    ; CHECK:      liveins: $e4, $p4
+    ; CHECK:      $a14 = frame-setup MOVAA_aa $a10
+    ; CHECK:      $a10 = frame-setup LEA_aac $a10, -520
+    ; CHECK:      frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+    ; CHECK:      STD_ace $a14, -512, $e4
+    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK-NEXT: STD_ace killed $a15, 0, $e4
+    ; CHECK:      STDA_acp $a14, -512, $p4
+    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK-NEXT: STDA_acp killed $a15, 0, $p4
+    ; CHECK:      $e2 = LDD_eac $a14, -512
+    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK-NEXT: $e4 = LDD_eac killed $a15, 0
+    ; CHECK:      $p2 = LDDA_pac $a14, -512
+    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK-NEXT: $p4 = LDDA_pac killed $a15, 0
+    STD_ace %stack.0.ptr0, 0, $e4
+    STD_ace %stack.1.ptr1, 0, $e4
+    STDA_acp %stack.0.ptr0, 0, $p4
+    STDA_acp %stack.1.ptr1, 0, $p4
+    $e2 = LDD_eac %stack.0.ptr0, 0
+    $e4 = LDD_eac %stack.1.ptr1, 0
+    $p2 = LDDA_pac %stack.0.ptr0, 0
+    $p4 = LDDA_pac %stack.1.ptr1, 0
 
 ...

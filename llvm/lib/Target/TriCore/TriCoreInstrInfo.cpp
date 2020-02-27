@@ -287,16 +287,19 @@ void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
   const uint64_t Low16 = Val & 0xFFFFu;
   const uint64_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
 
-  assert(High16 && "Expected High16 to be non-zero");
-  BuildMI(MBB, MBBI, DL, get(TriCore::ADDIHA_aac), DstReg)
-      .addUse(SrcReg)
-      .addImm(High16)
-      .setMIFlag(Flag);
+  if (High16) {
+    BuildMI(MBB, MBBI, DL, get(TriCore::ADDIHA_aac), DstReg)
+        .addUse(SrcReg)
+        .addImm(High16)
+        .setMIFlag(Flag);
+
+    SrcReg = DstReg;
+  }
 
   // Skip the LEA if Low16 is 0
   if (Low16) {
     BuildMI(MBB, MBBI, DL, get(TriCore::LEA_aac), DstReg)
-        .addUse(DstReg)
+        .addUse(SrcReg)
         .addImm(Low16)
         .setMIFlag(Flag);
   }

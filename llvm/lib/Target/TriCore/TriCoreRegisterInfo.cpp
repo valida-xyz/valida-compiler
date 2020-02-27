@@ -113,17 +113,19 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineBasicBlock &MBB = *MI.getParent();
   bool FrameRegIsKill = false;
 
-  // Check if the offset can fit into an 16-bit immediate
-  if (!isInt<16>(Offset)) {
+  // Check if the offset can fit into the immediate operand of the instruction
+  if (!TII->doesOffsetFitInOffsetOperand(MI.getOpcode(), Offset)) {
     // Materializing the offset separately can lead to a case where the
     // instruction, from which the frame index is eliminated, performs a NOP.
     // For example, LEA_aac %stack.0.foo 0, where the offset of %stack.0.foo
     // is bigger than 16-bits, results in the following code:
     //
-    // %offset = ADDIH_aac %offset, imm
+    // %offset = ADDIHA_aac %offset, %src, immHi
+    // %offset = LEA_aac %offset, immLo
     // %foo = LEA_aac %offset, 0
     //
     // To avoid this we check for LEA and eliminate it
+    // FIXME: Ideally we should introduce a combiner to eliminate these cases
     const bool IsLea = MI.getOpcode() == TriCore::LEA_aac;
 
     // Emit a 32-bit frame offset
