@@ -161,3 +161,49 @@ body:             |
     %2:_(s64) = G_INSERT %0, %1, 0
     $e4 = COPY %2
 ...
+
+---
+name:            insert_s64_s32_off32
+body:             |
+  bb.0:
+    liveins: $e4, $d4
+
+
+    ; CHECK-LABEL: name: insert_s64_s32_off32
+    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[UV]](s32), [[COPY1]](s32)
+    ; CHECK: $e4 = COPY [[MV]](s64)
+    %0:_(s64) = COPY $e4
+    %1:_(s32) = COPY $d5
+    %2:_(s64) = G_INSERT %0, %1, 32
+    $e4 = COPY %2
+...
+
+---
+name:            insert_s40_s8
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+
+    ; CHECK-LABEL: name: insert_s40_s8
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[COPY1]](s32)
+    ; CHECK: [[ANYEXT:%[0-9]+]]:_(s64) = G_ANYEXT [[COPY]](s32)
+    ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[ANYEXT]](s64)
+    ; CHECK: [[INSERT:%[0-9]+]]:_(s32) = G_INSERT [[UV1]], [[TRUNC]](s8), 0
+    ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[UV]](s32), [[INSERT]](s32)
+    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s40) = G_TRUNC [[MV]](s64)
+    ; CHECK: [[TRUNC2:%[0-9]+]]:_(s32) = G_TRUNC [[TRUNC1]](s40)
+    ; CHECK: $d4 = COPY [[TRUNC2]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s40) = G_ANYEXT %0
+    %3:_(s8) = G_TRUNC %1
+    %4:_(s40) = G_INSERT %2, %3, 32
+    %5:_(s32) = G_TRUNC %4
+    $d4 = COPY %5
+...

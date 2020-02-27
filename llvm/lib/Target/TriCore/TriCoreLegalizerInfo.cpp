@@ -420,6 +420,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
         return (Ty0.getSizeInBits() == 32 && Ty1.getSizeInBits() <= 32);
       })
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0)
       .clampScalar(0, s32, s32)
       .maxScalar(1, s32);
 
