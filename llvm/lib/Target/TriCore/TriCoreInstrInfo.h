@@ -52,6 +52,8 @@ public:
                        const DebugLoc &DL, Register DstReg, Register SrcReg,
                        uint64_t Val,
                        MachineInstr::MIFlag Flag = MachineInstr::NoFlags) const;
+
+  bool doesOffsetFitInOffsetOperand(unsigned Opcode, int64_t Offset) const;
 };
 } // namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREINSTRINFO_H

@@ -303,3 +303,34 @@ void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
       .addImm(High16)
       .setMIFlag(Flag);
 }
+
+static unsigned getOffsetBits(unsigned Opc) {
+  switch (Opc) {
+  default:
+    llvm_unreachable("unexpected opcode!");
+  case TriCore::LDB_dalc:
+  case TriCore::LDBU_dalc:
+  case TriCore::LDH_dalc:
+  case TriCore::LDHU_dalc:
+  case TriCore::LDW_dalc:
+  case TriCore::LDA_aalc:
+  case TriCore::STB_alcd:
+  case TriCore::STH_alcd:
+  case TriCore::STW_alcd:
+  case TriCore::STA_alca:
+    return 16;
+  case TriCore::LEA_aac:
+    return 16;
+  case TriCore::LDD_eac:
+  case TriCore::LDDA_pac:
+  case TriCore::STD_ace:
+  case TriCore::STDA_acp:
+    return 10;
+  }
+}
+
+bool TriCoreInstrInfo::doesOffsetFitInOffsetOperand(unsigned Opcode,
+                                                    int64_t Offset) const {
+  unsigned Bits = getOffsetBits(Opcode);
+  return isIntN(Bits, Offset);
+}
