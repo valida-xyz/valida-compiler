@@ -1829,7 +1829,7 @@ bool TriCoreInstructionSelector::selectLoadStore(
     MachineInstr &I, const MachineRegisterInfo &MRI) const {
 
   const Register &ValReg = I.getOperand(0).getReg();
-  const Register &PtrReg = I.getOperand(1).getReg();
+  Register PtrReg = I.getOperand(1).getReg();
   const RegisterBank &DstRB = *RBI.getRegBank(ValReg, MRI, TRI);
 
   auto &MemOp = **I.memoperands_begin();
@@ -1870,7 +1870,18 @@ bool TriCoreInstructionSelector::selectLoadStore(
   if (!IsStore)
     MemMI = MemMI.addDef(ValReg);
 
-  MemMI = MemMI.addUse(PtrReg).addImm(0);
+  uint64_t Offset = 0;
+  auto *PtrMI = MRI.getVRegDef(PtrReg);
+  if (PtrMI->getOpcode() == TargetOpcode::G_PTR_ADD) {
+    if (auto COff = getConstantVRegVal(PtrMI->getOperand(2).getReg(), MRI)) {
+      if (TII.doesOffsetFitInOffsetOperand(NewOpc, *COff)) {
+        PtrReg = PtrMI->getOperand(1).getReg();
+        Offset = *COff;
+      }
+    }
+  }
+
+  MemMI = MemMI.addUse(PtrReg).addImm(Offset);
   if (IsStore)
     MemMI = MemMI.addUse(ValReg);
 
