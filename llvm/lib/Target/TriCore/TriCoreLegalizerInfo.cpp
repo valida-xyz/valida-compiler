@@ -152,6 +152,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_SADDO and G_SSUBO should be always lowered
   getActionDefinitionsBuilder({G_SADDO, G_SSUBO}).lower();
 
+  // G_UMULO and G_SMULO should be always lowered because there is no cheap way
+  // to do this in hardware
+  getActionDefinitionsBuilder({G_UMULO, G_SMULO}).lowerFor({{s32, s1}});
+
   // G_SDIV, G_UDIV is only legal for 32 bit types and has to be lowered for
   // 64-bit type
   getActionDefinitionsBuilder({G_SDIV, G_UDIV})
@@ -223,8 +227,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
       .legalFor({{s32, s1}});
 
-  // G_UMULH is a legalization artifact which has the correct type already
-  getActionDefinitionsBuilder(G_UMULH).legalFor({s32});
+  // G_UMULH/G_SMULH is a legalization artifact which has the correct type already
+  getActionDefinitionsBuilder({G_UMULH, G_SMULH}).legalFor({s32});
 
   // G_CTLZ is only legal for s32 types
   getActionDefinitionsBuilder(G_CTLZ)
