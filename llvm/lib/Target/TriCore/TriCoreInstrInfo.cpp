@@ -282,26 +282,24 @@ void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
               TriCore::AddrRegsRegClass.getID()) &&
          "Expected SrcReg to be an address register");
 
-  // Materialize the value using MOVHA_ac and LEA_aac
+  // Materialize the value using ADDIHA_aac and LEA_aac
   // Calculation taken from chapter 2.7 Address Arithmetic
   const uint64_t Low16 = Val & 0xFFFFu;
   const uint64_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
-
-  // Skip the LEA if Low16 is 0
-  if (Low16) {
-    BuildMI(MBB, MBBI, DL, get(TriCore::LEA_aac), DstReg)
-        .addUse(SrcReg)
-        .addImm(Low16)
-        .setMIFlag(Flag);
-
-    SrcReg = DstReg;
-  }
 
   assert(High16 && "Expected High16 to be non-zero");
   BuildMI(MBB, MBBI, DL, get(TriCore::ADDIHA_aac), DstReg)
       .addUse(SrcReg)
       .addImm(High16)
       .setMIFlag(Flag);
+
+  // Skip the LEA if Low16 is 0
+  if (Low16) {
+    BuildMI(MBB, MBBI, DL, get(TriCore::LEA_aac), DstReg)
+        .addUse(DstReg)
+        .addImm(Low16)
+        .setMIFlag(Flag);
+  }
 }
 
 static unsigned getOffsetBits(unsigned Opc) {
