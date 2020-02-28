@@ -1,4 +1,4 @@
-# RUN: llc -mtriple=tricore -mcpu=tc2xx -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
+# RUN: llc -mtriple=tricore -mcpu=tc2xx -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 || true | FileCheck %s
 # XFAIL: *
 
 ---
@@ -7,7 +7,7 @@ body:             |
   bb.0:
     liveins: $d4, $e4
 
-    ; CHECK-NOT: {{%[0-9]+}}:_(s80) = G_INSERT {{%[0-9]+}}:_, {{%[0-9]+}}:_(s8), 64 (in function: insert_s80_s8)
+    ; CHECK-NOT: LLVM ERROR: unable to legalize instruction: {{%[0-9]+}}:_(s80) = G_INSERT {{%[0-9]+}}:_, {{%[0-9]+}}:_(s8), 64 (in function: insert_s80_s8)
     %0:_(s64) = COPY $e4
     %1:_(s32) = COPY $d4
     %2:_(s80) = G_ANYEXT %0

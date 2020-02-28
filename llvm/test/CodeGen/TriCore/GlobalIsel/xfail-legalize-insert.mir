@@ -1,4 +1,4 @@
-# RUN: llc -mtriple=tricore -mcpu=tc2xx -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
+# RUN: llc -mtriple=tricore -mcpu=tc2xx -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 || true | FileCheck %s
 # XFAIL: *
 
 # To legalize this pass, we need to have G_EXTRACT legalized, which we do not
