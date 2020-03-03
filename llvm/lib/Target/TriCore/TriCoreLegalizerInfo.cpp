@@ -350,8 +350,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   else
     FPArithmActions.libcallFor({s64});
 
-  // G_FFLOOR and G_FCEIL require a libcall for s32 and s64
-  getActionDefinitionsBuilder({G_FFLOOR, G_FCEIL})
+  // G_FFLOOR, G_FCEIL, G_FRINT and G_FNEARBYINT require a libcall for s32 and
+  // s64
+  getActionDefinitionsBuilder({G_FFLOOR, G_FCEIL, G_FRINT, G_FNEARBYINT})
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0)
       .libcallFor({s32, s64});
