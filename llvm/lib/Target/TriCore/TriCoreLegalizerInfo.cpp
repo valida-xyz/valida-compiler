@@ -206,6 +206,15 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_CTLZ_ZERO_UNDEF produces a defined result, lower it to G_CTLZ
   getActionDefinitionsBuilder(G_CTLZ_ZERO_UNDEF).lower();
 
+  // G_CTTZ should be lowered
+  getActionDefinitionsBuilder(G_CTTZ)
+      .lowerFor({{s32, s32}})
+      .clampScalar(1, s32, s32)
+      .clampScalar(0, s32, s32);
+
+  // G_CTTZ_ZERO_UNDEF produces a defined result, lower it to G_CTTZ
+  getActionDefinitionsBuilder(G_CTTZ_ZERO_UNDEF).lower();
+
   // G_CTPOP needs to be lowered for TC161 and is legal for TC162 and up
   auto &CTPOPActions = getActionDefinitionsBuilder(G_CTPOP)
                            .clampScalar(0, s32, s32)
