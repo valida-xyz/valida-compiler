@@ -117,6 +117,10 @@ def : SimpleBinOpPat<xor, XOR_ddd>;
 
 def : Pat<(i32 (ctlz i32:$src)), (i32 (CLZ_dd DataRegs:$src))>;
 
+let Predicates = [HasTC162] in {
+def : Pat<(i32 (ctpop i32:$src)), (i32 (POPCNTW_dd DataRegs:$src))>;
+} // Predicates = [HasTC162]
+
 // 2.1.10 Shift.
 
 def : SimpleBinOpPat<shl, SH_ddd>;
