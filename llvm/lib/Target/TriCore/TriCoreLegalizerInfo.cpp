@@ -194,6 +194,16 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_CTLZ_ZERO_UNDEF produces a defined result, lower it to G_CTLZ
   getActionDefinitionsBuilder(G_CTLZ_ZERO_UNDEF).lower();
 
+  // G_CTPOP needs to be lowered for TC161 and is legal for TC162 and up
+  auto &CTPOPActions = getActionDefinitionsBuilder(G_CTPOP)
+                           .clampScalar(0, s32, s32)
+                           .clampScalar(1, s32, s32);
+
+  if (ST.hasTC162Ops())
+    CTPOPActions.legalFor({{s32, s32}});
+  else
+    CTPOPActions.lowerFor({{s32, s32}});
+
   // Shifts
 
   // G_SHL, G_LSHR and G_ASHR always produce the same type as their src type
