@@ -174,6 +174,16 @@ def : TruncStorePat<i16,    STH_alcd>;
 def : Trunc64StorePat<i8,   STB_alcd>;
 def : Trunc64StorePat<i16,  STH_alcd>;
 
+//===----------------------------------------------------------------------===//
+// Unary Ops
+//===----------------------------------------------------------------------===//
+
+// B_SWAP
+
+let Predicates = [HasTC162] in {
+def : Pat<(bswap DataRegs:$src), (SHUFFLE_ddc DataRegs:$src, (i32 0x01B))>;
+} // Predicates = [HasTC162]
+
 
 //===----------------------------------------------------------------------===//
 // Floating point instructions
