@@ -107,6 +107,18 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({s16, s32, s64})
       .clampScalar(0, s16, s64);
 
+  // Unary Ops
+
+  // G_BSWAP is legal for s32 scalars for TC162 and above and should be lowered
+  // below TC162
+  auto &BSwapActions =
+      getActionDefinitionsBuilder(G_BSWAP).clampScalar(0, s32, s32);
+
+  if (ST.hasTC162Ops())
+    BSwapActions.legalFor({s32});
+  else
+    BSwapActions.lower();
+
   // Jump table calculation
 
   // G_JUMP_TABLE is only legal for pointers

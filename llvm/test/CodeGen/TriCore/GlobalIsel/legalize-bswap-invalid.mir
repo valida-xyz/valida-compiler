@@ -1,0 +1,14 @@
+# RUN: (not llc -mtriple=tricore -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+
+---
+name:            bswap_s48
+body:             |
+  bb.0.entry:
+
+    ; ERROR: LLVM ERROR: unable to legalize instruction: %2:_(s48) = G_BSWAP %1:_ (in function: bswap_s48)
+    %0:_(s64) = COPY $e4
+    %1:_(s48) = G_TRUNC %0
+    %2:_(s48) = G_BSWAP %1
+    %3:_(s64) = G_ANYEXT %2
+    $e4 = COPY %3
+...
