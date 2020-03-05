@@ -75,6 +75,9 @@ registers:
   - { id: 19, class: _ }
   - { id: 20, class: _ }
   - { id: 21, class: _ }
+  - { id: 22, class: _ }
+  - { id: 23, class: _ }
+  - { id: 24, class: _ }
 body:             |
   bb.0.entry:
     liveins: $a4, $e4
@@ -89,10 +92,13 @@ body:             |
     ; CHECK: [[CROSSBANK_CP:%[0-9]+]]:dataregbank(p0) = COPY [[COPY]](p0)
     ; CHECK: [[UV14:%[0-9]+]]:dataregbank(s8), [[UV15:%[0-9]+]]:dataregbank(s8), [[UV16:%[0-9]+]]:dataregbank(s8), [[UV17:%[0-9]+]]:dataregbank(s8) = G_UNMERGE_VALUES [[CROSSBANK_CP]](p0)
     ; CHECK: [[CROSSBANK_UM:%[0-9]+]]:addrregbank(p0), [[CROSSBANK_UM2:%[0-9]+]]:addrregbank(p0) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: G_STORE [[UV4]](s8), [[COPY]](p0) :: (store 1)
-    ; CHECK: G_STORE [[UV6]](s8), [[COPY]](p0) :: (store 1)
-    ; CHECK: G_STORE [[UV14]](s8), [[COPY]](p0) :: (store 1)
-    ; CHECK: G_STORE [[UV4]](s8), [[CROSSBANK_UM]](p0) :: (store 1)
+    ; CHECK: [[ANYEXT:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV4]](s8)
+    ; CHECK: [[ANYEXT1:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV6]](s8)
+    ; CHECK: [[ANYEXT2:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV14]](s8)
+    ; CHECK: $d2 = COPY [[ANYEXT]](s32)
+    ; CHECK: $d3 = COPY [[ANYEXT1]](s32)
+    ; CHECK: $d4 = COPY [[ANYEXT2]](s32)
+    ; CHECK: $a2 = COPY [[CROSSBANK_UM]](p0)
     %0(p0) = COPY $a4
     %1(s64) = COPY $e4
     %2(s32), %3(s32) = G_UNMERGE_VALUES %1(s64)
@@ -101,8 +107,11 @@ body:             |
     %8(s8), %9(s8), %10(s8), %11(s8), %12(s8), %13(s8), %14(s8), %15(s8) = G_UNMERGE_VALUES %1(s64)
     %16(s8), %17(s8), %18(s8), %19(s8) = G_UNMERGE_VALUES %0(p0)
     %20(p0), %21(p0) = G_UNMERGE_VALUES %1(s64)
-    G_STORE %6(s8), %0(p0) :: (store 1)
-    G_STORE %8(s8), %0(p0) :: (store 1)
-    G_STORE %16(s8), %0(p0) :: (store 1)
-    G_STORE %6(s8), %20(p0) :: (store 1)
+    %22(s32) = G_ANYEXT %6(s8)
+    %23(s32) = G_ANYEXT %8(s8)
+    %24(s32) = G_ANYEXT %16(s8)
+    $d2 = COPY %22(s32)
+    $d3 = COPY %23(s32)
+    $d4 = COPY %24(s32)
+    $a2 = COPY %20(p0)
 ...

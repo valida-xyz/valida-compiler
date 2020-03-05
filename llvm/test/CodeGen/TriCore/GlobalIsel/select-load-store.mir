@@ -56,93 +56,30 @@ registers:
   - { id: 0, class: addrregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
-  - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
-  - { id: 6, class: dataregbank }
-  - { id: 7, class: addrregbank }
-  - { id: 8, class: addrregbank }
+  - { id: 3, class: addrregbank }
+  - { id: 4, class: addrregbank }
 body:             |
   bb.0.entry:
     ; CHECK-LABEL: name: test_store
     ; CHECK: [[PTR:%[0-9]+]]:addrregs = COPY $a4
     ; CHECK: [[VAL:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[VAL1:%[0-9]+]]:extdataregs = COPY $e4
-    ; CHECK: STB_alcd [[PTR]], 0, [[VAL]] :: (store 1)
-    ; CHECK: STH_alcd [[PTR]], 0, [[VAL]] :: (store 2)
+    ; CHECK: [[COPY:%[0-9]+]]:addrregs = COPY [[VAL]]
+    ; CHECK: [[COPY1:%[0-9]+]]:extaddrregs = COPY [[VAL1]]
     ; CHECK: STW_alcd [[PTR]], 0, [[VAL]] :: (store 4)
-    ; CHECK: [[VAL_ADDR:%[0-9]+]]:addrregs = COPY [[VAL]]
-    ; CHECK: STA_alca [[PTR]], 0, [[VAL_ADDR]] :: (store 4)
+    ; CHECK: STA_alca [[PTR]], 0, [[COPY]] :: (store 4)
     ; CHECK: STD_ace [[PTR]], 0, [[VAL1]] :: (store 8)
-    ; CHECK: [[VAL1_ADDR:%[0-9]+]]:extaddrregs = COPY [[VAL1]]
-    ; CHECK: STDA_acp [[PTR]], 0, [[VAL1_ADDR]] :: (store 8)
+    ; CHECK: STDA_acp [[PTR]], 0, [[COPY1]] :: (store 8)
     ; CHECK: STA_alca [[PTR]], 0, [[PTR]] :: (store 4)
     %0(p0) = COPY $a4
     %1(s32) = COPY $d4
     %2(s64) = COPY $e4
-    %3(s8) = G_TRUNC %1(s32)
-    G_STORE %3(s8), %0(p0) :: (store 1)
-    %4(s16) = G_TRUNC %1(s32)
-    G_STORE %4(s16), %0(p0) :: (store 2)
-    %5(s8) = G_TRUNC %2(s64)
-    G_STORE %5(s8), %0(p0) :: (store 1)
-    %6(s16) = G_TRUNC %2(s64)
-    G_STORE %6(s16), %0(p0) :: (store 2)
+    %3(s32) = COPY %1(s32)
+    %4(s64) = COPY %2(s64)
     G_STORE %1(s32), %0(p0) :: (store 4)
-    %7(s32) = COPY %1(s32)
-    G_STORE %7(s32), %0(p0) :: (store 4)
+    G_STORE %3(s32), %0(p0) :: (store 4)
     G_STORE %2(s64), %0(p0) :: (store 8)
-    %8(s64) = COPY %2(s64)
-    G_STORE %8(s64), %0(p0) :: (store 8)
+    G_STORE %4(s64), %0(p0) :: (store 8)
     G_STORE %0(p0), %0(p0) :: (store 4)
 ...
 
----
-name:            test_trunc_store
-legalized:       true
-regBankSelected: true
-registers:
-  - { id: 0, class: addrregbank }
-  - { id: 1, class: dataregbank }
-  - { id: 3, class: dataregbank }
-  - { id: 4, class: dataregbank }
-body:             |
-  bb.0.entry:
-    ; CHECK-LABEL: name: test_trunc_store
-    ; CHECK: [[PTR:%[0-9]+]]:addrregs = COPY $a4
-    ; CHECK: [[VAL:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: STB_alcd [[PTR]], 0, [[VAL]] :: (store 1)
-    ; CHECK: STH_alcd [[PTR]], 0, [[VAL]] :: (store 2)
-    %0(p0) = COPY $a4
-    %1(s32) = COPY $d4
-    %3(s8) = G_TRUNC %1(s32)
-    G_STORE %3(s8), %0(p0) :: (store 1)
-    %4(s16) = G_TRUNC %1(s32)
-    G_STORE %4(s16), %0(p0) :: (store 2)
-...
-
----
-name:            test_extended_trunc_store
-legalized:       true
-regBankSelected: true
-registers:
-  - { id: 0, class: addrregbank }
-  - { id: 1, class: dataregbank }
-  - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
-body:             |
-  bb.0.entry:
-    ; CHECK-LABEL: name: test_extended_trunc_store
-    ; CHECK: [[PTR:%[0-9]+]]:addrregs = COPY $a4
-    ; CHECK: [[VAL:%[0-9]+]]:extdataregs = COPY $e4
-    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY [[VAL]].dsub0
-    ; CHECK: STB_alcd [[PTR]], 0, [[COPY]] :: (store 1)
-    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY [[VAL]].dsub0
-    ; CHECK: STH_alcd [[PTR]], 0, [[COPY1]] :: (store 2)
-    %0(p0) = COPY $a4
-    %1(s64) = COPY $e4
-    %2(s8) = G_TRUNC %1(s64)
-    G_STORE %2(s8), %0(p0) :: (store 1)
-    %3(s16) = G_TRUNC %1(s64)
-    G_STORE %3(s16), %0(p0) :: (store 2)
-...

@@ -35,10 +35,14 @@ static LegalityPredicate isMisalignedMemAccess() {
   };
 }
 
-static LegalityPredicate isTruncStore() {
-  return [=](const LegalityQuery &Query) {
-    // Truncating store if type size is bigger than memory size
-    return Query.Types[0].getSizeInBits() > Query.MMODescrs[0].SizeInBits;
+static LegalityPredicate isWideScalarExtTruncMemAccess() {
+  return [=](const LegalityQuery &Query) -> bool {
+    const unsigned DstSize = Query.Types[0].getSizeInBits();
+    const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+
+    // A wide scalar extending load is an extending load with a destination size
+    // >32-bit
+    return DstSize > 32 && DstSize > MemSize;
   };
 }
 
@@ -354,9 +358,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Load & Store
 
-  // G_LOAD is legal for 32 and 64-bit scalar and pointer types.
-  // Memory size must be a power of 2.
-  getActionDefinitionsBuilder(G_LOAD)
+  // G_LOAD and G_STORE are legal for 32 and 64-bit scalar and pointer types.
+  // Memory size must be a power of 2. Furthermore, misaligned loads/stores must
+  // be broken up.
+  getActionDefinitionsBuilder({G_LOAD, G_STORE})
       .legalForTypesWithMemDesc({
           // Load/store uses natural alignment up to half-word alignment
           // Pointers require word alignment
@@ -368,54 +373,38 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
           {s64, p0, 64, 16},
           {p0, p0, 32, 32},
       })
-      // Unaligned loads must be broken up into aligned loads
+      // Unaligned accesses must be broken up into aligned loads/stores
       .narrowScalarIf(isMisalignedMemAccess(), narrowToAlignedMemAccess())
-      // Non-power-of-2 loads need to be broken up
+      // Non-power-of-2 accesses need to be broken up
       .lowerIfMemSizeNotPow2()
-      // Result must fit in a register
-      .clampScalar(0, s32, s64)
-      // Lower any extending loads left into G_ANYEXT and G_LOAD
-      .lowerIf([=](const LegalityQuery &Query) {
-        return Query.Types[0].getSizeInBits() != Query.MMODescrs[0].SizeInBits;
-      })
-      // Eliminate left-over non-pow-2 results
-      .widenScalarToNextPow2(0);
+      // Memory size is now a power-of-2. Narrow any non-power-of-2 types to
+      // the memory size. This gets rid of extending loads to non-pow-2 types
+      // and also enables G_STORE to be widened if needed
+      .narrowScalarIf(LegalityPredicates::sizeNotPow2(0), narrowToMemSize())
+      // Similarly, narrow extloads/truncstores with value type >32-bit
+      .narrowScalarIf(isWideScalarExtTruncMemAccess(), narrowToMemSize())
+      // Finally, clamp the scalar value to our register size. At this point we
+      // are either >= 64-bit or <= 32-bit (due to the rule above eliminating
+      // non-pow-2 types). Therefore we don't need a widenScalarToNextPow2.
+      .clampScalar(0, s32, s64);
 
-  // G_STORE is legal for pointers and scalars if the store size is equal to the
-  // scalar type size. Different to G_LOAD, we require explicit s8 and s16
-  // value types, because this allows to match every possible store with
-  // TableGen instead of having to fall back to C++ for truncating stores.
-  getActionDefinitionsBuilder(G_STORE)
-      .legalForTypesWithMemDesc({
-          // Load/store uses natural alignment up to half-word alignment
-          // Pointers require word alignment
-          // TODO: p0 load/store can use half-word alignment if they are put on
-          //  the data regbank.
-          {s8, p0, 8, 8},
-          {s16, p0, 16, 16},
-          {s32, p0, 32, 16},
-          {s64, p0, 64, 16},
-          {p0, p0, 32, 32},
-      })
-      // Unaligned stores must be broken up into aligned stores
-      .narrowScalarIf(isMisalignedMemAccess(), narrowToAlignedMemAccess())
-      // Lower truncating stores into G_TRUNC and G_STORE
-      .narrowScalarIf(isTruncStore(), narrowToMemSize())
-      // Non-power-of-2 stores need to be broken up
-      .lowerIfMemSizeNotPow2()
-      // Extend / truncate the value to a power-of-2 between s8 and s64
-      .clampScalar(0, s8, s64)
-      .widenScalarToNextPow2(0);
-
-  // G_SEXTLOAD and G_ZEXTLOAD are legal for a 32-bit result type
+  // G_SEXTLOAD and G_ZEXTLOAD mostly follow the same rules as G_LOAD but
+  // require a 32-bit type, as that is the only type where we can have extending
+  // loads on TriCore. If we have something that cannot be handled directly with
+  // G_SEXTLOAD/G_ZEXTLOAD, we need to lower to G_LOAD with an appropriate
+  // extension
   getActionDefinitionsBuilder({G_SEXTLOAD, G_ZEXTLOAD})
       .legalForTypesWithMemDesc({
           {s32, p0, 8, 8},
           {s32, p0, 16, 16},
-          {s32, p0, 32, 32},
+          {s32, p0, 32, 16},
       })
-      .clampScalar(0, s32, s32)
+      // Unaligned accesses must be lowered, so that G_LOAD can handle them
+      .lowerIf(isMisalignedMemAccess())
+      // Non-power-of-2 loads must be lowered to G_LOAD
       .lowerIfMemSizeNotPow2()
+      // Result must match a 32-bit register
+      .clampScalar(0, s32, s32)
       // Lower anything left over to G_*EXT and G_LOAD
       .lower();
 

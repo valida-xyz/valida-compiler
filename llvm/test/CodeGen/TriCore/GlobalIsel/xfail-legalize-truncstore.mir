@@ -1,0 +1,18 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -pass-remarks-missed='gisel*' -run-pass=legalizer -verify-machineinstrs %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERROR
+# XFAIL: *
+
+# The legalizer cannot combine the G_ANYEXT produced by legalizing the G_LOAD
+# with the G_SEXT, causing this error. When we rework the legalization of the
+# extensions, this error will go away.
+
+# ERROR-NOT: remark: <unknown>:0:0: unable to legalize instruction: %2:_(s48) = G_ANYEXT %1:_(s32) (in function: test_nonpow2_store)
+
+---
+name:            test_nonpow2_store
+body:             |
+  bb.0:
+    %0:_(p0) = COPY $a4
+    %1:_(s32) = COPY $d4
+    %2:_(s48) = G_ANYEXT %1(s32)
+    G_STORE %2(s48), %0(p0) :: (store 4)
+...
