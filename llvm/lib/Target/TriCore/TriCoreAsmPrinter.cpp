@@ -43,7 +43,7 @@ public:
 
   StringRef getPassName() const override { return "TriCore Assembly Printer"; }
 
-  void EmitInstruction(const MachineInstr *MI) override;
+  void emitInstruction(const MachineInstr *MI) override;
 
 private:
   void EmitJumpTableAddr(const MachineInstr *MI, MCSymbol *PICOffSymbol);
@@ -146,7 +146,7 @@ void TriCoreAsmPrinter::EmitJumpTableAddrTC16XPIC(const MachineInstr *MI) {
       MCSymbolRefExpr::create(PICOffSymbol, OutContext);
 
   EmitToStreamer(*OutStreamer, MCInstBuilder(TriCore::JL).addExpr(SymRefExpr));
-  OutStreamer->EmitLabel(PICOffSymbol);
+  OutStreamer->emitLabel(PICOffSymbol);
 
   // Now materialize the offset of the PICOffSymbol and subtract it from $a11
   // (holding PC+4)
@@ -225,11 +225,11 @@ void TriCoreAsmPrinter::EmitJumpTableInsts(const MachineInstr *MI) {
   const unsigned JTI = JTIOp.getIndex();
 
   // Make sure the jump table is 4-byte aligned
-  EmitAlignment(Align(4));
+  emitAlignment(Align(4));
 
   // Emit a label for the jump table
   MCSymbol *JTISymbol = GetJTISymbol(JTI);
-  OutStreamer->EmitLabel(JTISymbol);
+  OutStreamer->emitLabel(JTISymbol);
 
   // Emit each entry of the table
   const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
@@ -242,7 +242,7 @@ void TriCoreAsmPrinter::EmitJumpTableInsts(const MachineInstr *MI) {
 
     // Make sure that we use the 4-byte J instruction, as otherwise our address
     // calculation is broken
-    OutStreamer->EmitAssemblerFlag(MCAssemblerFlag::MCAF_Code32);
+    OutStreamer->emitAssemblerFlag(MCAssemblerFlag::MCAF_Code32);
 
     // Emit jump
     EmitToStreamer(*OutStreamer,
@@ -327,7 +327,7 @@ void TriCoreAsmPrinter::LowerJIJumpTable(const MachineInstr *MI) {
 
   // If we are in PIC mode, then we need to emit a label here
   if (IsPIC)
-    OutStreamer->EmitLabel(PICOffSymbol);
+    OutStreamer->emitLabel(PICOffSymbol);
 
   const unsigned Opcode = IsPIC ? TriCore::JRI : TriCore::JI;
   EmitToStreamer(*OutStreamer, MCInstBuilder(Opcode).addOperand(DstMCOp));
@@ -402,7 +402,7 @@ void TriCoreAsmPrinter::LowerJIJumpTableTC16XPIC(const MachineInstr *MI) {
   EmitToStreamer(*OutStreamer, MCInstBuilder(TriCore::JI).addOperand(DstMCOp));
 }
 
-void TriCoreAsmPrinter::EmitInstruction(const MachineInstr *MI) {
+void TriCoreAsmPrinter::emitInstruction(const MachineInstr *MI) {
   // Lower pseudo instruction
   const unsigned Opcode = MI->getOpcode();
   switch (Opcode) {

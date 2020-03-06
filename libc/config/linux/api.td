@@ -84,6 +84,13 @@ def StdIOAPI : PublicAPI<"stdio.h"> {
   ];
 }
 
+def StdlibAPI : PublicAPI<"stdlib.h"> {
+  let Functions = [
+    "_Exit",
+    "abort",
+  ];
+}
+
 def ErrnoAPI : PublicAPI<"errno.h"> {
   let Macros = [
     ErrnoMacro,
@@ -131,5 +138,27 @@ def SysMManAPI : PublicAPI<"sys/mman.h"> {
   let Functions = [
     "mmap",
     "munmap",
+  ];
+}
+
+def SignalAPI : PublicAPI<"signal.h"> {
+  let Functions = [
+    "raise",
+    "sigprocmask",
+    "sigemptyset",
+    "sigaddset",
+  ];
+}
+
+def ThreadsAPI : PublicAPI<"threads.h"> {
+  let Enumerations = [
+    "mtx_plain",
+    "mtx_recursive",
+    "mtx_timed",
+    "thrd_timedout",
+    "thrd_success",
+    "thrd_busy",
+    "thrd_error",
+    "thrd_nomem",
   ];
 }

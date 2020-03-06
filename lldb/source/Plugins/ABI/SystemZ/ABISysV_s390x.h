@@ -6,13 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ABISysV_s390x_h_
-#define liblldb_ABISysV_s390x_h_
+#ifndef LLDB_SOURCE_PLUGINS_ABI_SYSTEMZ_ABISYSV_S390X_H
+#define LLDB_SOURCE_PLUGINS_ABI_SYSTEMZ_ABISYSV_S390X_H
 
 #include "lldb/Target/ABI.h"
 #include "lldb/lldb-private.h"
 
-class ABISysV_s390x : public lldb_private::ABI {
+class ABISysV_s390x : public lldb_private::RegInfoBasedABI {
 public:
   ~ABISysV_s390x() override = default;
 
@@ -88,11 +88,7 @@ protected:
   bool RegisterIsCalleeSaved(const lldb_private::RegisterInfo *reg_info);
 
 private:
-  ABISysV_s390x(lldb::ProcessSP process_sp,
-                std::unique_ptr<llvm::MCRegisterInfo> info_up)
-      : lldb_private::ABI(std::move(process_sp), std::move(info_up)) {
-    // Call CreateInstance instead.
-  }
+  using lldb_private::RegInfoBasedABI::RegInfoBasedABI; // Call CreateInstance instead.
 };
 
-#endif // liblldb_ABISysV_s390x_h_
+#endif // LLDB_SOURCE_PLUGINS_ABI_SYSTEMZ_ABISYSV_S390X_H

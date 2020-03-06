@@ -1,4 +1,4 @@
-; RUN: opt -passes=attributor --attributor-disable=false -attributor-max-iterations-verify -attributor-annotate-decl-cs -attributor-max-iterations=7 -S < %s | FileCheck %s --check-prefixes=ATTRIBUTOR,ATTRIBUTOR_MODULE
+; RUN: opt -passes=attributor --attributor-disable=false -attributor-max-iterations-verify -attributor-annotate-decl-cs -attributor-max-iterations=6 -S < %s | FileCheck %s --check-prefixes=ATTRIBUTOR,ATTRIBUTOR_MODULE
 ; RUN: opt -passes=attributor-cgscc --attributor-disable=false -attributor-annotate-decl-cs -S < %s | FileCheck %s --check-prefixes=ATTRIBUTOR,ATTRIBUTOR_CGSCC
 
 
@@ -117,12 +117,15 @@ define i32 @fact_loop(i32 %0) local_unnamed_addr #0 {
 ;     mutual_recursion1();
 ; }
 
-; ATTRIBUTOR: Function Attrs: nofree noinline nosync nounwind readnone uwtable
+declare void @sink() nounwind willreturn nosync nofree
+
+; ATTRIBUTOR: Function Attrs: nofree noinline nosync nounwind uwtable
 ; ATTRIBUTOR-NOT: willreturn
 ; ATTRIBUTOR-NEXT: define void @mutual_recursion1(i1 %c)
 define void @mutual_recursion1(i1 %c) #0 {
   br i1 %c, label %rec, label %end
 rec:
+  call void @sink()
   call void @mutual_recursion2(i1 %c)
   br label %end
 end:
@@ -130,7 +133,7 @@ end:
 }
 
 
-; ATTRIBUTOR: Function Attrs: nofree noinline nosync nounwind readnone uwtable
+; ATTRIBUTOR: Function Attrs: nofree noinline nosync nounwind uwtable
 ; ATTRIBUTOR-NOT: willreturn
 ; ATTRIBUTOR-NEXT: define void @mutual_recursion2(i1 %c)
 define void @mutual_recursion2(i1 %c) #0 {
@@ -189,17 +192,23 @@ define void @conditional_exit(i32 %0, i32* nocapture readonly %1) local_unnamed_
 
 ; TEST 6 (positive case)
 ; Call intrinsic function
-; FIXME: missing willreturn
-; ATTRIBUTOR: Function Attrs: nounwind readnone speculatable
+; ATTRIBUTOR: Function Attrs: nounwind readnone speculatable willreturn
 ; ATTRIBUTOR-NEXT: declare float @llvm.floor.f32(float)
 declare float @llvm.floor.f32(float)
 
-; FIXME: missing willreturn
-; ATTRIBUTOR: Function Attrs: noinline nosync nounwind readnone uwtable
-; ATTRIBUTOR-NEXT: define void @call_floor(float %a)
+; ATTRIBUTOR_MODULE: Function Attrs: nofree noinline nosync nounwind readnone uwtable willreturn
+; ATTRIBUTOR_CGSCC:  Function Attrs: nofree noinline norecurse nosync nounwind readnone uwtable willreturn
+; ATTRIBUTOR-NEXT:   define void @call_floor(float %a)
 define void @call_floor(float %a) #0 {
     tail call float @llvm.floor.f32(float %a)
     ret void
+}
+
+; ATTRIBUTOR: Function Attrs: noinline nosync nounwind readnone uwtable willreturn
+; ATTRIBUTOR-NEXT: define float @call_floor2(float %a)
+define float @call_floor2(float %a) #0 {
+    %c = tail call float @llvm.floor.f32(float %a)
+    ret float %c
 }
 
 
@@ -297,8 +306,8 @@ declare i32 @__gxx_personality_v0(...)
 ; }
 
 ; FIXME: missing willreturn
-; ATTRIBUTOR_MODULE: Function Attrs: nofree noinline nosync nounwind readonly uwtable
-; ATTRIBUTOR_CGSCC: Function Attrs: nofree noinline norecurse nosync nounwind readonly uwtable
+; ATTRIBUTOR_MODULE: Function Attrs: argmemonly nofree noinline nosync nounwind readonly uwtable
+; ATTRIBUTOR_CGSCC: Function Attrs: argmemonly nofree noinline norecurse nosync nounwind readonly uwtable
 ; ATTRIBUTOR-NEXT: define i32 @loop_constant_trip_count(i32* nocapture nofree readonly %0)
 define i32 @loop_constant_trip_count(i32* nocapture readonly %0) #0 {
   br label %3
@@ -329,8 +338,8 @@ define i32 @loop_constant_trip_count(i32* nocapture readonly %0) #0 {
 ;     return ans;
 ; }
 ; FNATTR-NEXT: define i32 @loop_trip_count_unbound(i32 %0, i32 %1, i32* nocapture readonly %2, i32 %3) local_unnamed_addr
-; ATTRIBUTOR_MODULE: Function Attrs: nofree noinline nosync nounwind readonly uwtable
-; ATTRIBUTOR_CGSCC: Function Attrs: nofree noinline norecurse nosync nounwind readonly uwtable
+; ATTRIBUTOR_MODULE: Function Attrs: argmemonly nofree noinline nosync nounwind readonly uwtable
+; ATTRIBUTOR_CGSCC: Function Attrs: argmemonly nofree noinline norecurse nosync nounwind readonly uwtable
 ; ATTRIBUTOR-NOT: willreturn
 ; ATTRIBUTOR-NEXT: define i32 @loop_trip_count_unbound(i32 %0, i32 %1, i32* nocapture nofree readonly %2, i32 %3) local_unnamed_addr
 define i32 @loop_trip_count_unbound(i32 %0, i32 %1, i32* nocapture readonly %2, i32 %3) local_unnamed_addr #0 {
@@ -366,8 +375,8 @@ define i32 @loop_trip_count_unbound(i32 %0, i32 %1, i32* nocapture readonly %2, 
 
 
 ; FIXME: missing willreturn
-; ATTRIBUTOR_MODULE: Function Attrs: nofree noinline nosync nounwind readonly uwtable
-; ATTRIBUTOR_CGSCC: Function Attrs: nofree noinline norecurse nosync nounwind readonly uwtable
+; ATTRIBUTOR_MODULE: Function Attrs: argmemonly nofree noinline nosync nounwind readonly uwtable
+; ATTRIBUTOR_CGSCC: Function Attrs: argmemonly nofree noinline norecurse nosync nounwind readonly uwtable
 ; ATTRIBUTOR-NEXT: define i32 @loop_trip_dec(i32 %0, i32* nocapture nofree readonly %1) local_unnamed_addr
 
 define i32 @loop_trip_dec(i32 %0, i32* nocapture readonly %1) local_unnamed_addr #0 {

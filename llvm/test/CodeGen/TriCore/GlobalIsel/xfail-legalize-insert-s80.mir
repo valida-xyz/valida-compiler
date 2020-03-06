@@ -1,4 +1,4 @@
-# RUN: (not llc -mtriple=tricore -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s
+# RUN: not --crash llc -mtriple=tricore -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
 # XFAIL: *
 
 ---

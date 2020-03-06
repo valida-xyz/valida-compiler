@@ -13,7 +13,9 @@
 #ifndef MLIR_DIALECT_LINALG_EDSC_BUILDERS_H_
 #define MLIR_DIALECT_LINALG_EDSC_BUILDERS_H_
 
-#include "mlir/Dialect/Linalg/EDSC/Intrinsics.h"
+#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+// TODO(ntv): Needed for SubViewOp::Range, clean this up.
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/EDSC/Builders.h"
 #include "mlir/EDSC/Intrinsics.h"
@@ -21,9 +23,17 @@
 #include "mlir/IR/Builders.h"
 
 namespace mlir {
+class AffineForOp;
 class BlockArgument;
+class SubViewOp;
+
+namespace loop {
+class ParallelOp;
+} // namespace loop
 
 namespace edsc {
+class AffineLoopNestBuilder;
+class ParallelLoopNestBuilder;
 
 /// A LoopRangeBuilder is a generic NestedBuilder for loop.for operations.
 /// More specifically it is meant to be used as a temporary object for
@@ -115,14 +125,17 @@ Operation *makeGenericLinalgOp(
 namespace ops {
 using edsc::StructuredIndexed;
 using edsc::ValueHandle;
-using edsc::intrinsics::linalg_yield;
 
 //===----------------------------------------------------------------------===//
 // EDSC builders for linalg generic operations.
 //===----------------------------------------------------------------------===//
 
-/// Build the body of a region to compute a multiply-accumulate, under the
-/// current ScopedContext, at the current insert point.
+/// Build the body of a region to compute a scalar multiply, under the current
+/// ScopedContext, at the current insert point.
+void mulRegionBuilder(ArrayRef<BlockArgument> args);
+
+/// Build the body of a region to compute a scalar multiply-accumulate, under
+/// the current ScopedContext, at the current insert point.
 void macRegionBuilder(ArrayRef<BlockArgument> args);
 
 /// TODO(ntv): In the future we should tie these implementations to something in
@@ -176,6 +189,8 @@ Operation *linalg_pointwise_max(StructuredIndexed I1, StructuredIndexed I2,
 
 // TODO(ntv): Implement more useful pointwise operations on a per-need basis.
 
+using MatmulRegionBuilder = function_ref<void(ArrayRef<BlockArgument> args)>;
+
 /// Build a linalg.generic, under the current ScopedContext, at the current
 /// insert point, that computes:
 /// ```
@@ -183,7 +198,8 @@ Operation *linalg_pointwise_max(StructuredIndexed I1, StructuredIndexed I2,
 ///    |
 ///    |  C(m, n) += A(m, k) * B(k, n)
 /// ```
-Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, ValueHandle vC);
+Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, ValueHandle vC,
+                         MatmulRegionBuilder regionBuilder = macRegionBuilder);
 
 /// Build a linalg.generic, under the current ScopedContext, at the current
 /// insert point, that computes:
@@ -193,7 +209,8 @@ Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, ValueHandle vC);
 ///    |  C(m, n) = sum_k(A(m, k) * B(k, n))
 /// ```
 /// and returns the tensor `C`.
-Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, RankedTensorType tC);
+Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, RankedTensorType tC,
+                         MatmulRegionBuilder regionBuilder = mulRegionBuilder);
 
 /// Build a linalg.generic, under the current ScopedContext, at the current
 /// insert point, that computes:
@@ -204,11 +221,14 @@ Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, RankedTensorType tC);
 /// ```
 /// and returns the tensor `D`.
 Operation *linalg_matmul(ValueHandle vA, ValueHandle vB, ValueHandle vC,
-                         RankedTensorType tD);
+                         RankedTensorType tD,
+                         MatmulRegionBuilder regionBuilder = macRegionBuilder);
 
-template <typename Container> Operation *linalg_matmul(Container values) {
+template <typename Container>
+Operation *linalg_matmul(Container values,
+                         MatmulRegionBuilder regionBuilder = macRegionBuilder) {
   assert(values.size() == 3 && "Expected exactly 3 values");
-  return linalg_matmul(values[0], values[1], values[2]);
+  return linalg_matmul(values[0], values[1], values[2], regionBuilder);
 }
 
 /// Build a linalg.generic, under the current ScopedContext, at the current

@@ -14,9 +14,9 @@
 #ifndef LLVM_OPENMP_IR_IRBUILDER_H
 #define LLVM_OPENMP_IR_IRBUILDER_H
 
+#include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {
@@ -34,6 +34,9 @@ public:
   /// potentially other helpers into the underlying module. Must be called
   /// before any other method and only once!
   void initialize();
+
+  /// Finalize the underlying module, e.g., by outlining regions.
+  void finalize();
 
   /// Add attributes known for \p FnID to \p Fn.
   void addAttributes(omp::RuntimeFunction FnID, Function &Fn);
@@ -147,9 +150,8 @@ public:
   /// \param CanceledDirective The kind of directive that is cancled.
   ///
   /// \returns The insertion point after the barrier.
-  InsertPointTy CreateCancel(const LocationDescription &Loc,
-                              Value *IfCondition,
-                              omp::Directive CanceledDirective);
+  InsertPointTy CreateCancel(const LocationDescription &Loc, Value *IfCondition,
+                             omp::Directive CanceledDirective);
 
   /// Generator for '#omp parallel'
   ///
@@ -174,10 +176,21 @@ public:
   /// \param Loc The location where the flush directive was encountered
   void CreateFlush(const LocationDescription &Loc);
 
+  /// Generator for '#omp taskwait'
+  ///
+  /// \param Loc The location where the taskwait directive was encountered.
+  void CreateTaskwait(const LocationDescription &Loc);
+
+  /// Generator for '#omp taskyield'
+  ///
+  /// \param Loc The location where the taskyield directive was encountered.
+  void CreateTaskyield(const LocationDescription &Loc);
+
   ///}
 
+  /// Return the insertion point used by the underlying IRBuilder.
+  InsertPointTy getInsertionPoint() { return Builder.saveIP(); }
 
-private:
   /// Update the internal location to \p Loc.
   bool updateToLocation(const LocationDescription &Loc) {
     Builder.restoreIP(Loc.IP);
@@ -239,6 +252,16 @@ private:
            FinalizationStack.back().DK == DK;
   }
 
+  /// Generate a taskwait runtime call.
+  ///
+  /// \param Loc The location at which the request originated and is fulfilled.
+  void emitTaskwaitImpl(const LocationDescription &Loc);
+
+  /// Generate a taskyield runtime call.
+  ///
+  /// \param Loc The location at which the request originated and is fulfilled.
+  void emitTaskyieldImpl(const LocationDescription &Loc);
+
   /// Return the current thread ID.
   ///
   /// \param Ident The ident (ident_t*) describing the query origin.
@@ -255,6 +278,20 @@ private:
 
   /// Map to remember existing ident_t*.
   DenseMap<std::pair<Constant *, uint64_t>, GlobalVariable *> IdentMap;
+
+  /// Helper that contains information about regions we need to outline
+  /// during finalization.
+  struct OutlineInfo {
+    SmallVector<BasicBlock *, 32> Blocks;
+    using PostOutlineCBTy = std::function<void(Function &)>;
+    PostOutlineCBTy PostOutlineCB;
+  };
+
+  /// Collection of regions that need to be outlined during finalization.
+  SmallVector<OutlineInfo, 16> OutlineInfos;
+
+  /// Add a new region that will be outlined later.
+  void addOutlineInfo(OutlineInfo &&OI) { OutlineInfos.emplace_back(OI); }
 
   /// An ordered map of auto-generated variables to their unique names.
   /// It stores variables with the following names: 1) ".gomp_critical_user_" +
@@ -312,8 +349,8 @@ private:
   /// \param FinIP Insertion point for emitting Finalization code and exit call
   /// \param ExitCall Call to the ending OMP Runtime Function
   /// \param HasFinalize indicate if the directive will require finalization
-  /// 		 	 and has a finalization callback in the stack that
-  /// 			 should be called.
+  ///         and has a finalization callback in the stack that
+  ///        should be called.
   ///
   /// \return The insertion position in exit block
   InsertPointTy emitCommonDirectiveExit(omp::Directive OMPD,
@@ -332,8 +369,8 @@ private:
   ///        to evaluate a conditional of whether a thread will execute
   ///        body code or not.
   /// \param HasFinalize indicate if the directive will require finalization
-  /// 		 	 and has a finalization callback in the stack that should
-  /// 			 be called.
+  ///         and has a finalization callback in the stack that
+  /// should        be called.
   ///
   /// \return The insertion point after the region
 
@@ -346,9 +383,9 @@ private:
   /// Get the platform-specific name separator.
   /// \param Parts different parts of the final name that needs separation
   /// \param FirstSeparator First separator used between the initial two
-  /// 			 parts of the name.
+  ///        parts of the name.
   /// \param Separator separator used between all of the rest consecutinve
-  /// 			 parts of the name
+  ///        parts of the name
   static std::string getNameWithSeparators(ArrayRef<StringRef> Parts,
                                            StringRef FirstSeparator,
                                            StringRef Separator);

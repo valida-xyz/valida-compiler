@@ -11,9 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Tooling/ASTDiff/ASTDiff.h"
-
 #include "clang/AST/ParentMapContext.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/PriorityQueue.h"
 
@@ -117,12 +117,12 @@ public:
   Impl(SyntaxTree *Parent, Stmt *N, ASTContext &AST);
   template <class T>
   Impl(SyntaxTree *Parent,
-       typename std::enable_if<std::is_base_of<Stmt, T>::value, T>::type *Node,
+       std::enable_if_t<std::is_base_of<Stmt, T>::value, T> *Node,
        ASTContext &AST)
       : Impl(Parent, dyn_cast<Stmt>(Node), AST) {}
   template <class T>
   Impl(SyntaxTree *Parent,
-       typename std::enable_if<std::is_base_of<Decl, T>::value, T>::type *Node,
+       std::enable_if_t<std::is_base_of<Decl, T>::value, T> *Node,
        ASTContext &AST)
       : Impl(Parent, dyn_cast<Decl>(Node), AST) {}
 
@@ -684,9 +684,7 @@ private:
   }
 };
 
-ast_type_traits::ASTNodeKind Node::getType() const {
-  return ASTNode.getNodeKind();
-}
+ASTNodeKind Node::getType() const { return ASTNode.getNodeKind(); }
 
 StringRef Node::getTypeLabel() const { return getType().asStringRef(); }
 

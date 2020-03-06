@@ -674,6 +674,7 @@
 // RUN: %clang -target armv8m.main-none-linux-gnu -mcmse -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=V8M_CMSE %s
 // RUN: %clang -target arm-none-linux-gnu -mcpu=cortex-m33 -mcmse -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=V8M_CMSE %s
 // RUN: %clang -target arm -mcpu=cortex-m23 -mcmse -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=V8M_CMSE %s
+// RUN: %clang -target arm-none-linux-gnu -mcpu=cortex-m55 -mcmse -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=V8M_CMSE %s
 // V8M_CMSE-NOT: __ARM_FEATURE_CMSE 1
 // V8M_CMSE: #define __ARM_FEATURE_CMSE 3
 
@@ -726,6 +727,20 @@
 // M33-ALLOW-FP-INSTR: #define __ARM_FP 0x6
 // M33-ALLOW-FP-INSTR: #define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_1 1
 
+// Test whether predefines are as expected when targeting cortex-m55 (softfp FP ABI as default).
+// RUN: %clang -target arm-eabi -mcpu=cortex-m55 -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=M55 %s
+// M55: #define __ARM_ARCH 8
+// M55: #define __ARM_ARCH_8_1M_MAIN__ 1
+// M55: #define __ARM_ARCH_EXT_IDIV__ 1
+// M55-NOT: __ARM_ARCH_ISA_ARM
+// M55: #define __ARM_ARCH_ISA_THUMB 2
+// M55: #define __ARM_ARCH_PROFILE 'M'
+// M55-NOT: __ARM_FEATURE_CRC32
+// M55: #define __ARM_FEATURE_DSP 1
+// M55: #define __ARM_FEATURE_MVE 3
+// M55: #define __ARM_FP 0xe
+// M55: #define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_1 1
+
 // Test whether predefines are as expected when targeting krait (soft FP as default).
 // RUN: %clang -target armv7 -mcpu=krait -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=KRAIT %s
 // RUN: %clang -target armv7 -mthumb -mcpu=krait -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=KRAIT %s
@@ -761,8 +776,9 @@
 // CHECK-V81M-MVEFP: #define __ARM_FEATURE_SIMD32 1
 // CHECK-V81M-MVEFP: #define __ARM_FPV5__ 1
 
-// nofp discards mve.fp, but not mve/dsp
-// RUN: %clang -target arm-arm-none-eabi -march=armv8.1-m.main+mve.fp+nofp -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=CHECK-V81M-MVEFP-NOFP %s
+// fpu=none/nofp discards mve.fp, but not mve/dsp
+// RUN: %clang -target arm-arm-none-eabi -march=armv8.1-m.main+mve.fp+nofp            -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=CHECK-V81M-MVEFP-NOFP %s
+// RUN: %clang -target arm-arm-none-eabi -march=armv8.1-m.main+mve.fp      -mfpu=none -x c -E -dM %s -o - | FileCheck -match-full-lines --check-prefix=CHECK-V81M-MVEFP-NOFP %s
 // CHECK-V81M-MVEFP-NOFP: #define __ARM_FEATURE_DSP 1
 // CHECK-V81M-MVEFP-NOFP: #define __ARM_FEATURE_MVE 1
 

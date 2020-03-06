@@ -17,6 +17,7 @@
 #include "clang/AST/ASTVector.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclAccessPair.h"
+#include "clang/AST/DependencyFlags.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/TemplateBase.h"
@@ -28,10 +29,10 @@
 #include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/iterator.h"
-#include "llvm/ADT/iterator_range.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/iterator.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/TrailingObjects.h"
@@ -120,13 +121,20 @@ protected:
        bool TD, bool VD, bool ID, bool ContainsUnexpandedParameterPack)
     : ValueStmt(SC)
   {
-    ExprBits.TypeDependent = TD;
-    ExprBits.ValueDependent = VD;
-    ExprBits.InstantiationDependent = ID;
+    auto D = ExprDependence::None;
+    if (TD)
+      D |= ExprDependence::Type;
+    if (VD)
+      D |= ExprDependence::Value;
+    if (ID)
+      D |= ExprDependence::Instantiation;
+    if (ContainsUnexpandedParameterPack)
+      D |= ExprDependence::UnexpandedPack;
+
+    ExprBits.Dependent = static_cast<unsigned>(D);
     ExprBits.ValueKind = VK;
     ExprBits.ObjectKind = OK;
     assert(ExprBits.ObjectKind == OK && "truncated kind");
-    ExprBits.ContainsUnexpandedParameterPack = ContainsUnexpandedParameterPack;
     setType(T);
   }
 
@@ -148,6 +156,20 @@ public:
     TR = t;
   }
 
+  ExprDependence getDependence() const {
+    return static_cast<ExprDependence>(ExprBits.Dependent);
+  }
+
+  void setDependence(ExprDependence Deps) {
+    ExprBits.Dependent = static_cast<unsigned>(Deps);
+  }
+  void addDependence(ExprDependence Deps) {
+    ExprBits.Dependent |= static_cast<unsigned>(Deps);
+  }
+  void removeDependence(ExprDependence Deps) {
+    ExprBits.Dependent &= ~static_cast<unsigned>(Deps);
+  }
+
   /// isValueDependent - Determines whether this expression is
   /// value-dependent (C++ [temp.dep.constexpr]). For example, the
   /// array bound of "Chars" in the following example is
@@ -155,11 +177,8 @@ public:
   /// @code
   /// template<int Size, char (&Chars)[Size]> struct meta_string;
   /// @endcode
-  bool isValueDependent() const { return ExprBits.ValueDependent; }
-
-  /// Set whether this expression is value-dependent or not.
-  void setValueDependent(bool VD) {
-    ExprBits.ValueDependent = VD;
+  bool isValueDependent() const {
+    return static_cast<bool>(getDependence() & ExprDependence::Value);
   }
 
   /// isTypeDependent - Determines whether this expression is
@@ -173,11 +192,8 @@ public:
   ///   x + y;
   /// }
   /// @endcode
-  bool isTypeDependent() const { return ExprBits.TypeDependent; }
-
-  /// Set whether this expression is type-dependent or not.
-  void setTypeDependent(bool TD) {
-    ExprBits.TypeDependent = TD;
+  bool isTypeDependent() const {
+    return static_cast<bool>(getDependence() & ExprDependence::Type);
   }
 
   /// Whether this expression is instantiation-dependent, meaning that
@@ -198,12 +214,7 @@ public:
   /// \endcode
   ///
   bool isInstantiationDependent() const {
-    return ExprBits.InstantiationDependent;
-  }
-
-  /// Set whether this expression is instantiation-dependent or not.
-  void setInstantiationDependent(bool ID) {
-    ExprBits.InstantiationDependent = ID;
+    return static_cast<bool>(getDependence() & ExprDependence::Instantiation);
   }
 
   /// Whether this expression contains an unexpanded parameter
@@ -221,13 +232,7 @@ public:
   /// The expressions \c args and \c static_cast<Types&&>(args) both
   /// contain parameter packs.
   bool containsUnexpandedParameterPack() const {
-    return ExprBits.ContainsUnexpandedParameterPack;
-  }
-
-  /// Set the bit that describes whether this expression
-  /// contains an unexpanded parameter pack.
-  void setContainsUnexpandedParameterPack(bool PP = true) {
-    ExprBits.ContainsUnexpandedParameterPack = PP;
+    return static_cast<bool>(getDependence() & ExprDependence::UnexpandedPack);
   }
 
   /// getExprLoc - Return the preferred location for the arrow when diagnosing
@@ -1214,10 +1219,6 @@ class DeclRefExpr final
 
   /// Construct an empty declaration reference expression.
   explicit DeclRefExpr(EmptyShell Empty) : Expr(DeclRefExprClass, Empty) {}
-
-  /// Computes the type- and value-dependence flags for this
-  /// declaration reference expression.
-  void computeDependence(const ASTContext &Ctx);
 
 public:
   DeclRefExpr(const ASTContext &Ctx, ValueDecl *D,
@@ -2557,8 +2558,6 @@ class CallExpr : public Expr {
   /// The location of the right parenthese. This has a different meaning for
   /// the derived classes of CallExpr.
   SourceLocation RParenLoc;
-
-  void updateDependenciesFromArg(Expr *Arg);
 
   // CallExpr store some data in trailing objects. However since CallExpr
   // is used a base of other expression classes we cannot use
@@ -3960,14 +3959,8 @@ class StmtExpr : public Expr {
   Stmt *SubStmt;
   SourceLocation LParenLoc, RParenLoc;
 public:
-  // FIXME: Does type-dependence need to be computed differently?
-  // FIXME: Do we need to compute instantiation instantiation-dependence for
-  // statements? (ugh!)
-  StmtExpr(CompoundStmt *substmt, QualType T,
-           SourceLocation lp, SourceLocation rp) :
-    Expr(StmtExprClass, T, VK_RValue, OK_Ordinary,
-         T->isDependentType(), false, false, false),
-    SubStmt(substmt), LParenLoc(lp), RParenLoc(rp) { }
+  StmtExpr(CompoundStmt *SubStmt, QualType T,
+           SourceLocation LParen, SourceLocation RParen);
 
   /// Build an empty statement expression.
   explicit StmtExpr(EmptyShell Empty) : Expr(StmtExprClass, Empty) { }
@@ -4467,13 +4460,8 @@ public:
     assert(Init < getNumInits() && "Initializer access out of range!");
     InitExprs[Init] = expr;
 
-    if (expr) {
-      ExprBits.TypeDependent |= expr->isTypeDependent();
-      ExprBits.ValueDependent |= expr->isValueDependent();
-      ExprBits.InstantiationDependent |= expr->isInstantiationDependent();
-      ExprBits.ContainsUnexpandedParameterPack |=
-          expr->containsUnexpandedParameterPack();
-    }
+    if (expr)
+      addDependence(expr->getDependence());
   }
 
   /// Reserve space for some number of initializers.
@@ -5282,10 +5270,9 @@ class GenericSelectionExpr final
   template <bool Const> class AssociationTy {
     friend class GenericSelectionExpr;
     template <bool OtherConst> friend class AssociationIteratorTy;
-    using ExprPtrTy =
-        typename std::conditional<Const, const Expr *, Expr *>::type;
-    using TSIPtrTy = typename std::conditional<Const, const TypeSourceInfo *,
-                                               TypeSourceInfo *>::type;
+    using ExprPtrTy = std::conditional_t<Const, const Expr *, Expr *>;
+    using TSIPtrTy =
+        std::conditional_t<Const, const TypeSourceInfo *, TypeSourceInfo *>;
     ExprPtrTy E;
     TSIPtrTy TSI;
     bool Selected;
@@ -5327,10 +5314,9 @@ class GenericSelectionExpr final
     //    const Association &Assoc = *It++; // Oops, Assoc is dangling.
     using BaseTy = typename AssociationIteratorTy::iterator_facade_base;
     using StmtPtrPtrTy =
-        typename std::conditional<Const, const Stmt *const *, Stmt **>::type;
-    using TSIPtrPtrTy =
-        typename std::conditional<Const, const TypeSourceInfo *const *,
-                                  TypeSourceInfo **>::type;
+        std::conditional_t<Const, const Stmt *const *, Stmt **>;
+    using TSIPtrPtrTy = std::conditional_t<Const, const TypeSourceInfo *const *,
+                                           TypeSourceInfo **>;
     StmtPtrPtrTy E; // = nullptr; FIXME: Once support for gcc 4.8 is dropped.
     TSIPtrPtrTy TSI; // Kept in sync with E.
     unsigned Offset = 0, SelectedOffset = 0;

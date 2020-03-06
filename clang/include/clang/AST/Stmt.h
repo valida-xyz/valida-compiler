@@ -14,6 +14,7 @@
 #define LLVM_CLANG_AST_STMT_H
 
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/DependencyFlags.h"
 #include "clang/AST/StmtIterator.h"
 #include "clang/Basic/CapturedStmt.h"
 #include "clang/Basic/IdentifierTable.h"
@@ -315,12 +316,9 @@ protected:
 
     unsigned ValueKind : 2;
     unsigned ObjectKind : 3;
-    unsigned TypeDependent : 1;
-    unsigned ValueDependent : 1;
-    unsigned InstantiationDependent : 1;
-    unsigned ContainsUnexpandedParameterPack : 1;
+    unsigned /*ExprDependence*/ Dependent : ExprDependenceBits;
   };
-  enum { NumExprBits = NumStmtBits + 9 };
+  enum { NumExprBits = NumStmtBits + 5 + ExprDependenceBits };
 
   class ConstantExprBitfields {
     friend class ASTStmtReader;
@@ -3032,7 +3030,7 @@ public:
   }
 
   IdentifierInfo *getLabelIdentifier(unsigned i) const {
-    return Names[i + NumInputs];
+    return Names[i + NumOutputs + NumInputs];
   }
 
   AddrLabelExpr *getLabelExpr(unsigned i) const;
@@ -3043,11 +3041,11 @@ public:
   using labels_const_range = llvm::iterator_range<const_labels_iterator>;
 
   labels_iterator begin_labels() {
-    return &Exprs[0] + NumInputs;
+    return &Exprs[0] + NumOutputs + NumInputs;
   }
 
   labels_iterator end_labels() {
-    return &Exprs[0] + NumInputs + NumLabels;
+    return &Exprs[0] + NumOutputs + NumInputs + NumLabels;
   }
 
   labels_range labels() {
@@ -3055,11 +3053,11 @@ public:
   }
 
   const_labels_iterator begin_labels() const {
-    return &Exprs[0] + NumInputs;
+    return &Exprs[0] + NumOutputs + NumInputs;
   }
 
   const_labels_iterator end_labels() const {
-    return &Exprs[0] + NumInputs + NumLabels;
+    return &Exprs[0] + NumOutputs + NumInputs + NumLabels;
   }
 
   labels_const_range labels() const {

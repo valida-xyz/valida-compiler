@@ -208,6 +208,12 @@ struct ByteCommand : BaseCommand {
   unsigned size;
 };
 
+struct InsertCommand {
+  OutputSection *os;
+  bool isAfter;
+  StringRef where;
+};
+
 struct PhdrsCommand {
   StringRef name;
   unsigned type = llvm::ELF::PT_NULL;
@@ -276,6 +282,7 @@ public:
   ExprValue getSymbolValue(StringRef name, const Twine &loc);
 
   void addOrphanSections();
+  void diagnoseOrphanHandling() const;
   void adjustSectionsBeforeSorting();
   void adjustSectionsAfterSorting();
 
@@ -311,10 +318,16 @@ public:
   // A list of symbols referenced by the script.
   std::vector<llvm::StringRef> referencedSymbols;
 
-  // Used to implement INSERT [AFTER|BEFORE]. Contains commands that need
-  // to be inserted into SECTIONS commands list.
-  llvm::DenseMap<StringRef, std::vector<BaseCommand *>> insertAfterCommands;
-  llvm::DenseMap<StringRef, std::vector<BaseCommand *>> insertBeforeCommands;
+  // Used to implement INSERT [AFTER|BEFORE]. Contains output sections that need
+  // to be reordered.
+  std::vector<InsertCommand> insertCommands;
+
+  // Sections that will be warned/errored by --orphan-handling.
+  std::vector<const InputSectionBase *> orphanSections;
+
+  // Sections whose addresses are not equal to their addrExpr values.
+  std::vector<std::pair<const OutputSection *, uint64_t>>
+      changedSectionAddresses;
 };
 
 extern LinkerScript *script;

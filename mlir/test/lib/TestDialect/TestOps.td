@@ -11,6 +11,7 @@
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/OpAsmInterface.td"
+include "mlir/Analysis/ControlFlowInterfaces.td"
 include "mlir/Analysis/CallInterfaces.td"
 include "mlir/Analysis/InferTypeOpInterface.td"
 
@@ -25,6 +26,14 @@ class TEST_Op<string mnemonic, list<OpTrait> traits = []> :
 //===----------------------------------------------------------------------===//
 // Test Types
 //===----------------------------------------------------------------------===//
+
+def IntTypesOp : TEST_Op<"int_types"> {
+  let results = (outs
+    AnyI16:$any_i16,
+    SI32:$si32,
+    UI64:$ui64
+  );
+}
 
 def ComplexF64 : Complex<F64>;
 def ComplexOp : TEST_Op<"complex_f64"> {
@@ -127,15 +136,15 @@ def MixedNormalVariadicResults : TEST_Op<
 
 def NonNegIntAttrOp : TEST_Op<"non_negative_int_attr"> {
   let arguments = (ins
-      NonNegativeI32Attr:$i32attr,
-      NonNegativeI64Attr:$i64attr
+      Confined<I32Attr, [IntNonNegative]>:$i32attr,
+      Confined<I64Attr, [IntNonNegative]>:$i64attr
   );
 }
 
 def PositiveIntAttrOp : TEST_Op<"positive_int_attr"> {
   let arguments = (ins
-      PositiveI32Attr:$i32attr,
-      PositiveI64Attr:$i64attr
+      Confined<I32Attr, [IntPositive]>:$i32attr,
+      Confined<I64Attr, [IntPositive]>:$i64attr
   );
 }
 
@@ -187,6 +196,15 @@ def I64EnumAttrOp : TEST_Op<"i64_enum_attr"> {
   let results = (outs I32:$val);
 }
 
+
+def IntAttrOp : TEST_Op<"int_attrs"> {
+  let arguments = (ins
+    AnyI32Attr:$any_i32_attr,
+    UI32Attr:$ui32_attr,
+    SI32Attr:$si32_attr
+  );
+}
+
 def FloatElementsAttrOp : TEST_Op<"float_elements_attr"> {
   let arguments = (ins
       RankedF32ElementsAttr<[2]>:$scalar_f32_attr,
@@ -203,6 +221,20 @@ def UpdateFloatElementsAttr : Pat<
   (FloatElementsAttrOp
     ConstantAttr<RankedF32ElementsAttr<[2]>, "{5.0f, 6.0f}">:$f32attr,
     $f64attr)>;
+
+def IntElementsAttrOp : TEST_Op<"int_elements_attr"> {
+  let arguments = (ins
+      AnyI32ElementsAttr:$any_i32_attr,
+      I32ElementsAttr:$i32_attr
+  );
+}
+
+def RankedIntElementsAttrOp : TEST_Op<"ranked_int_elements_attr"> {
+  let arguments = (ins
+      RankedI32ElementsAttr<[2]>:$vector_i32_attr,
+      RankedI64ElementsAttr<[4, 8]>:$matrix_i64_attr
+  );
+}
 
 //===----------------------------------------------------------------------===//
 // Test Attribute Constraints
@@ -415,6 +447,11 @@ def OpWithShapedTypeInferTypeInterfaceOp : TEST_Op<"op_with_shaped_type_infer_ty
    ]> {
   let arguments = (ins AnyTensor, AnyTensor);
   let results = (outs AnyTensor);
+
+  let extraClassDeclaration = [{
+    LogicalResult reifyReturnTypeShapes(OpBuilder &builder,
+                                        SmallVectorImpl<Value> &shapes);
+  }];
 }
 
 def IsNotScalar : Constraint<CPred<"$0.getType().getRank() != 0">>;
@@ -423,8 +460,10 @@ def UpdateAttr : Pat<(I32ElementsAttrOp $attr),
                      (I32ElementsAttrOp ConstantAttr<I32ElementsAttr, "0">),
                      [(IsNotScalar $attr)]>;
 
-def TestBranchOp : TEST_Op<"br", [Terminator]> {
-  let arguments = (ins Variadic<AnyType>:$operands);
+def TestBranchOp : TEST_Op<"br",
+    [DeclareOpInterfaceMethods<BranchOpInterface>, Terminator]> {
+  let arguments = (ins Variadic<AnyType>:$targetOperands);
+  let successors = (successor AnySuccessor:$target);
 }
 
 def AttrSizedOperandOp : TEST_Op<"attr_sized_operands",
@@ -602,12 +641,11 @@ def OpAllAttrConstraint2 : TEST_Op<"all_attr_constraint_of2"> {
   let results = (outs I32);
 }
 def Constraint0 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>().getValue()[0]."
+    CPred<"$_self.cast<ArrayAttr>()[0]."
           "cast<IntegerAttr>().getInt() == 0">,
     "[0] == 0">;
 def Constraint1 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>().getValue()[1]."
-          "cast<IntegerAttr>().getInt() == 1">,
+    CPred<"$_self.cast<ArrayAttr>()[1].cast<IntegerAttr>().getInt() == 1">,
     "[1] == 1">;
 def : Pat<(OpAllAttrConstraint1
             AllAttrConstraintsOf<[Constraint0, Constraint1]>:$attr),
@@ -637,6 +675,11 @@ def TestOpWithVariadicResultsAndFolder: TEST_Op<"op_with_variadic_results_and_fo
   let arguments = (ins Variadic<I32>:$operands);
   let results = (outs Variadic<I32>);
   let hasFolder = 1;
+}
+
+def TestCommutativeOp : TEST_Op<"op_commutative", [Commutative]> {
+  let arguments = (ins I32:$op1, I32:$op2, I32:$op3, I32:$op4);
+  let results = (outs I32);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1078,6 +1121,12 @@ def FormatAttrOp : TEST_Op<"format_attr_op"> {
   let assemblyFormat = "$attr attr-dict";
 }
 
+// Test that we elide attributes that are within the syntax.
+def FormatAttrDictWithKeywordOp : TEST_Op<"format_attr_dict_w_keyword"> {
+  let arguments = (ins I64Attr:$attr);
+  let assemblyFormat = "attr-dict-with-keyword";
+}
+
 // Test that we don't need to provide types in the format if they are buildable.
 def FormatBuildableTypeOp : TEST_Op<"format_buildable_type_op"> {
   let arguments = (ins I64:$buildable);
@@ -1121,5 +1170,10 @@ def FormatOperandDOp : FormatOperandBase<"format_operand_d_op", [{
 def FormatOperandEOp : FormatOperandBase<"format_operand_e_op", [{
   $buildable `,` $operand `:` type($buildable) `,` type($operand) attr-dict
 }]>;
+
+def FormatSuccessorAOp : TEST_Op<"format_successor_a_op", [Terminator]> {
+  let successors = (successor VariadicSuccessor<AnySuccessor>:$targets);
+  let assemblyFormat = "$targets attr-dict";
+}
 
 #endif // TEST_OPS

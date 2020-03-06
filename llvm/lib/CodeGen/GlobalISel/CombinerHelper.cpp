@@ -75,36 +75,7 @@ bool CombinerHelper::matchCombineCopy(MachineInstr &MI) {
     return false;
   Register DstReg = MI.getOperand(0).getReg();
   Register SrcReg = MI.getOperand(1).getReg();
-
-  // Give up if either DstReg or SrcReg  is a physical register.
-  if (Register::isPhysicalRegister(DstReg) ||
-      Register::isPhysicalRegister(SrcReg))
-    return false;
-
-  // Give up the types don't match.
-  LLT DstTy = MRI.getType(DstReg);
-  LLT SrcTy = MRI.getType(SrcReg);
-  // Give up if one has a valid LLT, but the other doesn't.
-  if (DstTy.isValid() != SrcTy.isValid())
-    return false;
-  // Give up if the types don't match.
-  if (DstTy.isValid() && SrcTy.isValid() && DstTy != SrcTy)
-    return false;
-
-  // Get the register banks and classes.
-  const RegisterBank *DstBank = MRI.getRegBankOrNull(DstReg);
-  const RegisterBank *SrcBank = MRI.getRegBankOrNull(SrcReg);
-  const TargetRegisterClass *DstRC = MRI.getRegClassOrNull(DstReg);
-  const TargetRegisterClass *SrcRC = MRI.getRegClassOrNull(SrcReg);
-
-  // Replace if the register constraints match.
-  if ((SrcRC == DstRC) && (SrcBank == DstBank))
-    return true;
-  // Replace if DstReg has no constraints.
-  if (!DstBank && !DstRC)
-    return true;
-
-  return false;
+  return canReplaceReg(DstReg, SrcReg, MRI);
 }
 void CombinerHelper::applyCombineCopy(MachineInstr &MI) {
   Register DstReg = MI.getOperand(0).getReg();
@@ -295,7 +266,7 @@ namespace {
 /// Select a preference between two uses. CurrentUse is the current preference
 /// while *ForCandidate is attributes of the candidate under consideration.
 PreferredTuple ChoosePreferredUse(PreferredTuple &CurrentUse,
-                                  const LLT &TyForCandidate,
+                                  const LLT TyForCandidate,
                                   unsigned OpcodeForCandidate,
                                   MachineInstr *MIForCandidate) {
   if (!CurrentUse.Ty.isValid()) {
@@ -499,7 +470,7 @@ void CombinerHelper::applyCombineExtendingLoads(MachineInstr &MI,
         UseMI->getOpcode() == TargetOpcode::G_ANYEXT) {
       Register UseDstReg = UseMI->getOperand(0).getReg();
       MachineOperand &UseSrcMO = UseMI->getOperand(1);
-      const LLT &UseDstTy = MRI.getType(UseDstReg);
+      const LLT UseDstTy = MRI.getType(UseDstReg);
       if (UseDstReg != ChosenDstReg) {
         if (Preferred.Ty == UseDstTy) {
           // If the use has the same type as the preferred use, then merge
@@ -1151,7 +1122,7 @@ bool CombinerHelper::optimizeMemcpy(MachineInstr &MI, Register Dst,
     // Construct MMOs for the accesses.
     auto *LoadMMO =
         MF.getMachineMemOperand(&SrcMMO, CurrOffset, CopyTy.getSizeInBytes());
-    auto *StoreMMO = 
+    auto *StoreMMO =
         MF.getMachineMemOperand(&DstMMO, CurrOffset, CopyTy.getSizeInBytes());
 
     // Create the load.
@@ -1400,6 +1371,116 @@ bool CombinerHelper::applyCombineMulToShl(MachineInstr &MI,
   MI.getOperand(2).setReg(ShiftCst.getReg(0));
   Observer.changedInstr(MI);
   return true;
+}
+
+bool CombinerHelper::matchCombineShiftToUnmerge(MachineInstr &MI,
+                                                unsigned TargetShiftSize,
+                                                unsigned &ShiftVal) {
+  assert((MI.getOpcode() == TargetOpcode::G_SHL ||
+          MI.getOpcode() == TargetOpcode::G_LSHR ||
+          MI.getOpcode() == TargetOpcode::G_ASHR) && "Expected a shift");
+
+  LLT Ty = MRI.getType(MI.getOperand(0).getReg());
+  if (Ty.isVector()) // TODO:
+    return false;
+
+  // Don't narrow further than the requested size.
+  unsigned Size = Ty.getSizeInBits();
+  if (Size <= TargetShiftSize)
+    return false;
+
+  auto MaybeImmVal =
+    getConstantVRegValWithLookThrough(MI.getOperand(2).getReg(), MRI);
+  if (!MaybeImmVal)
+    return false;
+
+  ShiftVal = MaybeImmVal->Value;
+  return ShiftVal >= Size / 2 && ShiftVal < Size;
+}
+
+bool CombinerHelper::applyCombineShiftToUnmerge(MachineInstr &MI,
+                                                const unsigned &ShiftVal) {
+  Register DstReg = MI.getOperand(0).getReg();
+  Register SrcReg = MI.getOperand(1).getReg();
+  LLT Ty = MRI.getType(SrcReg);
+  unsigned Size = Ty.getSizeInBits();
+  unsigned HalfSize = Size / 2;
+  assert(ShiftVal >= HalfSize);
+
+  LLT HalfTy = LLT::scalar(HalfSize);
+
+  Builder.setInstr(MI);
+  auto Unmerge = Builder.buildUnmerge(HalfTy, SrcReg);
+  unsigned NarrowShiftAmt = ShiftVal - HalfSize;
+
+  if (MI.getOpcode() == TargetOpcode::G_LSHR) {
+    Register Narrowed = Unmerge.getReg(1);
+
+    //  dst = G_LSHR s64:x, C for C >= 32
+    // =>
+    //   lo, hi = G_UNMERGE_VALUES x
+    //   dst = G_MERGE_VALUES (G_LSHR hi, C - 32), 0
+
+    if (NarrowShiftAmt != 0) {
+      Narrowed = Builder.buildLShr(HalfTy, Narrowed,
+        Builder.buildConstant(HalfTy, NarrowShiftAmt)).getReg(0);
+    }
+
+    auto Zero = Builder.buildConstant(HalfTy, 0);
+    Builder.buildMerge(DstReg, { Narrowed, Zero });
+  } else if (MI.getOpcode() == TargetOpcode::G_SHL) {
+    Register Narrowed = Unmerge.getReg(0);
+    //  dst = G_SHL s64:x, C for C >= 32
+    // =>
+    //   lo, hi = G_UNMERGE_VALUES x
+    //   dst = G_MERGE_VALUES 0, (G_SHL hi, C - 32)
+    if (NarrowShiftAmt != 0) {
+      Narrowed = Builder.buildShl(HalfTy, Narrowed,
+        Builder.buildConstant(HalfTy, NarrowShiftAmt)).getReg(0);
+    }
+
+    auto Zero = Builder.buildConstant(HalfTy, 0);
+    Builder.buildMerge(DstReg, { Zero, Narrowed });
+  } else {
+    assert(MI.getOpcode() == TargetOpcode::G_ASHR);
+    auto Hi = Builder.buildAShr(
+      HalfTy, Unmerge.getReg(1),
+      Builder.buildConstant(HalfTy, HalfSize - 1));
+
+    if (ShiftVal == HalfSize) {
+      // (G_ASHR i64:x, 32) ->
+      //   G_MERGE_VALUES hi_32(x), (G_ASHR hi_32(x), 31)
+      Builder.buildMerge(DstReg, { Unmerge.getReg(1), Hi });
+    } else if (ShiftVal == Size - 1) {
+      // Don't need a second shift.
+      // (G_ASHR i64:x, 63) ->
+      //   %narrowed = (G_ASHR hi_32(x), 31)
+      //   G_MERGE_VALUES %narrowed, %narrowed
+      Builder.buildMerge(DstReg, { Hi, Hi });
+    } else {
+      auto Lo = Builder.buildAShr(
+        HalfTy, Unmerge.getReg(1),
+        Builder.buildConstant(HalfTy, ShiftVal - HalfSize));
+
+      // (G_ASHR i64:x, C) ->, for C >= 32
+      //   G_MERGE_VALUES (G_ASHR hi_32(x), C - 32), (G_ASHR hi_32(x), 31)
+      Builder.buildMerge(DstReg, { Lo, Hi });
+    }
+  }
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool CombinerHelper::tryCombineShiftToUnmerge(MachineInstr &MI,
+                                              unsigned TargetShiftAmount) {
+  unsigned ShiftAmt;
+  if (matchCombineShiftToUnmerge(MI, TargetShiftAmount, ShiftAmt)) {
+    applyCombineShiftToUnmerge(MI, ShiftAmt);
+    return true;
+  }
+
+  return false;
 }
 
 bool CombinerHelper::tryCombine(MachineInstr &MI) {

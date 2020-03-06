@@ -43,7 +43,7 @@ OpFoldResult StructAccessOp::fold(ArrayRef<Attribute> operands) {
     return nullptr;
 
   size_t elementIndex = index().getZExtValue();
-  return structAttr.getValue()[elementIndex];
+  return structAttr[elementIndex];
 }
 
 /// This is an example of a c++ rewrite pattern for the TransposeOp. It
@@ -66,11 +66,11 @@ struct SimplifyRedundantTranspose : public mlir::OpRewritePattern<TransposeOp> {
     TransposeOp transposeInputOp =
         llvm::dyn_cast_or_null<TransposeOp>(transposeInput.getDefiningOp());
 
-    // If the input is defined by another Transpose, bingo!
+    // Input defined by another transpose? If not, no match.
     if (!transposeInputOp)
       return matchFailure();
 
-    // Use the rewriter to perform the replacement.
+    // Otherwise, we have a redundant transpose. Use the rewriter.
     rewriter.replaceOp(op, {transposeInputOp.getOperand()});
     return matchSuccess();
   }

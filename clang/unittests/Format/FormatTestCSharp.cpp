@@ -170,12 +170,18 @@ TEST_F(FormatTestCSharp, CSharpFatArrows) {
   verifyFormat("public override string ToString() => \"{Name}\\{Age}\";");
 }
 
+TEST_F(FormatTestCSharp, CSharpConditionalExpressions) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+  // conditional expression is not seen as a NullConditional.
+  verifyFormat("var y = A < B ? -1 : 1;", Style);
+}
+
 TEST_F(FormatTestCSharp, CSharpNullConditional) {
   FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
   Style.SpaceBeforeParens = FormatStyle::SBPO_Always;
 
   verifyFormat(
-      "public Person(string firstName, string lastName, int? age=null)");
+      "public Person(string firstName, string lastName, int? age = null)");
 
   verifyFormat("foo () {\n"
                "  switch (args?.Length) {}\n"
@@ -240,23 +246,41 @@ TEST_F(FormatTestCSharp, Attributes) {
 
   verifyFormat("[TestMethod]\n"
                "public string Host\n"
-               "{\n"
-               "    set;\n"
-               "    get;\n"
-               "}");
+               "{ set; get; }");
 
   verifyFormat("[TestMethod(\"start\", HelpText = \"Starts the server "
                "listening on provided host\")]\n"
                "public string Host\n"
-               "{\n"
-               "    set;\n"
-               "    get;\n"
-               "}");
+               "{ set; get; }");
 
   verifyFormat(
       "[DllImport(\"Hello\", EntryPoint = \"hello_world\")]\n"
       "// The const char* returned by hello_world must not be deleted.\n"
       "private static extern IntPtr HelloFromCpp();)");
+
+  // Class attributes go on their own line and do not affect layout of
+  // interfaces. Line wrapping decisions previously caused each interface to be
+  // on its own line.
+  verifyFormat("[SomeAttribute]\n"
+               "[SomeOtherAttribute]\n"
+               "public class A : IShape, IAnimal, IVehicle\n"
+               "{\n"
+               "    int X;\n"
+               "}");
+
+  // Attributes in a method declaration do not cause line wrapping.
+  verifyFormat("void MethodA([In][Out] ref double x)\n"
+               "{\n"
+               "}");
+
+  // [] in an attribute do not cause premature line wrapping or indenting.
+  verifyFormat(R"(//
+public class A
+{
+    [SomeAttribute(new[] { RED, GREEN, BLUE }, -1.0f, 1.0f)]
+    [DoNotSerialize]
+    public Data MemberVariable;
+})");
 
   //  Unwrappable lines go on a line of their own.
   // 'target:' is not treated as a label.
@@ -498,7 +522,7 @@ var x = foo(className, $@"some code:
 TEST_F(FormatTestCSharp, CSharpObjectInitializers) {
   FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
 
-  // Start code fragemnts with a comment line so that C++ raw string literals
+  // Start code fragments with a comment line so that C++ raw string literals
   // as seen are identical to expected formatted code.
 
   verifyFormat(R"(//
@@ -516,12 +540,118 @@ Shape[] shapes = new[] {
 
   // Omitted final `,`s will change the formatting.
   verifyFormat(R"(//
-Shape[] shapes = new[] {new Circle {Radius = 2.7281, Colour = Colours.Red},
-                        new Square {
-                            Side = 101.1,
-                            Colour = Colours.Yellow,
-                        }};)",
+Shape[] shapes = new[] { new Circle { Radius = 2.7281, Colour = Colours.Red },
+                         new Square {
+                             Side = 101.1,
+                             Colour = Colours.Yellow,
+                         } };)",
                Style);
+
+  // Lambdas can be supplied as initialiser arguments.
+  verifyFormat(R"(//
+private Transformer _transformer = new X.Y {
+    Filler = (Shape shape) => { return new Transform.Fill(shape, RED); },
+    Scaler = (Shape shape) => { return new Transform.Resize(shape, 0.1); },
+};)",
+               Style);
+}
+
+TEST_F(FormatTestCSharp, CSharpNamedArguments) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+
+  verifyFormat(R"(//
+PrintOrderDetails(orderNum: 31, productName: "Red Mug",
+                  sellerName: "Gift Shop");)",
+               Style);
+
+  // Ensure that trailing comments do not cause problems.
+  verifyFormat(R"(//
+PrintOrderDetails(orderNum: 31, productName: "Red Mug",  // comment
+                  sellerName: "Gift Shop");)",
+               Style);
+
+  verifyFormat(R"(foreach (var tickCount in task.Begin(seed: 0)) {)", Style);
+}
+
+TEST_F(FormatTestCSharp, CSharpPropertyAccessors) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+
+  verifyFormat("int Value { get }", Style);
+  verifyFormat("int Value { get; }", Style);
+  verifyFormat("int Value { internal get; }", Style);
+  verifyFormat("int Value { get; } = 0", Style);
+  verifyFormat("int Value { set }", Style);
+  verifyFormat("int Value { set; }", Style);
+  verifyFormat("int Value { internal set; }", Style);
+  verifyFormat("int Value { set; } = 0", Style);
+  verifyFormat("int Value { get; set }", Style);
+  verifyFormat("int Value { set; get }", Style);
+  verifyFormat("int Value { get; private set; }", Style);
+  verifyFormat("int Value { get; set; }", Style);
+  verifyFormat("int Value { get; set; } = 0", Style);
+  verifyFormat("int Value { internal get; internal set; }", Style);
+
+  // Do not wrap expression body definitions.
+  verifyFormat(R"(//
+public string Name {
+  get => _name;
+  set => _name = value;
+})",
+               Style);
+}
+
+TEST_F(FormatTestCSharp, CSharpSpaces) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+  Style.SpaceBeforeSquareBrackets = false;
+  Style.SpacesInSquareBrackets = false;
+  Style.SpaceBeforeCpp11BracedList = true;
+  Style.Cpp11BracedListStyle = false;
+  Style.SpacesInContainerLiterals = false;
+
+  verifyFormat(R"(new Car { "Door", 0.1 })", Style);
+  verifyFormat(R"(new Car { 0.1, "Door" })", Style);
+  verifyFormat(R"(new string[] { "A" })", Style);
+  verifyFormat(R"(new string[] {})", Style);
+  verifyFormat(R"(new Car { someVariableName })", Style);
+  verifyFormat(R"(new Car { someVariableName })", Style);
+  verifyFormat(R"(new Dictionary<string, string> { ["Key"] = "Value" };)",
+               Style);
+  verifyFormat(R"(Apply(x => x.Name, x => () => x.ID);)", Style);
+  verifyFormat(R"(bool[] xs = { true, true };)", Style);
+  verifyFormat(R"(taskContext.Factory.Run(async () => doThing(args);)", Style);
+  verifyFormat(R"(catch (TestException) when (innerFinallyExecuted))", Style);
+  verifyFormat(R"(private float[,] Values;)", Style);
+
+  Style.SpacesInSquareBrackets = true;
+  verifyFormat(R"(private float[ , ] Values;)", Style);
+  verifyFormat(R"(string dirPath = args?[ 0 ];)", Style);
+}
+
+TEST_F(FormatTestCSharp, CSharpNullableTypes) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+  Style.SpacesInSquareBrackets = false;
+
+  verifyFormat(R"(//
+public class A {
+  void foo() { int? value = some.bar(); }
+})",
+               Style); // int? is nullable not a conditional expression.
+
+  verifyFormat(R"(void foo(int? x, int? y, int? z) {})",
+               Style); // Nullables in function definitions.
+
+  verifyFormat(R"(public float? Value;)", Style); // no space before `?`.
+
+  verifyFormat(R"(int?[] arr = new int?[10];)",
+               Style); // An array of a nullable type.
+}
+
+TEST_F(FormatTestCSharp, CSharpArraySubscripts) {
+  FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
+
+  // Do not format array subscript operators as attributes.
+  verifyFormat(R"(if (someThings[index].Contains(myThing)) {)", Style);
+  verifyFormat(R"(if (someThings[i][j][k].Contains(myThing)) {)", Style);
 }
 
 } // namespace format

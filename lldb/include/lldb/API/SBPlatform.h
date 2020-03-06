@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBPlatform_h_
-#define LLDB_SBPlatform_h_
+#ifndef LLDB_API_SBPLATFORM_H
+#define LLDB_API_SBPLATFORM_H
 
 #include "lldb/API/SBDefines.h"
 
@@ -97,6 +97,8 @@ public:
 
   ~SBPlatform();
 
+  static SBPlatform GetHostPlatform();
+
   explicit operator bool() const;
 
   bool IsValid() const;
@@ -169,4 +171,4 @@ protected:
 
 } // namespace lldb
 
-#endif // LLDB_SBPlatform_h_
+#endif // LLDB_API_SBPLATFORM_H

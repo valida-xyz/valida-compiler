@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TestDialect.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/Module.h"
 #include "mlir/IR/PatternMatch.h"
@@ -42,7 +43,7 @@ struct TestOpAsmInterface : public OpAsmDialectInterface {
     auto args = block->getArguments();
     auto e = std::min(arrayAttr.size(), args.size());
     for (unsigned i = 0; i < e; ++i) {
-      if (auto strAttr = arrayAttr.getValue()[i].dyn_cast<StringAttr>())
+      if (auto strAttr = arrayAttr[i].dyn_cast<StringAttr>())
         setNameFn(args[i], strAttr.getValue());
     }
   }
@@ -112,8 +113,10 @@ struct TestInlinerInterface : public DialectInlinerInterface {
                                        Type resultType,
                                        Location conversionLoc) const final {
     // Only allow conversion for i16/i32 types.
-    if (!(resultType.isInteger(16) || resultType.isInteger(32)) ||
-        !(input.getType().isInteger(16) || input.getType().isInteger(32)))
+    if (!(resultType.isSignlessInteger(16) ||
+          resultType.isSignlessInteger(32)) ||
+        !(input.getType().isSignlessInteger(16) ||
+          input.getType().isSignlessInteger(32)))
       return nullptr;
     return builder.create<TestCastOp>(conversionLoc, resultType, input);
   }
@@ -159,6 +162,17 @@ TestDialect::verifyRegionResultAttribute(Operation *op, unsigned regionIndex,
     return op->emitError() << "invalid to use 'test.invalid_attr'";
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// TestBranchOp
+//===----------------------------------------------------------------------===//
+
+Optional<OperandRange> TestBranchOp::getSuccessorOperands(unsigned index) {
+  assert(index == 0 && "invalid successor index");
+  return getOperands();
+}
+
+bool TestBranchOp::canEraseSuccessorOperand() { return true; }
 
 //===----------------------------------------------------------------------===//
 // Test IsolatedRegionOp - parse passthrough region arguments.
@@ -297,37 +311,37 @@ LogicalResult TestOpWithVariadicResultsAndFolder::fold(
 LogicalResult mlir::OpWithInferTypeInterfaceOp::inferReturnTypes(
     MLIRContext *, Optional<Location> location, ValueRange operands,
     ArrayRef<NamedAttribute> attributes, RegionRange regions,
-    SmallVectorImpl<Type> &inferedReturnTypes) {
+    SmallVectorImpl<Type> &inferredReturnTypes) {
   if (operands[0].getType() != operands[1].getType()) {
     return emitOptionalError(location, "operand type mismatch ",
                              operands[0].getType(), " vs ",
                              operands[1].getType());
   }
-  inferedReturnTypes.assign({operands[0].getType()});
+  inferredReturnTypes.assign({operands[0].getType()});
   return success();
 }
 
 LogicalResult OpWithShapedTypeInferTypeInterfaceOp::inferReturnTypeComponents(
     MLIRContext *context, Optional<Location> location, ValueRange operands,
     ArrayRef<NamedAttribute> attributes, RegionRange regions,
-    SmallVectorImpl<ShapedTypeComponents> &inferedComponents) {
-  // Create return type consisting of the first element of each shape of the
-  // input operands or unknown for unranked operand.
-  std::vector<int64_t> shape;
-  shape.reserve(operands.size());
-  for (auto operandType : operands.getTypes()) {
-    if (auto sval = operandType.dyn_cast<ShapedType>()) {
-      if (sval.hasRank())
-        shape.push_back(sval.getShape().front());
-      else
-        shape.push_back(ShapedType::kDynamicSize);
-    } else {
-      return emitOptionalError(location, "only shaped type operands allowed");
-    }
+    SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
+  // Create return type consisting of the last element of the first operand.
+  auto operandType = *operands.getTypes().begin();
+  auto sval = operandType.dyn_cast<ShapedType>();
+  if (!sval) {
+    return emitOptionalError(location, "only shaped type operands allowed");
   }
-  inferedComponents.reserve(1);
+  int64_t dim =
+      sval.hasRank() ? sval.getShape().front() : ShapedType::kDynamicSize;
   auto type = IntegerType::get(17, context);
-  inferedComponents.emplace_back(shape, type);
+  inferredReturnShapes.push_back(ShapedTypeComponents({dim}, type));
+  return success();
+}
+
+LogicalResult OpWithShapedTypeInferTypeInterfaceOp::reifyReturnTypeShapes(
+    OpBuilder &builder, llvm::SmallVectorImpl<Value> &shapes) {
+  shapes = SmallVector<Value, 1>{
+      builder.createOrFold<mlir::DimOp>(getLoc(), getOperand(0), 0)};
   return success();
 }
 

@@ -64,6 +64,8 @@ public:
     ProduceNonFlagSettingCondBr =
         !MF.getFunction().hasFnAttribute(Attribute::SpeculativeLoadHardening);
     MFReturnAddr = Register();
+
+    processPHIs(MF);
   }
 
 private:
@@ -77,6 +79,9 @@ private:
 
   // An early selection function that runs before the selectImpl() call.
   bool earlySelect(MachineInstr &I) const;
+
+  // Do some preprocessing of G_PHIs before we begin selection.
+  void processPHIs(MachineFunction &MF);
 
   bool earlySelectSHL(MachineInstr &I, MachineRegisterInfo &MRI) const;
 
@@ -273,6 +278,8 @@ private:
   /// new copy.
   Register narrowExtendRegIfNeeded(Register ExtReg,
                                              MachineIRBuilder &MIB) const;
+  Register widenGPRBankRegIfNeeded(Register Reg, unsigned Size,
+                                   MachineIRBuilder &MIB) const;
   ComplexRendererFns selectArithExtendedRegister(MachineOperand &Root) const;
 
   void renderTruncImm(MachineInstrBuilder &MIB, const MachineInstr &MI,
@@ -439,6 +446,18 @@ static bool getSubRegForClass(const TargetRegisterClass *RC,
   }
 
   return true;
+}
+
+/// Returns the minimum size the given register bank can hold.
+static unsigned getMinSizeForRegBank(const RegisterBank &RB) {
+  switch (RB.getID()) {
+  case AArch64::GPRRegBankID:
+    return 32;
+  case AArch64::FPRRegBankID:
+    return 8;
+  default:
+    llvm_unreachable("Tried to get minimum size for unknown register bank.");
+  }
 }
 
 /// Check whether \p I is a currently unsupported binary operation:
@@ -629,23 +648,20 @@ static bool isValidCopy(const MachineInstr &I, const RegisterBank &DstBank,
 }
 #endif
 
-/// Helper function for selectCopy. Inserts a subregister copy from
-/// \p *From to \p *To, linking it up to \p I.
+/// Helper function for selectCopy. Inserts a subregister copy from \p SrcReg
+/// to \p *To.
 ///
-/// e.g, given I = "Dst = COPY SrcReg", we'll transform that into
-///
-/// CopyReg (From class) = COPY SrcReg
-/// SubRegCopy (To class) = COPY CopyReg:SubReg
-/// Dst = COPY SubRegCopy
-static bool selectSubregisterCopy(MachineInstr &I, MachineRegisterInfo &MRI,
-                                  const RegisterBankInfo &RBI, Register SrcReg,
-                                  const TargetRegisterClass *From,
-                                  const TargetRegisterClass *To,
-                                  unsigned SubReg) {
+/// E.g "To = COPY SrcReg:SubReg"
+static bool copySubReg(MachineInstr &I, MachineRegisterInfo &MRI,
+                       const RegisterBankInfo &RBI, Register SrcReg,
+                       const TargetRegisterClass *To, unsigned SubReg) {
+  assert(SrcReg.isValid() && "Expected a valid source register?");
+  assert(To && "Destination register class cannot be null");
+  assert(SubReg && "Expected a valid subregister");
+
   MachineIRBuilder MIB(I);
-  auto Copy = MIB.buildCopy({From}, {SrcReg});
-  auto SubRegCopy = MIB.buildInstr(TargetOpcode::COPY, {To}, {})
-                        .addReg(Copy.getReg(0), 0, SubReg);
+  auto SubRegCopy =
+      MIB.buildInstr(TargetOpcode::COPY, {To}, {}).addReg(SrcReg, 0, SubReg);
   MachineOperand &RegOp = I.getOperand(1);
   RegOp.setReg(SubRegCopy.getReg(0));
 
@@ -740,25 +756,28 @@ static bool selectCopy(MachineInstr &I, const TargetInstrInfo &TII,
     unsigned SrcSize = TRI.getRegSizeInBits(*SrcRC);
     unsigned DstSize = TRI.getRegSizeInBits(*DstRC);
 
-    // If we're doing a cross-bank copy on different-sized registers, we need
-    // to do a bit more work.
+    // If the source register is bigger than the destination we need to perform
+    // a subregister copy.
     if (SrcSize > DstSize) {
-      // We're doing a cross-bank copy into a smaller register. We need a
-      // subregister copy. First, get a register class that's on the same bank
-      // as the destination, but the same size as the source.
-      const TargetRegisterClass *SubregRC =
-          getMinClassForRegBank(DstRegBank, SrcSize, true);
-      assert(SubregRC && "Didn't get a register class for subreg?");
-
-      // Get the appropriate subregister for the destination.
       unsigned SubReg = 0;
-      if (!getSubRegForClass(DstRC, TRI, SubReg)) {
-        LLVM_DEBUG(dbgs() << "Couldn't determine subregister for copy.\n");
-        return false;
+
+      // If the source bank doesn't support a subregister copy small enough,
+      // then we first need to copy to the destination bank.
+      if (getMinSizeForRegBank(SrcRegBank) > DstSize) {
+        const TargetRegisterClass *SubregRC = getMinClassForRegBank(
+            DstRegBank, SrcSize, /* GetAllRegSet = */ true);
+        getSubRegForClass(DstRC, TRI, SubReg);
+
+        MachineIRBuilder MIB(I);
+        auto Copy = MIB.buildCopy({SubregRC}, {SrcReg});
+        copySubReg(I, MRI, RBI, Copy.getReg(0), DstRC, SubReg);
+      } else {
+        const TargetRegisterClass *SubregRC = getMinClassForRegBank(
+            SrcRegBank, DstSize, /* GetAllRegSet = */ true);
+        getSubRegForClass(SubregRC, TRI, SubReg);
+        copySubReg(I, MRI, RBI, SrcReg, DstRC, SubReg);
       }
 
-      // Now, insert a subregister copy using the new register class.
-      selectSubregisterCopy(I, MRI, RBI, SrcReg, SubregRC, DstRC, SubReg);
       return CheckCopy();
     }
 
@@ -1124,26 +1143,25 @@ static Register getTestBitReg(Register Reg, uint64_t &Bit, bool &Invert,
 MachineInstr *AArch64InstructionSelector::emitTestBit(
     Register TestReg, uint64_t Bit, bool IsNegative, MachineBasicBlock *DstMBB,
     MachineIRBuilder &MIB) const {
-  MachineRegisterInfo &MRI = *MIB.getMRI();
-#ifndef NDEBUG
+  assert(TestReg.isValid());
   assert(ProduceNonFlagSettingCondBr &&
          "Cannot emit TB(N)Z with speculation tracking!");
-  assert(TestReg.isValid());
-  LLT Ty = MRI.getType(TestReg);
-  unsigned Size = Ty.getSizeInBits();
-  assert(Bit < Size &&
-         "Bit to test must be smaler than the size of a test register!");
-  assert(Ty.isScalar() && "Expected a scalar!");
-  assert(Size >= 32 && "Expected at least a 32-bit register!");
-#endif
+  MachineRegisterInfo &MRI = *MIB.getMRI();
 
   // Attempt to optimize the test bit by walking over instructions.
   TestReg = getTestBitReg(TestReg, Bit, IsNegative, MRI);
-  bool UseWReg = Bit < 32;
+  LLT Ty = MRI.getType(TestReg);
+  unsigned Size = Ty.getSizeInBits();
+  assert(!Ty.isVector() && "Expected a scalar!");
+  assert(Bit < 64 && "Bit is too large!");
 
   // When the test register is a 64-bit register, we have to narrow to make
   // TBNZW work.
-  if (UseWReg)
+  bool UseWReg = Bit < 32;
+  unsigned NecessarySize = UseWReg ? 32 : 64;
+  if (Size < NecessarySize)
+    TestReg = widenGPRBankRegIfNeeded(TestReg, NecessarySize, MIB);
+  else if (Size > NecessarySize)
     TestReg = narrowExtendRegIfNeeded(TestReg, MIB);
 
   static const unsigned OpcTable[2][2] = {{AArch64::TBZX, AArch64::TBNZX},
@@ -5154,6 +5172,52 @@ Register AArch64InstructionSelector::narrowExtendRegIfNeeded(
   return Copy.getReg(0);
 }
 
+Register AArch64InstructionSelector::widenGPRBankRegIfNeeded(
+    Register Reg, unsigned WideSize, MachineIRBuilder &MIB) const {
+  assert(WideSize >= 8 && "WideSize is smaller than all possible registers?");
+  MachineRegisterInfo &MRI = *MIB.getMRI();
+  unsigned NarrowSize = MRI.getType(Reg).getSizeInBits();
+  assert(WideSize >= NarrowSize &&
+         "WideSize cannot be smaller than NarrowSize!");
+
+  // If the sizes match, just return the register.
+  //
+  // If NarrowSize is an s1, then we can select it to any size, so we'll treat
+  // it as a don't care.
+  if (NarrowSize == WideSize || NarrowSize == 1)
+    return Reg;
+
+  // Now check the register classes.
+  const RegisterBank *RB = RBI.getRegBank(Reg, MRI, TRI);
+  const TargetRegisterClass *OrigRC = getMinClassForRegBank(*RB, NarrowSize);
+  const TargetRegisterClass *WideRC = getMinClassForRegBank(*RB, WideSize);
+  assert(OrigRC && "Could not determine narrow RC?");
+  assert(WideRC && "Could not determine wide RC?");
+
+  // If the sizes differ, but the register classes are the same, there is no
+  // need to insert a SUBREG_TO_REG.
+  //
+  // For example, an s8 that's supposed to be a GPR will be selected to either
+  // a GPR32 or a GPR64 register. Note that this assumes that the s8 will
+  // always end up on a GPR32.
+  if (OrigRC == WideRC)
+    return Reg;
+
+  // We have two different register classes. Insert a SUBREG_TO_REG.
+  unsigned SubReg = 0;
+  getSubRegForClass(OrigRC, TRI, SubReg);
+  assert(SubReg && "Couldn't determine subregister?");
+
+  // Build the SUBREG_TO_REG and return the new, widened register.
+  auto SubRegToReg =
+      MIB.buildInstr(AArch64::SUBREG_TO_REG, {WideRC}, {})
+          .addImm(0)
+          .addUse(Reg)
+          .addImm(SubReg);
+  constrainSelectedInstRegOperands(*SubRegToReg, TII, TRI, RBI);
+  return SubRegToReg.getReg(0);
+}
+
 /// Select an "extended register" operand. This operand folds in an extend
 /// followed by an optional left shift.
 InstructionSelector::ComplexRendererFns
@@ -5277,6 +5341,95 @@ bool AArch64InstructionSelector::isDef32(const MachineInstr &MI) const {
   case TargetOpcode::G_TRUNC:
   case TargetOpcode::G_PHI:
     return false;
+  }
+}
+
+
+// Perform fixups on the given PHI instruction's operands to force them all
+// to be the same as the destination regbank.
+static void fixupPHIOpBanks(MachineInstr &MI, MachineRegisterInfo &MRI,
+                            const AArch64RegisterBankInfo &RBI) {
+  assert(MI.getOpcode() == TargetOpcode::G_PHI && "Expected a G_PHI");
+  Register DstReg = MI.getOperand(0).getReg();
+  const RegisterBank *DstRB = MRI.getRegBankOrNull(DstReg);
+  assert(DstRB && "Expected PHI dst to have regbank assigned");
+  MachineIRBuilder MIB(MI);
+
+  // Go through each operand and ensure it has the same regbank.
+  for (unsigned OpIdx = 1; OpIdx < MI.getNumOperands(); ++OpIdx) {
+    MachineOperand &MO = MI.getOperand(OpIdx);
+    if (!MO.isReg())
+      continue;
+    Register OpReg = MO.getReg();
+    const RegisterBank *RB = MRI.getRegBankOrNull(OpReg);
+    if (RB != DstRB) {
+      // Insert a cross-bank copy.
+      auto *OpDef = MRI.getVRegDef(OpReg);
+      const LLT &Ty = MRI.getType(OpReg);
+      MIB.setInsertPt(*OpDef->getParent(), std::next(OpDef->getIterator()));
+      auto Copy = MIB.buildCopy(Ty, OpReg);
+      MRI.setRegBank(Copy.getReg(0), *DstRB);
+      MO.setReg(Copy.getReg(0));
+    }
+  }
+}
+
+void AArch64InstructionSelector::processPHIs(MachineFunction &MF) {
+  // We're looking for PHIs, build a list so we don't invalidate iterators.
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  SmallVector<MachineInstr *, 32> Phis;
+  for (auto &BB : MF) {
+    for (auto &MI : BB) {
+      if (MI.getOpcode() == TargetOpcode::G_PHI)
+        Phis.emplace_back(&MI);
+    }
+  }
+
+  for (auto *MI : Phis) {
+    // We need to do some work here if the operand types are < 16 bit and they
+    // are split across fpr/gpr banks. Since all types <32b on gpr
+    // end up being assigned gpr32 regclasses, we can end up with PHIs here
+    // which try to select between a gpr32 and an fpr16. Ideally RBS shouldn't
+    // be selecting heterogenous regbanks for operands if possible, but we
+    // still need to be able to deal with it here.
+    //
+    // To fix this, if we have a gpr-bank operand < 32b in size and at least
+    // one other operand is on the fpr bank, then we add cross-bank copies
+    // to homogenize the operand banks. For simplicity the bank that we choose
+    // to settle on is whatever bank the def operand has. For example:
+    //
+    // %endbb:
+    //   %dst:gpr(s16) = G_PHI %in1:gpr(s16), %bb1, %in2:fpr(s16), %bb2
+    //  =>
+    // %bb2:
+    //   ...
+    //   %in2_copy:gpr(s16) = COPY %in2:fpr(s16)
+    //   ...
+    // %endbb:
+    //   %dst:gpr(s16) = G_PHI %in1:gpr(s16), %bb1, %in2_copy:gpr(s16), %bb2
+    bool HasGPROp = false, HasFPROp = false;
+    for (unsigned OpIdx = 1; OpIdx < MI->getNumOperands(); ++OpIdx) {
+      const auto &MO = MI->getOperand(OpIdx);
+      if (!MO.isReg())
+        continue;
+      const LLT &Ty = MRI.getType(MO.getReg());
+      if (!Ty.isValid() || !Ty.isScalar())
+        break;
+      if (Ty.getSizeInBits() >= 32)
+        break;
+      const RegisterBank *RB = MRI.getRegBankOrNull(MO.getReg());
+      // If for some reason we don't have a regbank yet. Don't try anything.
+      if (!RB)
+        break;
+
+      if (RB->getID() == AArch64::GPRRegBankID)
+        HasGPROp = true;
+      else
+        HasFPROp = true;
+    }
+    // We have heterogenous regbanks, need to fixup.
+    if (HasGPROp && HasFPROp)
+      fixupPHIOpBanks(*MI, MRI, RBI);
   }
 }
 

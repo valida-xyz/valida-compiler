@@ -61,8 +61,10 @@ Error Config::addSaveTemps(std::string OutputFileName,
   std::error_code EC;
   ResolutionFile = std::make_unique<raw_fd_ostream>(
       OutputFileName + "resolution.txt", EC, sys::fs::OpenFlags::OF_Text);
-  if (EC)
+  if (EC) {
+    ResolutionFile.reset();
     return errorCodeToError(EC);
+  }
 
   auto setHook = [&](std::string PathSuffix, ModuleHookFn &Hook) {
     // Keep track of the hook provided by the linker, which also needs to run.
@@ -375,7 +377,8 @@ void codegen(const Config &Conf, TargetMachine *TM, AddStreamFn AddStream,
 void splitCodeGen(const Config &C, TargetMachine *TM, AddStreamFn AddStream,
                   unsigned ParallelCodeGenParallelismLevel,
                   std::unique_ptr<Module> Mod) {
-  ThreadPool CodegenThreadPool(ParallelCodeGenParallelismLevel);
+  ThreadPool CodegenThreadPool(
+      heavyweight_hardware_concurrency(ParallelCodeGenParallelismLevel));
   unsigned ThreadCount = 0;
   const Target *T = &TM->getTarget();
 

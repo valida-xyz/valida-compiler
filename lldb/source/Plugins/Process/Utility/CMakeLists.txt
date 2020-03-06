@@ -1,4 +1,4 @@
-add_lldb_library(lldbPluginProcessUtility PLUGIN
+add_lldb_library(lldbPluginProcessUtility
   AuxVector.cpp
   DynamicRegisterInfo.cpp
   FreeBSDSignals.cpp
@@ -27,7 +27,6 @@ add_lldb_library(lldbPluginProcessUtility PLUGIN
   RegisterContextLinux_mips.cpp
   RegisterContextLinux_s390x.cpp
   RegisterContextLLDB.cpp
-  RegisterContextMacOSXFrameBackchain.cpp
   RegisterContextMach_arm.cpp
   RegisterContextMach_i386.cpp
   RegisterContextMach_x86_64.cpp
@@ -52,7 +51,6 @@ add_lldb_library(lldbPluginProcessUtility PLUGIN
   StopInfoMachException.cpp
   ThreadMemory.cpp
   UnwindLLDB.cpp
-  UnwindMacOSXFrameBackchain.cpp
 
   LINK_LIBS
     lldbBreakpoint

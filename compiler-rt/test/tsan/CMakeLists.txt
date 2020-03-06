@@ -19,6 +19,10 @@ endif()
 
 set(TSAN_TESTSUITES)
 
+if (NOT DEFINED TSAN_TEST_DEFLAKE_THRESHOLD)
+  set(TSAN_TEST_DEFLAKE_THRESHOLD "10")
+endif()
+
 set(TSAN_TEST_ARCH ${TSAN_SUPPORTED_ARCH})
 if(APPLE)
   darwin_filter_host_archs(TSAN_SUPPORTED_ARCH TSAN_TEST_ARCH)
@@ -26,6 +30,7 @@ endif()
 
 foreach(arch ${TSAN_TEST_ARCH})
   set(TSAN_TEST_APPLE_PLATFORM "osx")
+  set(TSAN_TEST_MIN_DEPLOYMENT_TARGET_FLAG "${DARWIN_osx_MIN_VER_FLAG}")
 
   set(TSAN_TEST_TARGET_ARCH ${arch})
   string(TOLOWER "-${arch}" TSAN_TEST_CONFIG_SUFFIX)
@@ -73,6 +78,7 @@ if(APPLE)
       set(TSAN_TEST_CONFIG_SUFFIX "-${arch}-${platform}")
       set(TSAN_TEST_APPLE_PLATFORM "${platform}")
       set(TSAN_TEST_TARGET_ARCH "${arch}")
+      set(TSAN_TEST_MIN_DEPLOYMENT_TARGET_FLAG "${DARWIN_${platform}_MIN_VER_FLAG}")
       configure_lit_site_cfg(
         ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
         ${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_NAME}/lit.site.cfg.py

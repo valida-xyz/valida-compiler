@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_StackFrameRecognizer_h_
-#define liblldb_StackFrameRecognizer_h_
+#ifndef LLDB_TARGET_STACKFRAMERECOGNIZER_H
+#define LLDB_TARGET_STACKFRAMERECOGNIZER_H
 
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectList.h"
@@ -101,8 +101,8 @@ private:
 class StackFrameRecognizerManager {
 public:
   static void AddRecognizer(lldb::StackFrameRecognizerSP recognizer,
-                            ConstString module,
-                            ConstString symbol,
+                            ConstString module, ConstString symbol,
+                            ConstString alternate_symbol,
                             bool first_instruction_only = true);
 
   static void AddRecognizer(lldb::StackFrameRecognizerSP recognizer,
@@ -113,7 +113,8 @@ public:
   static void ForEach(
       std::function<void(uint32_t recognizer_id, std::string recognizer_name,
                          std::string module, std::string symbol,
-                         bool regexp)> const &callback);
+                         std::string alternate_symbol, bool regexp)> const
+          &callback);
 
   static bool RemoveRecognizerWithID(uint32_t recognizer_id);
 
@@ -163,4 +164,4 @@ class ValueObjectRecognizerSynthesizedValue : public ValueObject {
 
 } // namespace lldb_private
 
-#endif // liblldb_StackFrameRecognizer_h_
+#endif // LLDB_TARGET_STACKFRAMERECOGNIZER_H

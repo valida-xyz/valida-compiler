@@ -380,7 +380,8 @@ protected:
         if (Contents[0] != ARMBuildAttrs::Format_Version || Contents.size() == 1)
           return Error::success();
 
-        Attributes.Parse(Contents, ELFT::TargetEndianness == support::little);
+        if (Error E = Attributes.parse(Contents, ELFT::TargetEndianness))
+          return E;
         break;
       }
     }

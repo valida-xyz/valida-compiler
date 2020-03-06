@@ -26,8 +26,11 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/Type.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Basic/TokenKinds.h"
 #include "clang/Index/IndexSymbol.h"
+#include "clang/Tooling/Syntax/Tokens.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -115,15 +118,6 @@ std::string printDefinition(const Decl *D) {
   return Definition;
 }
 
-void printParams(llvm::raw_ostream &OS,
-                 const std::vector<HoverInfo::Param> &Params) {
-  for (size_t I = 0, E = Params.size(); I != E; ++I) {
-    if (I)
-      OS << ", ";
-    OS << Params.at(I);
-  }
-}
-
 std::string printType(QualType QT, const PrintingPolicy &Policy) {
   // TypePrinter doesn't resolve decltypes, so resolve them here.
   // FIXME: This doesn't handle composite types that contain a decltype in them.
@@ -131,6 +125,43 @@ std::string printType(QualType QT, const PrintingPolicy &Policy) {
   while (const auto *DT = QT->getAs<DecltypeType>())
     QT = DT->getUnderlyingType();
   return QT.getAsString(Policy);
+}
+
+std::string printType(const TemplateTypeParmDecl *TTP) {
+  std::string Res = TTP->wasDeclaredWithTypename() ? "typename" : "class";
+  if (TTP->isParameterPack())
+    Res += "...";
+  return Res;
+}
+
+std::string printType(const NonTypeTemplateParmDecl *NTTP,
+                      const PrintingPolicy &PP) {
+  std::string Res = printType(NTTP->getType(), PP);
+  if (NTTP->isParameterPack())
+    Res += "...";
+  return Res;
+}
+
+std::string printType(const TemplateTemplateParmDecl *TTP,
+                      const PrintingPolicy &PP) {
+  std::string Res;
+  llvm::raw_string_ostream OS(Res);
+  OS << "template <";
+  llvm::StringRef Sep = "";
+  for (const Decl *Param : *TTP->getTemplateParameters()) {
+    OS << Sep;
+    Sep = ", ";
+    if (const auto *TTP = dyn_cast<TemplateTypeParmDecl>(Param))
+      OS << printType(TTP);
+    else if (const auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(Param))
+      OS << printType(NTTP, PP);
+    else if (const auto *TTPD = dyn_cast<TemplateTemplateParmDecl>(Param))
+      OS << printType(TTPD, PP);
+  }
+  // FIXME: TemplateTemplateParameter doesn't store the info on whether this
+  // param was a "typename" or "class".
+  OS << "> class";
+  return OS.str();
 }
 
 std::vector<HoverInfo::Param>
@@ -142,21 +173,18 @@ fetchTemplateParameters(const TemplateParameterList *Params,
   for (const Decl *Param : *Params) {
     HoverInfo::Param P;
     if (const auto *TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
-      P.Type = TTP->wasDeclaredWithTypename() ? "typename" : "class";
-      if (TTP->isParameterPack())
-        *P.Type += "...";
+      P.Type = printType(TTP);
 
       if (!TTP->getName().empty())
         P.Name = TTP->getNameAsString();
+
       if (TTP->hasDefaultArgument())
         P.Default = TTP->getDefaultArgument().getAsString(PP);
     } else if (const auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(Param)) {
+      P.Type = printType(NTTP, PP);
+
       if (IdentifierInfo *II = NTTP->getIdentifier())
         P.Name = II->getName().str();
-
-      P.Type = printType(NTTP->getType(), PP);
-      if (NTTP->isParameterPack())
-        *P.Type += "...";
 
       if (NTTP->hasDefaultArgument()) {
         P.Default.emplace();
@@ -164,16 +192,11 @@ fetchTemplateParameters(const TemplateParameterList *Params,
         NTTP->getDefaultArgument()->printPretty(Out, nullptr, PP);
       }
     } else if (const auto *TTPD = dyn_cast<TemplateTemplateParmDecl>(Param)) {
-      P.Type.emplace();
-      llvm::raw_string_ostream OS(*P.Type);
-      OS << "template <";
-      printParams(OS,
-                  fetchTemplateParameters(TTPD->getTemplateParameters(), PP));
-      OS << "> class"; // FIXME: TemplateTemplateParameter doesn't store the
-                       // info on whether this param was a "typename" or
-                       // "class".
+      P.Type = printType(TTPD, PP);
+
       if (!TTPD->getName().empty())
         P.Name = TTPD->getNameAsString();
+
       if (TTPD->hasDefaultArgument()) {
         P.Default.emplace();
         llvm::raw_string_ostream Out(*P.Default);
@@ -385,6 +408,10 @@ HoverInfo getHoverContents(const NamedDecl *D, const SymbolIndex *Index) {
     fillFunctionTypeAndParams(HI, D, FD, Policy);
   else if (const auto *VD = dyn_cast<ValueDecl>(D))
     HI.Type = printType(VD->getType(), Policy);
+  else if (const auto *TTP = dyn_cast<TemplateTypeParmDecl>(D))
+    HI.Type = TTP->wasDeclaredWithTypename() ? "typename" : "class";
+  else if (const auto *TTP = dyn_cast<TemplateTemplateParmDecl>(D))
+    HI.Type = printType(TTP, Policy);
 
   // Fill in value with evaluated initializer if possible.
   if (const auto *Var = dyn_cast<VarDecl>(D)) {
@@ -499,23 +526,53 @@ llvm::Optional<HoverInfo> getHover(ParsedAST &AST, Position Pos,
                                    format::FormatStyle Style,
                                    const SymbolIndex *Index) {
   const SourceManager &SM = AST.getSourceManager();
-  llvm::Optional<HoverInfo> HI;
-  SourceLocation SourceLocationBeg = SM.getMacroArgExpandedLocation(
-      getBeginningOfIdentifier(Pos, SM, AST.getLangOpts()));
+  auto CurLoc = sourceLocationInMainFile(SM, Pos);
+  if (!CurLoc) {
+    llvm::consumeError(CurLoc.takeError());
+    return llvm::None;
+  }
+  const auto &TB = AST.getTokens();
+  auto TokensTouchingCursor = syntax::spelledTokensTouching(*CurLoc, TB);
+  // Early exit if there were no tokens around the cursor.
+  if (TokensTouchingCursor.empty())
+    return llvm::None;
 
-  if (auto Deduced = getDeducedType(AST.getASTContext(), SourceLocationBeg)) {
-    HI = getHoverContents(*Deduced, AST.getASTContext(), Index);
-  } else if (auto M = locateMacroAt(SourceLocationBeg, AST.getPreprocessor())) {
-    HI = getHoverContents(*M, AST);
-  } else {
-    auto Offset = positionToOffset(SM.getBufferData(SM.getMainFileID()), Pos);
-    if (!Offset) {
-      llvm::consumeError(Offset.takeError());
-      return llvm::None;
+  // To be used as a backup for highlighting the selected token, we use back as
+  // it aligns better with biases elsewhere (editors tend to send the position
+  // for the left of the hovered token).
+  CharSourceRange HighlightRange =
+      TokensTouchingCursor.back().range(SM).toCharRange(SM);
+  llvm::Optional<HoverInfo> HI;
+  // Macros and deducedtype only works on identifiers and auto/decltype keywords
+  // respectively. Therefore they are only trggered on whichever works for them,
+  // similar to SelectionTree::create().
+  for (const auto &Tok : TokensTouchingCursor) {
+    if (Tok.kind() == tok::identifier) {
+      // Prefer the identifier token as a fallback highlighting range.
+      HighlightRange = Tok.range(SM).toCharRange(SM);
+      if (auto M = locateMacroAt(Tok, AST.getPreprocessor())) {
+        HI = getHoverContents(*M, AST);
+        break;
+      }
+    } else if (Tok.kind() == tok::kw_auto || Tok.kind() == tok::kw_decltype) {
+      if (auto Deduced = getDeducedType(AST.getASTContext(), Tok.location())) {
+        HI = getHoverContents(*Deduced, AST.getASTContext(), Index);
+        HighlightRange = Tok.range(SM).toCharRange(SM);
+        break;
+      }
     }
-    SelectionTree Selection(AST.getASTContext(), AST.getTokens(), *Offset);
+  }
+
+  // If it wasn't auto/decltype or macro, look for decls and expressions.
+  if (!HI) {
+    auto Offset = SM.getFileOffset(*CurLoc);
+    // Editors send the position on the left of the hovered character.
+    // So our selection tree should be biased right. (Tested with VSCode).
+    SelectionTree ST =
+        SelectionTree::createRight(AST.getASTContext(), TB, Offset, Offset);
     std::vector<const Decl *> Result;
-    if (const SelectionTree::Node *N = Selection.commonAncestor()) {
+    if (const SelectionTree::Node *N = ST.commonAncestor()) {
+      // FIXME: Fill in HighlightRange with range coming from N->ASTNode.
       auto Decls = explicitReferenceTargets(N->ASTNode, DeclRelation::Alias);
       if (!Decls.empty()) {
         HI = getHoverContents(Decls.front(), Index);
@@ -538,9 +595,8 @@ llvm::Optional<HoverInfo> getHover(ParsedAST &AST, Position Pos,
   if (auto Formatted =
           tooling::applyAllReplacements(HI->Definition, Replacements))
     HI->Definition = *Formatted;
+  HI->SymRange = halfOpenToRange(SM, HighlightRange);
 
-  HI->SymRange = getTokenRange(AST.getSourceManager(), AST.getLangOpts(),
-                               SourceLocationBeg);
   return HI;
 }
 

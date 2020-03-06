@@ -1045,6 +1045,8 @@ void DwarfUnit::constructTemplateTypeParameterDIE(
     addType(ParamDIE, TP->getType());
   if (!TP->getName().empty())
     addString(ParamDIE, dwarf::DW_AT_name, TP->getName());
+  if (TP->isDefault() && (DD->getDwarfVersion() >= 5))
+    addFlag(ParamDIE, dwarf::DW_AT_default_value);
 }
 
 void DwarfUnit::constructTemplateValueParameterDIE(
@@ -1057,6 +1059,8 @@ void DwarfUnit::constructTemplateValueParameterDIE(
     addType(ParamDIE, VP->getType());
   if (!VP->getName().empty())
     addString(ParamDIE, dwarf::DW_AT_name, VP->getName());
+  if (VP->isDefault() && (DD->getDwarfVersion() >= 5))
+    addFlag(ParamDIE, dwarf::DW_AT_default_value);
   if (Metadata *Val = VP->getValue()) {
     if (ConstantInt *CI = mdconst::dyn_extract<ConstantInt>(Val))
       addConstantValue(ParamDIE, CI, VP->getType());
@@ -1628,8 +1632,8 @@ void DwarfUnit::emitCommonHeader(bool UseOffsets, dwarf::UnitType UT) {
     StringRef Prefix = isDwoUnit() ? "debug_info_dwo_" : "debug_info_";
     MCSymbol *BeginLabel = Asm->createTempSymbol(Prefix + "start");
     EndLabel = Asm->createTempSymbol(Prefix + "end");
-    Asm->EmitLabelDifference(EndLabel, BeginLabel, 4);
-    Asm->OutStreamer->EmitLabel(BeginLabel);
+    Asm->emitLabelDifference(EndLabel, BeginLabel, 4);
+    Asm->OutStreamer->emitLabel(BeginLabel);
   } else
     Asm->emitInt32(getHeaderSize() + getUnitDie().getSize());
 
@@ -1667,10 +1671,10 @@ void DwarfTypeUnit::emitHeader(bool UseOffsets) {
                               DD->useSplitDwarf() ? dwarf::DW_UT_split_type
                                                   : dwarf::DW_UT_type);
   Asm->OutStreamer->AddComment("Type Signature");
-  Asm->OutStreamer->EmitIntValue(TypeSignature, sizeof(TypeSignature));
+  Asm->OutStreamer->emitIntValue(TypeSignature, sizeof(TypeSignature));
   Asm->OutStreamer->AddComment("Type DIE Offset");
   // In a skeleton type unit there is no type DIE so emit a zero offset.
-  Asm->OutStreamer->EmitIntValue(Ty ? Ty->getOffset() : 0,
+  Asm->OutStreamer->emitIntValue(Ty ? Ty->getOffset() : 0,
                                  sizeof(Ty->getOffset()));
 }
 

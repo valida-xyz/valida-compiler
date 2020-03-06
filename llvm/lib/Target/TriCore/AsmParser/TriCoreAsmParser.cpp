@@ -42,6 +42,8 @@ class TriCoreAsmParser : public MCTargetAsmParser {
                                bool MatchingInlineAsm) override;
 
   bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc) override;
+  OperandMatchResultTy tryParseRegister(unsigned &RegNo, SMLoc &StartLoc,
+                                        SMLoc &EndLoc) override;
 
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override;
@@ -607,7 +609,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
       return true;
 
     Inst.setLoc(IDLoc);
-    Out.EmitInstruction(Inst, getSTI());
+    Out.emitInstruction(Inst, getSTI());
     if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
       setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
       setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
@@ -764,6 +766,16 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
 
 bool TriCoreAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
                                      SMLoc &EndLoc) {
+  const auto Res = tryParseRegister(RegNo, StartLoc, EndLoc);
+  if (Res != MatchOperand_Success)
+    return Error(StartLoc, "invalid register name");
+
+  return false;
+}
+
+OperandMatchResultTy TriCoreAsmParser::tryParseRegister(unsigned &RegNo,
+                                                        SMLoc &StartLoc,
+                                                        SMLoc &EndLoc) {
   const AsmToken &Tok = getParser().getTok();
   StartLoc = Tok.getLoc();
   EndLoc = Tok.getEndLoc();
@@ -774,10 +786,10 @@ bool TriCoreAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
   if (RegNo == 0)
     RegNo = MatchRegisterAltName(Name);
   if (RegNo == 0)
-    return Error(StartLoc, "invalid register name");
+    return MatchOperand_NoMatch;
 
   getParser().Lex(); // Eat identifier token.
-  return false;
+  return MatchOperand_Success;
 }
 
 OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
@@ -1063,18 +1075,18 @@ bool TriCoreAsmParser::ParseInstruction(ParseInstructionInfo &Info,
   return false;
 }
 
-// Returns false on succes
+// Returns false on success
 bool TriCoreAsmParser::ParseDirective(AsmToken DirectiveID) {
   StringRef IDVal = DirectiveID.getIdentifier();
   if (IDVal == ".code16") {
     if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions]))
       clearFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
-    getParser().getStreamer().EmitAssemblerFlag(MCAF_Code16);
+    getParser().getStreamer().emitAssemblerFlag(MCAF_Code16);
     return false;
   }
   if (IDVal == ".code32") {
     clearFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
-    getParser().getStreamer().EmitAssemblerFlag(MCAF_Code32);
+    getParser().getStreamer().emitAssemblerFlag(MCAF_Code32);
     return false;
   }
   return true;

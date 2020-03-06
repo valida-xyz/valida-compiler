@@ -290,6 +290,11 @@ TEST(TargetParserTest, testARMCPU) {
                          ARM::AEK_HWDIVTHUMB | ARM::AEK_DSP, "8-M.Mainline"));
   EXPECT_TRUE(testARMCPU("cortex-m35p", "armv8-m.main", "fpv5-sp-d16",
                          ARM::AEK_HWDIVTHUMB | ARM::AEK_DSP, "8-M.Mainline"));
+  EXPECT_TRUE(testARMCPU("cortex-m55", "armv8.1-m.main", "fp-armv8-fullfp16-d16",
+                         ARM::AEK_HWDIVTHUMB | ARM::AEK_DSP | ARM::AEK_SIMD |
+                         ARM::AEK_FP         | ARM::AEK_RAS | ARM::AEK_LOB |
+                         ARM::AEK_FP16,
+                        "8.1-M.Mainline"));
   EXPECT_TRUE(testARMCPU("iwmmxt", "iwmmxt", "none",
                          ARM::AEK_NONE, "iwmmxt"));
   EXPECT_TRUE(testARMCPU("xscale", "xscale", "none",
@@ -299,7 +304,7 @@ TEST(TargetParserTest, testARMCPU) {
                          "7-S"));
 }
 
-static constexpr unsigned NumARMCPUArchs = 85;
+static constexpr unsigned NumARMCPUArchs = 86;
 
 TEST(TargetParserTest, testARMCPUArchList) {
   SmallVector<StringRef, NumARMCPUArchs> List;
@@ -781,6 +786,10 @@ TEST(TargetParserTest, testAArch64CPU) {
       AArch64::AEK_NONE, ""));
 
   EXPECT_TRUE(testAArch64CPU(
+      "cortex-a34", "armv8-a", "crypto-neon-fp-armv8",
+      AArch64::AEK_CRC | AArch64::AEK_CRYPTO | AArch64::AEK_FP |
+      AArch64::AEK_SIMD, "8-A"));
+  EXPECT_TRUE(testAArch64CPU(
       "cortex-a35", "armv8-a", "crypto-neon-fp-armv8",
       AArch64::AEK_CRC | AArch64::AEK_CRYPTO | AArch64::AEK_FP |
       AArch64::AEK_SIMD, "8-A"));
@@ -957,7 +966,7 @@ TEST(TargetParserTest, testAArch64CPU) {
       "8.2-A"));
 }
 
-static constexpr unsigned NumAArch64CPUArchs = 35;
+static constexpr unsigned NumAArch64CPUArchs = 36;
 
 TEST(TargetParserTest, testAArch64CPUArchList) {
   SmallVector<StringRef, NumAArch64CPUArchs> List;
@@ -1002,6 +1011,8 @@ bool testAArch64Extension(StringRef CPUName, AArch64::ArchKind AK,
 }
 
 TEST(TargetParserTest, testAArch64Extension) {
+  EXPECT_FALSE(testAArch64Extension("cortex-a34",
+                                    AArch64::ArchKind::INVALID, "ras"));
   EXPECT_FALSE(testAArch64Extension("cortex-a35",
                                     AArch64::ArchKind::INVALID, "ras"));
   EXPECT_FALSE(testAArch64Extension("cortex-a53",

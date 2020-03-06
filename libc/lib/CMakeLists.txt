@@ -12,6 +12,16 @@ add_entrypoint_library(
     # sys/mman.h entrypoints
     mmap
     munmap
+
+    # signal.h entrypoints
+    raise
+    sigaddset
+    sigemptyset
+    sigprocmask
+
+    # stdlib.h entrypoints
+    _Exit
+    abort
 )
 
 add_entrypoint_library(

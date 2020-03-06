@@ -439,6 +439,14 @@ public:
                                       bool *Fast) const override;
   bool isTruncateFree(Type *, Type *) const override;
   bool isTruncateFree(EVT, EVT) const override;
+
+  bool shouldFormOverflowOp(unsigned Opcode, EVT VT,
+                            bool MathUsed) const override {
+    // Form add and sub with overflow intrinsics regardless of any extra
+    // users of the math result.
+    return VT == MVT::i32 || VT == MVT::i64;
+  }
+
   const char *getTargetNodeName(unsigned Opcode) const override;
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
@@ -472,6 +480,9 @@ public:
     }
     return TargetLowering::getInlineAsmMemConstraint(ConstraintCode);
   }
+
+  Register getRegisterByName(const char *RegName, LLT VT,
+                             const MachineFunction &MF) const override;
 
   /// If a physical register, this returns the register that receives the
   /// exception address on entry to an EH pad.

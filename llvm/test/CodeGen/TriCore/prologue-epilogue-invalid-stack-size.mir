@@ -1,4 +1,4 @@
-# RUN: (llc -mtriple=tricore -run-pass=prologepilog -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+# RUN: not --crash llc -mtriple=tricore -run-pass=prologepilog -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
 
 --- |  
   define dso_local void @varsize() #0 {

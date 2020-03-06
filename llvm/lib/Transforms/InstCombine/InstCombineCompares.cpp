@@ -1666,17 +1666,13 @@ Instruction *InstCombiner::foldICmpAndShift(ICmpInst &Cmp, BinaryOperator *And,
       if (Cmp.isSigned() && (NewAndCst.isNegative() || NewCmpCst.isNegative()))
         return nullptr;
     } else {
-      // For an arithmetic shift right we can do the same, if we ensure
-      // the And doesn't use any bits being shifted in. Normally these would
-      // be turned into lshr by SimplifyDemandedBits, but not if there is an
-      // additional user.
+      // For an arithmetic shift, check that both constants don't use (in a
+      // signed sense) the top bits being shifted out.
       assert(ShiftOpcode == Instruction::AShr && "Unknown shift opcode");
       NewCmpCst = C1.shl(*C3);
       NewAndCst = C2.shl(*C3);
-      AnyCmpCstBitsShiftedOut = NewCmpCst.lshr(*C3) != C1;
-      if (NewAndCst.lshr(*C3) != C2)
-        return nullptr;
-      if (Cmp.isSigned() && (NewAndCst.isNegative() || NewCmpCst.isNegative()))
+      AnyCmpCstBitsShiftedOut = NewCmpCst.ashr(*C3) != C1;
+      if (NewAndCst.ashr(*C3) != C2)
         return nullptr;
     }
 
@@ -3455,7 +3451,8 @@ foldShiftIntoShiftInAnotherHandOfAndInICmp(ICmpInst &I, const SimplifyQuery SQ,
   Instruction *NarrowestShift = XShift;
 
   Type *WidestTy = WidestShift->getType();
-  assert(NarrowestShift->getType() == I.getOperand(0)->getType() &&
+  Type *NarrowestTy = NarrowestShift->getType();
+  assert(NarrowestTy == I.getOperand(0)->getType() &&
          "We did not look past any shifts while matching XShift though.");
   bool HadTrunc = WidestTy != I.getOperand(0)->getType();
 
@@ -3492,6 +3489,23 @@ foldShiftIntoShiftInAnotherHandOfAndInICmp(ICmpInst &I, const SimplifyQuery SQ,
   // We have two shift amounts from two different shifts. The types of those
   // shift amounts may not match. If that's the case let's bailout now.
   if (XShAmt->getType() != YShAmt->getType())
+    return nullptr;
+
+  // As input, we have the following pattern:
+  //   icmp eq/ne (and ((x shift Q), (y oppositeshift K))), 0
+  // We want to rewrite that as:
+  //   icmp eq/ne (and (x shift (Q+K)), y), 0  iff (Q+K) u< bitwidth(x)
+  // While we know that originally (Q+K) would not overflow
+  // (because  2 * (N-1) u<= iN -1), we have looked past extensions of
+  // shift amounts. so it may now overflow in smaller bitwidth.
+  // To ensure that does not happen, we need to ensure that the total maximal
+  // shift amount is still representable in that smaller bit width.
+  unsigned MaximalPossibleTotalShiftAmount =
+      (WidestTy->getScalarSizeInBits() - 1) +
+      (NarrowestTy->getScalarSizeInBits() - 1);
+  APInt MaximalRepresentableShiftAmount =
+      APInt::getAllOnesValue(XShAmt->getType()->getScalarSizeInBits());
+  if (MaximalRepresentableShiftAmount.ult(MaximalPossibleTotalShiftAmount))
     return nullptr;
 
   // Can we fold (XShAmt+YShAmt) ?
@@ -5572,8 +5586,11 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
         isa<IntegerType>(A->getType())) {
       Value *Result;
       Constant *Overflow;
-      if (OptimizeOverflowCheck(Instruction::Add, /*Signed*/false, A, B,
-                                *AddI, Result, Overflow)) {
+      // m_UAddWithOverflow can match patterns that do not include  an explicit
+      // "add" instruction, so check the opcode of the matched op.
+      if (AddI->getOpcode() == Instruction::Add &&
+          OptimizeOverflowCheck(Instruction::Add, /*Signed*/ false, A, B, *AddI,
+                                Result, Overflow)) {
         replaceInstUsesWith(*AddI, Result);
         return replaceInstUsesWith(I, Overflow);
       }
@@ -5782,10 +5799,10 @@ Instruction *InstCombiner::foldFCmpIntToFPConst(FCmpInst &I, Instruction *LHSI,
     }
   } else {
     // See if the RHS value is < UnsignedMin.
-    APFloat SMin(RHS.getSemantics());
-    SMin.convertFromAPInt(APInt::getMinValue(IntWidth), true,
+    APFloat UMin(RHS.getSemantics());
+    UMin.convertFromAPInt(APInt::getMinValue(IntWidth), false,
                           APFloat::rmNearestTiesToEven);
-    if (SMin.compare(RHS) == APFloat::cmpGreaterThan) { // umin > 12312.0
+    if (UMin.compare(RHS) == APFloat::cmpGreaterThan) { // umin > 12312.0
       if (Pred == ICmpInst::ICMP_NE || Pred == ICmpInst::ICMP_UGT ||
           Pred == ICmpInst::ICMP_UGE)
         return replaceInstUsesWith(I, Builder.getTrue());
@@ -6030,14 +6047,11 @@ Instruction *InstCombiner::visitFCmpInst(FCmpInst &I) {
   // If we're just checking for a NaN (ORD/UNO) and have a non-NaN operand,
   // then canonicalize the operand to 0.0.
   if (Pred == CmpInst::FCMP_ORD || Pred == CmpInst::FCMP_UNO) {
-    if (!match(Op0, m_PosZeroFP()) && isKnownNeverNaN(Op0, &TLI)) {
-      I.setOperand(0, ConstantFP::getNullValue(OpType));
-      return &I;
-    }
-    if (!match(Op1, m_PosZeroFP()) && isKnownNeverNaN(Op1, &TLI)) {
-      I.setOperand(1, ConstantFP::getNullValue(OpType));
-      return &I;
-    }
+    if (!match(Op0, m_PosZeroFP()) && isKnownNeverNaN(Op0, &TLI))
+      return replaceOperand(I, 0, ConstantFP::getNullValue(OpType));
+
+    if (!match(Op1, m_PosZeroFP()) && isKnownNeverNaN(Op1, &TLI))
+      return replaceOperand(I, 1, ConstantFP::getNullValue(OpType));
   }
 
   // fcmp pred (fneg X), (fneg Y) -> fcmp swap(pred) X, Y
@@ -6062,10 +6076,8 @@ Instruction *InstCombiner::visitFCmpInst(FCmpInst &I) {
 
   // The sign of 0.0 is ignored by fcmp, so canonicalize to +0.0:
   // fcmp Pred X, -0.0 --> fcmp Pred X, 0.0
-  if (match(Op1, m_AnyZeroFP()) && !match(Op1, m_PosZeroFP())) {
-    I.setOperand(1, ConstantFP::getNullValue(OpType));
-    return &I;
-  }
+  if (match(Op1, m_AnyZeroFP()) && !match(Op1, m_PosZeroFP()))
+    return replaceOperand(I, 1, ConstantFP::getNullValue(OpType));
 
   // Handle fcmp with instruction LHS and constant RHS.
   Instruction *LHSI;

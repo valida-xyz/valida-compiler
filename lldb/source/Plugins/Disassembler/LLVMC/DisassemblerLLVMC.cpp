@@ -43,7 +43,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-LLDB_PLUGIN(DisassemblerLLVMC);
+LLDB_PLUGIN_DEFINE(DisassemblerLLVMC)
 
 class DisassemblerLLVMC::MCDisasmInstance {
 public:
@@ -710,7 +710,7 @@ public:
       s.PutCString(")");
       break;
     case Operand::Type::Register:
-      s.PutCString(op.m_register.AsCString());
+      s.PutCString(op.m_register.GetStringRef());
       break;
     case Operand::Type::Sum:
       s.PutCString("(");

@@ -46,7 +46,7 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_renderscript;
 
-LLDB_PLUGIN(RenderScriptRuntime);
+LLDB_PLUGIN_DEFINE(RenderScriptRuntime)
 
 #define FMT_COORD "(%" PRIu32 ", %" PRIu32 ", %" PRIu32 ")"
 
@@ -793,6 +793,9 @@ RenderScriptRuntime::CreateInstance(Process *process,
 Searcher::CallbackReturn
 RSBreakpointResolver::SearchCallback(SearchFilter &filter,
                                      SymbolContext &context, Address *) {
+  BreakpointSP breakpoint_sp = GetBreakpoint();
+  assert(breakpoint_sp);
+
   ModuleSP module = context.module_sp;
 
   if (!module || !IsRenderScriptScriptModule(module))
@@ -813,7 +816,7 @@ RSBreakpointResolver::SearchCallback(SearchFilter &filter,
   if (kernel_sym) {
     Address bp_addr = kernel_sym->GetAddress();
     if (filter.AddressPasses(bp_addr))
-      m_breakpoint->AddLocation(bp_addr);
+      breakpoint_sp->AddLocation(bp_addr);
   }
 
   return Searcher::eCallbackReturnContinue;
@@ -823,6 +826,9 @@ Searcher::CallbackReturn
 RSReduceBreakpointResolver::SearchCallback(lldb_private::SearchFilter &filter,
                                            lldb_private::SymbolContext &context,
                                            Address *) {
+  BreakpointSP breakpoint_sp = GetBreakpoint();
+  assert(breakpoint_sp);
+
   // We need to have access to the list of reductions currently parsed, as
   // reduce names don't actually exist as symbols in a module. They are only
   // identifiable by parsing the .rs.info packet, or finding the expand symbol.
@@ -869,7 +875,7 @@ RSReduceBreakpointResolver::SearchCallback(lldb_private::SearchFilter &filter,
           if (!SkipPrologue(module, address)) {
             LLDB_LOGF(log, "%s: Error trying to skip prologue", __FUNCTION__);
           }
-          m_breakpoint->AddLocation(address, &new_bp);
+          breakpoint_sp->AddLocation(address, &new_bp);
           LLDB_LOGF(log, "%s: %s reduction breakpoint on %s in %s",
                     __FUNCTION__, new_bp ? "new" : "existing",
                     kernel_name.GetCString(),
@@ -884,7 +890,8 @@ RSReduceBreakpointResolver::SearchCallback(lldb_private::SearchFilter &filter,
 Searcher::CallbackReturn RSScriptGroupBreakpointResolver::SearchCallback(
     SearchFilter &filter, SymbolContext &context, Address *addr) {
 
-  if (!m_breakpoint)
+  BreakpointSP breakpoint_sp = GetBreakpoint();
+  if (!breakpoint_sp)
     return eCallbackReturnContinue;
 
   Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_BREAKPOINTS));
@@ -894,7 +901,8 @@ Searcher::CallbackReturn RSScriptGroupBreakpointResolver::SearchCallback(
     return Searcher::eCallbackReturnContinue;
 
   std::vector<std::string> names;
-  m_breakpoint->GetNames(names);
+  Breakpoint& breakpoint = *breakpoint_sp;
+  breakpoint.GetNames(names);
   if (names.empty())
     return eCallbackReturnContinue;
 
@@ -934,7 +942,7 @@ Searcher::CallbackReturn RSScriptGroupBreakpointResolver::SearchCallback(
       }
 
       bool new_bp;
-      m_breakpoint->AddLocation(address, &new_bp);
+      breakpoint.AddLocation(address, &new_bp);
 
       LLDB_LOGF(log, "%s: Placed %sbreakpoint on %s", __FUNCTION__,
                 new_bp ? "new " : "", k.m_name.AsCString());
@@ -1031,8 +1039,8 @@ bool RenderScriptRuntime::CouldHaveDynamicValue(ValueObject &in_value) {
 }
 
 lldb::BreakpointResolverSP
-RenderScriptRuntime::CreateExceptionResolver(Breakpoint *bp, bool catch_bp,
-                                             bool throw_bp) {
+RenderScriptRuntime::CreateExceptionResolver(const lldb::BreakpointSP &bp,
+                                             bool catch_bp, bool throw_bp) {
   BreakpointResolverSP resolver_sp;
   return resolver_sp;
 }
@@ -3131,7 +3139,7 @@ void RenderScriptRuntime::DumpKernels(Stream &strm) const {
     strm.Printf("Resource '%s':", module->m_resname.c_str());
     strm.EOL();
     for (const auto &kernel : module->m_kernels) {
-      strm.Indent(kernel.m_name.AsCString());
+      strm.Indent(kernel.m_name.GetStringRef());
       strm.EOL();
     }
   }
@@ -3941,9 +3949,10 @@ void RSModuleDescriptor::Dump(Stream &strm) const {
 }
 
 void RSGlobalDescriptor::Dump(Stream &strm) const {
-  strm.Indent(m_name.AsCString());
+  strm.Indent(m_name.GetStringRef());
   VariableList var_list;
-  m_module->m_module->FindGlobalVariables(m_name, nullptr, 1U, var_list);
+  m_module->m_module->FindGlobalVariables(m_name, CompilerDeclContext(), 1U,
+                                          var_list);
   if (var_list.GetSize() == 1) {
     auto var = var_list.GetVariableAtIndex(0);
     auto type = var->GetType();
@@ -3966,12 +3975,12 @@ void RSGlobalDescriptor::Dump(Stream &strm) const {
 }
 
 void RSKernelDescriptor::Dump(Stream &strm) const {
-  strm.Indent(m_name.AsCString());
+  strm.Indent(m_name.GetStringRef());
   strm.EOL();
 }
 
 void RSReductionDescriptor::Dump(lldb_private::Stream &stream) const {
-  stream.Indent(m_reduce_name.AsCString());
+  stream.Indent(m_reduce_name.GetStringRef());
   stream.IndentMore();
   stream.EOL();
   stream.Indent();

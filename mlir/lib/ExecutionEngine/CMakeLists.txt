@@ -1,3 +1,10 @@
+set(LLVM_OPTIONAL_SOURCES
+  CRunnerUtils.cpp
+  ExecutionEngine.cpp
+  RunnerUtils.cpp
+  OptUtils.cpp
+  )
+
 llvm_map_components_to_libnames(outlibs "nativecodegen" "IPO")
 add_llvm_library(MLIRExecutionEngine
   ExecutionEngine.cpp
@@ -13,6 +20,7 @@ target_link_libraries(MLIRExecutionEngine
   LLVMBitReader
   LLVMBitWriter
   LLVMExecutionEngine
+  LLVMObject
   LLVMOrcJIT
   LLVMJITLink
   LLVMSupport
@@ -26,3 +34,14 @@ target_link_libraries(MLIRExecutionEngine
   LLVMTransformUtils
 
   ${outlibs})
+
+add_llvm_library(mlir_c_runner_utils SHARED CRunnerUtils.cpp)
+add_llvm_library(mlir_c_runner_utils_static CRunnerUtils.cpp)
+target_compile_definitions(mlir_c_runner_utils PRIVATE mlir_c_runner_utils_EXPORTS)
+
+add_llvm_library(mlir_runner_utils SHARED RunnerUtils.cpp)
+target_link_libraries(mlir_runner_utils
+
+  mlir_c_runner_utils_static
+)
+target_compile_definitions(mlir_runner_utils PRIVATE mlir_runner_utils_EXPORTS)

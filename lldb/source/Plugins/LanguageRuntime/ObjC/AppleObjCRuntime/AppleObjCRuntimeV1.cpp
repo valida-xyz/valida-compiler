@@ -105,8 +105,8 @@ ConstString AppleObjCRuntimeV1::GetPluginName() {
 uint32_t AppleObjCRuntimeV1::GetPluginVersion() { return 1; }
 
 BreakpointResolverSP
-AppleObjCRuntimeV1::CreateExceptionResolver(Breakpoint *bkpt, bool catch_bp,
-                                            bool throw_bp) {
+AppleObjCRuntimeV1::CreateExceptionResolver(const BreakpointSP &bkpt,
+                                            bool catch_bp, bool throw_bp) {
   BreakpointResolverSP resolver_sp;
 
   if (throw_bp)
@@ -362,7 +362,7 @@ void AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded() {
         lldb::offset_t offset = addr_size; // Skip prototype
         const uint32_t count = data.GetU32(&offset);
         const uint32_t num_buckets = data.GetU32(&offset);
-        const addr_t buckets_ptr = data.GetPointer(&offset);
+        const addr_t buckets_ptr = data.GetAddress(&offset);
         if (m_hash_signature.NeedsUpdate(count, num_buckets, buckets_ptr)) {
           m_hash_signature.UpdateSignature(count, num_buckets, buckets_ptr);
 

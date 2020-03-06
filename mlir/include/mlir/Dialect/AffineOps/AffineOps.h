@@ -73,6 +73,9 @@ public:
     return getAttrOfType<AffineMapAttr>("map").getValue();
   }
 
+  /// Returns the affine value map computed from this operation.
+  AffineValueMap getAffineValueMap();
+
   /// Returns true if the result of this operation can be used as dimension id.
   bool isValidDim();
 
@@ -528,6 +531,7 @@ bool isValidSymbol(Value value);
 /// 4. propagate constant operands and drop them
 void canonicalizeMapAndOperands(AffineMap *map,
                                 SmallVectorImpl<Value> *operands);
+
 /// Canonicalizes an integer set the same way canonicalizeMapAndOperands does
 /// for affine maps.
 void canonicalizeSetAndOperands(IntegerSet *set,
@@ -572,9 +576,6 @@ class AffineBound {
 public:
   AffineForOp getAffineForOp() { return op; }
   AffineMap getMap() { return map; }
-
-  /// Returns an AffineValueMap representing this bound.
-  AffineValueMap getAsAffineValueMap();
 
   unsigned getNumOperands() { return opEnd - opStart; }
   Value getOperand(unsigned idx) { return op.getOperand(opStart + idx); }
@@ -653,6 +654,10 @@ private:
   SmallVector<Value, 8> reorderedDims;
   SmallVector<Value, 8> concatenatedSymbols;
 
+  /// The number of symbols in concatenated symbols that belong to the original
+  /// map as opposed to those concatendated during map composition.
+  unsigned numProperSymbols;
+
   AffineMap affineMap;
 
   /// Used with RAII to control the depth at which AffineApply are composed
@@ -666,7 +671,7 @@ private:
   }
   static constexpr unsigned kMaxAffineApplyDepth = 1;
 
-  AffineApplyNormalizer() { affineApplyDepth()++; }
+  AffineApplyNormalizer() : numProperSymbols(0) { affineApplyDepth()++; }
 
 public:
   ~AffineApplyNormalizer() { affineApplyDepth()--; }

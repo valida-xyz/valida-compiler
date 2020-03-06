@@ -1883,7 +1883,7 @@ X86InstrInfo::findThreeSrcCommutedOpIndices(const MachineInstr &MI,
   unsigned KMaskOp = -1U;
   if (X86II::isKMasked(TSFlags)) {
     // For k-zero-masked operations it is Ok to commute the first vector
-    // operand.
+    // operand. Unless this is an intrinsic instruction.
     // For regular k-masked operations a conservative choice is done as the
     // elements of the first vector operand, for which the corresponding bit
     // in the k-mask operand is set to 0, are copied to the result of the
@@ -1902,7 +1902,7 @@ X86InstrInfo::findThreeSrcCommutedOpIndices(const MachineInstr &MI,
 
     // The operand with index = 1 is used as a source for those elements for
     // which the corresponding bit in the k-mask is set to 0.
-    if (X86II::isKMergeMasked(TSFlags))
+    if (X86II::isKMergeMasked(TSFlags) || IsIntrinsic)
       FirstCommutableVecOp = 3;
 
     LastCommutableVecOp++;
@@ -3191,7 +3191,7 @@ static unsigned getLoadStoreRegOpcode(unsigned Reg,
 
 bool X86InstrInfo::getMemOperandsWithOffset(
     const MachineInstr &MemOp, SmallVectorImpl<const MachineOperand *> &BaseOps,
-    int64_t &Offset, const TargetRegisterInfo *TRI) const {
+    int64_t &Offset, bool &OffsetIsScalable, const TargetRegisterInfo *TRI) const {
   const MCInstrDesc &Desc = MemOp.getDesc();
   int MemRefBegin = X86II::getMemoryOperandNo(Desc.TSFlags);
   if (MemRefBegin < 0)
@@ -3222,6 +3222,7 @@ bool X86InstrInfo::getMemOperandsWithOffset(
   if (!BaseOp->isReg())
     return false;
 
+  OffsetIsScalable = false;
   BaseOps.push_back(BaseOp);
   return true;
 }
@@ -7656,7 +7657,8 @@ bool X86InstrInfo::isAssociativeAndCommutative(const MachineInstr &Inst) const {
   case X86::VMULSSrr:
   case X86::VMULSDZrr:
   case X86::VMULSSZrr:
-    return Inst.getParent()->getParent()->getTarget().Options.UnsafeFPMath;
+    return Inst.getFlag(MachineInstr::MIFlag::FmReassoc) &&
+           Inst.getFlag(MachineInstr::MIFlag::FmNsz);
   default:
     return false;
   }
@@ -7842,6 +7844,20 @@ void X86InstrInfo::setSpecialOperandAttr(MachineInstr &OldMI1,
                                          MachineInstr &OldMI2,
                                          MachineInstr &NewMI1,
                                          MachineInstr &NewMI2) const {
+  // Propagate FP flags from the original instructions.
+  // But clear poison-generating flags because those may not be valid now.
+  // TODO: There should be a helper function for copying only fast-math-flags.
+  uint16_t IntersectedFlags = OldMI1.getFlags() & OldMI2.getFlags();
+  NewMI1.setFlags(IntersectedFlags);
+  NewMI1.clearFlag(MachineInstr::MIFlag::NoSWrap);
+  NewMI1.clearFlag(MachineInstr::MIFlag::NoUWrap);
+  NewMI1.clearFlag(MachineInstr::MIFlag::IsExact);
+
+  NewMI2.setFlags(IntersectedFlags);
+  NewMI2.clearFlag(MachineInstr::MIFlag::NoSWrap);
+  NewMI2.clearFlag(MachineInstr::MIFlag::NoUWrap);
+  NewMI2.clearFlag(MachineInstr::MIFlag::IsExact);
+
   // Integer instructions may define an implicit EFLAGS dest register operand.
   MachineOperand *OldFlagDef1 = OldMI1.findRegisterDefOperand(X86::EFLAGS);
   MachineOperand *OldFlagDef2 = OldMI2.findRegisterDefOperand(X86::EFLAGS);

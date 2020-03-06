@@ -1,4 +1,4 @@
-# RUN: (not llc -mtriple=tricore -global-isel -run-pass=postrapseudos -verify-machineinstrs %s -o - 2>&1 || true) | FileCheck %s --check-prefix=ERROR
+# RUN: not --crash llc -mtriple=tricore -global-isel -run-pass=postrapseudos -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
 
 # Check that we abort when trying to copy a pseudo register
 

@@ -1,4 +1,5 @@
 #include "clang/AST/JSONNodeDumper.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/StringSwitch.h"
 
@@ -997,7 +998,7 @@ void JSONNodeDumper::VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
   case ObjCPropertyDecl::Required: JOS.attribute("control", "required"); break;
   case ObjCPropertyDecl::Optional: JOS.attribute("control", "optional"); break;
   }
-  
+
   ObjCPropertyDecl::PropertyAttributeKind Attrs = D->getPropertyAttributes();
   if (Attrs != ObjCPropertyDecl::OBJC_PR_noattr) {
     if (Attrs & ObjCPropertyDecl::OBJC_PR_getter)

@@ -692,6 +692,10 @@ class Base(unittest2.TestCase):
             # differ in the debug info, which is not being hashed.
             "settings set symbols.enable-external-lookup false",
 
+            # Disable fix-its by default so that incorrect expressions in tests don't
+            # pass just because Clang thinks it has a fix-it.
+            "settings set target.auto-apply-fixits false",
+
             # Testsuite runs in parallel and the host can have also other load.
             "settings set plugin.process.gdb-remote.packet-timeout 60",
 
@@ -699,6 +703,11 @@ class Base(unittest2.TestCase):
                 configuration.lldb_module_cache_dir),
             "settings set use-color false",
         ]
+
+        # Set any user-overridden settings.
+        for setting, value in configuration.settings:
+            commands.append('setting set %s %s'%(setting, value))
+
         # Make sure that a sanitizer LLDB's environment doesn't get passed on.
         if cls.platformContext and cls.platformContext.shlib_environment_var in os.environ:
             commands.append('settings set target.env-vars {}='.format(
@@ -799,11 +808,11 @@ class Base(unittest2.TestCase):
             # set environment variable names for finding shared libraries
             self.dylibPath = self.platformContext.shlib_environment_var
 
-        # Create the debugger instance if necessary.
-        try:
-            self.dbg = lldb.DBG
-        except AttributeError:
-            self.dbg = lldb.SBDebugger.Create()
+        # Create the debugger instance.
+        self.dbg = lldb.SBDebugger.Create()
+        # Copy selected platform from a global instance if it exists.
+        if lldb.selected_platform is not None:
+            self.dbg.SetSelectedPlatform(lldb.selected_platform)
 
         if not self.dbg:
             raise Exception('Invalid debugger instance')
@@ -1013,6 +1022,11 @@ class Base(unittest2.TestCase):
             if self.dicts:
                 for dict in reversed(self.dicts):
                     self.cleanup(dictionary=dict)
+
+        # This must be the last statement, otherwise teardown hooks or other
+        # lines might depend on this still being active.
+        lldb.SBDebugger.Destroy(self.dbg)
+        del self.dbg
 
     # =========================================================
     # Various callbacks to allow introspection of test progress
@@ -1990,10 +2004,6 @@ class TestBase(Base):
         # Do this last, to make sure it's in reverse order from how we setup.
         Base.tearDown(self)
 
-        # This must be the last statement, otherwise teardown hooks or other
-        # lines might depend on this still being active.
-        del self.dbg
-
     def switch_to_thread_with_stop_reason(self, stop_reason):
         """
         Run the 'thread list' command, and select the thread with stop reason as
@@ -2394,10 +2404,19 @@ FileCheck output:
         self.assertTrue(expr.strip() == expr, "Expression contains trailing/leading whitespace: '" + expr + "'")
 
         frame = self.frame()
-        eval_result = frame.EvaluateExpression(expr)
+        options = lldb.SBExpressionOptions()
+
+        # Disable fix-its that tests don't pass by accident.
+        options.SetAutoApplyFixIts(False)
+
+        # Set the usual default options for normal expressions.
+        options.SetIgnoreBreakpoints(True)
+        options.SetLanguage(frame.GuessLanguage())
+
+        eval_result = frame.EvaluateExpression(expr, options)
 
         if error_msg:
-            self.assertFalse(eval_result.IsValid())
+            self.assertFalse(eval_result.IsValid(), "Unexpected success with result: '" + str(eval_result) + "'")
             self.assertEqual(error_msg, eval_result.GetError().GetCString())
             return
 
@@ -2406,7 +2425,7 @@ FileCheck output:
                 "Unexpected failure with msg: " + eval_result.GetError().GetCString())
 
         if result_type:
-            self.assertEqual(result_type, eval_result.GetTypeName())
+            self.assertEqual(result_type, eval_result.GetDisplayTypeName())
 
         if result_value:
             self.assertEqual(result_value, eval_result.GetValue())

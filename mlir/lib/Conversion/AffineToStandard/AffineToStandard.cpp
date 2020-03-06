@@ -15,7 +15,7 @@
 
 #include "mlir/Dialect/AffineOps/AffineOps.h"
 #include "mlir/Dialect/LoopOps/LoopOps.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExprVisitor.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
@@ -216,10 +216,10 @@ mlir::Value mlir::expandAffineExpr(OpBuilder &builder, Location loc,
 
 /// Create a sequence of operations that implement the `affineMap` applied to
 /// the given `operands` (as it it were an AffineApplyOp).
-Optional<SmallVector<Value, 8>> static expandAffineMap(OpBuilder &builder,
-                                                       Location loc,
-                                                       AffineMap affineMap,
-                                                       ValueRange operands) {
+Optional<SmallVector<Value, 8>> mlir::expandAffineMap(OpBuilder &builder,
+                                                      Location loc,
+                                                      AffineMap affineMap,
+                                                      ValueRange operands) {
   auto numDims = affineMap.getNumDims();
   auto expanded = functional::map(
       [numDims, &builder, loc, operands](AffineExpr expr) {
@@ -332,7 +332,7 @@ public:
 
   PatternMatchResult matchAndRewrite(AffineTerminatorOp op,
                                      PatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<loop::TerminatorOp>(op);
+    rewriter.replaceOpWithNewOp<loop::YieldOp>(op);
     return matchSuccess();
   }
 };

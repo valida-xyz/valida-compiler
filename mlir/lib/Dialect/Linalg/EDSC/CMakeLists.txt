@@ -2,12 +2,13 @@ set(LIBS
 
   MLIREDSC
   MLIRIR
+  MLIRAffineOps
   MLIRLinalgOps
   MLIRLoopOps
   MLIRStandardOps
   )
 
-add_llvm_library(MLIRLinalgEDSC
+add_mlir_dialect_library(MLIRLinalgEDSC
   Builders.cpp
 
   ADDITIONAL_HEADER_DIRS

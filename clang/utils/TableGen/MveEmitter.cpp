@@ -60,6 +60,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TableGen/Error.h"
@@ -1187,6 +1188,18 @@ Result::Ptr MveEmitter::getCodeForDag(DagInit *D, const Result::Scope &Scope,
         getScalarType("u32"), ST->kind() == ScalarTypeKind::UnsignedInt);
     } else {
       PrintFatalError("unsignedflag's argument should be a scalar type");
+    }
+  } else if (Op->getName() == "bitsize") {
+    if (D->getNumArgs() != 1)
+      PrintFatalError("bitsize should have exactly one argument");
+    Record *TypeRec = cast<DefInit>(D->getArg(0))->getDef();
+    if (!TypeRec->isSubClassOf("Type"))
+      PrintFatalError("bitsize's argument should be a type");
+    if (const auto *ST = dyn_cast<ScalarType>(getType(TypeRec, Param))) {
+      return std::make_shared<IntLiteralResult>(getScalarType("u32"),
+                                                ST->sizeInBits());
+    } else {
+      PrintFatalError("bitsize's argument should be a scalar type");
     }
   } else {
     std::vector<Result::Ptr> Args;

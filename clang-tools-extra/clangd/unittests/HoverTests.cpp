@@ -339,7 +339,7 @@ class Foo {})cpp";
          HI.Definition = "~X()";
          HI.Parameters.emplace();
        }},
-      {"class X { operator [[in^t]](); };",
+      {"class X { [[op^erator]] int(); };",
        [](HoverInfo &HI) {
          HI.NamespaceScope = "";
          HI.Name = "operator int";
@@ -347,6 +347,13 @@ class Foo {})cpp";
          HI.Kind = index::SymbolKind::ConversionFunction;
          HI.Definition = "operator int()";
          HI.Parameters.emplace();
+       }},
+      {"class X { operator [[^X]](); };",
+       [](HoverInfo &HI) {
+         HI.NamespaceScope = "";
+         HI.Name = "X";
+         HI.Kind = index::SymbolKind::Class;
+         HI.Definition = "class X {}";
        }},
 
       // auto on lambda
@@ -573,6 +580,42 @@ class Foo {})cpp";
          // pattern.
          HI.Documentation = "comment from primary";
        }},
+      {// Template Type Parameter
+       R"cpp(
+          template <typename [[^T]] = int> void foo();
+          )cpp",
+       [](HoverInfo &HI) {
+         HI.Name = "T";
+         HI.Kind = index::SymbolKind::TemplateTypeParm;
+         HI.NamespaceScope = "";
+         HI.Definition = "typename T = int";
+         HI.LocalScope = "foo::";
+         HI.Type = "typename";
+       }},
+      {// TemplateTemplate Type Parameter
+       R"cpp(
+          template <template<typename> class [[^T]]> void foo();
+          )cpp",
+       [](HoverInfo &HI) {
+         HI.Name = "T";
+         HI.Kind = index::SymbolKind::TemplateTemplateParm;
+         HI.NamespaceScope = "";
+         HI.Definition = "template <typename> class T";
+         HI.LocalScope = "foo::";
+         HI.Type = "template <typename> class";
+       }},
+      {// NonType Template Parameter
+       R"cpp(
+          template <int [[^T]] = 5> void foo();
+          )cpp",
+       [](HoverInfo &HI) {
+         HI.Name = "T";
+         HI.Kind = index::SymbolKind::NonTypeTemplateParm;
+         HI.NamespaceScope = "";
+         HI.Definition = "int T = 5";
+         HI.LocalScope = "foo::";
+         HI.Type = "int";
+       }},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Code);
@@ -618,7 +661,7 @@ TEST(Hover, NoHover) {
             }
           )cpp",
       R"cpp(// Template auto parameter. Nothing (Not useful).
-            template<^auto T>
+            template<a^uto T>
             void func() {
             }
             void foo() {

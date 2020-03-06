@@ -1643,6 +1643,21 @@ TEST(Matcher, HasNameSupportsFunctionScope) {
   EXPECT_TRUE(matches(code, fieldDecl(hasName("::a::F(int)::S::m"))));
 }
 
+TEST(Matcher, HasNameQualifiedSupportsLinkage) {
+  // https://bugs.llvm.org/show_bug.cgi?id=42193
+  std::string code = R"cpp(namespace foo { extern "C" void test(); })cpp";
+  EXPECT_TRUE(matches(code, functionDecl(hasName("test"))));
+  EXPECT_TRUE(matches(code, functionDecl(hasName("foo::test"))));
+  EXPECT_TRUE(matches(code, functionDecl(hasName("::foo::test"))));
+  EXPECT_TRUE(notMatches(code, functionDecl(hasName("::test"))));
+
+  code = R"cpp(namespace foo { extern "C" { void test(); } })cpp";
+  EXPECT_TRUE(matches(code, functionDecl(hasName("test"))));
+  EXPECT_TRUE(matches(code, functionDecl(hasName("foo::test"))));
+  EXPECT_TRUE(matches(code, functionDecl(hasName("::foo::test"))));
+  EXPECT_TRUE(notMatches(code, functionDecl(hasName("::test"))));
+}
+
 TEST(Matcher, HasAnyName) {
   const std::string Code = "namespace a { namespace b { class C; } }";
 
@@ -1992,22 +2007,28 @@ TEST(EachOf, BehavesLikeAnyOfUnlessBothMatch) {
 TEST(Optionally, SubmatchersDoNotMatch) {
   EXPECT_TRUE(matchAndVerifyResultFalse(
       "class A { int a; int b; };",
-      recordDecl(optionally(has(fieldDecl(hasName("c")).bind("v")),
-                            has(fieldDecl(hasName("d")).bind("v")))),
-      std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("v")));
+      recordDecl(optionally(has(fieldDecl(hasName("c")).bind("c")))),
+      std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("c")));
+}
+
+// Regression test.
+TEST(Optionally, SubmatchersDoNotMatchButPreserveBindings) {
+  std::string Code = "class A { int a; int b; };";
+  auto Matcher = recordDecl(decl().bind("decl"),
+                            optionally(has(fieldDecl(hasName("c")).bind("v"))));
+  // "decl" is still bound.
+  EXPECT_TRUE(matchAndVerifyResultTrue(
+      Code, Matcher, std::make_unique<VerifyIdIsBoundTo<RecordDecl>>("decl")));
+  // "v" is not bound, but the match still suceeded.
+  EXPECT_TRUE(matchAndVerifyResultFalse(
+      Code, Matcher, std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("v")));
 }
 
 TEST(Optionally, SubmatchersMatch) {
   EXPECT_TRUE(matchAndVerifyResultTrue(
       "class A { int a; int c; };",
-      recordDecl(optionally(has(fieldDecl(hasName("a")).bind("v")),
-                            has(fieldDecl(hasName("b")).bind("v")))),
-      std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("v", 1)));
-  EXPECT_TRUE(matchAndVerifyResultTrue(
-      "class A { int c; int b; };",
-      recordDecl(optionally(has(fieldDecl(hasName("c")).bind("v")),
-                            has(fieldDecl(hasName("b")).bind("v")))),
-      std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("v", 2)));
+      recordDecl(optionally(has(fieldDecl(hasName("a")).bind("v")))),
+      std::make_unique<VerifyIdIsBoundTo<FieldDecl>>("v")));
 }
 
 TEST(IsTemplateInstantiation, MatchesImplicitClassTemplateInstantiation) {

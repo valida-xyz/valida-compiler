@@ -5,59 +5,38 @@ set(LLVM_OPTIONAL_SOURCES
 set(LIB_LIBS
   MLIRAnalysis
   MLIRLLVMIR
-  MLIROptMain
+  MLIROptLib
   MLIRParser
   MLIRPass
   MLIRTransforms
   MLIRSupport
 )
-add_llvm_library(MLIRMlirOptLib
+add_llvm_library(MLIRMlirOptMain
   mlir-opt.cpp
 )
-target_link_libraries(MLIRMlirOptLib
+target_link_libraries(MLIRMlirOptMain
   ${LIB_LIBS}
 )
 
-set(FULL_LINK_LIBS
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+set(LIBS
+  ${dialect_libs}
+  ${conversion_libs}
+  MLIRLoopOpsTransforms
   MLIRLoopAnalysis
   MLIRAnalysis
-  MLIRAffineOps
-  MLIRAffineToStandard
   MLIRDialect
-  MLIRLoopsToGPU
-  MLIRLinalgToLLVM
-
-  MLIRLoopToStandard
   MLIREDSC
-  MLIRFxpMathOps
-  MLIRGPU
-  MLIRGPUtoNVVMTransforms
-  MLIRGPUtoROCDLTransforms
-  MLIRGPUtoSPIRVTransforms
-  MLIRLinalgOps
-  MLIRLinalgAnalysis
-  MLIRLinalgEDSC
-  MLIRLinalgTransforms
-  MLIRLinalgUtils
-  MLIRLLVMIR
-  MLIRLoopOps
-  MLIRNVVMIR
-  MLIROpenMP
-  MLIROptMain
+  MLIROptLib
   MLIRParser
   MLIRPass
   MLIRQuantizerFxpMathConfig
   MLIRQuantizerSupport
   MLIRQuantizerTransforms
-  MLIRQuantOps
-  MLIRROCDLIR
   MLIRSPIRV
-  MLIRLinalgToSPIRVTransforms
-  MLIRStandardToSPIRVTransforms
   MLIRSPIRVTestPasses
   MLIRSPIRVTransforms
-  MLIRStandardOps
-  MLIRStandardToLLVM
   MLIRTransforms
   MLIRTransformUtils
   MLIRTestDialect
@@ -65,36 +44,26 @@ set(FULL_LINK_LIBS
   MLIRTestPass
   MLIRTestTransforms
   MLIRSupport
-  MLIRVectorOps
-  MLIRVectorToLLVM
-  MLIRVectorToLoops
-)
-set(LIBS
   MLIRIR
-  MLIROptMain
+  MLIROptLib
   LLVMSupport
   LLVMCore
   LLVMAsmParser
 )
 
-if(MLIR_CUDA_CONVERSIONS_ENABLED)
-  list(APPEND LIBS
-    LLVMNVPTXCodeGen
-    LLVMNVPTXDesc
-    LLVMNVPTXInfo
-    MLIRTargetNVVMIR
-  )
-  # Order matters here, so insert at front.
-  list(INSERT FULL_LINK_LIBS 0
-    MLIRGPUtoCUDATransforms
-  )
-endif()
 add_llvm_tool(mlir-opt
  mlir-opt.cpp
 )
+# Manually expand the target library, since our MLIR libraries
+# aren't plugged into the LLVM dependency tracking. If we don't
+# do this then we can't insert the CodeGen library after ourselves
+llvm_expand_pseudo_components(TARGET_LIBS AllTargetsCodeGens)
+# Prepend LLVM in front of every target, this is how the library
+# are named with CMake
+SET(targets_to_link)
+FOREACH(t ${TARGET_LIBS})
+  LIST(APPEND targets_to_link "LLVM${t}")
+ENDFOREACH(t)
+
 llvm_update_compile_flags(mlir-opt)
-# It is necessary to use whole_archive_link to ensure that all static
-# initializers are called. However, whole_archive_link libraries cannot
-# also be target_link_libraries.
-whole_archive_link(mlir-opt ${FULL_LINK_LIBS})
-target_link_libraries(mlir-opt PRIVATE ${LIBS})
+target_link_libraries(mlir-opt PRIVATE ${LIBS} ${targets_to_link})

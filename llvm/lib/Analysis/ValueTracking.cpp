@@ -1254,9 +1254,9 @@ static void computeKnownBitsFromOperator(const Operator *I,
       Q.DL.getTypeSizeInBits(ScalarTy);
 
     assert(SrcBitWidth && "SrcBitWidth can't be zero");
-    Known = Known.zextOrTrunc(SrcBitWidth, false);
+    Known = Known.anyextOrTrunc(SrcBitWidth);
     computeKnownBits(I->getOperand(0), Known, Depth + 1, Q);
-    Known = Known.zextOrTrunc(BitWidth, true /* ExtendedBitsAreKnownZero */);
+    Known = Known.zextOrTrunc(BitWidth);
     break;
   }
   case Instruction::BitCast: {
@@ -4525,7 +4525,9 @@ bool llvm::isOverflowIntrinsicNoWrap(const WithOverflowInst *WO,
   return llvm::any_of(GuardingBranches, AllUsesGuardedByBranch);
 }
 
-bool llvm::isGuaranteedNotToBeUndefOrPoison(const Value *V) {
+bool llvm::isGuaranteedNotToBeUndefOrPoison(const Value *V,
+                                            const Instruction *CtxI,
+                                            const DominatorTree *DT) {
   // If the value is a freeze instruction, then it can never
   // be undef or poison.
   if (isa<FreezeInst>(V))
@@ -4549,6 +4551,37 @@ bool llvm::isGuaranteedNotToBeUndefOrPoison(const Value *V) {
           return isGuaranteedNotToBeUndefOrPoison(V);
         }))
       return true;
+  }
+
+  if (auto I = dyn_cast<Instruction>(V)) {
+    if (programUndefinedIfFullPoison(I) && I->getType()->isIntegerTy(1))
+      // Note: once we have an agreement that poison is a value-wise concept,
+      // we can remove the isIntegerTy(1) constraint.
+      return true;
+  }
+
+  // CxtI may be null or a cloned instruction.
+  if (!CtxI || !CtxI->getParent() || !DT)
+    return false;
+
+  // If V is used as a branch condition before reaching CtxI, V cannot be
+  // undef or poison.
+  //   br V, BB1, BB2
+  // BB1:
+  //   CtxI ; V cannot be undef or poison here
+  auto Dominator = DT->getNode(CtxI->getParent())->getIDom();
+  while (Dominator) {
+    auto *TI = Dominator->getBlock()->getTerminator();
+
+    if (auto BI = dyn_cast<BranchInst>(TI)) {
+      if (BI->isConditional() && BI->getCondition() == V)
+        return true;
+    } else if (auto SI = dyn_cast<SwitchInst>(TI)) {
+      if (SI->getCondition() == V)
+        return true;
+    }
+
+    Dominator = Dominator->getIDom();
   }
 
   return false;
@@ -4701,11 +4734,18 @@ const Value *llvm::getGuaranteedNonFullPoisonOp(const Instruction *I) {
     case Instruction::SRem:
       return I->getOperand(1);
 
+    case Instruction::Call:
+      if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+        switch (II->getIntrinsicID()) {
+        case Intrinsic::assume:
+          return II->getArgOperand(0);
+        default:
+          return nullptr;
+        }
+      }
+      return nullptr;
+
     default:
-      // Note: It's really tempting to think that a conditional branch or
-      // switch should be listed here, but that's incorrect.  It's not
-      // branching off of poison which is UB, it is executing a side effecting
-      // instruction which follows the branch.
       return nullptr;
   }
 }
@@ -4786,6 +4826,9 @@ static bool isKnownNonNaN(const Value *V, FastMathFlags FMF) {
     }
     return true;
   }
+
+  if (isa<ConstantAggregateZero>(V))
+    return true;
 
   return false;
 }

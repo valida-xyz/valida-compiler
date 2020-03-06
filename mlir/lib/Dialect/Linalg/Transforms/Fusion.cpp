@@ -12,11 +12,12 @@
 
 #include "mlir/Analysis/Dominance.h"
 #include "mlir/Dialect/Linalg/Analysis/DependenceAnalysis.h"
+#include "mlir/Dialect/Linalg/EDSC/Intrinsics.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgTypes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
-#include "mlir/EDSC/Helpers.h"
+#include "mlir/Dialect/StandardOps/EDSC/Intrinsics.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/OpImplementation.h"
@@ -35,6 +36,8 @@ using namespace mlir;
 using namespace mlir::edsc;
 using namespace mlir::edsc::intrinsics;
 using namespace mlir::linalg;
+
+using folded_std_constant_index = folded::ValueBuilder<ConstantIndexOp>;
 
 using llvm::dbgs;
 
@@ -67,7 +70,7 @@ static llvm::cl::list<unsigned> clTileSizes(
 static LinalgOp cloneWithLoopRanges(OpBuilder &b, Location loc, LinalgOp op,
                                     ArrayRef<SubViewOp::Range> loopRanges) {
   assert(op.hasBufferSemantics() && "expected linalg op with buffer semantics");
-  auto maps = loopToOperandRangesMaps(op);
+  auto maps = op.indexing_maps();
   SmallVector<Value, 8> clonedViews;
   clonedViews.reserve(op.getNumInputsAndOutputs());
   // Iterate over the inputs and outputs in order.
@@ -75,7 +78,7 @@ static LinalgOp cloneWithLoopRanges(OpBuilder &b, Location loc, LinalgOp op,
   SmallVector<Value, 8> ios(op.getInputsAndOutputBuffers());
   for (auto en : llvm::enumerate(ios)) {
     unsigned idx = en.index();
-    auto map = maps[idx];
+    auto map = maps[idx].cast<AffineMapAttr>().getValue();
     LLVM_DEBUG(dbgs() << "map: " << map << "\n");
     Value view = en.value();
     SmallVector<SubViewOp::Range, 4> viewRanges(map.getNumResults());
@@ -119,13 +122,13 @@ struct ViewDimension {
 // the first one.
 static ViewDimension getViewDefiningLoopRange(LinalgOp op, unsigned loopDepth) {
   assert(op.hasBufferSemantics() && "expected linalg op with buffer semantics");
-  auto maps = loopToOperandRangesMaps(op);
+  auto maps = op.indexing_maps();
   // Iterate over the inputs and outputs in order.
   // Extract the subranges from the linearized ranges.
   SmallVector<Value, 8> ios(op.getInputsAndOutputBuffers());
   for (auto en : llvm::enumerate(ios)) {
     unsigned idx = en.index();
-    auto map = maps[idx];
+    auto map = maps[idx].cast<AffineMapAttr>().getValue();
     LLVM_DEBUG(dbgs() << "getViewDefiningLoopRange I/O idx: " << idx << "\n");
     LLVM_DEBUG(dbgs() << "getViewDefiningLoopRange map: " << map << "\n");
     Value view = en.value();
@@ -161,7 +164,9 @@ static LinalgOp fuse(Value producedView, LinalgOp producer, LinalgOp consumer,
   //   we can always identify a data dimension with a (at least one) loop
   //   dimension.
   AffineMap producerMap =
-      loopToOperandRangesMaps(producer)[producer.getNumInputs() + producerIdx];
+      producer.indexing_maps()[producer.getNumInputs() + producerIdx]
+          .cast<AffineMapAttr>()
+          .getValue();
   LLVM_DEBUG(dbgs() << "Producer Idx: " << producerIdx
                     << ", producer map: " << producerMap << "\n");
 
@@ -188,9 +193,9 @@ static LinalgOp fuse(Value producedView, LinalgOp producer, LinalgOp consumer,
                  << "existing LoopRange: " << loopRanges[i] << "\n");
     else {
       auto viewDim = getViewDefiningLoopRange(producer, i);
-      loopRanges[i] = SubViewOp::Range{constant_index(folder, 0),
-                                       dim(viewDim.view, viewDim.dimension),
-                                       constant_index(folder, 1)};
+      loopRanges[i] = SubViewOp::Range{folded_std_constant_index(folder, 0),
+                                       std_dim(viewDim.view, viewDim.dimension),
+                                       folded_std_constant_index(folder, 1)};
       LLVM_DEBUG(llvm::dbgs() << "new LoopRange: " << loopRanges[i] << "\n");
     }
   }
@@ -278,6 +283,10 @@ Optional<FusionInfo> mlir::linalg::fuseProducerOf(
     LLVM_DEBUG(dbgs() << "\n***Consider producer:\t"
                       << *dependence.dependentOpView.op << "\n");
     auto producer = cast<LinalgOp>(dependence.dependentOpView.op);
+    if (isa<linalg::IndexedGenericOp>(dependence.dependentOpView.op)) {
+      LLVM_DEBUG(dbgs() << "Not fusing indexed_generic producer");
+      continue;
+    }
 
     // Check that the dependence is indeed on the input `consumerIdx` view.
     auto consumedView = dependence.indexingView;

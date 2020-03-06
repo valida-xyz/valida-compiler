@@ -150,7 +150,9 @@ GCNSubtarget::initializeSubtargetDependencies(const Triple &TT,
 
   HasFminFmaxLegacy = getGeneration() < AMDGPUSubtarget::VOLCANIC_ISLANDS;
 
-  if (DoesNotSupportXNACK && EnableXNACK) {
+  // Disable XNACK on targets where it is not enabled by default unless it is
+  // explicitly requested.
+  if (!FS.contains("+xnack") && DoesNotSupportXNACK && EnableXNACK) {
     ToggleFeature(AMDGPU::FeatureXNACK);
     EnableXNACK = false;
   }
@@ -241,6 +243,7 @@ GCNSubtarget::GCNSubtarget(const Triple &TT, StringRef GPU, StringRef FS,
     HasDPP(false),
     HasDPP8(false),
     HasR128A16(false),
+    HasGFX10A16(false),
     HasNSAEncoding(false),
     HasDLInsts(false),
     HasDot1Insts(false),
@@ -325,18 +328,41 @@ unsigned AMDGPUSubtarget::getMaxLocalMemSizeWithWaveCount(unsigned NWaves,
   return getLocalMemorySize() * MaxWaves / WorkGroupsPerCu / NWaves;
 }
 
+// FIXME: Should return min,max range.
 unsigned AMDGPUSubtarget::getOccupancyWithLocalMemSize(uint32_t Bytes,
   const Function &F) const {
-  unsigned WorkGroupSize = getFlatWorkGroupSizes(F).second;
-  unsigned WorkGroupsPerCu = getMaxWorkGroupsPerCU(WorkGroupSize);
-  if (!WorkGroupsPerCu)
+  const unsigned MaxWorkGroupSize = getFlatWorkGroupSizes(F).second;
+  const unsigned MaxWorkGroupsPerCu = getMaxWorkGroupsPerCU(MaxWorkGroupSize);
+  if (!MaxWorkGroupsPerCu)
     return 0;
-  unsigned MaxWaves = getMaxWavesPerEU();
-  unsigned Limit = getLocalMemorySize() * MaxWaves / WorkGroupsPerCu;
-  unsigned NumWaves = Limit / (Bytes ? Bytes : 1u);
-  NumWaves = std::min(NumWaves, MaxWaves);
-  NumWaves = std::max(NumWaves, 1u);
-  return NumWaves;
+
+  const unsigned WaveSize = getWavefrontSize();
+
+  // FIXME: Do we need to account for alignment requirement of LDS rounding the
+  // size up?
+  // Compute restriction based on LDS usage
+  unsigned NumGroups = getLocalMemorySize() / (Bytes ? Bytes : 1u);
+
+  // This can be queried with more LDS than is possible, so just assume the
+  // worst.
+  if (NumGroups == 0)
+    return 1;
+
+  NumGroups = std::min(MaxWorkGroupsPerCu, NumGroups);
+
+  // Round to the number of waves.
+  const unsigned MaxGroupNumWaves = (MaxWorkGroupSize + WaveSize - 1) / WaveSize;
+  unsigned MaxWaves = NumGroups * MaxGroupNumWaves;
+
+  // Clamp to the maximum possible number of waves.
+  MaxWaves = std::min(MaxWaves, getMaxWavesPerEU());
+
+  // FIXME: Needs to be a multiple of the group size?
+  //MaxWaves = MaxGroupNumWaves * (MaxWaves / MaxGroupNumWaves);
+
+  assert(MaxWaves > 0 && MaxWaves <= getMaxWavesPerEU() &&
+         "computed invalid occupancy");
+  return MaxWaves;
 }
 
 unsigned

@@ -25,6 +25,7 @@
 #include "clang/Basic/PrettyStackTrace.h"
 #include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/AtomicOrdering.h"
 using namespace clang;
 using namespace CodeGen;
 using namespace llvm::omp;
@@ -1449,15 +1450,7 @@ void CodeGenFunction::EmitOMPParallelDirective(const OMPParallelDirective &S) {
     // The cleanup callback that finalizes all variabels at the given location,
     // thus calls destructors etc.
     auto FiniCB = [this](InsertPointTy IP) {
-      CGBuilderTy::InsertPointGuard IPG(Builder);
-      assert(IP.getBlock()->end() != IP.getPoint() &&
-             "OpenMP IR Builder should cause terminated block!");
-      llvm::BasicBlock *IPBB = IP.getBlock();
-      llvm::BasicBlock *DestBB = IPBB->splitBasicBlock(IP.getPoint());
-      IPBB->getTerminator()->eraseFromParent();
-      Builder.SetInsertPoint(IPBB);
-      CodeGenFunction::JumpDest Dest = getJumpDestInCurrentScope(DestBB);
-      EmitBranchThroughCleanup(Dest);
+      OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
     };
 
     // Privatization callback that performs appropriate action for
@@ -1479,25 +1472,10 @@ void CodeGenFunction::EmitOMPParallelDirective(const OMPParallelDirective &S) {
     auto BodyGenCB = [ParallelRegionBodyStmt,
                       this](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
                             llvm::BasicBlock &ContinuationBB) {
-      auto OldAllocaIP = AllocaInsertPt;
-      AllocaInsertPt = &*AllocaIP.getPoint();
-
-      auto OldReturnBlock = ReturnBlock;
-      ReturnBlock = getJumpDestInCurrentScope(&ContinuationBB);
-
-      llvm::BasicBlock *CodeGenIPBB = CodeGenIP.getBlock();
-      CodeGenIPBB->splitBasicBlock(CodeGenIP.getPoint());
-      llvm::Instruction *CodeGenIPBBTI = CodeGenIPBB->getTerminator();
-      CodeGenIPBBTI->removeFromParent();
-
-      Builder.SetInsertPoint(CodeGenIPBB);
-
-      EmitStmt(ParallelRegionBodyStmt);
-
-      Builder.Insert(CodeGenIPBBTI);
-
-      AllocaInsertPt = OldAllocaIP;
-      ReturnBlock = OldReturnBlock;
+      OMPBuilderCBHelpers::OutlinedRegionBodyRAII ORB(*this, AllocaIP,
+                                                      ContinuationBB);
+      OMPBuilderCBHelpers::EmitOMPRegionBody(*this, ParallelRegionBodyStmt,
+                                             CodeGenIP, ContinuationBB);
     };
 
     CGCapturedStmtInfo CGSI(*CS, CR_OpenMP);
@@ -1769,7 +1747,7 @@ static void emitAlignedClause(CodeGenFunction &CGF,
              "alignment is not power of 2");
       if (Alignment != 0) {
         llvm::Value *PtrValue = CGF.EmitScalarExpr(E);
-        CGF.EmitAlignmentAssumption(
+        CGF.emitAlignmentAssumption(
             PtrValue, E, /*No second loc needed*/ SourceLocation(),
             llvm::ConstantInt::get(CGF.getLLVMContext(), Alignment));
       }
@@ -2017,12 +1995,14 @@ static void emitCommonSimdLoop(CodeGenFunction &CGF, const OMPLoopDirective &S,
     BodyCodeGen(CGF);
   };
   const Expr *IfCond = nullptr;
-  for (const auto *C : S.getClausesOfKind<OMPIfClause>()) {
-    if (CGF.getLangOpts().OpenMP >= 50 &&
-        (C->getNameModifier() == OMPD_unknown ||
-         C->getNameModifier() == OMPD_simd)) {
-      IfCond = C->getCondition();
-      break;
+  if (isOpenMPSimdDirective(S.getDirectiveKind())) {
+    for (const auto *C : S.getClausesOfKind<OMPIfClause>()) {
+      if (CGF.getLangOpts().OpenMP >= 50 &&
+          (C->getNameModifier() == OMPD_unknown ||
+           C->getNameModifier() == OMPD_simd)) {
+        IfCond = C->getCondition();
+        break;
+      }
     }
   }
   if (IfCond) {
@@ -3149,55 +3129,18 @@ void CodeGenFunction::EmitOMPMasterDirective(const OMPMasterDirective &S) {
     const CapturedStmt *CS = S.getInnermostCapturedStmt();
     const Stmt *MasterRegionBodyStmt = CS->getCapturedStmt();
 
-    // TODO: Replace with a generic helper function for finalization
     auto FiniCB = [this](InsertPointTy IP) {
-      CGBuilderTy::InsertPointGuard IPG(Builder);
-      assert(IP.getBlock()->end() != IP.getPoint() &&
-             "OpenMP IR Builder should cause terminated block!");
-
-      llvm::BasicBlock *IPBB = IP.getBlock();
-      llvm::BasicBlock *DestBB = IPBB->getUniqueSuccessor();
-      assert(DestBB && "Finalization block should have one successor!");
-
-      // erase and replace with cleanup branch.
-      IPBB->getTerminator()->eraseFromParent();
-      Builder.SetInsertPoint(IPBB);
-      CodeGenFunction::JumpDest Dest = getJumpDestInCurrentScope(DestBB);
-      EmitBranchThroughCleanup(Dest);
+      OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
     };
 
-    // TODO: Replace with a generic helper function for emitting body
     auto BodyGenCB = [MasterRegionBodyStmt, this](InsertPointTy AllocaIP,
                                                   InsertPointTy CodeGenIP,
                                                   llvm::BasicBlock &FiniBB) {
-      // Alloca insertion block should be in the entry block of the containing
-      // function So it expects an empty AllocaIP in which case will reuse the
-      // old alloca insertion point, or a new AllocaIP in the same block as the
-      // old one
-      assert((!AllocaIP.isSet() ||
-              AllocaInsertPt->getParent() == AllocaIP.getBlock()) &&
-             "Insertion point should be in the entry block of containing "
-             "function!");
-      auto OldAllocaIP = AllocaInsertPt;
-      if (AllocaIP.isSet())
-        AllocaInsertPt = &*AllocaIP.getPoint();
-      auto OldReturnBlock = ReturnBlock;
-      ReturnBlock = getJumpDestInCurrentScope(&FiniBB);
-
-      llvm::BasicBlock *CodeGenIPBB = CodeGenIP.getBlock();
-      if (llvm::Instruction *CodeGenIPBBTI = CodeGenIPBB->getTerminator())
-        CodeGenIPBBTI->eraseFromParent();
-
-      Builder.SetInsertPoint(CodeGenIPBB);
-
-      EmitStmt(MasterRegionBodyStmt);
-
-      if (Builder.saveIP().isSet())
-        Builder.CreateBr(&FiniBB);
-
-      AllocaInsertPt = OldAllocaIP;
-      ReturnBlock = OldReturnBlock;
+      OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
+      OMPBuilderCBHelpers::EmitOMPRegionBody(*this, MasterRegionBodyStmt,
+                                             CodeGenIP, FiniBB);
     };
+
     CGCapturedStmtInfo CGSI(*CS, CR_OpenMP);
     CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(*this, &CGSI);
     Builder.restoreIP(OMPBuilder->CreateMaster(Builder, BodyGenCB, FiniCB));
@@ -3226,53 +3169,16 @@ void CodeGenFunction::EmitOMPCriticalDirective(const OMPCriticalDirective &S) {
       HintInst =
           Builder.CreateIntCast(EmitScalarExpr(Hint), CGM.Int32Ty, false);
 
-    // TODO: Replace with a generic helper function for finalization
     auto FiniCB = [this](InsertPointTy IP) {
-      CGBuilderTy::InsertPointGuard IPG(Builder);
-      assert(IP.getBlock()->end() != IP.getPoint() &&
-             "OpenMP IR Builder should cause terminated block!");
-      llvm::BasicBlock *IPBB = IP.getBlock();
-      llvm::BasicBlock *DestBB = IPBB->getUniqueSuccessor();
-      assert(DestBB && "Finalization block should have one successor!");
-
-      // erase and replace with cleanup branch.
-      IPBB->getTerminator()->eraseFromParent();
-      Builder.SetInsertPoint(IPBB);
-      CodeGenFunction::JumpDest Dest = getJumpDestInCurrentScope(DestBB);
-      EmitBranchThroughCleanup(Dest);
+      OMPBuilderCBHelpers::FinalizeOMPRegion(*this, IP);
     };
 
-    // TODO: Replace with a generic helper function for emitting body
     auto BodyGenCB = [CriticalRegionBodyStmt, this](InsertPointTy AllocaIP,
                                                     InsertPointTy CodeGenIP,
                                                     llvm::BasicBlock &FiniBB) {
-      // Alloca insertion block should be in the entry block of the containing
-      // function So it expects an empty AllocaIP in which case will reuse the
-      // old alloca insertion point, or a new AllocaIP in the same block as the
-      // old one
-      assert((!AllocaIP.isSet() ||
-              AllocaInsertPt->getParent() == AllocaIP.getBlock()) &&
-             "Insertion point should be in the entry block of containing "
-             "function!");
-      auto OldAllocaIP = AllocaInsertPt;
-      if (AllocaIP.isSet())
-        AllocaInsertPt = &*AllocaIP.getPoint();
-      auto OldReturnBlock = ReturnBlock;
-      ReturnBlock = getJumpDestInCurrentScope(&FiniBB);
-
-      llvm::BasicBlock *CodeGenIPBB = CodeGenIP.getBlock();
-      if (llvm::Instruction *CodeGenIPBBTI = CodeGenIPBB->getTerminator())
-        CodeGenIPBBTI->eraseFromParent();
-
-      Builder.SetInsertPoint(CodeGenIPBB);
-
-      EmitStmt(CriticalRegionBodyStmt);
-
-      if (Builder.saveIP().isSet())
-        Builder.CreateBr(&FiniBB);
-
-      AllocaInsertPt = OldAllocaIP;
-      ReturnBlock = OldReturnBlock;
+      OMPBuilderCBHelpers::InlinedRegionBodyRAII IRB(*this, AllocaIP, FiniBB);
+      OMPBuilderCBHelpers::EmitOMPRegionBody(*this, CriticalRegionBodyStmt,
+                                             CodeGenIP, FiniBB);
     };
 
     CGCapturedStmtInfo CGSI(*CS, CR_OpenMP);
@@ -3892,6 +3798,30 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
         return llvm::None;
       }(),
       S.getBeginLoc(), AO);
+}
+
+void CodeGenFunction::EmitOMPDepobjDirective(const OMPDepobjDirective &S) {
+  const auto *DO = S.getSingleClause<OMPDepobjClause>();
+  LValue DOLVal = EmitLValue(DO->getDepobj());
+  if (const auto *DC = S.getSingleClause<OMPDependClause>()) {
+    SmallVector<std::pair<OpenMPDependClauseKind, const Expr *>, 4>
+        Dependencies;
+    for (const Expr *IRef : DC->varlists())
+      Dependencies.emplace_back(DC->getDependencyKind(), IRef);
+    Address DepAddr = CGM.getOpenMPRuntime().emitDependClause(
+        *this, Dependencies, /*ForDepobj=*/true, DC->getBeginLoc());
+    EmitStoreOfScalar(DepAddr.getPointer(), DOLVal);
+    return;
+  }
+  if (const auto *DC = S.getSingleClause<OMPDestroyClause>()) {
+    CGM.getOpenMPRuntime().emitDestroyClause(*this, DOLVal, DC->getBeginLoc());
+    return;
+  }
+  if (const auto *UC = S.getSingleClause<OMPUpdateClause>()) {
+    CGM.getOpenMPRuntime().emitUpdateClause(
+        *this, DOLVal, UC->getDependencyKind(), UC->getBeginLoc());
+    return;
+  }
 }
 
 void CodeGenFunction::EmitOMPDistributeLoop(const OMPLoopDirective &S,
@@ -4628,12 +4558,16 @@ static void emitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_default:
   case OMPC_seq_cst:
   case OMPC_acq_rel:
+  case OMPC_acquire:
+  case OMPC_release:
+  case OMPC_relaxed:
   case OMPC_shared:
   case OMPC_linear:
   case OMPC_aligned:
   case OMPC_copyin:
   case OMPC_copyprivate:
   case OMPC_flush:
+  case OMPC_depobj:
   case OMPC_proc_bind:
   case OMPC_schedule:
   case OMPC_ordered:
@@ -4669,23 +4603,58 @@ static void emitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_match:
   case OMPC_nontemporal:
   case OMPC_order:
+  case OMPC_destroy:
     llvm_unreachable("Clause is not allowed in 'omp atomic'.");
   }
 }
 
 void CodeGenFunction::EmitOMPAtomicDirective(const OMPAtomicDirective &S) {
   llvm::AtomicOrdering AO = llvm::AtomicOrdering::Monotonic;
-  if (S.getSingleClause<OMPSeqCstClause>())
+  bool MemOrderingSpecified = false;
+  if (S.getSingleClause<OMPSeqCstClause>()) {
     AO = llvm::AtomicOrdering::SequentiallyConsistent;
-  else if (S.getSingleClause<OMPAcqRelClause>())
+    MemOrderingSpecified = true;
+  } else if (S.getSingleClause<OMPAcqRelClause>()) {
     AO = llvm::AtomicOrdering::AcquireRelease;
+    MemOrderingSpecified = true;
+  } else if (S.getSingleClause<OMPAcquireClause>()) {
+    AO = llvm::AtomicOrdering::Acquire;
+    MemOrderingSpecified = true;
+  } else if (S.getSingleClause<OMPReleaseClause>()) {
+    AO = llvm::AtomicOrdering::Release;
+    MemOrderingSpecified = true;
+  } else if (S.getSingleClause<OMPRelaxedClause>()) {
+    AO = llvm::AtomicOrdering::Monotonic;
+    MemOrderingSpecified = true;
+  }
   OpenMPClauseKind Kind = OMPC_unknown;
   for (const OMPClause *C : S.clauses()) {
-    // Find first clause (skip seq_cst|acq_rel clause, if it is first).
+    // Find first clause (skip seq_cst|acq_rel|aqcuire|release|relaxed clause,
+    // if it is first).
     if (C->getClauseKind() != OMPC_seq_cst &&
-        C->getClauseKind() != OMPC_acq_rel) {
+        C->getClauseKind() != OMPC_acq_rel &&
+        C->getClauseKind() != OMPC_acquire &&
+        C->getClauseKind() != OMPC_release &&
+        C->getClauseKind() != OMPC_relaxed) {
       Kind = C->getClauseKind();
       break;
+    }
+  }
+  if (!MemOrderingSpecified) {
+    llvm::AtomicOrdering DefaultOrder =
+        CGM.getOpenMPRuntime().getDefaultMemoryOrdering();
+    if (DefaultOrder == llvm::AtomicOrdering::Monotonic ||
+        DefaultOrder == llvm::AtomicOrdering::SequentiallyConsistent ||
+        (DefaultOrder == llvm::AtomicOrdering::AcquireRelease &&
+         Kind == OMPC_capture)) {
+      AO = DefaultOrder;
+    } else if (DefaultOrder == llvm::AtomicOrdering::AcquireRelease) {
+      if (Kind == OMPC_unknown || Kind == OMPC_update || Kind == OMPC_write) {
+        AO = llvm::AtomicOrdering::Release;
+      } else if (Kind == OMPC_read) {
+        assert(Kind == OMPC_read && "Unexpected atomic kind.");
+        AO = llvm::AtomicOrdering::Acquire;
+      }
     }
   }
 
@@ -5235,7 +5204,8 @@ void CodeGenFunction::EmitOMPCancelDirective(const OMPCancelDirective &S) {
 CodeGenFunction::JumpDest
 CodeGenFunction::getOMPCancelDestination(OpenMPDirectiveKind Kind) {
   if (Kind == OMPD_parallel || Kind == OMPD_task ||
-      Kind == OMPD_target_parallel)
+      Kind == OMPD_target_parallel || Kind == OMPD_taskloop ||
+      Kind == OMPD_master_taskloop || Kind == OMPD_parallel_master_taskloop)
     return ReturnBlock;
   assert(Kind == OMPD_for || Kind == OMPD_section || Kind == OMPD_sections ||
          Kind == OMPD_parallel_sections || Kind == OMPD_parallel_for ||
@@ -5780,7 +5750,7 @@ void CodeGenFunction::EmitOMPParallelMasterTaskLoopDirective(
       Action.Enter(CGF);
       CGF.EmitOMPTaskLoopBasedDirective(S);
     };
-    OMPLexicalScope Scope(CGF, S, llvm::None, /*EmitPreInitStmt=*/false);
+    OMPLexicalScope Scope(CGF, S, OMPD_parallel, /*EmitPreInitStmt=*/false);
     CGM.getOpenMPRuntime().emitMasterRegion(CGF, TaskLoopCodeGen,
                                             S.getBeginLoc());
   };

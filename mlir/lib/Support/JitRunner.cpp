@@ -33,10 +33,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileUtilities.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/StringSaver.h"
-#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <numeric>
 
@@ -105,12 +103,6 @@ static OwningModuleRef parseMLIRInput(StringRef inputFilename,
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
   return OwningModuleRef(parseSourceFile(sourceMgr, context));
-}
-
-// Initialize the relevant subsystems of LLVM.
-static void initializeLLVM() {
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmPrinter();
 }
 
 static inline Error make_string_error(const Twine &message) {
@@ -209,11 +201,6 @@ static Error compileAndExecuteSingleFloatReturnFunction(
 int mlir::JitRunnerMain(
     int argc, char **argv,
     function_ref<LogicalResult(mlir::ModuleOp)> mlirTransformer) {
-  llvm::InitLLVM y(argc, argv);
-
-  initializeLLVM();
-  mlir::initializeLLVMPasses();
-
   llvm::cl::ParseCommandLineOptions(argc, argv, "MLIR CPU execution driver\n");
 
   Optional<unsigned> optLevel = getCommandLineOptLevel();

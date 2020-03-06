@@ -48,6 +48,27 @@ struct TargetEnvAttributeStorage : public AttributeStorage {
 } // namespace spirv
 } // namespace mlir
 
+spirv::TargetEnvAttr spirv::TargetEnvAttr::get(
+    spirv::Version version, ArrayRef<spirv::Extension> extensions,
+    ArrayRef<spirv::Capability> capabilities, DictionaryAttr limits) {
+  Builder b(limits.getContext());
+
+  auto versionAttr = b.getI32IntegerAttr(static_cast<uint32_t>(version));
+
+  SmallVector<Attribute, 4> extAttrs;
+  extAttrs.reserve(extensions.size());
+  for (spirv::Extension ext : extensions)
+    extAttrs.push_back(b.getStringAttr(spirv::stringifyExtension(ext)));
+
+  SmallVector<Attribute, 4> capAttrs;
+  capAttrs.reserve(capabilities.size());
+  for (spirv::Capability cap : capabilities)
+    capAttrs.push_back(b.getI32IntegerAttr(static_cast<uint32_t>(cap)));
+
+  return get(versionAttr, b.getArrayAttr(extAttrs), b.getArrayAttr(capAttrs),
+             limits);
+}
+
 spirv::TargetEnvAttr spirv::TargetEnvAttr::get(IntegerAttr version,
                                                ArrayAttr extensions,
                                                ArrayAttr capabilities,
@@ -98,15 +119,15 @@ ArrayAttr spirv::TargetEnvAttr::getCapabilitiesAttr() {
   return getImpl()->capabilities.cast<ArrayAttr>();
 }
 
-DictionaryAttr spirv::TargetEnvAttr::getResourceLimits() {
-  return getImpl()->limits.cast<DictionaryAttr>();
+spirv::ResourceLimitsAttr spirv::TargetEnvAttr::getResourceLimits() {
+  return getImpl()->limits.cast<spirv::ResourceLimitsAttr>();
 }
 
 LogicalResult spirv::TargetEnvAttr::verifyConstructionInvariants(
-    Optional<Location> loc, MLIRContext *context, IntegerAttr version,
-    ArrayAttr extensions, ArrayAttr capabilities, DictionaryAttr limits) {
-  if (!version.getType().isInteger(32))
-    return emitOptionalError(loc, "expected 32-bit integer for version");
+    Location loc, IntegerAttr version, ArrayAttr extensions,
+    ArrayAttr capabilities, DictionaryAttr limits) {
+  if (!version.getType().isSignlessInteger(32))
+    return emitError(loc, "expected 32-bit integer for version");
 
   if (!llvm::all_of(extensions.getValue(), [](Attribute attr) {
         if (auto strAttr = attr.dyn_cast<StringAttr>())
@@ -114,7 +135,7 @@ LogicalResult spirv::TargetEnvAttr::verifyConstructionInvariants(
             return true;
         return false;
       }))
-    return emitOptionalError(loc, "unknown extension in extension list");
+    return emitError(loc, "unknown extension in extension list");
 
   if (!llvm::all_of(capabilities.getValue(), [](Attribute attr) {
         if (auto intAttr = attr.dyn_cast<IntegerAttr>())
@@ -122,11 +143,10 @@ LogicalResult spirv::TargetEnvAttr::verifyConstructionInvariants(
             return true;
         return false;
       }))
-    return emitOptionalError(loc, "unknown capability in capability list");
+    return emitError(loc, "unknown capability in capability list");
 
   if (!limits.isa<spirv::ResourceLimitsAttr>())
-    return emitOptionalError(loc,
-                             "expected spirv::ResourceLimitsAttr for limits");
+    return emitError(loc, "expected spirv::ResourceLimitsAttr for limits");
 
   return success();
 }
@@ -158,6 +178,26 @@ spirv::getEntryPointABIAttr(ArrayRef<int32_t> localSize, MLIRContext *context) {
       context);
 }
 
+spirv::EntryPointABIAttr spirv::lookupEntryPointABI(Operation *op) {
+  while (op && !op->hasTrait<OpTrait::FunctionLike>())
+    op = op->getParentOp();
+  if (!op)
+    return {};
+
+  if (auto attr = op->getAttrOfType<spirv::EntryPointABIAttr>(
+          spirv::getEntryPointABIAttrName()))
+    return attr;
+
+  return {};
+}
+
+DenseIntElementsAttr spirv::lookupLocalWorkGroupSize(Operation *op) {
+  if (auto entryPoint = spirv::lookupEntryPointABI(op))
+    return entryPoint.local_size();
+
+  return {};
+}
+
 spirv::ResourceLimitsAttr
 spirv::getDefaultResourceLimits(MLIRContext *context) {
   auto i32Type = IntegerType::get(32, context);
@@ -186,17 +226,4 @@ spirv::TargetEnvAttr spirv::lookupTargetEnvOrDefault(Operation *op) {
           spirv::getTargetEnvAttrName()))
     return attr;
   return getDefaultTargetEnv(op->getContext());
-}
-
-DenseIntElementsAttr spirv::lookupLocalWorkGroupSize(Operation *op) {
-  while (op && !op->hasTrait<OpTrait::FunctionLike>())
-    op = op->getParentOp();
-  if (!op)
-    return {};
-
-  if (auto attr = op->getAttrOfType<spirv::EntryPointABIAttr>(
-          spirv::getEntryPointABIAttrName()))
-    return attr.local_size();
-
-  return {};
 }

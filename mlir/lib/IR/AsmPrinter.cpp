@@ -63,6 +63,13 @@ OpAsmPrinter::~OpAsmPrinter() {}
 // OpPrintingFlags
 //===----------------------------------------------------------------------===//
 
+static llvm::cl::opt<int> printElementsAttrWithHexIfLarger(
+    "mlir-print-elementsattrs-with-hex-if-larger",
+    llvm::cl::desc(
+        "Print DenseElementsAttrs with a hex string that have "
+        "more elements than the given upper limit (use -1 to disable)"),
+    llvm::cl::init(100));
+
 static llvm::cl::opt<unsigned> elideElementsAttrIfLarger(
     "mlir-elide-elementsattrs-if-larger",
     llvm::cl::desc("Elide ElementsAttrs with \"...\" that have "
@@ -887,7 +894,10 @@ protected:
                              bool withKeyword = false);
   void printTrailingLocation(Location loc);
   void printLocationInternal(LocationAttr loc, bool pretty = false);
-  void printDenseElementsAttr(DenseElementsAttr attr);
+
+  /// Print a dense elements attribute. If 'allowHex' is true, a hex string is
+  /// used instead of individual elements when the elements attr is large.
+  void printDenseElementsAttr(DenseElementsAttr attr, bool allowHex);
 
   void printDialectAttribute(Attribute attr);
   void printDialectType(Type type);
@@ -1248,12 +1258,14 @@ void ModulePrinter::printAttribute(Attribute attr,
     break;
   case StandardAttributes::Integer: {
     auto intAttr = attr.cast<IntegerAttr>();
-    // Print all integer attributes as signed unless i1.
-    bool isSigned = attrType.isIndex() || attrType.getIntOrFloatBitWidth() != 1;
+    // Print all signed/signless integer attributes as signed unless i1.
+    bool isSigned =
+        attrType.isIndex() || (!attrType.isUnsignedInteger() &&
+                               attrType.getIntOrFloatBitWidth() != 1);
     intAttr.getValue().print(os, isSigned);
 
     // IntegerAttr elides the type if I64.
-    if (typeElision == AttrTypeElision::May && attrType.isInteger(64))
+    if (typeElision == AttrTypeElision::May && attrType.isSignlessInteger(64))
       return;
     break;
   }
@@ -1321,7 +1333,7 @@ void ModulePrinter::printAttribute(Attribute attr,
       break;
     }
     os << "dense<";
-    printDenseElementsAttr(eltsAttr);
+    printDenseElementsAttr(eltsAttr, /*allowHex=*/true);
     os << '>';
     break;
   }
@@ -1333,9 +1345,9 @@ void ModulePrinter::printAttribute(Attribute attr,
       break;
     }
     os << "sparse<";
-    printDenseElementsAttr(elementsAttr.getIndices());
+    printDenseElementsAttr(elementsAttr.getIndices(), /*allowHex=*/false);
     os << ", ";
-    printDenseElementsAttr(elementsAttr.getValues());
+    printDenseElementsAttr(elementsAttr.getValues(), /*allowHex=*/true);
     os << '>';
     break;
   }
@@ -1360,25 +1372,28 @@ void ModulePrinter::printAttribute(Attribute attr,
 
 /// Print the integer element of the given DenseElementsAttr at 'index'.
 static void printDenseIntElement(DenseElementsAttr attr, raw_ostream &os,
-                                 unsigned index) {
+                                 unsigned index, bool isSigned) {
   APInt value = *std::next(attr.int_value_begin(), index);
   if (value.getBitWidth() == 1)
     os << (value.getBoolValue() ? "true" : "false");
   else
-    value.print(os, /*isSigned=*/true);
+    value.print(os, isSigned);
 }
 
 /// Print the float element of the given DenseElementsAttr at 'index'.
 static void printDenseFloatElement(DenseElementsAttr attr, raw_ostream &os,
-                                   unsigned index) {
+                                   unsigned index, bool isSigned) {
+  assert(isSigned && "floating point values are always signed");
   APFloat value = *std::next(attr.float_value_begin(), index);
   printFloatValue(value, os);
 }
 
-void ModulePrinter::printDenseElementsAttr(DenseElementsAttr attr) {
+void ModulePrinter::printDenseElementsAttr(DenseElementsAttr attr,
+                                           bool allowHex) {
   auto type = attr.getType();
   auto shape = type.getShape();
   auto rank = type.getRank();
+  bool isSigned = !type.getElementType().isUnsignedInteger();
 
   // The function used to print elements of this attribute.
   auto printEltFn = type.getElementType().isa<IntegerType>()
@@ -1387,7 +1402,7 @@ void ModulePrinter::printDenseElementsAttr(DenseElementsAttr attr) {
 
   // Special case for 0-d and splat tensors.
   if (attr.isSplat()) {
-    printEltFn(attr, os, 0);
+    printEltFn(attr, os, 0, isSigned);
     return;
   }
 
@@ -1398,6 +1413,15 @@ void ModulePrinter::printDenseElementsAttr(DenseElementsAttr attr) {
       os << '[';
     for (int i = 0; i < rank; ++i)
       os << ']';
+    return;
+  }
+
+  // Check to see if we should format this attribute as a hex string.
+  if (allowHex && printElementsAttrWithHexIfLarger != -1 &&
+      numElements > printElementsAttrWithHexIfLarger) {
+    ArrayRef<char> rawData = attr.getRawData();
+    os << '"' << "0x" << llvm::toHex(StringRef(rawData.data(), rawData.size()))
+       << "\"";
     return;
   }
 
@@ -1430,7 +1454,7 @@ void ModulePrinter::printDenseElementsAttr(DenseElementsAttr attr) {
     while (openBrackets++ < rank)
       os << '[';
     openBrackets = rank;
-    printEltFn(attr, os, idx);
+    printEltFn(attr, os, idx, isSigned);
     bumpCounter();
   }
   while (openBrackets-- > 0)
@@ -1475,6 +1499,10 @@ void ModulePrinter::printType(Type type) {
 
   case StandardTypes::Integer: {
     auto integer = type.cast<IntegerType>();
+    if (integer.isSigned())
+      os << 's';
+    else if (integer.isUnsigned())
+      os << 'u';
     os << 'i' << integer.getWidth();
     return;
   }
@@ -1936,9 +1964,13 @@ public:
                                          /*withKeyword=*/true);
   }
 
+  /// Print the given successor.
+  void printSuccessor(Block *successor) override;
+
   /// Print an operation successor with the operands used for the block
   /// arguments.
-  void printSuccessorAndUseList(Operation *term, unsigned index) override;
+  void printSuccessorAndUseList(Block *successor,
+                                ValueRange succOperands) override;
 
   /// Print the given region.
   void printRegion(Region &region, bool printEntryBlockArgs,
@@ -2034,23 +2066,14 @@ void OperationPrinter::printGenericOp(Operation *op) {
   os << '"';
   printEscapedString(op->getName().getStringRef(), os);
   os << "\"(";
-
-  // Get the list of operands that are not successor operands.
-  unsigned totalNumSuccessorOperands = 0;
-  unsigned numSuccessors = op->getNumSuccessors();
-  for (unsigned i = 0; i < numSuccessors; ++i)
-    totalNumSuccessorOperands += op->getNumSuccessorOperands(i);
-  unsigned numProperOperands = op->getNumOperands() - totalNumSuccessorOperands;
-  interleaveComma(op->getOperands().take_front(numProperOperands),
-                  [&](Value value) { printValueID(value); });
-
+  interleaveComma(op->getOperands(), [&](Value value) { printValueID(value); });
   os << ')';
 
   // For terminators, print the list of successors and their operands.
-  if (numSuccessors != 0) {
+  if (op->getNumSuccessors() != 0) {
     os << '[';
-    interleaveComma(llvm::seq<unsigned>(0, numSuccessors),
-                    [&](unsigned i) { printSuccessorAndUseList(op, i); });
+    interleaveComma(op->getSuccessors(),
+                    [&](Block *successor) { printBlockName(successor); });
     os << ']';
   }
 
@@ -2139,12 +2162,14 @@ void OperationPrinter::printValueID(Value value, bool printResultNo) const {
   state->getSSANameState().printValueID(value, printResultNo, os);
 }
 
-void OperationPrinter::printSuccessorAndUseList(Operation *term,
-                                                unsigned index) {
-  printBlockName(term->getSuccessor(index));
+void OperationPrinter::printSuccessor(Block *successor) {
+  printBlockName(successor);
+}
 
-  auto succOperands = term->getSuccessorOperands(index);
-  if (succOperands.begin() == succOperands.end())
+void OperationPrinter::printSuccessorAndUseList(Block *successor,
+                                                ValueRange succOperands) {
+  printBlockName(successor);
+  if (succOperands.empty())
     return;
 
   os << '(';

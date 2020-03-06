@@ -1,4 +1,4 @@
-# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -run-pass=legalizer -verify-machineinstrs %s -o /dev/null
+# RUN: not --crash llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -run-pass=legalizer -verify-machineinstrs %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERROR
 # XFAIL: *
 
 # This code triggers a bug in GlobalISel where the legalizer thinks the source
@@ -8,6 +8,7 @@
 name: test_unmerge_s16_s96
 body: |
   bb.0:
+    ; ERROR-NOT: Assertion `isVector() && "cannot get element type of scalar/aggregate"' failed.
     %0:_(s64) = G_CONSTANT i64 0
     %1:_(s96) = G_ANYEXT %0
     %2:_(s16), %3:_(s16), %4:_(s16), %5:_(s16), %6:_(s16), %7:_(s16) = G_UNMERGE_VALUES %1

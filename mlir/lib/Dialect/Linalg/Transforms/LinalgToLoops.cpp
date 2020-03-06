@@ -6,21 +6,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/Linalg/EDSC/Builders.h"
+#include "mlir/Dialect/AffineOps/EDSC/Intrinsics.h"
 #include "mlir/Dialect/Linalg/EDSC/Intrinsics.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 #include "mlir/Dialect/Linalg/IR/LinalgTypes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/Linalg/Transforms/LinalgTransforms.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
-#include "mlir/Dialect/LoopOps/LoopOps.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
-#include "mlir/EDSC/Helpers.h"
+#include "mlir/Dialect/LoopOps/EDSC/Builders.h"
+#include "mlir/Dialect/StandardOps/EDSC/Intrinsics.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Support/Functional.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/STLExtras.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -30,9 +30,6 @@ using namespace mlir;
 using namespace mlir::edsc;
 using namespace mlir::edsc::intrinsics;
 using namespace mlir::linalg;
-
-using IndexedStdValue = TemplatedIndexedValue<std_load, std_store>;
-using IndexedAffineValue = TemplatedIndexedValue<affine_load, affine_store>;
 
 using edsc::op::operator+;
 using edsc::op::operator==;
@@ -77,7 +74,7 @@ SmallVector<Value, 4> emitLoopRanges(OpBuilder &b, Location loc, AffineMap map,
   SmallVector<Value, 4> res;
   for (unsigned idx = 0, e = map.getNumResults(); idx < e; ++idx) {
     res.push_back(
-        linalg_range(constant_index(0), sizes[idx], constant_index(1)));
+        linalg_range(std_constant_index(0), sizes[idx], std_constant_index(1)));
   }
   return res;
 }
@@ -98,8 +95,8 @@ public:
         permuteIvs(allIvs.take_front(nPar), copyOp.inputPermutation());
     auto outputIvs =
         permuteIvs(allIvs.take_front(nPar), copyOp.outputPermutation());
-    SmallVector<IndexHandle, 8> iivs(inputIvs.begin(), inputIvs.end());
-    SmallVector<IndexHandle, 8> oivs(outputIvs.begin(), outputIvs.end());
+    SmallVector<ValueHandle, 8> iivs(inputIvs.begin(), inputIvs.end());
+    SmallVector<ValueHandle, 8> oivs(outputIvs.begin(), outputIvs.end());
     IndexedValueType O(copyOp.getOutputBuffer(0)), I(copyOp.getInput(0));
     // Emit the proper scalar assignment, whether we are dealing with a 0-D or
     // an n-D loop nest; with or without permutations.
@@ -119,7 +116,7 @@ public:
     auto nPar = fillOp.getNumParallelLoops();
     assert(nPar == allIvs.size());
     auto ivs =
-        SmallVector<IndexHandle, 4>(allIvs.begin(), allIvs.begin() + nPar);
+        SmallVector<ValueHandle, 4>(allIvs.begin(), allIvs.begin() + nPar);
     IndexedValueType O(fillOp.getOutputBuffer(0));
     // Emit the proper scalar assignment, whether we are dealing with a 0-D or
     // an n-D loop nest; with or without permutations.
@@ -135,7 +132,7 @@ public:
     assert(dotOp.hasBufferSemantics() &&
            "expected linalg op with buffer semantics");
     assert(allIvs.size() == 1);
-    IndexHandle r_i(allIvs[0]);
+    ValueHandle r_i(allIvs[0]);
     IndexedValueType A(dotOp.getInput(0)), B(dotOp.getInput(1)),
         C(dotOp.getOutputBuffer(0));
     // Emit scalar form.
@@ -151,7 +148,7 @@ public:
     assert(matvecOp.hasBufferSemantics() &&
            "expected linalg op with buffer semantics");
     assert(allIvs.size() == 2);
-    IndexHandle i(allIvs[0]), r_j(allIvs[1]);
+    ValueHandle i(allIvs[0]), r_j(allIvs[1]);
     IndexedValueType A(matvecOp.getInput(0)), B(matvecOp.getInput(1)),
         C(matvecOp.getOutputBuffer(0));
     // Emit scalar form.
@@ -167,7 +164,7 @@ public:
     assert(matmulOp.hasBufferSemantics() &&
            "expected linalg op with buffer semantics");
     assert(allIvs.size() == 3);
-    IndexHandle i(allIvs[0]), j(allIvs[1]), r_k(allIvs[2]);
+    ValueHandle i(allIvs[0]), j(allIvs[1]), r_k(allIvs[2]);
     IndexedValueType A(matmulOp.getInput(0)), B(matmulOp.getInput(1)),
         C(matmulOp.getOutputBuffer(0));
     // Emit scalar form.
@@ -183,7 +180,9 @@ public:
            "expected linalg op with buffer semantics");
     auto b = ScopedContext::getBuilder();
     auto loc = ScopedContext::getLocation();
-    auto maps = loopToOperandRangesMaps(convOp);
+    auto mapsRange = convOp.indexing_maps().getAsRange<AffineMapAttr>();
+    auto maps = functional::map([](AffineMapAttr a) { return a.getValue(); },
+                                mapsRange);
     SmallVector<ValueHandle, 8> fIdx(
         makeCanonicalAffineApplies(b, loc, maps[0], allIvs));
     SmallVector<ValueHandle, 8> imIdx(
@@ -242,30 +241,44 @@ public:
 
     // 1.a. Emit std_load from input views.
     for (unsigned i = 0; i < nInputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, genericOp.getInputIndexingMap(i), allIvs));
-      indexedValues[i] = std_load(genericOp.getInput(i), indexing);
+      Value input = genericOp.getInput(i);
+      if (input.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, genericOp.getInputIndexingMap(i), allIvs));
+        indexedValues[i] = std_load(input, indexing);
+      } else {
+        indexedValues[i] = std_load(input);
+      }
     }
 
     // 1.b. Emit std_load from output views.
     for (unsigned i = 0; i < nOutputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, genericOp.getOutputIndexingMap(i), allIvs));
-      indexedValues[nInputs + i] =
-          std_load(genericOp.getOutputBuffer(i), indexing);
+      Value output = genericOp.getOutputBuffer(i);
+      if (output.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, genericOp.getOutputIndexingMap(i), allIvs));
+        indexedValues[nInputs + i] = std_load(output, indexing);
+      } else {
+        indexedValues[nInputs + i] = std_load(output);
+      }
     }
 
     auto funcOp = genericOp.getFunction();
     if (funcOp) {
       // 2. Emit call.
-      Operation *callOp = call(funcOp, indexedValues);
+      Operation *callOp = std_call(funcOp, indexedValues);
       assert(callOp->getNumResults() == genericOp.getNumOutputs());
 
       // 3. Emit std_store.
       for (unsigned i = 0; i < nOutputs; ++i) {
-        ValueHandleArray indexing(makeCanonicalAffineApplies(
-            b, loc, genericOp.getOutputIndexingMap(i), allIvs));
-        std_store(callOp->getResult(i), genericOp.getOutputBuffer(i), indexing);
+        Value output = genericOp.getOutputBuffer(i);
+        if (output.getType().cast<ShapedType>().getRank()) {
+          ValueHandleArray indexing(makeCanonicalAffineApplies(
+              b, loc, genericOp.getOutputIndexingMap(i), allIvs));
+          std_store(callOp->getResult(i), output, indexing);
+        } else {
+          std_store(callOp->getResult(i), output);
+        }
       }
       return;
     }
@@ -284,10 +297,15 @@ public:
     auto *yieldOp = cast<YieldOp>(block.back()).getOperation();
     assert(yieldOp->getNumOperands() == nOutputs);
     for (unsigned i = 0; i < nOutputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, genericOp.getOutputIndexingMap(i), allIvs));
-      std_store(map.lookup(yieldOp->getOperand(i)),
-                genericOp.getOutputBuffer(i), indexing);
+      Value output = genericOp.getOutputBuffer(i);
+      if (output.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, genericOp.getOutputIndexingMap(i), allIvs));
+        std_store(map.lookup(yieldOp->getOperand(i)),
+                  genericOp.getOutputBuffer(i), indexing);
+      } else {
+        std_store(map.lookup(yieldOp->getOperand(i)), output);
+      }
     }
   }
 };
@@ -343,31 +361,43 @@ public:
 
     // 1.a. Emit std_load from input views.
     for (unsigned i = 0; i < nInputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, indexedGenericOp.getInputIndexingMap(i), allIvs));
-      indexedValues[nLoops + i] =
-          std_load(indexedGenericOp.getInput(i), indexing);
+      Value input = indexedGenericOp.getInput(i);
+      if (input.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, indexedGenericOp.getInputIndexingMap(i), allIvs));
+        indexedValues[nLoops + i] = std_load(input, indexing);
+      } else {
+        indexedValues[nLoops + i] = std_load(input);
+      }
     }
 
     // 1.b. Emit std_load from output views.
     for (unsigned i = 0; i < nOutputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
-      indexedValues[nLoops + nInputs + i] =
-          std_load(indexedGenericOp.getOutputBuffer(i), indexing);
+      Value output = indexedGenericOp.getOutputBuffer(i);
+      if (output.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
+        indexedValues[nLoops + nInputs + i] = std_load(output, indexing);
+      } else {
+        indexedValues[nLoops + nInputs + i] = std_load(output);
+      }
     }
 
     if (auto funcOp = indexedGenericOp.getFunction()) {
       // 2. Emit call.
-      Operation *callOp = call(funcOp, indexedValues);
+      Operation *callOp = std_call(funcOp, indexedValues);
       assert(callOp->getNumResults() == indexedGenericOp.getNumOutputs());
 
       // 3. Emit std_store.
       for (unsigned i = 0; i < nOutputs; ++i) {
-        ValueHandleArray indexing(makeCanonicalAffineApplies(
-            b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
-        std_store(callOp->getResult(i), indexedGenericOp.getOutputBuffer(i),
-                  indexing);
+        Value output = indexedGenericOp.getOutputBuffer(i);
+        if (output.getType().cast<ShapedType>().getRank()) {
+          ValueHandleArray indexing(makeCanonicalAffineApplies(
+              b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
+          std_store(callOp->getResult(i), output, indexing);
+        } else {
+          std_store(callOp->getResult(i), output);
+        }
       }
       return;
     }
@@ -386,10 +416,14 @@ public:
     auto *yieldOp = cast<YieldOp>(block.back()).getOperation();
     assert(yieldOp->getNumOperands() == nOutputs);
     for (unsigned i = 0; i < nOutputs; ++i) {
-      ValueHandleArray indexing(makeCanonicalAffineApplies(
-          b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
-      std_store(map.lookup(yieldOp->getOperand(i)),
-                indexedGenericOp.getOutputBuffer(i), indexing);
+      Value output = indexedGenericOp.getOutputBuffer(i);
+      if (output.getType().cast<ShapedType>().getRank()) {
+        ValueHandleArray indexing(makeCanonicalAffineApplies(
+            b, loc, indexedGenericOp.getOutputIndexingMap(i), allIvs));
+        std_store(map.lookup(yieldOp->getOperand(i)), output, indexing);
+      } else {
+        std_store(map.lookup(yieldOp->getOperand(i)), output);
+      }
     }
   }
 };
@@ -434,23 +468,26 @@ LogicalResult LinalgOpToLoopsImpl<LoopTy, IndexedValueTy, ConcreteOpTy>::doit(
   auto nLoops = nPar + nRed + nWin;
   if (!loweringIsAllowed<LoopTy>(nPar, nLoops))
     return failure();
-  auto invertedMap =
-      inversePermutation(concatAffineMaps(loopToOperandRangesMaps(linalgOp)));
+  auto mapsRange =
+      linalgOp.indexing_maps().template getAsRange<AffineMapAttr>();
+  auto maps =
+      functional::map([](AffineMapAttr a) { return a.getValue(); }, mapsRange);
+  auto invertedMap = inversePermutation(concatAffineMaps(maps));
   if (!invertedMap) {
     LinalgScopedEmitter<IndexedValueTy, ConcreteOpTy>::emitScalarImplementation(
         {}, linalgOp);
     return success();
   }
 
-  SmallVector<IndexHandle, 4> allIvs(nLoops);
+  SmallVector<ValueHandle, 4> allIvs(nLoops, ValueHandle(b.getIndexType()));
   SmallVector<ValueHandle *, 4> allPIvs =
-      makeHandlePointers(MutableArrayRef<IndexHandle>(allIvs));
+      makeHandlePointers(MutableArrayRef<ValueHandle>(allIvs));
   auto loopRanges = emitLoopRanges(scope.getBuilder(), scope.getLocation(),
                                    invertedMap, getViewSizes(b, linalgOp));
   assert(loopRanges.size() == allIvs.size());
 
   GenericLoopNestRangeBuilder<LoopTy>(allPIvs, loopRanges)([&] {
-    auto allIvValues = extractValues(allIvs);
+    SmallVector<Value, 4> allIvValues(allIvs.begin(), allIvs.end());
     LinalgScopedEmitter<IndexedValueTy, ConcreteOpTy>::emitScalarImplementation(
         allIvValues, linalgOp);
   });
@@ -568,26 +605,26 @@ void LowerLinalgToLoopsPass<LoopType, IndexedValueType>::runOnFunction() {
 
 std::unique_ptr<OpPassBase<FuncOp>> mlir::createConvertLinalgToLoopsPass() {
   return std::make_unique<
-      LowerLinalgToLoopsPass<loop::ForOp, IndexedStdValue>>();
+      LowerLinalgToLoopsPass<loop::ForOp, StdIndexedValue>>();
 }
 
 std::unique_ptr<OpPassBase<FuncOp>>
 mlir::createConvertLinalgToParallelLoopsPass() {
   return std::make_unique<
-      LowerLinalgToLoopsPass<loop::ParallelOp, IndexedStdValue>>();
+      LowerLinalgToLoopsPass<loop::ParallelOp, StdIndexedValue>>();
 }
 
 std::unique_ptr<OpPassBase<FuncOp>>
 mlir::createConvertLinalgToAffineLoopsPass() {
   return std::make_unique<
-      LowerLinalgToLoopsPass<AffineForOp, IndexedAffineValue>>();
+      LowerLinalgToLoopsPass<AffineForOp, AffineIndexedValue>>();
 }
 
 /// Emits a loop nest of `loop.for` with the proper body for `op`.
 template <typename ConcreteOp>
 LogicalResult mlir::linalg::linalgOpToLoops(PatternRewriter &rewriter,
                                             Operation *op) {
-  return LinalgOpToLoopsImpl<loop::ForOp, IndexedStdValue, ConcreteOp>::doit(
+  return LinalgOpToLoopsImpl<loop::ForOp, StdIndexedValue, ConcreteOp>::doit(
       op, rewriter);
 }
 
@@ -595,7 +632,7 @@ LogicalResult mlir::linalg::linalgOpToLoops(PatternRewriter &rewriter,
 template <typename ConcreteOp>
 LogicalResult mlir::linalg::linalgOpToAffineLoops(PatternRewriter &rewriter,
                                                   Operation *op) {
-  return LinalgOpToLoopsImpl<AffineForOp, IndexedAffineValue, ConcreteOp>::doit(
+  return LinalgOpToLoopsImpl<AffineForOp, AffineIndexedValue, ConcreteOp>::doit(
       op, rewriter);
 }
 
@@ -603,7 +640,7 @@ LogicalResult mlir::linalg::linalgOpToAffineLoops(PatternRewriter &rewriter,
 template <typename ConcreteOp>
 LogicalResult mlir::linalg::linalgOpToParallelLoops(PatternRewriter &rewriter,
                                                     Operation *op) {
-  return LinalgOpToLoopsImpl<loop::ParallelOp, IndexedStdValue,
+  return LinalgOpToLoopsImpl<loop::ParallelOp, StdIndexedValue,
                              ConcreteOp>::doit(op, rewriter);
 }
 
@@ -630,18 +667,18 @@ template LogicalResult
 mlir::linalg::linalgOpToParallelLoops<GenericOp>(PatternRewriter &rewriter,
                                                  Operation *op);
 
-static PassRegistration<LowerLinalgToLoopsPass<loop::ForOp, IndexedStdValue>>
+static PassRegistration<LowerLinalgToLoopsPass<loop::ForOp, StdIndexedValue>>
     structuredLoopsPass(
         "convert-linalg-to-loops",
         "Lower the operations from the linalg dialect into loops");
 
 static PassRegistration<
-    LowerLinalgToLoopsPass<loop::ParallelOp, IndexedStdValue>>
+    LowerLinalgToLoopsPass<loop::ParallelOp, StdIndexedValue>>
     parallelLoopsPass(
         "convert-linalg-to-parallel-loops",
         "Lower the operations from the linalg dialect into parallel loops");
 
-static PassRegistration<LowerLinalgToLoopsPass<AffineForOp, IndexedAffineValue>>
+static PassRegistration<LowerLinalgToLoopsPass<AffineForOp, AffineIndexedValue>>
     affineLoopsPass(
         "convert-linalg-to-affine-loops",
         "Lower the operations from the linalg dialect into affine loops");

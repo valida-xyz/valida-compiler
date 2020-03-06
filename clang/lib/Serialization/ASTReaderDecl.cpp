@@ -502,12 +502,8 @@ uint64_t ASTDeclReader::GetCurrentCursorOffset() {
 }
 
 void ASTDeclReader::ReadFunctionDefinition(FunctionDecl *FD) {
-  if (Record.readInt()) {
+  if (Record.readInt())
     Reader.DefinitionSource[FD] = Loc.F->Kind == ModuleKind::MK_MainFile;
-    if (Reader.getContext().getLangOpts().BuildingPCHWithObjectFile &&
-        Reader.DeclIsFromPCHWithObjectFile(FD))
-      Reader.DefinitionSource[FD] = true;
-  }
   if (auto *CD = dyn_cast<CXXConstructorDecl>(FD)) {
     CD->setNumCtorInitializers(Record.readInt());
     if (CD->getNumCtorInitializers())
@@ -555,7 +551,7 @@ void ASTDeclReader::Visit(Decl *D) {
 
 void ASTDeclReader::VisitDecl(Decl *D) {
   if (D->isTemplateParameter() || D->isTemplateParameterPack() ||
-      isa<ParmVarDecl>(D)) {
+      isa<ParmVarDecl>(D) || isa<ObjCTypeParamDecl>(D)) {
     // We don't want to deserialize the DeclContext of a template
     // parameter or of a parameter of a function template immediately.   These
     // entities might be used in the formulation of its DeclContext (for
@@ -1422,12 +1418,8 @@ ASTDeclReader::RedeclarableResult ASTDeclReader::VisitVarDeclImpl(VarDecl *VD) {
       Reader.getContext().setBlockVarCopyInit(VD, CopyExpr, Record.readInt());
   }
 
-  if (VD->getStorageDuration() == SD_Static && Record.readInt()) {
+  if (VD->getStorageDuration() == SD_Static && Record.readInt())
     Reader.DefinitionSource[VD] = Loc.F->Kind == ModuleKind::MK_MainFile;
-    if (Reader.getContext().getLangOpts().BuildingPCHWithObjectFile &&
-        Reader.DeclIsFromPCHWithObjectFile(VD))
-      Reader.DefinitionSource[VD] = true;
-  }
 
   enum VarKind {
     VarNotTemplate = 0, VarTemplate, StaticDataMemberSpecialization
@@ -1686,12 +1678,8 @@ void ASTDeclReader::ReadCXXDefinitionData(
   Data.ODRHash = Record.readInt();
   Data.HasODRHash = true;
 
-  if (Record.readInt()) {
+  if (Record.readInt())
     Reader.DefinitionSource[D] = Loc.F->Kind == ModuleKind::MK_MainFile;
-    if (Reader.getContext().getLangOpts().BuildingPCHWithObjectFile &&
-        Reader.DeclIsFromPCHWithObjectFile(D))
-      Reader.DefinitionSource[D] = true;
-  }
 
   Data.NumBases = Record.readInt();
   if (Data.NumBases)
@@ -2756,6 +2744,8 @@ public:
     return Reader.readVersionTuple();
   }
 
+  OMPTraitInfo readOMPTraitInfo() { return Reader.readOMPTraitInfo(); }
+
   template <typename T> T *GetLocalDeclAs(uint32_t LocalID) {
     return Reader.GetLocalDeclAs<T>(LocalID);
   }
@@ -2840,7 +2830,8 @@ static bool isConsumerInterestedIn(ASTContext &Ctx, Decl *D, bool HasBody) {
       isa<PragmaDetectMismatchDecl>(D))
     return true;
   if (isa<OMPThreadPrivateDecl>(D) || isa<OMPDeclareReductionDecl>(D) ||
-      isa<OMPDeclareMapperDecl>(D) || isa<OMPAllocateDecl>(D))
+      isa<OMPDeclareMapperDecl>(D) || isa<OMPAllocateDecl>(D) ||
+      isa<OMPRequiresDecl>(D))
     return !D->getDeclContext()->isFunctionOrMethod();
   if (const auto *Var = dyn_cast<VarDecl>(D))
     return Var->isFileVarDecl() &&
