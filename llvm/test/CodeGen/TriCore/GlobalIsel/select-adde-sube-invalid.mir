@@ -1,6 +1,6 @@
 # RUN: llc -mtriple=tricore -global-isel -global-isel-abort=2 \
 # RUN:     -pass-remarks-missed='gisel*' -run-pass=instruction-select \
-# RUN:     -verify-machineinstrs %s -o /dev/null 2>&1 \
+# RUN:     -verify-machineinstrs %s -o - 2>&1 \
 # RUN: | FileCheck %s --check-prefix=ERROR
 
 # ERROR-NOT: remark:

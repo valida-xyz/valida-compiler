@@ -1,4 +1,4 @@
-# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -pass-remarks-missed='gisel*' -run-pass=legalizer -verify-machineinstrs %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERROR
+# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -pass-remarks-missed='gisel*' -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
 
 ---
 name:            test_invalid
