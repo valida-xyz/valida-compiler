@@ -76,6 +76,19 @@ def JIJumpTableTC16XPIC
 let isCodeGenOnly = 1 in
 def JUMPTABLE_INSTS : PseudoInst<(outs), (ins i32imm:$jti, i32imm:$size)>;
 
+// Immediate materialization
+// Similar to ARM/AArch64, these are pseudo instructions, the benefit is that
+// they can be remat'd as a single unit instead of having to handle reg inputs.
+// There is a long standing FIXME to teach remat to handle multiple instructions.
+// Since thats still not supported, we follow the other backends here.
+let isReMaterializable = 1, isCodeGenOnly = 1, isMoveImm = 1 ,
+    isAsCheapAsAMove = 1 in {
+    def MOVImmDataReg : PseudoInst<(outs DataRegs:$dst), (ins i32imm:$src)>;
+    def MOVImmExtDataReg : PseudoInst<(outs ExtDataRegs:$dst), (ins i64imm:$src)>;
+    def MOVImmAddrReg : PseudoInst<(outs AddrRegs:$dst), (ins i32imm:$src)>;
+} // isReMaterializable = 1, isCodeGenOnly = 1, isMoveImm = 1,
+  // isAsCheapAsAMove = 1
+
 //===----------------------------------------------------------------------===//
 // Instruction Definitions
 //===----------------------------------------------------------------------===//

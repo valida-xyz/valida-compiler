@@ -71,9 +71,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65527
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-  ; CHECK:   JNE_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967287
+  ; CHECK:   JNE_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -101,9 +100,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 8
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JNE_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 8
+  ; CHECK:   JNE_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -187,9 +185,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65527
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-  ; CHECK:   JEQ_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967287
+  ; CHECK:   JEQ_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -217,9 +214,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 8
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JEQ_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 8
+  ; CHECK:   JEQ_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -303,9 +299,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65527
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-  ; CHECK:   JGE_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967287
+  ; CHECK:   JGE_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -333,9 +328,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 8
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JGE_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 8
+  ; CHECK:   JGE_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -419,9 +413,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 16
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JGEU_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 16
+  ; CHECK:   JGEU_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -505,9 +498,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65527
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-  ; CHECK:   JLT_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967287
+  ; CHECK:   JLT_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -535,9 +527,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 8
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JLT_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 8
+  ; CHECK:   JLT_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:
@@ -621,9 +612,8 @@ body:             |
   ; CHECK: bb.0:
   ; CHECK:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; CHECK:   [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 16
-  ; CHECK:   [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-  ; CHECK:   JLTU_ddc [[COPY]], [[ADDIH_ddc]], %bb.1
+  ; CHECK:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 16
+  ; CHECK:   JLTU_ddc [[COPY]], [[MOVImmDataReg]], %bb.1
   ; CHECK:   J %bb.0
   ; CHECK: bb.1:
   bb.0:

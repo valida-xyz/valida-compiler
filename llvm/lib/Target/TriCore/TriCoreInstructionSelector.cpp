@@ -70,13 +70,6 @@ private:
                         MachineIRBuilder &MIRBuilder,
                         const MachineRegisterInfo &MRI) const;
 
-  void materialize32BitConstant(MachineIRBuilder &MIRBuilder, uint64_t Val,
-                                const Register &DestReg,
-                                MachineRegisterInfo &MRI) const;
-  void materializePointer(MachineIRBuilder &MIRBuilder, uint64_t Val,
-                          const Register &DestReg,
-                          MachineRegisterInfo &MRI) const;
-
   bool selectAddSubE(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectAddSubO(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectBrCond(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -620,53 +613,6 @@ void TriCoreInstructionSelector::emit32BitUnmerge(
   }
 }
 
-void TriCoreInstructionSelector::materialize32BitConstant(
-    MachineIRBuilder &MIRBuilder, uint64_t Val, const Register &DestReg,
-    MachineRegisterInfo &MRI) const {
-
-  // Materialize constant using MOVU_dc and ADDIH_ddc
-  uint64_t Low16 = Val & 0xFFFFu;
-  uint64_t High16 = (Val >> 16u) & 0xFFFFu;
-
-  Register MovReg = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
-
-  auto MoveMIB =
-      MIRBuilder.buildInstr(TriCore::MOVU_dc).addDef(MovReg).addImm(Low16);
-
-  // TODO: skip the ADDIH if High16 is 0
-  auto AddMIB = MIRBuilder.buildInstr(TriCore::ADDIH_ddc)
-                    .addDef(DestReg)
-                    .addUse(MovReg)
-                    .addImm(High16);
-
-  constrainSelectedInstRegOperands(*MoveMIB, TII, TRI, RBI);
-  constrainSelectedInstRegOperands(*AddMIB, TII, TRI, RBI);
-}
-
-void TriCoreInstructionSelector::materializePointer(
-    MachineIRBuilder &MIRBuilder, uint64_t Val, const Register &DestReg,
-    MachineRegisterInfo &MRI) const {
-
-  // Calculation taken from chapter 2.7 Address Arithmetic
-  uint64_t Low16 = Val & 0xFFFFu;
-  uint64_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
-
-  const Register MovReg = MRI.createVirtualRegister(&TriCore::AddrRegsRegClass);
-
-  // Materialize using MOVHA_ac and LEA_aac
-  // TODO: skip LEA when Low16 is 0
-  auto MovMI =
-      MIRBuilder.buildInstr(TriCore::MOVHA_ac).addDef(MovReg).addImm(High16);
-
-  auto LeaMI = MIRBuilder.buildInstr(TriCore::LEA_aac)
-                   .addDef(DestReg)
-                   .addUse(MovReg)
-                   .addImm(Low16);
-
-  constrainSelectedInstRegOperands(*MovMI, TII, TRI, RBI);
-  constrainSelectedInstRegOperands(*LeaMI, TII, TRI, RBI);
-}
-
 bool TriCoreInstructionSelector::selectAddSubE(MachineInstr &I,
                                                MachineRegisterInfo &MRI) const {
   assert(I.getOpcode() == TargetOpcode::G_UADDE ||
@@ -980,8 +926,10 @@ bool TriCoreInstructionSelector::selectConstant(
 
   const bool IsFloat = I.getOpcode() == TargetOpcode::G_FCONSTANT;
 
-  const LLT Ty = MRI.getType(I.getOperand(0).getReg());
+  const Register DstReg = I.getOperand(0).getReg();
+  const LLT Ty = MRI.getType(DstReg);
   const unsigned DefSize = Ty.getSizeInBits();
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
 
   if (DefSize != 16 && DefSize != 32 && DefSize != 64) {
     LLVM_DEBUG(dbgs() << "Constant with unsupported size.\n");
@@ -1003,45 +951,33 @@ bool TriCoreInstructionSelector::selectConstant(
   }
   MachineIRBuilder MIRBuilder(I);
 
-  if (Ty.isPointer()) {
-    // TODO: support 64-bit pointers
+  unsigned MovOpcode = 0;
+  if (DstRB.getID() == TriCore::AddrRegBankID) {
+    // TODO: support 64-bit constants on the address register bank
     if (DefSize != 32) {
-      LLVM_DEBUG(dbgs() << "64-bit pointers are not supported yet.\n");
+      LLVM_DEBUG(dbgs() << "64-bit constants on the address register bank are "
+                           "not supported yet.\n");
       return false;
     }
+    MovOpcode = TriCore::MOVImmAddrReg;
 
-    materializePointer(MIRBuilder, Val, I.getOperand(0).getReg(), MRI);
+  } else if (DstRB.getID() == TriCore::DataRegBankID) {
 
-  } else if (DefSize == 64) {
-    uint64_t LowerVal = Val & 0xFFFFFFFFu;
-    uint64_t HigherVal = Val >> 32u;
-
-    // First, materialize 2 32-bit constants
-    const Register LowerDestReg =
-        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
-    const Register HigherDestReg =
-        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
-
-    materialize32BitConstant(MIRBuilder, LowerVal, LowerDestReg, MRI);
-    materialize32BitConstant(MIRBuilder, HigherVal, HigherDestReg, MRI);
-
-    // Then merge them to a 64-bit constant using REG_SEQUENCE
-    const Register DestReg = I.getOperand(0).getReg();
-
-    MIRBuilder.buildInstr(TriCore::REG_SEQUENCE)
-        .addDef(DestReg)
-        .addUse(LowerDestReg)
-        .addImm(TriCore::dsub0)
-        .addUse(HigherDestReg)
-        .addImm(TriCore::dsub1);
-
-    TriCoreRegisterBankInfo::constrainGenericRegister(
-        DestReg, TriCore::ExtDataRegsRegClass, MRI);
+    if (DefSize == 64)
+      MovOpcode = TriCore::MOVImmExtDataReg;
+    else
+      MovOpcode = TriCore::MOVImmDataReg;
 
   } else {
-    materialize32BitConstant(MIRBuilder, Val, I.getOperand(0).getReg(), MRI);
+    LLVM_DEBUG(dbgs() << "G_CONSTANT on unexpected register bank: " << DstRB
+                      << ".\n");
+    return false;
   }
 
+  auto MovImm = MIRBuilder.buildInstr(MovOpcode)
+                    .addDef(I.getOperand(0).getReg())
+                    .addImm(Val);
+  constrainSelectedInstRegOperands(*MovImm, TII, TRI, RBI);
   I.removeFromParent();
   return true;
 }

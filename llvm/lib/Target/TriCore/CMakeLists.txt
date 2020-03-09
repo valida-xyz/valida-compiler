@@ -18,6 +18,7 @@ add_llvm_target(TriCoreCodeGen
   TriCoreAsmPrinter.cpp
   TriCoreCallingConvention.cpp
   TriCoreCallLowering.cpp
+  TriCoreExpandPseudoInsts.cpp
   TriCoreFrameLowering.cpp
   TriCoreInstrInfo.cpp
   TriCoreInstructionSelector.cpp

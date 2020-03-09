@@ -43,20 +43,16 @@ body:             |
     ; CHECK: $d2 = COPY [[LDB_dalc2]]
     ; CHECK: $d3 = COPY [[LDB_dalc3]]
     ; CHECK: $d4 = COPY [[LDBU_dalc1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDB_dalc4:%[0-9]+]]:dataregs = LDB_dalc [[ADDA_aaa]], 0 :: (load 1)
     ; CHECK: [[LDB_dalc5:%[0-9]+]]:dataregs = LDB_dalc [[ADDA_aaa]], 0 :: (load 1)
     ; CHECK: [[LDBU_dalc2:%[0-9]+]]:dataregs = LDBU_dalc [[ADDA_aaa]], 0 :: (load 1)
     ; CHECK: $d2 = COPY [[LDB_dalc4]]
     ; CHECK: $d3 = COPY [[LDB_dalc5]]
     ; CHECK: $d4 = COPY [[LDBU_dalc2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDB_dalc6:%[0-9]+]]:dataregs = LDB_dalc [[ADDA_aaa1]], 0 :: (load 1)
     ; CHECK: [[LDB_dalc7:%[0-9]+]]:dataregs = LDB_dalc [[ADDA_aaa1]], 0 :: (load 1)
     ; CHECK: [[LDBU_dalc3:%[0-9]+]]:dataregs = LDBU_dalc [[ADDA_aaa1]], 0 :: (load 1)
@@ -140,20 +136,16 @@ body:             |
     ; CHECK: $d2 = COPY [[LDH_dalc2]]
     ; CHECK: $d3 = COPY [[LDH_dalc3]]
     ; CHECK: $d4 = COPY [[LDHU_dalc1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDH_dalc4:%[0-9]+]]:dataregs = LDH_dalc [[ADDA_aaa]], 0 :: (load 2)
     ; CHECK: [[LDH_dalc5:%[0-9]+]]:dataregs = LDH_dalc [[ADDA_aaa]], 0 :: (load 2)
     ; CHECK: [[LDHU_dalc2:%[0-9]+]]:dataregs = LDHU_dalc [[ADDA_aaa]], 0 :: (load 2)
     ; CHECK: $d2 = COPY [[LDH_dalc4]]
     ; CHECK: $d3 = COPY [[LDH_dalc5]]
     ; CHECK: $d4 = COPY [[LDHU_dalc2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDH_dalc6:%[0-9]+]]:dataregs = LDH_dalc [[ADDA_aaa1]], 0 :: (load 2)
     ; CHECK: [[LDH_dalc7:%[0-9]+]]:dataregs = LDH_dalc [[ADDA_aaa1]], 0 :: (load 2)
     ; CHECK: [[LDHU_dalc3:%[0-9]+]]:dataregs = LDHU_dalc [[ADDA_aaa1]], 0 :: (load 2)
@@ -220,16 +212,12 @@ body:             |
     ; CHECK: $d2 = COPY [[LDW_dalc]]
     ; CHECK: [[LDW_dalc1:%[0-9]+]]:dataregs = LDW_dalc [[COPY]], 32767 :: (load 4)
     ; CHECK: $d2 = COPY [[LDW_dalc1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDW_dalc2:%[0-9]+]]:dataregs = LDW_dalc [[ADDA_aaa]], 0 :: (load 4)
     ; CHECK: $d2 = COPY [[LDW_dalc2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDW_dalc3:%[0-9]+]]:dataregs = LDW_dalc [[ADDA_aaa1]], 0 :: (load 4)
     ; CHECK: $d2 = COPY [[LDW_dalc3]]
     %0(p0) = COPY $a4
@@ -276,16 +264,12 @@ body:             |
     ; CHECK: $a2 = COPY [[LDA_aalc]]
     ; CHECK: [[LDA_aalc1:%[0-9]+]]:addrregs = LDA_aalc [[COPY]], 32767 :: (load 4)
     ; CHECK: $a2 = COPY [[LDA_aalc1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDA_aalc2:%[0-9]+]]:addrregs = LDA_aalc [[ADDA_aaa]], 0 :: (load 4)
     ; CHECK: $a2 = COPY [[LDA_aalc2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDA_aalc3:%[0-9]+]]:addrregs = LDA_aalc [[ADDA_aaa1]], 0 :: (load 4)
     ; CHECK: $a2 = COPY [[LDA_aalc3]]
     %0(p0) = COPY $a4
@@ -333,16 +317,12 @@ body:             |
     ; CHECK: $e2 = COPY [[LDD_eac]]
     ; CHECK: [[LDD_eac1:%[0-9]+]]:extdataregs = LDD_eac [[COPY]], 511 :: (load 8)
     ; CHECK: $e2 = COPY [[LDD_eac1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65023
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294966783
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDD_eac2:%[0-9]+]]:extdataregs = LDD_eac [[ADDA_aaa]], 0 :: (load 8)
     ; CHECK: $e2 = COPY [[LDD_eac2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 512
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 512
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDD_eac3:%[0-9]+]]:extdataregs = LDD_eac [[ADDA_aaa1]], 0 :: (load 8)
     ; CHECK: $e2 = COPY [[LDD_eac3]]
     %0(p0) = COPY $a4
@@ -390,16 +370,12 @@ body:             |
     ; CHECK: $p2 = COPY [[LDDA_pac]]
     ; CHECK: [[LDDA_pac1:%[0-9]+]]:extaddrregs = LDDA_pac [[COPY]], 511 :: (load 8)
     ; CHECK: $p2 = COPY [[LDDA_pac1]]
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65023
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY1]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294966783
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: [[LDDA_pac2:%[0-9]+]]:extaddrregs = LDDA_pac [[ADDA_aaa]], 0 :: (load 8)
     ; CHECK: $p2 = COPY [[LDDA_pac2]]
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 512
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 512
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: [[LDDA_pac3:%[0-9]+]]:extaddrregs = LDDA_pac [[ADDA_aaa1]], 0 :: (load 8)
     ; CHECK: $p2 = COPY [[LDDA_pac3]]
     %0(p0) = COPY $a4
@@ -443,15 +419,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: STB_alcd [[COPY]], -32768, [[COPY1]] :: (store 1)
     ; CHECK: STB_alcd [[COPY]], 32767, [[COPY1]] :: (store 1)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STB_alcd [[ADDA_aaa]], 0, [[COPY1]] :: (store 1)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STB_alcd [[ADDA_aaa1]], 0, [[COPY1]] :: (store 1)
     %0(p0) = COPY $a4
     %1(s32) = COPY $d4
@@ -491,15 +463,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: STH_alcd [[COPY]], -32768, [[COPY1]] :: (store 2)
     ; CHECK: STH_alcd [[COPY]], 32767, [[COPY1]] :: (store 2)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STH_alcd [[ADDA_aaa]], 0, [[COPY1]] :: (store 2)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STH_alcd [[ADDA_aaa1]], 0, [[COPY1]] :: (store 2)
     %0(p0) = COPY $a4
     %1(s32) = COPY $d4
@@ -539,15 +507,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: STW_alcd [[COPY]], -32768, [[COPY1]] :: (store 4)
     ; CHECK: STW_alcd [[COPY]], 32767, [[COPY1]] :: (store 4)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STW_alcd [[ADDA_aaa]], 0, [[COPY1]] :: (store 4)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STW_alcd [[ADDA_aaa1]], 0, [[COPY1]] :: (store 4)
     %0(p0) = COPY $a4
     %1(s32) = COPY $d4
@@ -587,15 +551,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:addrregs = COPY $a5
     ; CHECK: STA_alca [[COPY]], -32768, [[COPY1]] :: (store 4)
     ; CHECK: STA_alca [[COPY]], 32767, [[COPY1]] :: (store 4)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32767
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294934527
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STA_alca [[ADDA_aaa]], 0, [[COPY1]] :: (store 4)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 32768
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 32768
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STA_alca [[ADDA_aaa1]], 0, [[COPY1]] :: (store 4)
     %0(p0) = COPY $a4
     %1(p0) = COPY $a5
@@ -635,15 +595,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:extdataregs = COPY $e4
     ; CHECK: STD_ace [[COPY]], -512, [[COPY1]] :: (store 8)
     ; CHECK: STD_ace [[COPY]], 511, [[COPY1]] :: (store 8)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65023
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294966783
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STD_ace [[ADDA_aaa]], 0, [[COPY1]] :: (store 8)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 512
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 512
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STD_ace [[ADDA_aaa1]], 0, [[COPY1]] :: (store 8)
     %0(p0) = COPY $a4
     %1(s64) = COPY $e4
@@ -683,15 +639,11 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:extaddrregs = COPY $p4
     ; CHECK: STDA_acp [[COPY]], -512, [[COPY1]] :: (store 8)
     ; CHECK: STDA_acp [[COPY]], 511, [[COPY1]] :: (store 8)
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65023
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc]]
-    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY2]]
+    ; CHECK: [[MOVImmAddrReg:%[0-9]+]]:addrregs = MOVImmAddrReg 4294966783
+    ; CHECK: [[ADDA_aaa:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg]]
     ; CHECK: STDA_acp [[ADDA_aaa]], 0, [[COPY1]] :: (store 8)
-    ; CHECK: [[MOVU_dc1:%[0-9]+]]:dataregs = MOVU_dc 512
-    ; CHECK: [[ADDIH_ddc1:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc1]], 0, implicit-def $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:addrregs = COPY [[ADDIH_ddc1]]
-    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[COPY3]]
+    ; CHECK: [[MOVImmAddrReg1:%[0-9]+]]:addrregs = MOVImmAddrReg 512
+    ; CHECK: [[ADDA_aaa1:%[0-9]+]]:addrregs = ADDA_aaa [[COPY]], [[MOVImmAddrReg1]]
     ; CHECK: STDA_acp [[ADDA_aaa1]], 0, [[COPY1]] :: (store 8)
     %0(p0) = COPY $a4
     %1(s64) = COPY $p4

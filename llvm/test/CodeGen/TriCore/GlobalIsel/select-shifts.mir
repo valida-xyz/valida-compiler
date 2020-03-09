@@ -87,9 +87,8 @@ body:             |
 
     ; CHECK-LABEL: name: shl_imm_too_small_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65503
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967263
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[MOVImmDataReg]]
     ; CHECK: $d4 = COPY [[SH_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = G_CONSTANT i32 -33
@@ -112,9 +111,8 @@ body:             |
 
     ; CHECK-LABEL: name: shl_imm_too_big_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 32
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[ADDIH_ddc]]
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 32
+    ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[MOVImmDataReg]]
     ; CHECK: $d4 = COPY [[SH_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = G_CONSTANT i32 32
@@ -208,9 +206,8 @@ body:             |
 
     ; CHECK-LABEL: name: lshr_imm_too_small_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65504
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967264
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[MOVImmDataReg]], 0, implicit-def $psw
     ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[RSUB_ddc]]
     ; CHECK: $d4 = COPY [[SH_ddd]]
     %0(s32) = COPY $d4
@@ -234,9 +231,8 @@ body:             |
 
     ; CHECK-LABEL: name: lshr_imm_too_big_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 33
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 33
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[MOVImmDataReg]], 0, implicit-def $psw
     ; CHECK: [[SH_ddd:%[0-9]+]]:dataregs = SH_ddd [[COPY]], [[RSUB_ddc]]
     ; CHECK: $d4 = COPY [[SH_ddd]]
     %0(s32) = COPY $d4
@@ -331,9 +327,8 @@ body:             |
 
     ; CHECK-LABEL: name: ashr_imm_too_small_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 65504
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 65535, implicit-def $psw
-    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 4294967264
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[MOVImmDataReg]], 0, implicit-def $psw
     ; CHECK: [[SHAS_ddd:%[0-9]+]]:dataregs = SHAS_ddd [[COPY]], [[RSUB_ddc]], implicit-def $psw
     ; CHECK: $d4 = COPY [[SHAS_ddd]]
     %0(s32) = COPY $d4
@@ -357,9 +352,8 @@ body:             |
 
     ; CHECK-LABEL: name: ashr_imm_too_big_s32
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
-    ; CHECK: [[MOVU_dc:%[0-9]+]]:dataregs = MOVU_dc 33
-    ; CHECK: [[ADDIH_ddc:%[0-9]+]]:dataregs = ADDIH_ddc [[MOVU_dc]], 0, implicit-def $psw
-    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[ADDIH_ddc]], 0, implicit-def $psw
+    ; CHECK: [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 33
+    ; CHECK: [[RSUB_ddc:%[0-9]+]]:dataregs = RSUB_ddc [[MOVImmDataReg]], 0, implicit-def $psw
     ; CHECK: [[SHAS_ddd:%[0-9]+]]:dataregs = SHAS_ddd [[COPY]], [[RSUB_ddc]], implicit-def $psw
     ; CHECK: $d4 = COPY [[SHAS_ddd]]
     %0(s32) = COPY $d4

@@ -1,0 +1,20 @@
+# RUN: not --crash llc -O0 -mtriple=tricore -global-isel -run-pass=instruction-select -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+
+# Currently we don't handle a G_CONSTANT i64 on the address register bank,
+# because we never assign that register bank for G_CONSTANTs.
+# If that ever changes, this test will fail
+
+# ERROR: LLVM ERROR: cannot select: {{%[0-9]+}}:addrregbank({{s[0-9]+}}) = G_CONSTANT i64 0
+---
+name:            test_constant_s64_addregs
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: addrregbank }
+body:             |
+  bb.0:
+
+    %0(s64) = G_CONSTANT i64 0
+    $p2 = COPY %0(s64)
+...
+

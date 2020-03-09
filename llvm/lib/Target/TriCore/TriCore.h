@@ -24,8 +24,10 @@ class TriCoreTargetMachine;
 class FunctionPass;
 class InstructionSelector;
 
+FunctionPass *createTriCoreExpandPseudoPass();
 FunctionPass *createTriCoreJumpTablePass();
 
+void initializeTriCoreExpandPseudoPass(PassRegistry &);
 void initializeTriCoreJumpTablesPass(PassRegistry &);
 
 InstructionSelector *

@@ -28,6 +28,7 @@ extern "C" void LLVMInitializeTriCoreTarget() {
   RegisterTargetMachine<TriCoreTargetMachine> X(getTheTriCoreTarget());
   auto PR = PassRegistry::getPassRegistry();
   initializeGlobalISel(*PR);
+  initializeTriCoreExpandPseudoPass(*PR);
   initializeTriCoreJumpTablesPass(*PR);
 }
 
@@ -96,6 +97,7 @@ public:
   bool addGlobalInstructionSelect() override;
 
   void addPreEmitPass() override;
+  void addPreSched2() override;
 };
 
 } // end anonymous namespace
@@ -126,4 +128,8 @@ bool TriCorePassConfig::addGlobalInstructionSelect() {
 
 void TriCorePassConfig::addPreEmitPass() {
   addPass(createTriCoreJumpTablePass());
+}
+
+void TriCorePassConfig::addPreSched2() {
+  addPass(createTriCoreExpandPseudoPass());
 }
