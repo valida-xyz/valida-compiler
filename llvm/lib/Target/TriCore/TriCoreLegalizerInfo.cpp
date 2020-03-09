@@ -166,6 +166,16 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Floating point Ops
 
+  // G_FMINNUM and G_FMAXNUM are legal for tc18 otherwise it should be lowered
+  auto &FMinNumMaxNumActions =
+      getActionDefinitionsBuilder({G_FMAXNUM, G_FMINNUM})
+          .clampScalar(0, s32, s64);
+
+  if (ST.hasTC18Ops())
+    FMinNumMaxNumActions.legalFor({s32, s64});
+  else
+    FMinNumMaxNumActions.libcallFor({s32, s64});
+
   // G_FPEXT needs to convert from half to single, single to double and half to
   // double precision
   auto &FPExtActions = getActionDefinitionsBuilder(G_FPEXT)
