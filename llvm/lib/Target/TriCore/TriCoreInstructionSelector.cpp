@@ -238,6 +238,26 @@ static unsigned getCmpOpCodeForPredicate(CmpInst::Predicate Predicate,
   return getOpCodeForPredicate(Predicate, RB, SwapOperands, OpcTable);
 }
 
+static unsigned getCompareWithImmediateOpcode(unsigned CmpRegReg, int64_t Imm) {
+
+  switch(CmpRegReg) {
+  default:
+    return 0;
+  case TriCore::JNE_ddc:
+    return isInt<4>(Imm) ? TriCore::JNE_dcc : 0;
+  case TriCore::JEQ_ddc:
+    return isInt<4>(Imm) ? TriCore::JEQ_dcc : 0;
+  case TriCore::JGE_ddc:
+    return isInt<4>(Imm) ? TriCore::JGE_dcc : 0;
+  case TriCore::JGEU_ddc:
+    return isUInt<4>(Imm) ? TriCore::JGEU_dcc : 0;
+  case TriCore::JLT_ddc:
+    return isInt<4>(Imm) ? TriCore::JLT_dcc : 0;
+  case TriCore::JLTU_ddc:
+    return isUInt<4>(Imm) ? TriCore::JLTU_dcc : 0;
+  }
+}
+
 static unsigned getBranchOpCodeForPredicate(CmpInst::Predicate Predicate,
                                             const RegisterBank &RB,
                                             bool &SwapOperands) {
@@ -1064,11 +1084,24 @@ bool TriCoreInstructionSelector::selectCmpAndJump(
   const Register LHS = CondMI->getOperand(LHSIdx).getReg();
   const Register RHS = CondMI->getOperand(RHSIdx).getReg();
 
-  // Build the compare-and-jump instruction
-  auto JumpMI =
-      MIRBuilder.buildInstr(JumpOpCode).addUse(LHS).addUse(RHS).addMBB(DestMBB);
-  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
+  // Check if the right-hand-side operand is a constant, in which case we might
+  // be able to fold it into the instruction
+  MachineInstr *JumpMI;
+  auto VRegAndVal = getConstantVRegValWithLookThrough(RHS, MRI);
+  if (VRegAndVal) {
+    int64_t C = VRegAndVal->Value;
+    if (unsigned ImmCmpOpc = getCompareWithImmediateOpcode(JumpOpCode, C)) {
+      JumpMI = MIRBuilder.buildInstr(ImmCmpOpc).addUse(LHS).addImm(C).addMBB(DestMBB);
+      constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
+      I.removeFromParent();
+      return true;
+    }
+  }
 
+  // Nothing to fold, build the compare-and-jump instruction
+  JumpMI =
+    MIRBuilder.buildInstr(JumpOpCode).addUse(LHS).addUse(RHS).addMBB(DestMBB);
+  constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
   I.removeFromParent();
   return true;
 }
