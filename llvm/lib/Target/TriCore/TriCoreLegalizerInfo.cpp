@@ -164,6 +164,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .legalFor({{p0, s32}})
       .clampScalar(1, s32, s32);
 
+  // G_PTR_MASK must take a p0 pointer operand
+  getActionDefinitionsBuilder(G_PTR_MASK).legalFor({p0});
+
   // Floating point Ops
 
   // G_FMINNUM and G_FMAXNUM are legal for tc18 otherwise it should be lowered
@@ -480,6 +483,13 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_VASTART is legal for pointer type
   getActionDefinitionsBuilder(G_VASTART).legalFor({p0});
 
+  // va_list must be a pointer, but most sized types are pretty easy to handle
+  // as the destination.
+  getActionDefinitionsBuilder(G_VAARG)
+      .customForCartesianProduct({s32, s64, p0}, {p0})
+      .clampScalar(0, s32, s64)
+      .widenScalarToNextPow2(0);
+
   computeTables();
   verify(*ST.getInstrInfo());
 }
@@ -516,6 +526,8 @@ bool TriCoreLegalizerInfo::legalizeCustom(MachineInstr &MI,
     return false;
   case TargetOpcode::G_FCMP:
     return legalizeFCmp(MI, MRI, MIRBuilder);
+  case TargetOpcode::G_VAARG:
+    return legalizeVaArg(MI, MRI, MIRBuilder);
   }
   llvm_unreachable("expected switch to return");
 }
@@ -606,6 +618,62 @@ bool TriCoreLegalizerInfo::legalizeFCmp(MachineInstr &MI,
     assert(Results.size() == 2 && "Unexpected number of results");
     MIRBuilder.buildOr(OriginalResult, Results[0], Results[1]);
   }
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
+                                         MachineRegisterInfo &MRI,
+                                         MachineIRBuilder &MIRBuilder) const {
+  assert(MI.getOpcode() == TargetOpcode::G_VAARG);
+
+  MIRBuilder.setInstr(MI);
+  MachineFunction &MF = MIRBuilder.getMF();
+  const unsigned Align = MI.getOperand(2).getImm();
+  const Register Dst = MI.getOperand(0).getReg();
+  const Register ListPtr = MI.getOperand(1).getReg();
+
+  const LLT PtrTy = MRI.getType(ListPtr);
+  const LLT IntPtrTy = LLT::scalar(PtrTy.getSizeInBits());
+
+  const unsigned PtrSize = PtrTy.getSizeInBits() / 8;
+
+  // Loading the va_list pointer
+  auto List = MIRBuilder.buildLoad(
+      PtrTy, ListPtr,
+      *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOLoad,
+                               PtrSize, /* Align = */ PtrSize));
+
+  MachineInstrBuilder DstPtr;
+  if (Align > PtrSize) {
+    // Realign the list to the actual required alignment.
+    auto AlignMinus1 = MIRBuilder.buildConstant(IntPtrTy, Align - 1);
+
+    auto ListTmp = MIRBuilder.buildPtrAdd(PtrTy, List, AlignMinus1.getReg(0));
+
+    DstPtr = MIRBuilder.buildPtrMask(PtrTy, ListTmp, Log2_64(Align));
+  } else
+    DstPtr = List;
+
+  const unsigned ValSize = MRI.getType(Dst).getSizeInBits() / 8;
+
+  // Loading the vararg to the Dst reg
+  MIRBuilder.buildLoad(
+      Dst, DstPtr,
+      *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOLoad,
+                               ValSize, std::max(Align, PtrSize)));
+
+  auto Size = MIRBuilder.buildConstant(IntPtrTy, alignTo(ValSize, PtrSize));
+
+  // Advancing the va_list pointer to the next element
+  auto NewList = MIRBuilder.buildPtrAdd(PtrTy, DstPtr, Size.getReg(0));
+
+  // Storing the advanced va_list pointer
+  MIRBuilder.buildStore(
+      NewList, ListPtr,
+      *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOStore,
+                               PtrSize, /* Align = */ PtrSize));
 
   MI.eraseFromParent();
   return true;
