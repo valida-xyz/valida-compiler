@@ -35,6 +35,15 @@ static LegalityPredicate isMisalignedMemAccess() {
   };
 }
 
+static LegalityPredicate isTyWiderThanNonPow2MemSize() {
+  return [=](const LegalityQuery &Query) -> bool {
+    const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
+    const unsigned OpSize = Query.Types[0].getSizeInBits();
+
+    return !isPowerOf2_32(MemSize) && OpSize > MemSize;
+  };
+}
+
 static LegalityPredicate isWideScalarExtTruncMemAccess() {
   return [=](const LegalityQuery &Query) -> bool {
     const unsigned DstSize = Query.Types[0].getSizeInBits();
@@ -400,6 +409,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       })
       // Unaligned accesses must be broken up into aligned loads/stores
       .narrowScalarIf(isMisalignedMemAccess(), narrowToAlignedMemAccess())
+      // We need to narrow the source type to the memory size if the memory size
+      // is not a power of 2, otherwise it cannot be lowered
+      .narrowScalarIf(isTyWiderThanNonPow2MemSize(), narrowToMemSize())
       // Non-power-of-2 accesses need to be broken up
       .lowerIfMemSizeNotPow2()
       // Memory size is now a power-of-2. Narrow any non-power-of-2 types to
@@ -429,7 +441,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       // Non-power-of-2 loads must be lowered to G_LOAD
       .lowerIfMemSizeNotPow2()
       // Result must match a 32-bit register
-      .clampScalar(0, s32, s32)
+      // FIXME: Ideally we want to clamp it, but the current legalizer
+      //  implementation has a bug where it simply changes the destination type
+      //  without checking if the load actually fits the destination.
+      .minScalar(0, s32)
       // Lower anything left over to G_*EXT and G_LOAD
       .lower();
 

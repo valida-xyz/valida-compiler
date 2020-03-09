@@ -1,0 +1,26 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+# The legalizer blindly narrows the destination type of G_SEXTLOAD. Therefore
+# we need to lower some G_SEXTLOADs to G_LOAD instead of being able to use
+# proper G_SEXTLOADs. This test should start passing once the bug has been fixed
+# and we emit the better code.
+
+---
+name:            test_sextload
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sextload
+    ; CHECK: [[PTR:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[LOAD2:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 1)
+    ; CHECK: [[SEXT:%[0-9]+]]:_(s64) = G_SEXT [[LOAD2]](s32)
+    ; CHECK: $e2 = COPY [[SEXT]](s64)
+    ; CHECK: [[LOAD3:%[0-9]+]]:_(s32) = G_SEXTLOAD [[PTR]](p0) :: (load 2)
+    ; CHECK: [[SEXT1:%[0-9]+]]:_(s64) = G_SEXT [[LOAD3]](s32)
+    ; CHECK: $e2 = COPY [[SEXT1]](s64)
+    %0:_(p0) = COPY $a4
+    %3:_(s64) = G_SEXTLOAD %0(p0) :: (load 1)
+    $e2 = COPY %3(s64)
+    %4:_(s64) = G_SEXTLOAD %0(p0) :: (load 2)
+    $e2 = COPY %4(s64)
+...
