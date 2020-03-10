@@ -86,6 +86,7 @@ private:
   bool selectConstant(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectCmpAndJump(MachineInstr &I, const MachineRegisterInfo &MRI,
                         MachineIRBuilder &MIRBuilder) const;
+  bool selectImplicitDef(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectCopy(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectExt(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectExtAny(MachineInstr &I, MachineRegisterInfo &MRI, unsigned DstSize,
@@ -475,6 +476,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectICmp(I, MRI);
   case TargetOpcode::G_INSERT:
     return selectInsert(I, MRI);
+  case TargetOpcode::G_IMPLICIT_DEF:
+    return selectImplicitDef(I, MRI);
   case TargetOpcode::G_INTTOPTR:
   case TargetOpcode::G_PTRTOINT:
     return selectCopy(I, MRI);
@@ -1103,6 +1106,29 @@ bool TriCoreInstructionSelector::selectCmpAndJump(
     MIRBuilder.buildInstr(JumpOpCode).addUse(LHS).addUse(RHS).addMBB(DestMBB);
   constrainSelectedInstRegOperands(*JumpMI, TII, TRI, RBI);
   I.removeFromParent();
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectImplicitDef(
+    MachineInstr &I, MachineRegisterInfo &MRI) const {
+
+  assert(I.getOpcode() == TargetOpcode::G_IMPLICIT_DEF);
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const LLT DstTy = MRI.getType(DstReg);
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const TargetRegisterClass *DstRC = getRegClassForTypeOnBank(DstTy, DstRB);
+
+  if (!DstRC) {
+    LLVM_DEBUG(
+        dbgs()
+        << "Unable to determine TargetRegisterClass for G_IMPLICIT_DEF\n");
+    return false;
+  }
+
+  TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, *DstRC, MRI);
+  I.setDesc(TII.get(TargetOpcode::IMPLICIT_DEF));
+
   return true;
 }
 
