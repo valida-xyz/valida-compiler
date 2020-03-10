@@ -445,12 +445,6 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
                     PMI_FirstDataReg};
     break;
   }
-  case TargetOpcode::G_INSERT: {
-    // TriCore only supports INSERT on data registers, hence all
-    // operands must reside on the DataRegBank
-    OpRegBankIdx = {PMI_FirstDataReg, PMI_FirstDataReg, PMI_FirstDataReg};
-    break;
-  }
   default:
     break;
   }

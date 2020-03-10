@@ -94,7 +94,6 @@ private:
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
-  bool selectInsert(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectMerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -512,8 +511,6 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectGlobalValue(I, MRI);
   case TargetOpcode::G_ICMP:
     return selectICmp(I, MRI);
-  case TargetOpcode::G_INSERT:
-    return selectInsert(I, MRI);
   case TargetOpcode::G_IMPLICIT_DEF:
     return selectImplicitDef(I, MRI);
   case TargetOpcode::G_INTTOPTR:
@@ -1717,66 +1714,6 @@ bool TriCoreInstructionSelector::selectICmp(
 
   constrainSelectedInstRegOperands(*CmpMI, TII, TRI, RBI);
 
-  I.removeFromParent();
-  return true;
-}
-
-bool TriCoreInstructionSelector::selectInsert(MachineInstr &I,
-                                              MachineRegisterInfo &MRI) const {
-  const Register &DstReg = I.getOperand(0).getReg();
-  const Register &InsReg = I.getOperand(1).getReg();
-  const Register &SrcReg = I.getOperand(2).getReg();
-
-  const int64_t Offset = I.getOperand(3).getImm();
-
-  const LLT DstTy = MRI.getType(DstReg);
-  const LLT SrcTy = MRI.getType(SrcReg);
-
-  const unsigned SrcSize = SrcTy.getSizeInBits();
-
-  if (DstTy != LLT::scalar(32) && DstTy != LLT::pointer(0, 32)) {
-    LLVM_DEBUG(dbgs() << "Unexpected destination type for G_INSERT: " << DstTy
-                      << ", expected " << LLT::scalar(32) << " or "
-                      << LLT::pointer(0, 32) << "\n");
-    return false;
-  }
-
-  if (SrcSize > 32) {
-    LLVM_DEBUG(dbgs() << "Unexpected source size for G_INSERT: " << SrcTy
-                      << ", expected smaller than 32.\n");
-    return false;
-  }
-
-  if (SrcSize + Offset > 32) {
-    LLVM_DEBUG(dbgs() << "Source size + Offset cannot go over 32 bits\n");
-    return false;
-  }
-
-  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
-  const RegisterBank &InsRB = *RBI.getRegBank(InsReg, MRI, TRI);
-  const RegisterBank &SrcRB = *RBI.getRegBank(SrcReg, MRI, TRI);
-
-  // Make sure that using DataRegBank for all operands
-  if (DstRB.getID() != InsRB.getID() || DstRB.getID() != SrcRB.getID() ||
-      DstRB.getID() != TriCore::DataRegBankID) {
-    LLVM_DEBUG(dbgs() << "Unexpected regbank for G_INSERT"
-                      << ". DstRB: " << DstRB << ", InsRB: " << InsRB
-                      << ", SrcRB: " << SrcRB << '\n');
-    return false;
-  }
-
-  MachineIRBuilder MIRBuilder(I);
-
-  auto InsMI = MIRBuilder.buildInstr(TriCore::INSERT_dddcc)
-                   .addDef(DstReg)
-                   .addUse(InsReg)
-                   .addUse(SrcReg)
-                   .addImm(Offset)
-                   .addImm(SrcSize);
-
-  constrainSelectedInstRegOperands(*InsMI, TII, TRI, RBI);
-
-  // Finished with insert selection
   I.removeFromParent();
   return true;
 }

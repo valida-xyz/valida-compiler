@@ -498,34 +498,25 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
         });
   }
 
-  // G_INSERT is legal for s32 and p0 for type index 0 and s1-s32 and p0 for
-  // type index 1. We need to ensure that type index 0 is always s32, while
-  // type index 1 can be anything from s1 to s32.
-  getActionDefinitionsBuilder(G_INSERT)
-      .legalIf([=](const LegalityQuery &Query) {
-        const LLT Ty0 = Query.Types[0];
-        const LLT Ty1 = Query.Types[1];
-
-        return (Ty0.getSizeInBits() == 32 && Ty1.getSizeInBits() <= 32);
-      })
-      .clampScalar(0, s32, s64)
-      .widenScalarToNextPow2(0)
-      .clampScalar(0, s32, s32)
-      .maxScalar(1, s32);
-
-  // G_EXTRACT needs to be lowered since type 1 cannot be equal in size to
-  // type 0. This prevents us from modelling it according to our EXTR_ddcc
-  // instruction. A post-legalizer combiner should combine the resulting
-  // lowering code to our target instruction. G_EXTRACT which can be mapped
-  // to a subregister COPY are already handled by the clampScalar narrowing.
+  // G_EXTRACT and G_INSERT are meant to represent subregister copies and can
+  // therefore not map nicely to TriCore's EXTR_ddcc and INSERT_dddcc
+  // instructions. G_EXTRACT/G_INSERT which can be mapped to a TriCore
+  // subregister COPY are already handled by the clampScalar narrowing. A
+  // post-legalizer combiner should combine the resulting lowering code to our
+  // target instruction if possible.
   // FIXME: Support lowering G_EXTRACT with pointer type.
-  getActionDefinitionsBuilder(G_EXTRACT)
-      // G_EXTRACT can only be narrowed if the source type is a multiple of the
-      // narrowing type
-      .widenScalarIf(isNotMultipleOfN(1, 32), widenToNextMultipleOfN(1, 32))
-      .clampScalar(1, s32, s32)
-      // Lower any left overs
-      .lower();
+  for (unsigned Opcode : {G_INSERT, G_EXTRACT}) {
+    const unsigned TyIdx = Opcode == G_INSERT ? 0 : 1;
+
+    getActionDefinitionsBuilder(Opcode)
+        // Can only be narrowed if the source type is a multiple of the
+        // narrowing type
+        .widenScalarIf(isNotMultipleOfN(TyIdx, 32),
+                       widenToNextMultipleOfN(TyIdx, 32))
+        .clampScalar(TyIdx, s32, s32)
+        // Lower any left overs
+        .lower();
+  }
 
   // Branches
 
