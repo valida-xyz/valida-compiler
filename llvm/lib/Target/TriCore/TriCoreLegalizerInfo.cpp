@@ -70,10 +70,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   const LLT s32 = LLT::scalar(32);
   const LLT s64 = LLT::scalar(64);
 
-  // at least one G_IMPLICIT_DEF must be legal. we allow all types
+  // G_IMPLICIT_DEF must be legal for p0/s32/s64 tpes
   getActionDefinitionsBuilder(G_IMPLICIT_DEF)
-      .legalFor({p0, s1, s8, s16, s32, s64})
-      .clampScalar(0, s8, s64)
+      .legalFor({p0, s32, s64})
+      .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
   // G_PHI should be legal for all consumed types to avoid unnecessary
