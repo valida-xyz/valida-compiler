@@ -34,12 +34,12 @@ body:             |
   ; CHECK-NEXT: MOV_dc $d7, 0
     $d7 = MOVImmDataReg 0
 
-  ; CHECK-NEXT: MOVU_dc $d8, 32768
-  ; CHECK-NEXT: ADDIH_ddc $d8, $d8, 1, implicit-def $psw
+  ; CHECK-NEXT: MOVH_dc $d8, 3
+  ; CHECK-NEXT: SH_ddc $d8, $d8, -1
     $d8 = MOVImmDataReg 98304
 
-  ; CHECK-NEXT: MOVU_dc $d9, 65520
-  ; CHECK-NEXT: ADDIH_ddc $d9, $d9, 1, implicit-def $psw
+  ; CHECK-NEXT: MOVU_dc $d9, 65528
+  ; CHECK-NEXT: SH_ddc $d9, $d9, 1
     $d9 = MOVImmDataReg 131056
 
   ; Edge case: Trailing Zeros: 0 Leading Zeros: 15
@@ -47,12 +47,12 @@ body:             |
   ; CHECK-NEXT: ADDIH_ddc $d10, $d10, 1, implicit-def $psw
     $d10 = MOVImmDataReg 131071
 
-  ; CHECK-NEXT: MOVU_dc $d11, 61440
-  ; CHECK-NEXT: ADDIH_ddc $d11, $d11, 4095, implicit-def $psw
+  ; CHECK-NEXT: MOVH_dc $d11, 65535
+  ; CHECK-NEXT: SH_ddc $d11, $d11, -4
     $d11 = MOVImmDataReg 268431360
 
-  ; CHECK-NEXT: MOVU_dc $d12, 65534
-  ; CHECK-NEXT: ADDIH_ddc $d12, $d12, 1, implicit-def $psw
+  ; CHECK-NEXT: MOVU_dc $d12, 65535
+  ; CHECK-NEXT: SH_ddc $d12, $d12, 1
     $d12 = MOVImmDataReg 131070
 
   ; CHECK-NEXT: MOV_dc $d13, -32768

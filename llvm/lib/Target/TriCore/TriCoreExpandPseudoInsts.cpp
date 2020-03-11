@@ -122,6 +122,70 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
     return;
   }
 
+  uint32_t UImm = (uint32_t)Imm;
+  uint32_t TrailingZeros = countTrailingZeros(UImm);
+  uint32_t LeadingZeros = countLeadingZeros(UImm);
+
+  LLVM_DEBUG(llvm::dbgs() << "Immediate: " << Imm << " (0x" << utohexstr(UImm)
+                          << ") Trailing Zeros: " << TrailingZeros
+                          << " Leading Zeros: " << LeadingZeros << "\n");
+
+  // Check if we have enough space to shift the constant into
+  if (LeadingZeros + TrailingZeros >= 16) {
+
+    assert(LeadingZeros < 16 && "The leading 16 bits are all zero, this should "
+                                "be handled somewhere else!");
+    assert(TrailingZeros < 16 && "The lower 16 bits are all zero, this should "
+                                 "be handled somewhere else!");
+
+    if (LeadingZeros <= TrailingZeros) {
+
+      // We prefer to right-shift. We can use the 16-bit instruction
+      // for up to 8 bit right shifts but only for up  to 7 bit left shifts
+
+      // Also, we pre-shift the immediate left only by the minumum number of
+      // bits required (16 - TrailingZeros) to enable the compression of the
+      // shift instruction
+      uint32_t HighBits = ((UImm << (16 - TrailingZeros)) >> 16) & 0xffff;
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVH_dc))
+          .addReg(DstReg)
+          .addImm(HighBits);
+
+      int32_t ShiftAmount = -(16 - TrailingZeros);
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
+          .addReg(DstReg)
+          .addReg(DstReg)
+          .addImm(ShiftAmount);
+
+      LLVM_DEBUG(dbgs() << Imm << ": can use shift optimization: Use MOVH_dc "
+                        << utohexstr(HighBits) << ", shift right by "
+                        << ShiftAmount << "\n");
+      return;
+
+    } else {
+
+      // We have more leading zeros than trailing zeros, thus we want to left
+      // shift to enable the compression of the shift instruction.
+
+      // Again, pre-shift right by the minimum number of bits required
+      uint32_t LowBits = (UImm >> (16 - LeadingZeros)) & 0xffff;
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVU_dc))
+          .addReg(DstReg)
+          .addImm(LowBits);
+
+      uint32_t ShiftAmount = (16 - LeadingZeros);
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
+          .addReg(DstReg)
+          .addReg(DstReg)
+          .addImm(ShiftAmount);
+
+      LLVM_DEBUG(dbgs() << Imm << ": can use shift optimization: Use MOVU_dc "
+                        << utohexstr(LowBits) << ", shift left by "
+                        << ShiftAmount << "\n");
+      return;
+    }
+  }
+
   // As a last resort, use 2 32-bit instructions
   LLVM_DEBUG(
       dbgs() << "MOVImmDataReg " << Imm
