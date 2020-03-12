@@ -186,6 +186,30 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
     }
   }
 
+  // Check if we have an immediate with all 1's and zeros in the MSBs
+  // If so, the logical right-shift will get rid of the unneeded 1's in the
+  // upper bits we have from moving -1
+  if (LeadingZeros && !TrailingZeros) {
+    uint32_t PopCnt = countPopulation<uint32_t>(UImm);
+    if (32 - PopCnt == LeadingZeros) {
+
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOV_dc))
+          .addReg(DstReg)
+          .addImm(-1);
+
+      int32_t ShiftAmount = -(LeadingZeros);
+      BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
+          .addReg(DstReg)
+          .addReg(DstReg)
+          .addImm(ShiftAmount);
+
+      LLVM_DEBUG(dbgs() << Imm
+                        << ": can use shift optimization: upper bits are 0, "
+                           "all others are 1. Use MOV_dc -1 and right shift\n");
+      return;
+    }
+  }
+
   // As a last resort, use 2 32-bit instructions
   LLVM_DEBUG(
       dbgs() << "MOVImmDataReg " << Imm

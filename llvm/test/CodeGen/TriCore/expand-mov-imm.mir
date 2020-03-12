@@ -43,8 +43,8 @@ body:             |
     $d9 = MOVImmDataReg 131056
 
   ; Edge case: Trailing Zeros: 0 Leading Zeros: 15
-  ; CHECK-NEXT: MOVU_dc $d10, 65535
-  ; CHECK-NEXT: ADDIH_ddc $d10, $d10, 1, implicit-def $psw
+  ; CHECK-NEXT: MOV_dc $d10, -1
+  ; CHECK-NEXT: SH_ddc $d10, $d10, -15
     $d10 = MOVImmDataReg 131071
 
   ; CHECK-NEXT: MOVH_dc $d11, 65535
