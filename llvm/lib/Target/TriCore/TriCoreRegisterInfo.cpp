@@ -52,14 +52,14 @@ TriCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
 
   // Use markSuperRegs to ensure any register aliases are also reserved
-  markSuperRegs(Reserved, TriCore::A0);  // system global address register
-  markSuperRegs(Reserved, TriCore::A1);  // system global address register
-  markSuperRegs(Reserved, TriCore::A8);  // system global address register
-  markSuperRegs(Reserved, TriCore::A9);  // system global address register
-  markSuperRegs(Reserved, TriCore::A10); // stack pointer
-  markSuperRegs(Reserved, TriCore::A11); // return address
-  markSuperRegs(Reserved, TriCore::PC);  // program counter
-  markSuperRegs(Reserved, TriCore::PSW); // program status word register
+  markSuperRegs(Reserved, TriCore::A0);    // system global address register
+  markSuperRegs(Reserved, TriCore::A1);    // system global address register
+  markSuperRegs(Reserved, TriCore::A8);    // system global address register
+  markSuperRegs(Reserved, TriCore::A9);    // system global address register
+  markSuperRegs(Reserved, TriCore::A10);   // stack pointer
+  markSuperRegs(Reserved, TriCore::A11);   // return address
+  markSuperRegs(Reserved, TriCore::PC);    // program counter
+  markSuperRegs(Reserved, TriCore::PSW_C); // program status word incl. carry
 
   // Mark frame pointer if available
   if (TFI->hasFP(MF))

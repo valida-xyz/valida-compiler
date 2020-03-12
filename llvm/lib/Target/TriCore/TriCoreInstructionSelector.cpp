@@ -398,6 +398,51 @@ static bool isCarryOutProducer(const MachineInstr &I) {
   }
 }
 
+static bool isCarryOutClobberedBeforeUse(const MachineInstr &MI,
+                                         const MachineRegisterInfo &MRI) {
+  assert(isCarryOutProducer(MI));
+
+  const Register &CarryOutReg = MI.getOperand(1).getReg();
+
+  assert(MRI.getType(CarryOutReg).getSizeInBits() == 1 &&
+         CarryOutReg.isVirtual() &&
+         "Expected a virtual carry-out register of 1-bit");
+
+  // To check whether a carry-out is clobbered before use we loop over all uses
+  // and then check all dominating instructions in reverse order up to the
+  // carry-out definition. If one of these instructions writes $psw_c, it
+  // clobbers the carry-out
+  const auto RE = MI.getReverseIterator();
+  for (auto I = MRI.use_instr_nodbg_begin(CarryOutReg),
+            E = MachineRegisterInfo::use_instr_nodbg_end();
+       I != E; ++I) {
+    const MachineInstr &Use = *I;
+
+    // Iterate from Use to MI, skipping Use itself
+    for (auto RI = std::next(Use.getReverseIterator()); RI != RE; ++RI) {
+      const MachineInstr &Inst = *RI;
+
+      // Stop if we reach the original instruction
+      if (&Inst == &MI)
+        break;
+
+      // Instruction selector works bottom up, so this instructions should have
+      // been selected already
+      assert(!isPreISelGenericOpcode(Inst.getOpcode()) &&
+             "Expected already-selected instruction");
+
+      // Check if this instruction clobbers $psw_c
+      if (Inst.definesRegister(TriCore::PSW_C, MRI.getTargetRegisterInfo())) {
+        LLVM_DEBUG(dbgs() << Inst << " clobbers carry-out register "
+                          << CarryOutReg << '\n');
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 bool TriCoreInstructionSelector::select(MachineInstr &I) {
   assert(I.getParent() && "Instruction should be in a basic block!");
   assert(I.getParent()->getParent() && "Instruction should be in a function!");
@@ -640,16 +685,30 @@ bool TriCoreInstructionSelector::selectAddSubE(MachineInstr &I,
   // instruction. If that is not the case, the carry-in must be the constant
   // 0, since we can use a simple ADDX/SUBX instruction to handle this case.
   //
-  // We expect that there are no instructions clobbering the PSW are scheduled
-  // between this and the carry-out producing instruction. If that expectation
-  // turns out to be wrong, the COPY for the carry-in would get materialized,
-  // which is unsupported and fails in the TriCoreInstrInfo::copyPhysReg
+  // We also need to make sure that all usages of the carry-out are not
+  // clobbered by other instructions.
+  if (isCarryOutClobberedBeforeUse(I, MRI)) {
+    LLVM_DEBUG(dbgs() << "Carry-out register is clobbered before use\n");
+    return false;
+  }
 
-  // Look for the definition of the carry-in register, skipping truncations
-  const MachineInstr *Def = MRI.getVRegDef(CarryInReg);
-  while (Def->getOpcode() == TargetOpcode::G_TRUNC) {
+  // Also check if we can replace all uses of CarryOutReg with $psw_c
+  const RegisterBank *CarryOutRB = MRI.getRegBankOrNull(CarryOutReg);
+  if (!CarryOutRB || CarryOutRB->getID() != TriCore::StatusRegBankID) {
+    LLVM_DEBUG(dbgs() << "Cannot replace " << CarryOutReg << " with "
+                      << Register(TriCore::PSW_C)
+                      << "because it is not assigned to the StatusRegBank\n");
+    return false;
+  }
+
+  // Look for the definition of the carry-in register, skipping truncations and
+  // virtual copies
+  const MachineInstr *Def = getDefIgnoringCopies(CarryInReg, MRI);
+  while ((Def->getOpcode() == TargetOpcode::G_TRUNC ||
+          Def->getOpcode() == TargetOpcode::COPY) &&
+         Def->getOperand(1).getReg().isVirtual()) {
     CarryInReg = Def->getOperand(1).getReg();
-    Def = MRI.getVRegDef(CarryInReg);
+    Def = getDefIgnoringCopies(CarryInReg, MRI);
   }
 
   MachineIRBuilder MIRBuilder(I);
@@ -658,19 +717,8 @@ bool TriCoreInstructionSelector::selectAddSubE(MachineInstr &I,
   // instruction or is a constant
   unsigned Opc;
   if (isCarryOutProducer(*Def)) {
-    // Copy carry-in to pseudo-register PSW_C. This COPY should get eliminated
-    // in the register allocator
-    MIRBuilder.buildInstr(TargetOpcode::COPY)
-        .addDef(TriCore::PSW_C)
-        .addUse(CarryInReg);
-
-    if (!TriCoreRegisterBankInfo::constrainGenericRegister(
-            CarryInReg, TriCore::DataRegsRegClass, MRI)) {
-      LLVM_DEBUG(dbgs() << "Failed to constrain carry-in register for " << OpStr
-                        << '\n');
-      return false;
-    }
-
+    // Def is a carry-out producer, i.e. it sets $psw_c. Use ADDC_ddd/SUBC_ddd
+    // which read $psw_c.
     Opc = IsAdd ? TriCore::ADDC_ddd : TriCore::SUBC_ddd;
 
   } else if (auto CarryInVal = getConstantVRegVal(CarryInReg, MRI)) {
@@ -693,20 +741,11 @@ bool TriCoreInstructionSelector::selectAddSubE(MachineInstr &I,
     return false;
   }
 
-  // Build target instruction and copy PSW_C to carry-out
+  // Build target instruction and replace all uses of CarryOutReg with $psw_c
   const auto AddSubMI =
       MIRBuilder.buildInstr(Opc).addDef(DstReg).addUse(Src1Reg).addUse(Src2Reg);
 
-  MIRBuilder.buildInstr(TargetOpcode::COPY)
-      .addDef(CarryOutReg)
-      .addUse(TriCore::PSW_C);
-
-  if (!TriCoreRegisterBankInfo::constrainGenericRegister(
-          CarryOutReg, TriCore::DataRegsRegClass, MRI)) {
-    LLVM_DEBUG(dbgs() << "Failed to constrain carry-out register for " << OpStr
-                      << '\n');
-    return false;
-  }
+  MRI.replaceRegWith(CarryOutReg, TriCore::PSW_C);
 
   constrainSelectedInstRegOperands(*AddSubMI, TII, TRI, RBI);
 
@@ -735,24 +774,32 @@ bool TriCoreInstructionSelector::selectAddSubO(MachineInstr &I,
       !checkType(LLT::scalar(1), CarryTy, OpStr))
     return false;
 
-  // Emit ADDX/SUBX and use COPY from PSW_C for the carry-out
+  // We need to make sure that all usages of the carry-out are not
+  // clobbered by other instructions.
+  if (isCarryOutClobberedBeforeUse(I, MRI)) {
+    LLVM_DEBUG(dbgs() << "Carry-out register is clobbered before use\n");
+    return false;
+  }
+
+  // Also check if we can replace all uses of CarryOutReg with $psw_c
+  const RegisterBank *CarryOutRB = MRI.getRegBankOrNull(CarryReg);
+  if (!CarryOutRB || CarryOutRB->getID() != TriCore::StatusRegBankID) {
+    LLVM_DEBUG(dbgs() << "Cannot replace " << CarryReg << " with "
+                      << Register(TriCore::PSW_C)
+                      << "because it is not assigned to the StatusRegBank\n");
+    return false;
+  }
+
+  // Emit ADDX/SUBX and replace CarryReg with $psw_c
   MachineIRBuilder MIRBuilder(I);
 
   const unsigned Opc = IsAdd ? TriCore::ADDX_ddd : TriCore::SUBX_ddd;
   const auto AddSubMI =
       MIRBuilder.buildInstr(Opc).addDef(DstReg).addUse(Src1Reg).addUse(Src2Reg);
 
-  MIRBuilder.buildInstr(TargetOpcode::COPY)
-      .addDef(CarryReg)
-      .addUse(TriCore::PSW_C);
+  MRI.replaceRegWith(CarryReg, TriCore::PSW_C);
 
   constrainSelectedInstRegOperands(*AddSubMI, TII, TRI, RBI);
-  if (!TriCoreRegisterBankInfo::constrainGenericRegister(
-          CarryReg, TriCore::DataRegsRegClass, MRI)) {
-    LLVM_DEBUG(dbgs() << "Failed to constrain carry register for " << OpStr
-                      << '\n');
-    return false;
-  }
 
   I.removeFromParent();
   return true;

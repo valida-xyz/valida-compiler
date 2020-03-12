@@ -30,10 +30,13 @@ protected:
     PMI_ExtDataReg,
     PMI_AddrReg,
     PMI_ExtAddrReg,
+    PMI_CarryReg,
     PMI_FirstDataReg = PMI_DataReg,
     PMI_LastDataReg = PMI_ExtDataReg,
     PMI_FirstAddrReg = PMI_AddrReg,
     PMI_LastAddrReg = PMI_ExtAddrReg,
+    PMI_FirstCarryReg = PMI_CarryReg,
+    PMI_LastCarryReg = PMI_CarryReg,
     PMI_Min = PMI_FirstDataReg,
   };
 
@@ -48,6 +51,7 @@ protected:
     DistanceBetweenRegBanks = 3,
     TruncDataRegBankIdx = 13,
     TruncAddrRegBankIdx = 15,
+    CarryBitIdx = 17,
   };
 
   // Helper functions to check expectations about the maps and indices.
@@ -55,6 +59,7 @@ protected:
                               unsigned ValLength, const RegisterBank &RB);
   static bool checkValueMapImpl(unsigned Idx, unsigned FirstInBank,
                                 unsigned Size, unsigned Offset);
+  static bool checkCarryMapImpl(unsigned Idx, unsigned Offset);
   static bool checkPartialMappingIdx(PartialMappingIdx FirstAlias,
                                      PartialMappingIdx LastAlias,
                                      ArrayRef<PartialMappingIdx> Order);
@@ -84,6 +89,13 @@ protected:
   static const RegisterBankInfo::ValueMapping *
   getTruncMapping(unsigned BankID, unsigned DstSize, unsigned SrcSize);
 
+  /// Get the pointer to the ValueMapping of the operands of an
+  /// add/sub-with-carry instruction at \p RbIdx with a size of \p Size.
+  ///
+  /// The returned mapping works for add/sub instructions with a carry-in/-out
+  /// and same kind of non-carry operands for up to 5 operands.
+  static const RegisterBankInfo::ValueMapping *getCarryMapping();
+
 #define GET_TARGET_REGBANK_CLASS
 #include "TriCoreGenRegisterBank.inc"
 };
@@ -99,6 +111,15 @@ class TriCoreRegisterBankInfo final : public TriCoreGenRegisterBankInfo {
   /// \return An InstructionMapping with a statically allocated OperandsMapping
   const InstructionMapping &
   getSameKindOfOperandsMapping(const MachineInstr &MI) const;
+
+  /// Get an instruction mapping for one of the instructions with a carry-in
+  /// or carry-out. The non-carry operands map to the data regbank and have
+  /// similar size.
+  ///
+  /// \pre hasCarryBit(MI) == true && MI.getNumOperands() <= 5
+  ///
+  /// \return An InstructionMapping with a statically allocated OperandsMapping
+  const InstructionMapping &getCarryInstMapping(const MachineInstr &MI) const;
 
 public:
   explicit TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI);

@@ -15,3 +15,5 @@ def DataRegBank : RegisterBank<"DataRegBank", [ExtDataRegs]>;
 /// Address registers: A
 def AddrRegBank : RegisterBank<"AddrRegBank", [ExtAddrRegs]>;
 
+/// Carry bit register: PSW.C
+def StatusRegBank : RegisterBank<"StatusRegBank", [CarryReg]>;

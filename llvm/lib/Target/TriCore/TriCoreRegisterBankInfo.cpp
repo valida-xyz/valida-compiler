@@ -52,6 +52,11 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   assert(&TriCore::AddrRegBank == &AddrRegBank &&
          "The order in RegBanks is messed up");
 
+  const RegisterBank &StatusRegBank = getRegBank(TriCore::StatusRegBankID);
+  (void)StatusRegBank;
+  assert(&TriCore::StatusRegBank == &StatusRegBank &&
+         "The order in RegBanks is messed up");
+
   // Check data register bank coverage
   assert(DataRegBank.covers(*TRI.getRegClass(TriCore::DataRegsRegClassID)) &&
          "Subclass not added?");
@@ -62,6 +67,12 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
          "Subclass not added?");
   assert(AddrRegBank.getSize() == 64 && "AddrRegBank should hold up to 64-bit");
 
+  // Check psw.c register bank coverage
+  assert(StatusRegBank.covers(*TRI.getRegClass(TriCore::CarryRegRegClassID)) &&
+         "Subclass not added?");
+  assert(StatusRegBank.getSize() == 1 &&
+         "StatusRegBank should hold exactly 1-bit");
+
   // Check that the to-be-tablegen'ed file is in sync with our expectations.
   // First, the Idx.
   assert(checkPartialMappingIdx(PMI_FirstDataReg, PMI_LastDataReg,
@@ -70,6 +81,9 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   assert(checkPartialMappingIdx(PMI_FirstAddrReg, PMI_LastAddrReg,
                                 {PMI_AddrReg, PMI_ExtAddrReg}) &&
          "PartialMappingIdx is incorrectly ordered for AddrRegs");
+  assert(checkPartialMappingIdx(PMI_FirstCarryReg, PMI_LastCarryReg,
+                                {PMI_CarryReg}) &&
+         "PartialMappingIdx is incorrectly ordered for CarryReg");
 
   // Next, the content.
   // Check partial mapping.
@@ -85,6 +99,7 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   CHECK_PARTIALMAP(PMI_ExtDataReg, 0, 64, DataRegBank);
   CHECK_PARTIALMAP(PMI_AddrReg, 0, 32, AddrRegBank);
   CHECK_PARTIALMAP(PMI_ExtAddrReg, 0, 64, AddrRegBank);
+  CHECK_PARTIALMAP(PMI_CarryReg, 0, 1, StatusRegBank);
 
   // get rid of unused function warning in some IDEs
   (void)checkPartialMap;
@@ -149,6 +164,22 @@ TriCoreRegisterBankInfo::TriCoreRegisterBankInfo(const TargetRegisterInfo &TRI)
   CHECK_VALUEMAP_TRUNC(TriCore::DataRegBankID, PMI_DataReg, PMI_ExtDataReg);
   CHECK_VALUEMAP_TRUNC(TriCore::AddrRegBankID, PMI_AddrReg, PMI_ExtAddrReg);
 
+  // Check the value mapping for carry-bit arithmetic
+#define CHECK_VALUEMAP_CARRY(Idx, Offset)                                      \
+  do {                                                                         \
+    assert(checkCarryMapImpl(PartialMappingIdx::Idx, Offset) &&                \
+           "#Idx #Offset is incorrectly initialized");                         \
+  } while (false)
+
+  CHECK_VALUEMAP_CARRY(PMI_DataReg, 0);
+  CHECK_VALUEMAP_CARRY(PMI_CarryReg, 1);
+  CHECK_VALUEMAP_CARRY(PMI_DataReg, 2);
+  CHECK_VALUEMAP_CARRY(PMI_DataReg, 3);
+  CHECK_VALUEMAP_CARRY(PMI_CarryReg, 4);
+
+  // Get rid of unused warnings in non-assert builds
+  (void)checkCarryMapImpl;
+
   // TODO: check cross register bank copy mappings once implemented
 
   assert(verify(TRI) && "Invalid register bank information");
@@ -170,6 +201,8 @@ TriCoreRegisterBankInfo::getRegBankFromRegClass(const TargetRegisterClass &RC,
   case TriCore::ExtDataRegs_with_dsub1_in_ImplDataRegRegClassID:
   case TriCore::ImplDataRegRegClassID:
     return getRegBank(TriCore::DataRegBankID);
+  case TriCore::CarryRegRegClassID:
+    return getRegBank(TriCore::StatusRegBankID);
   default:
     llvm_unreachable("Register class not supported");
   }
@@ -212,6 +245,57 @@ TriCoreRegisterBankInfo::getSameKindOfOperandsMapping(
 
   return getInstructionMapping(DefaultMappingID, 1,
                                getValueMapping(RBIdx, Size), NumOperands);
+}
+
+const RegisterBankInfo::InstructionMapping &
+TriCoreRegisterBankInfo::getCarryInstMapping(const MachineInstr &MI) const {
+  const MachineFunction &MF = *MI.getParent()->getParent();
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  const unsigned NumOperands = MI.getNumOperands();
+  assert(NumOperands <= 5 &&
+         "This code is for carry-bit producing/consuming instructions");
+
+  const LLT Ty = MRI.getType(MI.getOperand(0).getReg());
+  const unsigned Size = Ty.getSizeInBits();
+  assert(!Ty.isPointer() && "Pointer operand in add/sub w/ carry?!");
+
+  // XXX: If TriCore ever supports 64-bit add/sub /w carry, remove this assert
+  assert(Size <= 32 && "Unsupported operand size");
+
+#ifndef NDEBUG
+  // Check for expected opcodes
+  const unsigned Opcode = MI.getOpcode();
+  assert((Opcode == TargetOpcode::G_UADDO || Opcode == TargetOpcode::G_UADDE ||
+          Opcode == TargetOpcode::G_USUBO || Opcode == TargetOpcode::G_USUBE) &&
+         "Unexpected opcode");
+
+  // Make sure all non-carry operands are using similar sizes by checking that
+  // the register bank base offset of the operand is equal to the base offset of
+  // the result register bank and that the carry-out/carry-in are 1-bit.
+  const PartialMappingIdx RBIdx = PMI_FirstDataReg;
+  for (unsigned Idx = 1; Idx != NumOperands; ++Idx) {
+    const LLT OpTy = MRI.getType(MI.getOperand(Idx).getReg());
+    const unsigned OpSize = OpTy.getSizeInBits();
+
+    // Check carry-bit operand
+    if (Idx == 1 || Idx == 5) {
+      assert(TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(
+                 PMI_FirstCarryReg, OpTy.getSizeInBytes()) != -1u &&
+             "Carry operand has incompatible size");
+      continue;
+    }
+
+    assert(
+        TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(RBIdx, OpSize) ==
+            TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(RBIdx, Size) &&
+        "Operand has incompatible size");
+    assert(!OpTy.isPointer() && "Operand has incompatible type.");
+  }
+#endif
+
+  return getInstructionMapping(DefaultMappingID, 1, getCarryMapping(),
+                               NumOperands);
 }
 
 const RegisterBankInfo::InstructionMapping &
@@ -280,6 +364,12 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   case TargetOpcode::G_LSHR:
   case TargetOpcode::G_ASHR:
     return getSameKindOfOperandsMapping(MI);
+  // Add/sub with carry.
+  case TargetOpcode::G_UADDO:
+  case TargetOpcode::G_UADDE:
+  case TargetOpcode::G_USUBO:
+  case TargetOpcode::G_USUBE:
+    return getCarryInstMapping(MI);
   default:
     break;
   }

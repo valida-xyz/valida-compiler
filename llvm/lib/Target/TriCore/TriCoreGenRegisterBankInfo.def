@@ -21,6 +21,8 @@ RegisterBankInfo::PartialMapping TriCoreGenRegisterBankInfo::PartMappings[]{
     {0, 32, TriCore::AddrRegBank},
     // 3: ExtAddrReg 64-bit value.
     {0, 64, TriCore::AddrRegBank},
+    // 4: CarryReg 1-bit carry value
+    {0, 1, TriCore::StatusRegBank},
 };
 
 // ValueMappings.
@@ -55,6 +57,13 @@ RegisterBankInfo::ValueMapping TriCoreGenRegisterBankInfo::ValMappings[]{
     // TruncAddrRegBankIdx.
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_AddrReg - PMI_Min], 1},
     {&TriCoreGenRegisterBankInfo::PartMappings[PMI_ExtAddrReg - PMI_Min], 1},
+    // Carry-bit arithmetic
+    // 17: Add/sub /w carry. <-- This must match CarryBitIdx.
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_CarryReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_DataReg - PMI_Min], 1},
+    {&TriCoreGenRegisterBankInfo::PartMappings[PMI_CarryReg - PMI_Min], 1},
     // TODO: Add mappings for cross register bank copies.
     //  Create FirstCrossRegCpyIdx and LastCrossRegCpyIdx.
     //  Create DistanceBetweenCrossRegCpy = <num operands>.
@@ -79,6 +88,16 @@ bool TriCoreGenRegisterBankInfo::checkValueMapImpl(unsigned Idx,
   unsigned PartialMapBaseIdx = Idx - PartialMappingIdx::PMI_Min;
   const ValueMapping &Map = TriCoreGenRegisterBankInfo::getValueMapping(
       (PartialMappingIdx)FirstInBank, Size)[Offset];
+  return Map.BreakDown == &PartMappings[PartialMapBaseIdx] &&
+         Map.NumBreakDowns == 1;
+}
+
+bool TriCoreGenRegisterBankInfo::checkCarryMapImpl(unsigned Idx,
+                                                   unsigned Offset) {
+  // Check that the ValueMapping at the given index matches the expected values
+  const unsigned PartialMapBaseIdx = Idx - PartialMappingIdx::PMI_Min;
+  const ValueMapping &Map =
+      TriCoreGenRegisterBankInfo::getCarryMapping()[Offset];
   return Map.BreakDown == &PartMappings[PartialMapBaseIdx] &&
          Map.NumBreakDowns == 1;
 }
@@ -112,14 +131,20 @@ bool TriCoreGenRegisterBankInfo::checkPartialMappingIdx(
 unsigned TriCoreGenRegisterBankInfo::getRegBankBaseIdxOffset(unsigned RBIdx,
                                                              unsigned Size) {
   // returned offset is relative to the register bank index
-  if (RBIdx == PMI_FirstDataReg || RBIdx == PMI_FirstAddrReg) {
+  switch (RBIdx) {
+  default:
+    return -1;
+  case PMI_FirstDataReg:
+  case PMI_FirstAddrReg:
     if (Size <= 32)
       return 0;
-    if (Size <= 64)
+    else if (Size <= 64)
       return 1;
-    return -1;
+    else
+      return -1;
+  case PMI_FirstCarryReg:
+    return Size <= 1 ? 0 : -1;
   }
-  return -1;
 }
 
 const RegisterBankInfo::ValueMapping *
@@ -148,6 +173,7 @@ TriCoreGenRegisterBankInfo::PartialMappingIdx
         // order corresponds to the register bank ID enum
         PMI_FirstAddrReg, // AddrReg
         PMI_FirstDataReg, // DataReg
+        PMI_None,         // StatusReg
     };
 
 const RegisterBankInfo::ValueMapping *
@@ -194,5 +220,12 @@ TriCoreGenRegisterBankInfo::getTruncMapping(unsigned BankID, unsigned DstSize,
                                                        : TruncDataRegBankIdx;
 
   return &ValMappings[TruncIdx];
+}
+
+const RegisterBankInfo::ValueMapping *
+TriCoreGenRegisterBankInfo::getCarryMapping() {
+  // XXX: If TriCore ever support add/sub /w carry on address regs or 64-bit
+  //  this function needs parameters and some more logic
+  return &ValMappings[CarryBitIdx];
 }
 } // namespace llvm

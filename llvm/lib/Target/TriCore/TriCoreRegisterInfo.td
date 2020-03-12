@@ -127,3 +127,11 @@ def ImplDataReg : RegisterClass<"TriCore", [i32, f32], 32, (add D15)>;
 def ImplAddrReg : RegisterClass<"TriCore", [i32], 32, (add A15)>;
 
 def ImplStackPtrReg : RegisterClass<"TriCore", [i32], 32, (add A10)>;
+
+def CarryReg : RegisterClass<"TriCore", [i1], 32, (add PSW_C)> {
+  // Don't allow copying of carry bit register
+  let CopyCost = -1;
+
+  // This pseudo register is not allocatable
+  let isAllocatable = 0;
+}

@@ -9,11 +9,11 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
   - { id: 6, class: dataregbank }
-  - { id: 7, class: dataregbank }
+  - { id: 7, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -21,13 +21,8 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[ADDX_ddd:%[0-9]+]]:dataregs = ADDX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[ADDC_ddd:%[0-9]+]]:dataregs = ADDC_ddd [[ADDX_ddd]], [[ADDX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY3]]
     ; CHECK: [[ADDC_ddd1:%[0-9]+]]:dataregs = ADDC_ddd [[ADDC_ddd]], [[ADDC_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY4:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[ADDC_ddd1]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
@@ -47,8 +42,9 @@ registers:
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
   - { id: 3, class: dataregbank }
-  - { id: 4, class: dataregbank }
+  - { id: 4, class: statusregbank }
   - { id: 5, class: dataregbank }
+  - { id: 6, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -56,14 +52,48 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[ADDX_ddd:%[0-9]+]]:dataregs = ADDX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[ADDX_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
     %2(s32) = G_CONSTANT i32 0
     %3(s1) = G_TRUNC %2(s32)
-    %4(s32), %5(s1) = G_UADDE %0, %1, %3
-    $d4 = COPY %4(s32)
+    %4(s1) = COPY %3(s1)
+    %5(s32), %6(s1) = G_UADDE %0, %1, %4
+    $d4 = COPY %5(s32)
+
+...
+
+---
+name:            adde_carry_out_used_in_copy
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: statusregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: statusregbank }
+  - { id: 6, class: dataregbank }
+  - { id: 7, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    ; CHECK-LABEL: name: adde_carry_out_used_in_copy
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[ADDX_ddd:%[0-9]+]]:dataregs = ADDX_ddd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: [[ADDC_ddd:%[0-9]+]]:dataregs = ADDC_ddd [[ADDX_ddd]], [[ADDX_ddd]], implicit-def $psw, implicit $psw
+    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
+    ; CHECK: [[INSERT_ddccc:%[0-9]+]]:dataregs = INSERT_ddccc [[COPY2]], 0, 1, 31
+    ; CHECK: $d4 = COPY [[INSERT_ddccc]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32), %3(s1) = G_UADDO %0, %1
+    %4(s32), %5(s1) = G_UADDE %2, %2, %3
+    %6(s1) = COPY %5(s1)
+    %7(s32) = G_ZEXT %6(s1)
+    $d4 = COPY %7(s32)
 
 ...
 
@@ -75,11 +105,11 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
   - { id: 6, class: dataregbank }
-  - { id: 7, class: dataregbank }
+  - { id: 7, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -87,13 +117,8 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[SUBX_ddd:%[0-9]+]]:dataregs = SUBX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[SUBC_ddd:%[0-9]+]]:dataregs = SUBC_ddd [[SUBX_ddd]], [[SUBX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY3]]
     ; CHECK: [[SUBC_ddd1:%[0-9]+]]:dataregs = SUBC_ddd [[SUBC_ddd]], [[SUBC_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY4:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[SUBC_ddd1]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
@@ -113,8 +138,9 @@ registers:
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
   - { id: 3, class: dataregbank }
-  - { id: 4, class: dataregbank }
+  - { id: 4, class: statusregbank }
   - { id: 5, class: dataregbank }
+  - { id: 6, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -122,14 +148,48 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[SUBX_ddd:%[0-9]+]]:dataregs = SUBX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[SUBX_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
     %2(s32) = G_CONSTANT i32 0
     %3(s1) = G_TRUNC %2(s32)
-    %4(s32), %5(s1) = G_USUBE %0, %1, %3
-    $d4 = COPY %4(s32)
+    %4(s1) = COPY %3(s1)
+    %5(s32), %6(s1) = G_USUBE %0, %1, %4
+    $d4 = COPY %5(s32)
+
+...
+
+---
+name:            sube_carry_out_used_in_copy
+legalized:       true
+regBankSelected: true
+registers:
+  - { id: 0, class: dataregbank }
+  - { id: 1, class: dataregbank }
+  - { id: 2, class: dataregbank }
+  - { id: 3, class: statusregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: statusregbank }
+  - { id: 6, class: dataregbank }
+  - { id: 7, class: dataregbank }
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+    ; CHECK-LABEL: name: sube_carry_out_used_in_copy
+    ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
+    ; CHECK: [[SUBX_ddd:%[0-9]+]]:dataregs = SUBX_ddd [[COPY]], [[COPY1]], implicit-def $psw
+    ; CHECK: [[SUBC_ddd:%[0-9]+]]:dataregs = SUBC_ddd [[SUBX_ddd]], [[SUBX_ddd]], implicit-def $psw, implicit $psw
+    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
+    ; CHECK: [[INSERT_ddccc:%[0-9]+]]:dataregs = INSERT_ddccc [[COPY2]], 0, 1, 31
+    ; CHECK: $d4 = COPY [[INSERT_ddccc]]
+    %0(s32) = COPY $d4
+    %1(s32) = COPY $d5
+    %2(s32), %3(s1) = G_USUBO %0, %1
+    %4(s32), %5(s1) = G_USUBE %2, %2, %3
+    %6(s1) = COPY %5(s1)
+    %7(s32) = G_ZEXT %6(s1)
+    $d4 = COPY %7(s32)
 
 ...
 
@@ -141,9 +201,9 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -151,10 +211,7 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[SUBX_ddd:%[0-9]+]]:dataregs = SUBX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[ADDC_ddd:%[0-9]+]]:dataregs = ADDC_ddd [[SUBX_ddd]], [[SUBX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[ADDC_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
@@ -172,9 +229,9 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -182,10 +239,7 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[ADDX_ddd:%[0-9]+]]:dataregs = ADDX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[SUBC_ddd:%[0-9]+]]:dataregs = SUBC_ddd [[ADDX_ddd]], [[ADDX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[SUBC_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
@@ -203,11 +257,11 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
   - { id: 6, class: dataregbank }
-  - { id: 7, class: dataregbank }
+  - { id: 7, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -215,13 +269,8 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[ADDX_ddd:%[0-9]+]]:dataregs = ADDX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[ADDC_ddd:%[0-9]+]]:dataregs = ADDC_ddd [[ADDX_ddd]], [[ADDX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY3]]
     ; CHECK: [[SUBC_ddd:%[0-9]+]]:dataregs = SUBC_ddd [[ADDC_ddd]], [[ADDC_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY4:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[SUBC_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
@@ -240,11 +289,11 @@ registers:
   - { id: 0, class: dataregbank }
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
-  - { id: 3, class: dataregbank }
+  - { id: 3, class: statusregbank }
   - { id: 4, class: dataregbank }
-  - { id: 5, class: dataregbank }
+  - { id: 5, class: statusregbank }
   - { id: 6, class: dataregbank }
-  - { id: 7, class: dataregbank }
+  - { id: 7, class: statusregbank }
 body:             |
   bb.0:
     liveins: $d4, $d5
@@ -252,13 +301,8 @@ body:             |
     ; CHECK: [[COPY:%[0-9]+]]:dataregs = COPY $d4
     ; CHECK: [[COPY1:%[0-9]+]]:dataregs = COPY $d5
     ; CHECK: [[SUBX_ddd:%[0-9]+]]:dataregs = SUBX_ddd [[COPY]], [[COPY1]], implicit-def $psw
-    ; CHECK: [[COPY2:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY2]]
     ; CHECK: [[SUBC_ddd:%[0-9]+]]:dataregs = SUBC_ddd [[SUBX_ddd]], [[SUBX_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY $psw_c
-    ; CHECK: $psw_c = COPY [[COPY3]]
     ; CHECK: [[ADDC_ddd:%[0-9]+]]:dataregs = ADDC_ddd [[SUBC_ddd]], [[SUBC_ddd]], implicit-def $psw, implicit $psw
-    ; CHECK: [[COPY4:%[0-9]+]]:dataregs = COPY $psw_c
     ; CHECK: $d4 = COPY [[ADDC_ddd]]
     %0(s32) = COPY $d4
     %1(s32) = COPY $d5
