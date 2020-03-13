@@ -1245,7 +1245,7 @@ bool TriCoreInstructionSelector::selectExtSign(MachineInstr &I,
          I.getOpcode() == TargetOpcode::G_SEXT_INREG);
 
   const Register DstReg = I.getOperand(0).getReg();
-  const Register SrcReg = I.getOperand(1).getReg();
+  Register SrcReg = I.getOperand(1).getReg();
 
   MachineIRBuilder MIRBuilder(I);
 
@@ -1269,6 +1269,24 @@ bool TriCoreInstructionSelector::selectExtSign(MachineInstr &I,
   //
   // Source size > 32-bits:
   // same as 32-bit destination for upper subreg
+
+  // In case of G_SEXT_INREG, our SrcReg is a 64-bit register as well. We need
+  // the 32-bit subregister if SrcSize is within 32-bit
+  if (SrcSize <= 32 && MRI.getType(SrcReg).getSizeInBits() > 32) {
+    assert(I.getOpcode() == TargetOpcode::G_SEXT_INREG &&
+           "Expected G_SEXT_INREG if SrcSize and type of SrcReg differ!");
+    const Register ScratchReg =
+        MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+    // No need to constrain SextSubreg since it already has a register
+    // class and will be constrained again by emit32BitSext
+    MIRBuilder.buildInstr(TargetOpcode::COPY)
+        .addDef(ScratchReg)
+        .addUse(SrcReg, 0, TriCore::dsub0);
+
+    SrcReg = ScratchReg;
+  }
+
   if (SrcSize == 32) {
     // This sign extends the result and puts it into a 64-bit register
     const auto MulMI = MIRBuilder.buildInstr(TriCore::MUL_edc)

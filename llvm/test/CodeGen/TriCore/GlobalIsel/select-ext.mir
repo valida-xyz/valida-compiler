@@ -148,6 +148,8 @@ registers:
   - { id: 1, class: dataregbank }
   - { id: 2, class: dataregbank }
   - { id: 3, class: dataregbank }
+  - { id: 4, class: dataregbank }
+  - { id: 5, class: dataregbank }
 body:             |
   bb.0.entry:
     ; CHECK-LABEL: name: test_sext_inreg
@@ -159,10 +161,22 @@ body:             |
     ; CHECK: [[EXTR_ddcc1:%[0-9]+]]:dataregs = EXTR_ddcc [[COPY2]], 0, 16
     ; CHECK: [[INSERT_SUBREG:%[0-9]+]]:extdataregs = INSERT_SUBREG [[COPY1]], [[EXTR_ddcc1]], %subreg.dsub1
     ; CHECK: $e2 = COPY [[INSERT_SUBREG]]
+    ; CHECK: [[COPY3:%[0-9]+]]:dataregs = COPY [[COPY1]].dsub0
+    ; CHECK: [[EXTR_ddcc2:%[0-9]+]]:dataregs = EXTR_ddcc [[COPY3]], 0, 16
+    ; CHECK: [[SHA_ddc:%[0-9]+]]:dataregs = SHA_ddc [[EXTR_ddcc2]], -31, implicit-def $psw
+    ; CHECK: [[REG_SEQUENCE:%[0-9]+]]:extdataregs = REG_SEQUENCE [[EXTR_ddcc2]], %subreg.dsub0, [[SHA_ddc]], %subreg.dsub1
+    ; CHECK: $e2 = COPY [[REG_SEQUENCE]]
+    ; CHECK: [[COPY4:%[0-9]+]]:dataregs = COPY [[COPY1]].dsub0
+    ; CHECK: [[MUL_edc:%[0-9]+]]:extdataregs = MUL_edc [[COPY4]], 1, implicit-def $psw
+    ; CHECK: $e2 = COPY [[MUL_edc]]
     %0(s32) = COPY $d4
     %1(s32) = G_SEXT_INREG %0(s32), 16
     $d2 = COPY %1(s32)
     %2(s64) = COPY $e4
     %3(s64) = G_SEXT_INREG %2(s64), 48
     $e2 = COPY %3(s64)
+    %4(s64) = G_SEXT_INREG %2(s64), 16
+    $e2 = COPY %4(s64)
+    %5(s64) = G_SEXT_INREG %2(s64), 32
+    $e2 = COPY %5(s64)
 ...
