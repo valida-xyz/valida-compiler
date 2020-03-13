@@ -169,6 +169,9 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
 
   // Floating point Ops
 
+  // G_FCOPYSIGN is legal for s32 and s64 types
+  getActionDefinitionsBuilder(G_FCOPYSIGN).legalFor({{s32, s32}, {s64, s64}});
+
   // G_FMINNUM and G_FMAXNUM are legal for tc18 otherwise it should be lowered
   auto &FMinNumMaxNumActions =
       getActionDefinitionsBuilder({G_FMAXNUM, G_FMINNUM})
