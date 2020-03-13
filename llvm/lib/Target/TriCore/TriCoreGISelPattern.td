@@ -213,6 +213,9 @@ def : SimpleBinOpPat<fdiv, DIVDF_eee, ExtDataRegs>;
 //===----------------------------------------------------------------------===//
 // Others
 //===----------------------------------------------------------------------===//
+def : Pat<(f32 (fcopysign f32:$src1, f32:$src2)), (f32 (INST_ddcdc DataRegs:$src1, (i32 31), DataRegs:$src2, (i32 31)))>;
+def : Pat<(f64 (fcopysign f64:$src1, f64:$src2)), (f64 (INSERT_SUBREG ExtDataRegs:$src1, (INST_ddcdc (subreg_32b<f32> ExtDataRegs:$src1, dsub1), (i32 31), (subreg_32b<f32> ExtDataRegs:$src2, dsub1),  (i32 31)), dsub1))>;
+
 def : Pat<(i32 (fp_to_sint f32:$src)), (i32 (FTOIZ_dd DataRegs:$src))>;
 
 let Predicates = [HasTC18] in {
