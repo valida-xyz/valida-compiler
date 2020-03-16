@@ -37,6 +37,8 @@ public:
 private:
   bool legalizeFCmp(MachineInstr &MI, MachineRegisterInfo &MRI,
                     MachineIRBuilder &MIRBuilder) const;
+  bool legalizeIntrinsicRound(MachineInstr &MI, MachineRegisterInfo &MRI,
+                              MachineIRBuilder &MIRBuilder) const;
   bool legalizeIntrinsicTrunc(MachineInstr &MI, MachineRegisterInfo &MRI,
                               MachineIRBuilder &MIRBuilder) const;
   bool legalizeVaArg(MachineInstr &MI, MachineRegisterInfo &MRI,

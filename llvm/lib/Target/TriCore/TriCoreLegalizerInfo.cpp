@@ -377,6 +377,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .widenScalarToNextPow2(0)
       .libcallFor({s32, s64});
 
+  // G_INTRINSIC_ROUND should use custom legalization since we cannot model all
+  // semantics of this instruction on TriCore yet
+  getActionDefinitionsBuilder(G_INTRINSIC_ROUND).customFor({s32, s64});
+
   // Load & Store
 
   // G_LOAD and G_STORE are legal for 32 and 64-bit scalar and pointer types.
@@ -533,6 +537,8 @@ bool TriCoreLegalizerInfo::legalizeCustom(MachineInstr &MI,
     return false;
   case TargetOpcode::G_FCMP:
     return legalizeFCmp(MI, MRI, MIRBuilder);
+  case TargetOpcode::G_INTRINSIC_ROUND:
+    return legalizeIntrinsicRound(MI, MRI, MIRBuilder);
   case TargetOpcode::G_INTRINSIC_TRUNC:
     return legalizeIntrinsicTrunc(MI, MRI, MIRBuilder);
   case TargetOpcode::G_VAARG:
@@ -556,38 +562,6 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
   default:
     break;
   }
-  return true;
-}
-
-bool TriCoreLegalizerInfo::legalizeIntrinsicTrunc(
-    MachineInstr &MI, MachineRegisterInfo &MRI,
-    MachineIRBuilder &MIRBuilder) const {
-  // Since G_INTRINSIC_TRUNC cannot be modeled in hardware, and because a
-  // libcall action is not supported, we need to create a libcall here
-  assert(MI.getOpcode() == TargetOpcode::G_INTRINSIC_TRUNC);
-
-  const Register DstReg = MI.getOperand(0).getReg();
-  const Register SrcReg = MI.getOperand(1).getReg();
-
-  LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
-
-  const LLT SrcTy = MRI.getType(SrcReg);
-  const unsigned Size = SrcTy.getSizeInBits();
-
-  RTLIB::Libcall RTLibOpc = Size == 32 ? RTLIB::TRUNC_F32 : RTLIB::TRUNC_F64;
-  const auto Type = Size == 32 ? Type::getFloatTy(Ctx) : Type::getDoubleTy(Ctx);
-
-  MIRBuilder.setInstr(MI);
-
-  assert(SrcTy == MRI.getType(DstReg) &&
-         (SrcTy == LLT::scalar(32) || SrcTy == LLT::scalar(64)) &&
-         "Expected float or double float types");
-
-  if (createLibcall(MIRBuilder, RTLibOpc, {DstReg, Type}, {{SrcReg, Type}}) ==
-      LegalizerHelper::UnableToLegalize)
-    return false;
-
-  MI.eraseFromParent();
   return true;
 }
 
@@ -659,6 +633,74 @@ bool TriCoreLegalizerInfo::legalizeFCmp(MachineInstr &MI,
     assert(Results.size() == 2 && "Unexpected number of results");
     MIRBuilder.buildOr(OriginalResult, Results[0], Results[1]);
   }
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool TriCoreLegalizerInfo::legalizeIntrinsicRound(
+    MachineInstr &MI, MachineRegisterInfo &MRI,
+    MachineIRBuilder &MIRBuilder) const {
+
+  // Since G_INTRINSIC_ROUND cannot be modeled in hardware, and the libcall 
+  // action is not supported. Therefore we create the libcall manually
+
+  assert(MI.getOpcode() == TargetOpcode::G_INTRINSIC_ROUND);
+
+  MIRBuilder.setInstr(MI);
+
+  const LLT s32 = LLT::scalar(32);
+  const LLT s64 = LLT::scalar(64);
+
+  const Register DstReg = MI.getOperand(0).getReg();
+  const Register SrcReg = MI.getOperand(1).getReg();
+
+  const LLT DstTy = MRI.getType(DstReg);
+  const LLT SrcTy = MRI.getType(SrcReg);
+
+  assert(SrcTy == DstTy && (SrcTy == s32 || SrcTy == s64) &&
+         "Expected float or double float types");
+
+  LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
+
+  RTLIB::Libcall Libcall = SrcTy == s32 ? RTLIB::ROUND_F32 : RTLIB::ROUND_F64;
+  Type *ArgTy = SrcTy == s32 ? Type::getFloatTy(Ctx) : Type::getDoubleTy(Ctx);
+
+  if (createLibcall(MIRBuilder, Libcall, {DstReg, ArgTy}, {{SrcReg, ArgTy}}) ==
+      LegalizerHelper::UnableToLegalize)
+    return false;
+
+  MI.eraseFromParent();
+  return true;
+}
+
+bool TriCoreLegalizerInfo::legalizeIntrinsicTrunc(
+    MachineInstr &MI, MachineRegisterInfo &MRI,
+    MachineIRBuilder &MIRBuilder) const {
+  // Since G_INTRINSIC_TRUNC cannot be modeled in hardware, and because a
+  // libcall action is not supported, we need to create a libcall here
+  assert(MI.getOpcode() == TargetOpcode::G_INTRINSIC_TRUNC);
+
+  const Register DstReg = MI.getOperand(0).getReg();
+  const Register SrcReg = MI.getOperand(1).getReg();
+
+  LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
+
+  const LLT SrcTy = MRI.getType(SrcReg);
+  const unsigned Size = SrcTy.getSizeInBits();
+
+  RTLIB::Libcall RTLibOpc = Size == 32 ? RTLIB::TRUNC_F32 : RTLIB::TRUNC_F64;
+  const auto Type = Size == 32 ? Type::getFloatTy(Ctx) : Type::getDoubleTy(Ctx);
+
+  MIRBuilder.setInstr(MI);
+
+  assert(SrcTy == MRI.getType(DstReg) &&
+         (SrcTy == LLT::scalar(32) || SrcTy == LLT::scalar(64)) &&
+         "Expected float or double float types");
+
+  if (createLibcall(MIRBuilder, RTLibOpc, {DstReg, Type}, {{SrcReg, Type}}) ==
+      LegalizerHelper::UnableToLegalize)
+    return false;
 
   MI.eraseFromParent();
   return true;
