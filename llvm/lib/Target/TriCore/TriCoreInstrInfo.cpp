@@ -305,8 +305,8 @@ void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
   }
 }
 
-static unsigned getOffsetBits(unsigned Opc) {
-  switch (Opc) {
+unsigned TriCoreInstrInfo::getOffsetBits(unsigned Opcode) const {
+  switch (Opcode) {
   default:
     llvm_unreachable("unexpected opcode!");
   case TriCore::LDB_dalc:

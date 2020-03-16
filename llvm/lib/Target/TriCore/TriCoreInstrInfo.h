@@ -55,6 +55,8 @@ public:
                        uint64_t Val,
                        MachineInstr::MIFlag Flag = MachineInstr::NoFlags) const;
 
+  unsigned getOffsetBits(unsigned Opcode) const;
+
   bool doesOffsetFitInOffsetOperand(unsigned Opcode, int64_t Offset) const;
 };
 } // namespace llvm
