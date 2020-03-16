@@ -348,3 +348,75 @@ MachineBasicBlock::iterator TriCoreFrameLowering::eliminateCallFramePseudoInstr(
   // Erase the pseudo instruction
   return MBB.erase(MI);
 }
+
+void TriCoreFrameLowering::processFunctionBeforeFrameFinalized(
+    MachineFunction &MF, RegScavenger *RS) const {
+  const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();
+  const TriCoreInstrInfo *TII =
+      MF.getSubtarget<TriCoreSubtarget>().getInstrInfo();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+
+  // When eliminating the frame index operands we might need to create a scratch
+  // register, which needs to be scavenged. In that case, the register scavenger
+  // might need an emergency spill slot to be able to spill to memory.
+  // TODO: emergency spill slot is not needed if there are free registers in
+  //  another register class
+  const unsigned EstimatedStackSize = estimateStackSize(MF);
+
+  // Find out what the smallest offset operand size is
+  unsigned OffsetBits = -1;
+  for (const MachineBasicBlock &MBB : MF) {
+    for (const MachineInstr &MI : MBB) {
+      // Only look at instructions which have a frame index operand
+      for (const MachineOperand &MO : MI.operands()) {
+        if (MO.isFI()) {
+          OffsetBits = std::min(OffsetBits, TII->getOffsetBits(MI.getOpcode()));
+          break;
+        }
+      }
+    }
+  }
+
+  // Emergency spill slot is not required if EstimatedStackSize can fit into the
+  // smallest offset operand we have
+  if (!isIntN(OffsetBits, EstimatedStackSize)) {
+    // The only thing we could possibly spill with the register scavenger are
+    // address registers (because frame index operands resolve to pointers)
+    const TargetRegisterClass *RC = &TriCore::AddrRegsRegClass;
+
+    const unsigned SpillSize = TRI->getSpillSize(*RC);
+    const unsigned SpillAlign = TRI->getSpillAlignment(*RC);
+
+    const int RegScavengeFI = MFI.CreateSpillStackObject(SpillSize, SpillAlign);
+    RS->addScavengingFrameIndex(RegScavengeFI);
+  }
+}
+
+uint64_t
+TriCoreFrameLowering::estimateStackSize(const MachineFunction &MF) const {
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+
+  int64_t Size = 0;
+
+  // Iterate over fixed sized objects which are incoming arguments. Look for
+  // object with the biggest offset. The offset already tells us how many bytes
+  // are used before that. The final size is then Offset + alignTo<4>(ObjSize)
+  int64_t MaxOffset = 0;
+  for (int I = MFI.getObjectIndexBegin(); I != 0; ++I) {
+    const int64_t ObjSize = MFI.getObjectSize(I);
+    const int64_t Offset = MFI.getObjectOffset(I);
+    if (ObjSize > 0 && Offset >= MaxOffset) {
+      MaxOffset = Offset;
+      Size = ObjSize;
+    }
+  }
+
+  Size = MaxOffset + alignTo<4>(Size); // Arguments use 4-byte alignment
+
+  // TriCore does not have callee saved registers, so no need to account for it
+
+  // Get the size of the rest of the frame objects and any possible reserved
+  // call frame, accounting for alignment.
+  Size += MFI.estimateStackSize(MF);
+  return alignTo(Size, getStackAlignment());
+}

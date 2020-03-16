@@ -28,6 +28,9 @@ public:
   void emitPrologue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
 
+  void processFunctionBeforeFrameFinalized(MachineFunction &MF,
+                                           RegScavenger *RS) const override;
+
   bool hasFP(const MachineFunction &MF) const override;
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
 
@@ -43,6 +46,14 @@ public:
   MachineBasicBlock::iterator
   eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                                 MachineBasicBlock::iterator MI) const override;
+
+protected:
+  /// Estimate the size of the stack, including the incoming arguments. We need
+  /// to account for register spills, local objects, reserved call frame and
+  /// incoming arguments. This is required to determine the largest possible
+  /// positive offset so that it can be determined if an emergency spill slot
+  /// for stack addresses is required.
+  uint64_t estimateStackSize(const MachineFunction &MF) const;
 };
 } // namespace llvm
 #endif
