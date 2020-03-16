@@ -203,7 +203,7 @@ CALL_CC(PackedMembers)
 CALL_CC(BitfieldMember2)
 // BitfieldMember2 copy-constructor:
 // CHECK-2-LABEL: define linkonce_odr void @_ZN15BitfieldMember2C2ERKS_(%struct.BitfieldMember2* %this, %struct.BitfieldMember2* nonnull align {{[0-9]+}} dereferenceable({{[0-9]+}}) %0)
-// CHECK-2: call void @llvm.memcpy.p0i8.p0i8.i64({{.*}} align 4 {{.*}} align 4 {{.*}}i64 16, i1 false)
+// CHECK-2: call void @llvm.memcpy.p0i8.p0i8.i32({{.*}} align 4 {{.*}} align 4 {{.*}}i32 16, i1 false)
 // CHECK-2: call void @_ZN6NonPODC1ERKS_
 // CHECK-2: ret void
 

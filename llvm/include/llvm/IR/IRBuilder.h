@@ -435,6 +435,21 @@ public:
     return ConstantInt::get(Context, AI);
   }
 
+  ConstantInt *getMinPtrSize(uint64_t Size, Value *PtrA,
+                             Value *PtrB = nullptr) {
+    assert(PtrA && "At least one pointer must be set!");
+    assert(BB && "Must have a basic block to retrieve the module!");
+
+    Module *M = BB->getParent()->getParent();
+    unsigned PtrSize = M->getDataLayout().getTypeSizeInBits(PtrA->getType());
+
+    if (PtrB) {
+      unsigned PtrSizeB = M->getDataLayout().getTypeSizeInBits(PtrB->getType());
+      PtrSize = std::min(PtrSize, PtrSizeB);
+    }
+    return getIntN(PtrSize, Size);
+  }
+
   //===--------------------------------------------------------------------===//
   // Type creation methods
   //===--------------------------------------------------------------------===//
@@ -521,7 +536,7 @@ public:
                          MaybeAlign Align, bool isVolatile = false,
                          MDNode *TBAATag = nullptr, MDNode *ScopeTag = nullptr,
                          MDNode *NoAliasTag = nullptr) {
-    return CreateMemSet(Ptr, Val, getInt64(Size), Align, isVolatile,
+    return CreateMemSet(Ptr, Val, getMinPtrSize(Size, Ptr), Align, isVolatile,
                         TBAATag, ScopeTag, NoAliasTag);
   }
 
@@ -565,9 +580,9 @@ public:
                          MDNode *TBAAStructTag = nullptr,
                          MDNode *ScopeTag = nullptr,
                          MDNode *NoAliasTag = nullptr) {
-    return CreateMemCpy(Dst, DstAlign, Src, SrcAlign, getInt64(Size),
-                        isVolatile, TBAATag, TBAAStructTag, ScopeTag,
-                        NoAliasTag);
+    return CreateMemCpy(Dst, DstAlign, Src, SrcAlign,
+                        getMinPtrSize(Size, Dst, Src), isVolatile, TBAATag,
+                        TBAAStructTag, ScopeTag, NoAliasTag);
   }
 
   CallInst *CreateMemCpy(Value *Dst, MaybeAlign DstAlign, Value *Src,
@@ -625,8 +640,9 @@ public:
                           bool isVolatile = false, MDNode *TBAATag = nullptr,
                           MDNode *ScopeTag = nullptr,
                           MDNode *NoAliasTag = nullptr) {
-    return CreateMemMove(Dst, DstAlign, Src, SrcAlign, getInt64(Size),
-                         isVolatile, TBAATag, ScopeTag, NoAliasTag);
+    return CreateMemMove(Dst, DstAlign, Src, SrcAlign,
+                         getMinPtrSize(Size, Dst, Src), isVolatile, TBAATag,
+                         ScopeTag, NoAliasTag);
   }
 
   CallInst *CreateMemMove(Value *Dst, MaybeAlign DstAlign, Value *Src,
