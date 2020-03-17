@@ -310,6 +310,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
 
+  // G_INTRINSIC_TRUNC should use custom legalization since we cannot model all
+  // semantics of this instruction on TriCore yet
+  getActionDefinitionsBuilder(G_INTRINSIC_TRUNC).customFor({s32, s64});
+
   // Floating Point Unary Ops
 
   // G_FPTOSI and G_FPTOUI are always legal for f32->s32 conversions.
@@ -529,6 +533,8 @@ bool TriCoreLegalizerInfo::legalizeCustom(MachineInstr &MI,
     return false;
   case TargetOpcode::G_FCMP:
     return legalizeFCmp(MI, MRI, MIRBuilder);
+  case TargetOpcode::G_INTRINSIC_TRUNC:
+    return legalizeIntrinsicTrunc(MI, MRI, MIRBuilder);
   case TargetOpcode::G_VAARG:
     return legalizeVaArg(MI, MRI, MIRBuilder);
   }
@@ -550,6 +556,38 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
   default:
     break;
   }
+  return true;
+}
+
+bool TriCoreLegalizerInfo::legalizeIntrinsicTrunc(
+    MachineInstr &MI, MachineRegisterInfo &MRI,
+    MachineIRBuilder &MIRBuilder) const {
+  // Since G_INTRINSIC_TRUNC cannot be modeled in hardware, and because a
+  // libcall action is not supported, we need to create a libcall here
+  assert(MI.getOpcode() == TargetOpcode::G_INTRINSIC_TRUNC);
+
+  const Register DstReg = MI.getOperand(0).getReg();
+  const Register SrcReg = MI.getOperand(1).getReg();
+
+  LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
+
+  const LLT SrcTy = MRI.getType(SrcReg);
+  const unsigned Size = SrcTy.getSizeInBits();
+
+  RTLIB::Libcall RTLibOpc = Size == 32 ? RTLIB::TRUNC_F32 : RTLIB::TRUNC_F64;
+  const auto Type = Size == 32 ? Type::getFloatTy(Ctx) : Type::getDoubleTy(Ctx);
+
+  MIRBuilder.setInstr(MI);
+
+  assert(SrcTy == MRI.getType(DstReg) &&
+         (SrcTy == LLT::scalar(32) || SrcTy == LLT::scalar(64)) &&
+         "Expected float or double float types");
+
+  if (createLibcall(MIRBuilder, RTLibOpc, {DstReg, Type}, {{SrcReg, Type}}) ==
+      LegalizerHelper::UnableToLegalize)
+    return false;
+
+  MI.eraseFromParent();
   return true;
 }
 
