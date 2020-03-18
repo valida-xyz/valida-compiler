@@ -68,6 +68,8 @@ def : SimpleBinOpPat<mul, MUL_ddd>;
 def : SimpleBinOpImmPat<mul, MUL_ddc, DataRegs, simm9>;
 def : Pat<(i32 (mulhu i32:$src1, i32:$src2)),
     (subreg_32b<i32> (MULU_edd DataRegs:$src1, DataRegs:$src2), dsub1)>;
+def : Pat<(i32 (mulhs i32:$src1, i32:$src2)),
+    (subreg_32b<i32> (MUL_edd DataRegs:$src1, DataRegs:$src2), dsub1)>;
 
 // 2.1.4 Division
 
