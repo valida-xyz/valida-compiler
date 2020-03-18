@@ -20,6 +20,7 @@
 #include "mlir/TableGen/OpInterfaces.h"
 #include "mlir/TableGen/OpTrait.h"
 #include "mlir/TableGen/Operator.h"
+#include "mlir/TableGen/SideEffects.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Signals.h"
@@ -280,6 +281,9 @@ private:
   // Generate the OpInterface methods.
   void genOpInterfaceMethods();
 
+  // Generate the side effect interface methods.
+  void genSideEffectInterfaceMethods();
+
 private:
   // The TableGen record for this op.
   // TODO(antiagainst,zinenko): OpEmitter should not have a Record directly,
@@ -321,6 +325,7 @@ OpEmitter::OpEmitter(const Operator &op)
   genFolderDecls();
   genOpInterfaceMethods();
   generateOpFormat(op, opClass);
+  genSideEffectInterfaceMethods();
 }
 
 void OpEmitter::emitDecl(const Operator &op, raw_ostream &os) {
@@ -396,16 +401,19 @@ void OpEmitter::genAttrGetters() {
   // Generate helper method to query whether a named attribute is a derived
   // attribute. This enables, for example, avoiding adding an attribute that
   // overlaps with a derived attribute.
-  auto &method =
-      opClass.newMethod("bool", "isDerivedAttribute", "StringRef name");
-  auto &body = method.body();
   auto derivedAttr = make_filter_range(op.getAttributes(),
                                        [](const NamedAttribute &namedAttr) {
                                          return namedAttr.attr.isDerivedAttr();
                                        });
-  for (auto namedAttr : derivedAttr)
-    body << "    if (name == \"" << namedAttr.name << "\") return true;\n";
-  body << " return false;";
+  if (!derivedAttr.empty()) {
+    opClass.addTrait("DerivedAttributeOpInterface::Trait");
+    auto &method = opClass.newMethod("bool", "isDerivedAttribute",
+                                     "StringRef name", OpMethod::MP_Static);
+    auto &body = method.body();
+    for (auto namedAttr : derivedAttr)
+      body << "    if (name == \"" << namedAttr.name << "\") return true;\n";
+    body << " return false;";
+  }
 }
 
 void OpEmitter::genAttrSetters() {
@@ -1161,6 +1169,80 @@ void OpEmitter::genOpInterfaceMethods() {
   }
 }
 
+void OpEmitter::genSideEffectInterfaceMethods() {
+  enum EffectKind { Operand, Result, Static };
+  struct EffectLocation {
+    /// The effect applied.
+    SideEffect effect;
+
+    /// The index if the kind is either operand or result.
+    unsigned index : 30;
+
+    /// The kind of the location.
+    unsigned kind : 2;
+  };
+
+  StringMap<SmallVector<EffectLocation, 1>> interfaceEffects;
+  auto resolveDecorators = [&](Operator::var_decorator_range decorators,
+                               unsigned index, unsigned kind) {
+    for (auto decorator : decorators)
+      if (SideEffect *effect = dyn_cast<SideEffect>(&decorator))
+        interfaceEffects[effect->getBaseEffectName()].push_back(
+            EffectLocation{*effect, index, kind});
+  };
+
+  // Collect effects that were specified via:
+  /// Traits.
+  for (const auto &trait : op.getTraits()) {
+    const auto *opTrait = dyn_cast<tblgen::SideEffectTrait>(&trait);
+    if (!opTrait)
+      continue;
+    auto &effects = interfaceEffects[opTrait->getBaseEffectName()];
+    for (auto decorator : opTrait->getEffects())
+      effects.push_back(EffectLocation{cast<SideEffect>(decorator),
+                                       /*index=*/0, EffectKind::Static});
+  }
+  /// Operands.
+  for (unsigned i = 0, operandIt = 0, e = op.getNumArgs(); i != e; ++i) {
+    if (op.getArg(i).is<NamedTypeConstraint *>()) {
+      resolveDecorators(op.getArgDecorators(i), operandIt, EffectKind::Operand);
+      ++operandIt;
+    }
+  }
+  /// Results.
+  for (unsigned i = 0, e = op.getNumResults(); i != e; ++i)
+    resolveDecorators(op.getResultDecorators(i), i, EffectKind::Result);
+
+  for (auto &it : interfaceEffects) {
+    auto effectsParam =
+        llvm::formatv(
+            "SmallVectorImpl<SideEffects::EffectInstance<{0}>> &effects",
+            it.first())
+            .str();
+
+    // Generate the 'getEffects' method.
+    auto &getEffects = opClass.newMethod("void", "getEffects", effectsParam);
+    auto &body = getEffects.body();
+
+    // Add effect instances for each of the locations marked on the operation.
+    for (auto &location : it.second) {
+      if (location.kind != EffectKind::Static) {
+        body << "  for (Value value : getODS"
+             << (location.kind == EffectKind::Operand ? "Operands" : "Results")
+             << "(" << location.index << "))\n  ";
+      }
+
+      body << "  effects.emplace_back(" << location.effect.getName()
+           << "::get()";
+
+      // If the effect isn't static, it has a specific value attached to it.
+      if (location.kind != EffectKind::Static)
+        body << ", value";
+      body << ", " << location.effect.getResource() << "::get());\n";
+    }
+  }
+}
+
 void OpEmitter::genParser() {
   if (!hasStringAttribute(def, "parser") ||
       hasStringAttribute(def, "assemblyFormat"))
@@ -1449,14 +1531,6 @@ void OpEmitter::genTraits() {
   unsigned numVariadicSuccessors = op.getNumVariadicSuccessors();
   addSizeCountTrait(opClass, "Successor", numSuccessors, numVariadicSuccessors);
 
-  // Add the native and interface traits.
-  for (const auto &trait : op.getTraits()) {
-    if (auto opTrait = dyn_cast<tblgen::NativeOpTrait>(&trait))
-      opClass.addTrait(opTrait->getTrait());
-    else if (auto opTrait = dyn_cast<tblgen::InterfaceOpTrait>(&trait))
-      opClass.addTrait(opTrait->getTrait());
-  }
-
   // Add variadic size trait and normal op traits.
   int numOperands = op.getNumOperands();
   int numVariadicOperands = op.getNumVariadicOperands();
@@ -1480,6 +1554,14 @@ void OpEmitter::genTraits() {
       opClass.addTrait("OpTrait::NOperands<" + Twine(numOperands) + ">::Impl");
       break;
     }
+  }
+
+  // Add the native and interface traits.
+  for (const auto &trait : op.getTraits()) {
+    if (auto opTrait = dyn_cast<tblgen::NativeOpTrait>(&trait))
+      opClass.addTrait(opTrait->getTrait());
+    else if (auto opTrait = dyn_cast<tblgen::InterfaceOpTrait>(&trait))
+      opClass.addTrait(opTrait->getTrait());
   }
 }
 

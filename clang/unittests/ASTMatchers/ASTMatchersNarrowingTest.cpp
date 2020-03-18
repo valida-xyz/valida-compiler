@@ -898,6 +898,12 @@ TEST(Matcher, HasOperatorNameForOverloadedOperatorCall) {
   DeclarationMatcher AnyOpStar = functionDecl(hasOverloadedOperatorName("*"));
   EXPECT_TRUE(matches("class Y; int operator*(Y &);", AnyOpStar));
   EXPECT_TRUE(matches("class Y { int operator*(); };", AnyOpStar));
+  DeclarationMatcher AnyAndOp =
+      functionDecl(hasAnyOverloadedOperatorName("&", "&&"));
+  EXPECT_TRUE(matches("class Y; Y operator&(Y &, Y &);", AnyAndOp));
+  EXPECT_TRUE(matches("class Y; Y operator&&(Y &, Y &);", AnyAndOp));
+  EXPECT_TRUE(matches("class Y { Y operator&(Y &); };", AnyAndOp));
+  EXPECT_TRUE(matches("class Y { Y operator&&(Y &); };", AnyAndOp));
 }
 
 
@@ -2689,6 +2695,20 @@ TEST(IsAssignmentOperator, Basic) {
       notMatches("void x() { int a; if(a == 0) return; }", BinAsgmtOperator));
 }
 
+TEST(IsComparisonOperator, Basic) {
+  StatementMatcher BinCompOperator = binaryOperator(isComparisonOperator());
+  StatementMatcher CXXCompOperator =
+      cxxOperatorCallExpr(isComparisonOperator());
+
+  EXPECT_TRUE(matches("void x() { int a; a == 1; }", BinCompOperator));
+  EXPECT_TRUE(matches("void x() { int a; a > 2; }", BinCompOperator));
+  EXPECT_TRUE(matches("struct S { bool operator==(const S&); };"
+                      "void x() { S s1, s2; bool b1 = s1 == s2; }",
+                      CXXCompOperator));
+  EXPECT_TRUE(
+      notMatches("void x() { int a; if(a = 0) return; }", BinCompOperator));
+}
+
 TEST(HasInit, Basic) {
   EXPECT_TRUE(
     matches("int x{0};",
@@ -2724,26 +2744,6 @@ void x() {
 #pragma omp taskyield
 })";
   EXPECT_TRUE(matchesWithOpenMP(Source1, Matcher));
-}
-
-TEST(Stmt, isOMPStructuredBlock) {
-  const std::string Source0 = R"(
-void x() {
-#pragma omp parallel
-;
-})";
-  EXPECT_TRUE(
-      matchesWithOpenMP(Source0, stmt(nullStmt(), isOMPStructuredBlock())));
-
-  const std::string Source1 = R"(
-void x() {
-#pragma omp parallel
-{;}
-})";
-  EXPECT_TRUE(
-      notMatchesWithOpenMP(Source1, stmt(nullStmt(), isOMPStructuredBlock())));
-  EXPECT_TRUE(
-      matchesWithOpenMP(Source1, stmt(compoundStmt(), isOMPStructuredBlock())));
 }
 
 TEST(OMPExecutableDirective, hasStructuredBlock) {

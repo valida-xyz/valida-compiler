@@ -7,11 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 def isWave32 : Predicate<"Subtarget->getWavefrontSize() == 32">,
-  AssemblerPredicate <"FeatureWavefrontSize32">;
+  AssemblerPredicate <(all_of FeatureWavefrontSize32)>;
 def isWave64 : Predicate<"Subtarget->getWavefrontSize() == 64">,
-  AssemblerPredicate <"FeatureWavefrontSize64">;
+  AssemblerPredicate <(all_of FeatureWavefrontSize64)>;
 
-def DisableInst : Predicate <"false">, AssemblerPredicate<"FeatureDisable">;
+def DisableInst : Predicate <"false">, AssemblerPredicate<(all_of FeatureDisable)>;
 
 class GCNPredicateControl : PredicateControl {
   Predicate SIAssemblerPredicate = isGFX6GFX7;
@@ -629,6 +629,16 @@ def add_ctpop : PatFrag <
   (ops node:$src0, node:$src1),
   (add (ctpop $src0), $src1)
 >;
+
+foreach I = 1-4 in {
+def shl#I#_add : PatFrag <
+  (ops node:$src0, node:$src1),
+  (add (shl_oneuse $src0, (i32 I)), $src1)> {
+  // FIXME: Poor substitute for disabling pattern in SelectionDAG
+  let PredicateCode = [{return false;}];
+  let GISelPredicateCode = [{return true;}];
+}
+}
 
 multiclass SIAtomicM0Glue2 <string op_name, bit is_amdgpu = 0,
                             SDTypeProfile tc = SDTAtomic2,

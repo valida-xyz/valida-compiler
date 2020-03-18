@@ -9,6 +9,28 @@
 include "llvm/Target/Target.td"
 
 //===----------------------------------------------------------------------===//
+// Target features.
+//===----------------------------------------------------------------------===//
+
+def Allow16BitInstructions : SubtargetFeature<"allow-16bit", "allow16BitInst",
+                            "true", "Allow usage of 16 bit instructions">;
+
+def Allow32BitInstructions : SubtargetFeature<"allow-32bit", "allow32BitInst",
+                            "true", "Allow usage of 32 bit instructions">;
+
+def Only32BitInstructions : SubtargetFeature<"insn32-only", "allow16BitInst",
+                            "false", "Force usage of 32 bit instructions">;
+
+def HasTC161Ops           : SubtargetFeature<"tc161", "HasTC161Ops",
+                            "true", "Support TC161 instructions">;
+
+def HasTC162Ops           : SubtargetFeature<"tc162", "HasTC162Ops",
+                            "true", "Support TC162 instructions", [HasTC161Ops]>;
+
+def HasTC18Ops            : SubtargetFeature<"tc18", "HasTC18Ops",
+                            "true", "Support TC18 instructions", [HasTC162Ops]>;
+
+//===----------------------------------------------------------------------===//
 // Register File Descriptions.
 //===----------------------------------------------------------------------===//
 
@@ -38,28 +60,6 @@ include "TriCoreSystemOperands.td"
 def TriCoreAsmParser : AsmParser {
   let ShouldEmitMatchRegisterAltName = 1;
 }
-
-//===----------------------------------------------------------------------===//
-// Target features.
-//===----------------------------------------------------------------------===//
-
-def Allow16BitInstructions : SubtargetFeature<"allow-16bit", "allow16BitInst",
-                            "true", "Allow usage of 16 bit instructions">;
-
-def Allow32BitInstructions : SubtargetFeature<"allow-32bit", "allow32BitInst",
-                            "true", "Allow usage of 32 bit instructions">;
-
-def Only32BitInstructions : SubtargetFeature<"insn32-only", "allow16BitInst",
-                            "false", "Force usage of 32 bit instructions">;
-
-def HasTC161Ops           : SubtargetFeature<"tc161", "HasTC161Ops",
-                            "true", "Support TC161 instructions">;
-
-def HasTC162Ops           : SubtargetFeature<"tc162", "HasTC162Ops",
-                            "true", "Support TC162 instructions", [HasTC161Ops]>;
-
-def HasTC18Ops            : SubtargetFeature<"tc18", "HasTC18Ops",
-                            "true", "Support TC18 instructions", [HasTC162Ops]>;
 
 //===----------------------------------------------------------------------===//
 // Target processors

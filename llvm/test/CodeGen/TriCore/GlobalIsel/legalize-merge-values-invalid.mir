@@ -11,24 +11,8 @@
 # supported and we can then check whether we handle them correctly.
 
 # ERROR-NOT: remark:
-# ERROR: remark: <unknown>:0:0: unable to legalize instruction: %6:_(s96) = G_MERGE_VALUES %0:_(s16), %1:_(s16), %2:_(s16), %3:_(s16), %4:_(s16), %5:_(s16) (in function: test_merge_s96_s16)
 # ERROR: remark: <unknown>:0:0: unable to legalize instruction: %7:_(s56) = G_MERGE_VALUES %0:_(s8), %1:_(s8), %2:_(s8), %3:_(s8), %4:_(s8), %5:_(s8), %6:_(s8) (in function: test_merge_s56_s8)
 # ERROR-NOT: remark:
-
----
-name: test_merge_s96_s16
-body: |
-  bb.0:
-    %0:_(s16) = G_CONSTANT i16 0
-    %1:_(s16) = G_CONSTANT i16 1
-    %2:_(s16) = G_CONSTANT i16 2
-    %3:_(s16) = G_CONSTANT i16 3
-    %4:_(s16) = G_CONSTANT i16 4
-    %5:_(s16) = G_CONSTANT i16 5
-    %8:_(s96) = G_MERGE_VALUES %0, %1, %2, %3, %4, %5
-    %9:_(s64) = G_TRUNC %8
-    $e0 = COPY %9
-...
 
 ---
 name: test_merge_s56_s8

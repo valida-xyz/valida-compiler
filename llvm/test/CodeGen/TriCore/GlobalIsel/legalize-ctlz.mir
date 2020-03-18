@@ -184,10 +184,7 @@ body:             |
     ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
     ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY1]](s32), [[UADDO]], [[UV6]]
     ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
-    ; CHECK: [[SELECT1:%[0-9]+]]:_(s32) = G_SELECT [[COPY2]](s32), [[UADDE]], [[UV7]]
-    ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[SELECT]](s32), [[SELECT1]](s32)
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[MV]](s64)
-    ; CHECK: $d2 = COPY [[TRUNC]](s32)
+    ; CHECK: $d2 = COPY [[SELECT]](s32)
     %0:_(s32) = COPY $d4
     %1:_(s64) = G_ANYEXT %0:_(s32)
     %2:_(s64) = G_CTLZ %1

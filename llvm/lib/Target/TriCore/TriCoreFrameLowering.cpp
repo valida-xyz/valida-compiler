@@ -207,7 +207,7 @@ void TriCoreFrameLowering::emitPrologue(MachineFunction &MF,
   //  returns false instead of actually checking if it should realign and
   //  reporting an error if needed. Therefore we need an explicit check here to
   //  avoid silent miscompiles
-  if (!NeedsStackRealignment && MFI.getMaxAlignment() > getStackAlignment())
+  if (!NeedsStackRealignment && MFI.getMaxAlign() > getStackAlign())
     report_fatal_error("Function \"" + Twine(MF.getName()) +
                        "\" required stack re-alignment, but LLVM couldn't "
                        "handle it (probably because it has a dynamic alloca).");

@@ -253,6 +253,23 @@ class Dialect {
   // the generated files are included into the dialect, you may want to specify
   // a full namespace path or a partial one.
   string cppNamespace = name;
+
+  // An optional code block containing extra declarations to place in the
+  // dialect declaration.
+  code extraClassDeclaration = "";
+
+  // If this dialect overrides the hook for materializing constants.
+  bit hasConstantMaterializer = 0;
+
+  // If this dialect overrides the hook for verifying operation attributes.
+  bit hasOperationAttrVerify = 0;
+
+  // If this dialect overrides the hook for verifying region argument
+  // attributes.
+  bit hasRegionArgAttrVerify = 0;
+
+  // If this dialect overrides the hook for verifying region result attributes.
+  bit hasRegionResultAttrVerify = 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -315,7 +332,7 @@ class AnyTypeOf<list<Type> allowedTypes, string description = ""> : Type<
 // Integer types.
 
 // Any integer type irrespective of its width and signedness semantics.
-def AnyInteger : Type<CPred<"$_self.isInteger()">, "integer">;
+def AnyInteger : Type<CPred<"$_self.isa<IntegerType>()">, "integer">;
 
 // Any integer type (regardless of signedness semantics) of a specific width.
 class AnyI<int width>
@@ -484,6 +501,29 @@ class HasAnyRankOfPred<list<int> ranks> : And<[
 
 class VectorOf<list<Type> allowedTypes> :
   ShapedContainerType<allowedTypes, IsVectorTypePred, "vector">;
+
+// Whether the number of elements of a vector is from the given
+// `allowedRanks` list
+class IsVectorOfRankPred<list<int> allowedRanks> :
+  And<[IsVectorTypePred,
+       Or<!foreach(allowedlength, allowedRanks,
+                   CPred<[{$_self.cast<VectorType>().getRank()
+                           == }]
+                         # allowedlength>)>]>;
+
+// Any vector where the rank is from the given `allowedRanks` list
+class VectorOfRank<list<int> allowedRanks> : Type<
+  IsVectorOfRankPred<allowedRanks>,
+  " of ranks " # StrJoinInt<allowedRanks, "/">.result>;
+
+// Any vector where the rank is from the given `allowedRanks` list and the type
+// is from the given `allowedTypes` list
+class VectorOfRankAndType<list<int> allowedRanks,
+                          list<Type> allowedTypes> : Type<
+  And<[VectorOf<allowedTypes>.predicate,
+       VectorOfRank<allowedRanks>.predicate]>,
+  VectorOf<allowedTypes>.description #
+  VectorOfRank<allowedRanks>.description>;
 
 // Whether the number of elements of a vector is from the given
 // `allowedLengths` list
@@ -728,6 +768,12 @@ class Attr<Pred condition, string descr = ""> :
   // instantiation.
   // TOOD(b/132458159): deduplicate the fields in attribute wrapper classes.
   Attr baseAttr = ?;
+}
+
+// An attribute of a specific dialect.
+class DialectAttr<Dialect d, Pred condition, string descr = ""> :
+    Attr<condition, descr> {
+  Dialect dialect = d;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1526,14 +1572,14 @@ def ResultsBroadcastableShape :
 def Broadcastable : NativeOpTrait<"ResultsBroadcastableShape">;
 // X op Y == Y op X
 def Commutative  : NativeOpTrait<"IsCommutative">;
+// Op behaves like a constant.
+def ConstantLike : NativeOpTrait<"ConstantLike">;
 // Op behaves like a function.
 def FunctionLike : NativeOpTrait<"FunctionLike">;
 // Op is isolated from above.
 def IsolatedFromAbove : NativeOpTrait<"IsIsolatedFromAbove">;
 // Op results are float or vectors/tensors thereof.
 def ResultsAreFloatLike : NativeOpTrait<"ResultsAreFloatLike">;
-// Op has no side effect.
-def NoSideEffect : NativeOpTrait<"HasNoSideEffect">;
 // Op has the same operand type.
 def SameTypeOperands : NativeOpTrait<"SameTypeOperands">;
 // Op has same shape for all operands.
@@ -1709,6 +1755,29 @@ class OpBuilder<string p, code b = ""> {
   string params = p;
   code body = b;
 }
+
+// A base decorator class that may optionally be added to OpVariables.
+class OpVariableDecorator;
+
+// Class for providing additional information on the variables, i.e. arguments
+// and results, of an operation.
+class OpVariable<Constraint varConstraint, string desc = "",
+                 list<OpVariableDecorator> varDecorators = []> {
+  // The constraint, either attribute or type, of the argument.
+  Constraint constraint = varConstraint;
+
+  // A description for the argument.
+  string description = desc;
+
+  // The list of decorators for this variable, e.g. side effects.
+  list<OpVariableDecorator> decorators = varDecorators;
+}
+class Arg<Constraint constraint, string desc = "",
+          list<OpVariableDecorator> decorators = []>
+  : OpVariable<constraint, desc, decorators>;
+class Res<Constraint constraint, string desc = "",
+          list<OpVariableDecorator> decorators = []>
+  : OpVariable<constraint, desc, decorators>;
 
 // Base class for all ops.
 class Op<Dialect dialect, string mnemonic, list<OpTrait> props = []> {

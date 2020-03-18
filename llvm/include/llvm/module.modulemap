@@ -29,7 +29,6 @@ module LLVM_Backend {
     exclude header "CodeGen/LinkAllCodegenComponents.h"
 
     // These are intended for (repeated) textual inclusion.
-    textual header "CodeGen/CommandFlags.inc"
     textual header "CodeGen/DIEValue.def"
   }
 }
@@ -274,6 +273,7 @@ module LLVM_intrinsic_gen {
   module IR_PatternMatch { header "IR/PatternMatch.h" export * }
   module IR_SafepointIRVerifier { header "IR/SafepointIRVerifier.h" export * }
   module IR_Statepoint { header "IR/Statepoint.h" export * }
+  module IR_KnowledgeRetention { header "IR/KnowledgeRetention.h" export * }
 
   export *
 }
@@ -317,8 +317,6 @@ module LLVM_MC {
 
   umbrella "MC"
   module * { export * }
-
-  textual header "MC/MCTargetOptionsCommandFlags.inc"
 }
 
 // Used by llvm-tblgen

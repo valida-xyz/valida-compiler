@@ -14,7 +14,8 @@
 #define LLVMIR_OPS
 
 include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
-include "mlir/Analysis/ControlFlowInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/SideEffects.td"
 
 class LLVM_Builder<string builder> {
   string llvmBuilder = builder;
@@ -452,7 +453,7 @@ def LLVM_FreezeOp : LLVM_OneResultOp<"freeze", [SameOperandsAndResultType]>,
 
 // Terminators.
 def LLVM_BrOp : LLVM_TerminatorOp<"br",
-    [DeclareOpInterfaceMethods<BranchOpInterface>]> {
+    [DeclareOpInterfaceMethods<BranchOpInterface>, NoSideEffect]> {
   let arguments = (ins Variadic<LLVM_Type>:$destOperands);
   let successors = (successor AnySuccessor:$dest);
   let assemblyFormat = [{
@@ -461,7 +462,8 @@ def LLVM_BrOp : LLVM_TerminatorOp<"br",
   let builders = [LLVM_TerminatorPassthroughOpBuilder];
 }
 def LLVM_CondBrOp : LLVM_TerminatorOp<"cond_br",
-    [AttrSizedOperandSegments, DeclareOpInterfaceMethods<BranchOpInterface>]> {
+    [AttrSizedOperandSegments, DeclareOpInterfaceMethods<BranchOpInterface>,
+     NoSideEffect]> {
   let arguments = (ins LLVMI1:$condition,
                    Variadic<LLVM_Type>:$trueDestOperands,
                    Variadic<LLVM_Type>:$falseDestOperands);
@@ -486,7 +488,7 @@ def LLVM_CondBrOp : LLVM_TerminatorOp<"cond_br",
             falseOperands);
   }]>, LLVM_TerminatorPassthroughOpBuilder];
 }
-def LLVM_ReturnOp : LLVM_TerminatorOp<"return", []>,
+def LLVM_ReturnOp : LLVM_TerminatorOp<"return", [NoSideEffect]>,
                     Arguments<(ins Variadic<LLVM_Type>:$args)> {
   string llvmBuilder = [{
     if ($_numOperands != 0)
@@ -791,21 +793,73 @@ def LLVM_experimental_vector_reduce_v2_fmul : LLVM_VectorReductionV2<"fmul">;
 // LLVM Matrix operations.
 //
 
-/// As specified in the LLVM MatrixBuilder:
-/// Create a llvm.matrix.multiply call, multiplying matrices LHS and RHS.
+/// Create a columnwise, strided 2-D matrix load, as specified in the LLVM
+/// MatrixBuilder.
+/// data    - Start address of the matrix read
+/// rows    - Number of rows in matrix (must be a constant)
+/// columns - Number of columns in matrix (must be a constant)
+/// stride  - Space between columns
+def LLVM_MatrixColumnsWiseLoadOp
+    : LLVM_OneResultOp<"intr.matrix.columnwise.load">,
+      Arguments<(ins LLVM_Type:$data, LLVM_Type:$stride,
+                 I32Attr:$rows, I32Attr:$columns)> {
+  string llvmBuilder = [{
+    llvm::MatrixBuilder<decltype(builder)> mb(builder);
+    $res = mb.CreateMatrixColumnwiseLoad(
+      $data, $rows.getZExtValue(), $columns.getZExtValue(), $stride);
+  }];
+  let assemblyFormat = "$data `,` `<` `stride` `=` $stride `>` attr-dict"
+    "`:` type($res) `from` type($data) `stride` type($stride)";
+}
+
+/// Create a columnwise, strided 2-D matrix store, as specified in the LLVM
+/// MatrixBuilder.
+/// matrix  - Matrix to store
+/// ptr     - Pointer to write back to
+/// rows    - Number of rows in matrix (must be a constant)
+/// columns - Number of columns in matrix (must be a constant)
+/// stride  - Space between columns
+def LLVM_MatrixColumnsWiseStoreOp
+    : LLVM_ZeroResultOp<"intr.matrix.columnwise.store">,
+      Arguments<(ins LLVM_Type:$matrix, LLVM_Type:$data, LLVM_Type:$stride,
+                 I32Attr:$rows, I32Attr:$columns)> {
+  string llvmBuilder = [{
+    llvm::MatrixBuilder<decltype(builder)> mb(builder);
+    mb.CreateMatrixColumnwiseStore(
+      $matrix, $data, $stride, $rows.getZExtValue(), $columns.getZExtValue());
+  }];
+  let assemblyFormat = "$matrix `,` $data `,` `<` `stride` `=` $stride `>` "
+    "attr-dict`:` type($matrix) `to` type($data) `stride` type($stride)";
+}
+
+/// Create a llvm.matrix.multiply call, multiplying 2-D matrices LHS and RHS, as
+/// specified in the LLVM MatrixBuilder.
 def LLVM_MatrixMultiplyOp
     : LLVM_OneResultOp<"intr.matrix.multiply">,
       Arguments<(
         ins LLVM_Type:$lhs, LLVM_Type:$rhs,
-            I32Attr:$lhs_rows, I32Attr:$lhs_columns, I32Attr:$rhs_rows)> {
+            I32Attr:$lhs_rows, I32Attr:$lhs_columns, I32Attr:$rhs_columns)> {
   string llvmBuilder = [{
     llvm::MatrixBuilder<decltype(builder)> mb(builder);
     $res = mb.CreateMatrixMultiply(
       $lhs, $rhs, $lhs_rows.getZExtValue(), $lhs_columns.getZExtValue(),
-      $rhs_rows.getZExtValue());
+      $rhs_columns.getZExtValue());
   }];
   let assemblyFormat = "$lhs `,` $rhs attr-dict "
     "`:` `(` type($lhs) `,` type($rhs) `)` `->` type($res)";
+}
+
+/// Create a llvm.matrix.transpose call, transposing a `rows` x `columns` 2-D
+/// `matrix`, as specified in the LLVM MatrixBuilder.
+def LLVM_MatrixTranposeOp
+    : LLVM_OneResultOp<"intr.matrix.transpose">,
+      Arguments<(ins LLVM_Type:$matrix, I32Attr:$rows, I32Attr:$columns)> {
+  string llvmBuilder = [{
+    llvm::MatrixBuilder<decltype(builder)> mb(builder);
+    $res = mb.CreateMatrixTranspose(
+      $matrix, $rows.getZExtValue(), $columns.getZExtValue());
+  }];
+  let assemblyFormat = "$matrix attr-dict `:` type($matrix) `into` type($res)";
 }
 
 //
@@ -889,4 +943,16 @@ def LLVM_AssumeOp : LLVM_Op<"intr.assume", []>,
   }];
 }
 
+def LLVM_FenceOp : LLVM_ZeroResultOp<"fence", []>,
+                   Arguments<(ins AtomicOrdering:$ordering,
+                    StrAttr:$syncscope)> {
+  let llvmBuilder = [{
+    llvm::LLVMContext &llvmContext = builder.getContext();
+    builder.CreateFence(getLLVMAtomicOrdering($ordering),
+      llvmContext.getOrInsertSyncScopeID($syncscope));
+  }];
+  let parser = [{ return parseFenceOp(parser, result); }];
+  let printer = [{ printFenceOp(p, *this); }];
+  let verifier = "return ::verify(*this);";
+}
 #endif // LLVMIR_OPS

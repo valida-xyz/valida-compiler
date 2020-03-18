@@ -6,13 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Tooling/Syntax/BuildTree.h"
+#include "clang/AST/ASTFwd.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclarationName.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/TypeLoc.h"
+#include "clang/AST/TypeLocVisitor.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Tooling/Syntax/Nodes.h"
@@ -20,6 +26,7 @@
 #include "clang/Tooling/Syntax/Tree.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
@@ -33,6 +40,110 @@ using namespace clang;
 
 LLVM_ATTRIBUTE_UNUSED
 static bool isImplicitExpr(clang::Expr *E) { return E->IgnoreImplicit() != E; }
+
+static SourceLocation getQualifiedNameStart(DeclaratorDecl *D) {
+  auto DN = D->getDeclName();
+  bool IsAnonymous = DN.isIdentifier() && !DN.getAsIdentifierInfo();
+  if (IsAnonymous)
+    return SourceLocation();
+  return D->getQualifierLoc() ? D->getQualifierLoc().getBeginLoc()
+                              : D->getLocation();
+}
+
+namespace {
+/// Get start location of the Declarator from the TypeLoc.
+/// E.g.:
+///   loc of `(` in `int (a)`
+///   loc of `*` in `int *(a)`
+///   loc of the first `(` in `int (*a)(int)`
+///   loc of the `*` in `int *(a)(int)`
+///   loc of the first `*` in `const int *const *volatile a;`
+///
+/// It is non-trivial to get the start location because TypeLocs are stored
+/// inside out. In the example above `*volatile` is the TypeLoc returned
+/// by `Decl.getTypeSourceInfo()`, and `*const` is what `.getPointeeLoc()`
+/// returns.
+struct GetStartLoc : TypeLocVisitor<GetStartLoc, SourceLocation> {
+  SourceLocation VisitParenTypeLoc(ParenTypeLoc T) {
+    auto L = Visit(T.getInnerLoc());
+    if (L.isValid())
+      return L;
+    return T.getLParenLoc();
+  }
+
+  // Types spelled in the prefix part of the declarator.
+  SourceLocation VisitPointerTypeLoc(PointerTypeLoc T) {
+    return HandlePointer(T);
+  }
+
+  SourceLocation VisitMemberPointerTypeLoc(MemberPointerTypeLoc T) {
+    return HandlePointer(T);
+  }
+
+  SourceLocation VisitBlockPointerTypeLoc(BlockPointerTypeLoc T) {
+    return HandlePointer(T);
+  }
+
+  SourceLocation VisitReferenceTypeLoc(ReferenceTypeLoc T) {
+    return HandlePointer(T);
+  }
+
+  SourceLocation VisitObjCObjectPointerTypeLoc(ObjCObjectPointerTypeLoc T) {
+    return HandlePointer(T);
+  }
+
+  // All other cases are not important, as they are either part of declaration
+  // specifiers (e.g. inheritors of TypeSpecTypeLoc) or introduce modifiers on
+  // existing declarators (e.g. QualifiedTypeLoc). They cannot start the
+  // declarator themselves, but their underlying type can.
+  SourceLocation VisitTypeLoc(TypeLoc T) {
+    auto N = T.getNextTypeLoc();
+    if (!N)
+      return SourceLocation();
+    return Visit(N);
+  }
+
+  SourceLocation VisitFunctionProtoTypeLoc(FunctionProtoTypeLoc T) {
+    if (T.getTypePtr()->hasTrailingReturn())
+      return SourceLocation(); // avoid recursing into the suffix of declarator.
+    return VisitTypeLoc(T);
+  }
+
+private:
+  template <class PtrLoc> SourceLocation HandlePointer(PtrLoc T) {
+    auto L = Visit(T.getPointeeLoc());
+    if (L.isValid())
+      return L;
+    return T.getLocalSourceRange().getBegin();
+  }
+};
+} // namespace
+
+/// Gets the range of declarator as defined by the C++ grammar. E.g.
+///     `int a;` -> range of `a`,
+///     `int *a;` -> range of `*a`,
+///     `int a[10];` -> range of `a[10]`,
+///     `int a[1][2][3];` -> range of `a[1][2][3]`,
+///     `int *a = nullptr` -> range of `*a = nullptr`.
+/// FIMXE: \p Name must be a source range, e.g. for `operator+`.
+static SourceRange getDeclaratorRange(const SourceManager &SM, TypeLoc T,
+                                      SourceLocation Name,
+                                      SourceRange Initializer) {
+  SourceLocation Start = GetStartLoc().Visit(T);
+  SourceLocation End = T.getSourceRange().getEnd();
+  assert(End.isValid());
+  if (Name.isValid()) {
+    if (Start.isInvalid())
+      Start = Name;
+    if (SM.isBeforeInTranslationUnit(End, Name))
+      End = Name;
+  }
+  if (Initializer.isValid()) {
+    assert(SM.isBeforeInTranslationUnit(End, Initializer.getEnd()));
+    End = Initializer.getEnd();
+  }
+  return SourceRange(Start, End);
+}
 
 /// A helper class for constructing the syntax tree while traversing a clang
 /// AST.
@@ -57,6 +168,7 @@ public:
   }
 
   llvm::BumpPtrAllocator &allocator() { return Arena.allocator(); }
+  const SourceManager &sourceManager() const { return Arena.sourceManager(); }
 
   /// Populate children for \p New node, assuming it covers tokens from \p
   /// Range.
@@ -64,23 +176,32 @@ public:
 
   /// Must be called with the range of each `DeclaratorDecl`. Ensures the
   /// corresponding declarator nodes are covered by `SimpleDeclaration`.
-  void noticeDeclaratorRange(llvm::ArrayRef<syntax::Token> Range);
+  void noticeDeclRange(llvm::ArrayRef<syntax::Token> Range);
 
   /// Notifies that we should not consume trailing semicolon when computing
   /// token range of \p D.
-  void noticeDeclaratorWithoutSemicolon(Decl *D);
+  void noticeDeclWithoutSemicolon(Decl *D);
 
   /// Mark the \p Child node with a corresponding \p Role. All marked children
   /// should be consumed by foldNode.
-  /// (!) when called on expressions (clang::Expr is derived from clang::Stmt),
-  ///     wraps expressions into expression statement.
+  /// When called on expressions (clang::Expr is derived from clang::Stmt),
+  /// wraps expressions into expression statement.
   void markStmtChild(Stmt *Child, NodeRole Role);
   /// Should be called for expressions in non-statement position to avoid
   /// wrapping into expression statement.
   void markExprChild(Expr *Child, NodeRole Role);
-
   /// Set role for a token starting at \p Loc.
   void markChildToken(SourceLocation Loc, NodeRole R);
+  /// Set role for \p T.
+  void markChildToken(const syntax::Token *T, NodeRole R);
+
+  /// Set role for the node that spans exactly \p Range.
+  void markChild(llvm::ArrayRef<syntax::Token> Range, NodeRole R);
+  /// Set role for the delayed node that spans exactly \p Range.
+  void markDelayedChild(llvm::ArrayRef<syntax::Token> Range, NodeRole R);
+  /// Set role for the node that may or may not be delayed. Node must span
+  /// exactly \p Range.
+  void markMaybeDelayedChild(llvm::ArrayRef<syntax::Token> Range, NodeRole R);
 
   /// Finish building the tree and consume the root node.
   syntax::TranslationUnit *finalize() && {
@@ -97,6 +218,9 @@ public:
     return TU;
   }
 
+  /// Finds a token starting at \p L. The token must exist if \p L is valid.
+  const syntax::Token *findToken(SourceLocation L) const;
+
   /// getRange() finds the syntax tokens corresponding to the passed source
   /// locations.
   /// \p First is the start position of the first token and \p Last is the start
@@ -109,15 +233,22 @@ public:
            Arena.sourceManager().isBeforeInTranslationUnit(First, Last));
     return llvm::makeArrayRef(findToken(First), std::next(findToken(Last)));
   }
-  llvm::ArrayRef<syntax::Token> getRange(const Decl *D) const {
-    auto Tokens = getRange(D->getBeginLoc(), D->getEndLoc());
-    if (llvm::isa<NamespaceDecl>(D))
-      return Tokens;
-    if (DeclsWithoutSemicolons.count(D))
-      return Tokens;
-    // FIXME: do not consume trailing semicolon on function definitions.
-    // Most declarations own a semicolon in syntax trees, but not in clang AST.
-    return withTrailingSemicolon(Tokens);
+
+  llvm::ArrayRef<syntax::Token>
+  getTemplateRange(const ClassTemplateSpecializationDecl *D) const {
+    auto R = D->getSourceRange();
+    auto Tokens = getRange(R.getBegin(), R.getEnd());
+    return maybeAppendSemicolon(Tokens, D);
+  }
+
+  llvm::ArrayRef<syntax::Token> getDeclRange(const Decl *D) const {
+    llvm::ArrayRef<clang::syntax::Token> Tokens;
+    // We want to drop the template parameters for specializations.
+    if (const auto *S = llvm::dyn_cast<TagDecl>(D))
+      Tokens = getRange(S->TypeDecl::getBeginLoc(), S->getEndLoc());
+    else
+      Tokens = getRange(D->getBeginLoc(), D->getEndLoc());
+    return maybeAppendSemicolon(Tokens, D);
   }
   llvm::ArrayRef<syntax::Token> getExprRange(const Expr *E) const {
     return getRange(E->getBeginLoc(), E->getEndLoc());
@@ -138,17 +269,26 @@ public:
 
 private:
   llvm::ArrayRef<syntax::Token>
+  maybeAppendSemicolon(llvm::ArrayRef<syntax::Token> Tokens,
+                       const Decl *D) const {
+    if (llvm::isa<NamespaceDecl>(D))
+      return Tokens;
+    if (DeclsWithoutSemicolons.count(D))
+      return Tokens;
+    // FIXME: do not consume trailing semicolon on function definitions.
+    // Most declarations own a semicolon in syntax trees, but not in clang AST.
+    return withTrailingSemicolon(Tokens);
+  }
+
+  llvm::ArrayRef<syntax::Token>
   withTrailingSemicolon(llvm::ArrayRef<syntax::Token> Tokens) const {
     assert(!Tokens.empty());
     assert(Tokens.back().kind() != tok::eof);
-    // (!) we never consume 'eof', so looking at the next token is ok.
+    // We never consume 'eof', so looking at the next token is ok.
     if (Tokens.back().kind() != tok::semi && Tokens.end()->kind() == tok::semi)
       return llvm::makeArrayRef(Tokens.begin(), Tokens.end() + 1);
     return Tokens;
   }
-
-  /// Finds a token starting at \p L. The token must exist.
-  const syntax::Token *findToken(SourceLocation L) const;
 
   /// A collection of trees covering the input tokens.
   /// When created, each tree corresponds to a single token in the file.
@@ -172,6 +312,23 @@ private:
 
     ~Forest() { assert(DelayedFolds.empty()); }
 
+    void assignRoleDelayed(llvm::ArrayRef<syntax::Token> Range,
+                           syntax::NodeRole Role) {
+      auto It = DelayedFolds.find(Range.begin());
+      assert(It != DelayedFolds.end());
+      assert(It->second.End == Range.end());
+      It->second.Role = Role;
+    }
+
+    void assignRoleMaybeDelayed(llvm::ArrayRef<syntax::Token> Range,
+                                syntax::NodeRole Role) {
+      auto It = DelayedFolds.find(Range.begin());
+      if (It == DelayedFolds.end())
+        return assignRole(Range, Role);
+      assert(It->second.End == Range.end());
+      It->second.Role = Role;
+    }
+
     void assignRole(llvm::ArrayRef<syntax::Token> Range,
                     syntax::NodeRole Role) {
       assert(!Range.empty());
@@ -189,12 +346,19 @@ private:
                       llvm::ArrayRef<syntax::Token> Tokens,
                       syntax::Tree *Node) {
       // Execute delayed folds inside `Tokens`.
-      auto BeginExecuted = DelayedFolds.lower_bound(Tokens.begin());
-      auto It = BeginExecuted;
-      for (; It != DelayedFolds.end() && It->second.End <= Tokens.end(); ++It)
+      auto BeginFolds = DelayedFolds.lower_bound(Tokens.begin());
+      auto EndFolds = BeginFolds;
+      for (; EndFolds != DelayedFolds.end() &&
+             EndFolds->second.End <= Tokens.end();
+           ++EndFolds)
+        ;
+      // We go in reverse order to ensure we fold deeper nodes first.
+      for (auto RevIt = EndFolds; RevIt != BeginFolds; --RevIt) {
+        auto It = std::prev(RevIt);
         foldChildrenEager(A, llvm::makeArrayRef(It->first, It->second.End),
                           It->second.Node);
-      DelayedFolds.erase(BeginExecuted, It);
+      }
+      DelayedFolds.erase(BeginFolds, EndFolds);
 
       // Attach children to `Node`.
       foldChildrenEager(A, Tokens, Node);
@@ -269,7 +433,7 @@ private:
           (EndChildren == Trees.end() || EndChildren->first == Tokens.end()) &&
           "fold crosses boundaries of existing subtrees");
 
-      // (!) we need to go in reverse order, because we can only prepend.
+      // We need to go in reverse order, because we can only prepend.
       for (auto It = EndChildren; It != BeginChildren; --It)
         Node->prependChildLowLevel(std::prev(It)->second.Node,
                                    std::prev(It)->second.Role);
@@ -301,6 +465,7 @@ private:
     struct DelayedFold {
       const syntax::Token *End = nullptr;
       syntax::Tree *Node = nullptr;
+      NodeRole Role = NodeRole::Unknown;
     };
     std::map<const syntax::Token *, DelayedFold> DelayedFolds;
   };
@@ -324,39 +489,106 @@ public:
 
   bool shouldTraversePostOrder() const { return true; }
 
-  bool WalkUpFromDeclaratorDecl(DeclaratorDecl *D) {
+  bool WalkUpFromDeclaratorDecl(DeclaratorDecl *DD) {
     // Ensure declarators are covered by SimpleDeclaration.
-    Builder.noticeDeclaratorRange(Builder.getRange(D));
-    // FIXME: build nodes for the declarator too.
+    Builder.noticeDeclRange(Builder.getDeclRange(DD));
+
+    // Build the declarator node.
+    SourceRange Initializer;
+    if (auto *V = llvm::dyn_cast<VarDecl>(DD)) {
+      auto *I = V->getInit();
+      // Initializers in range-based-for are not part of the declarator
+      if (I && !V->isCXXForRangeDecl())
+        Initializer = I->getSourceRange();
+    }
+    auto Declarator = getDeclaratorRange(
+        Builder.sourceManager(), DD->getTypeSourceInfo()->getTypeLoc(),
+        getQualifiedNameStart(DD), Initializer);
+    if (Declarator.isValid()) {
+      auto Tokens =
+          Builder.getRange(Declarator.getBegin(), Declarator.getEnd());
+      Builder.foldNode(Tokens, new (allocator()) syntax::SimpleDeclarator);
+      Builder.markChild(Tokens, syntax::NodeRole::SimpleDeclaration_declarator);
+    }
+
     return true;
   }
+
   bool WalkUpFromTypedefNameDecl(TypedefNameDecl *D) {
-    // Also a declarator.
-    Builder.noticeDeclaratorRange(Builder.getRange(D));
-    // FIXME: build nodes for the declarator too.
+    // Ensure declarators are covered by SimpleDeclaration.
+    Builder.noticeDeclRange(Builder.getDeclRange(D));
+
+    auto R = getDeclaratorRange(
+        Builder.sourceManager(), D->getTypeSourceInfo()->getTypeLoc(),
+        /*Name=*/D->getLocation(), /*Initializer=*/SourceRange());
+    if (R.isValid()) {
+      auto Tokens = Builder.getRange(R.getBegin(), R.getEnd());
+      Builder.foldNode(Tokens, new (allocator()) syntax::SimpleDeclarator);
+      Builder.markChild(Tokens, syntax::NodeRole::SimpleDeclaration_declarator);
+    }
     return true;
   }
 
   bool VisitDecl(Decl *D) {
     assert(!D->isImplicit());
-    Builder.foldNode(Builder.getRange(D),
+    Builder.foldNode(Builder.getDeclRange(D),
                      new (allocator()) syntax::UnknownDeclaration());
+    return true;
+  }
+
+  // RAV does not call WalkUpFrom* on explicit instantiations, so we have to
+  // override Traverse.
+  // FIXME: make RAV call WalkUpFrom* instead.
+  bool
+  TraverseClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *C) {
+    if (!RecursiveASTVisitor::TraverseClassTemplateSpecializationDecl(C))
+      return false;
+    if (C->isExplicitSpecialization())
+      return true; // we are only interested in explicit instantiations.
+    if (!WalkUpFromClassTemplateSpecializationDecl(C))
+      return false;
+    foldExplicitTemplateInstantiation(
+        Builder.getTemplateRange(C), Builder.findToken(C->getExternLoc()),
+        Builder.findToken(C->getTemplateKeywordLoc()), Builder.getDeclRange(C));
+    return true;
+  }
+
+  bool WalkUpFromTemplateDecl(TemplateDecl *S) {
+    foldTemplateDeclaration(
+        Builder.getDeclRange(S),
+        Builder.findToken(S->getTemplateParameters()->getTemplateLoc()),
+        Builder.getDeclRange(S->getTemplatedDecl()));
     return true;
   }
 
   bool WalkUpFromTagDecl(TagDecl *C) {
     // FIXME: build the ClassSpecifier node.
-    if (C->isFreeStanding()) {
-      // Class is a declaration specifier and needs a spanning declaration node.
-      Builder.foldNode(Builder.getRange(C),
-                       new (allocator()) syntax::SimpleDeclaration);
+    if (!C->isFreeStanding()) {
+      assert(C->getNumTemplateParameterLists() == 0);
       return true;
     }
+    // Class is a declaration specifier and needs a spanning declaration node.
+    auto DeclarationRange = Builder.getDeclRange(C);
+    Builder.foldNode(DeclarationRange,
+                     new (allocator()) syntax::SimpleDeclaration);
+
+    // Build TemplateDeclaration nodes if we had template parameters.
+    auto ConsumeTemplateParameters = [&](const TemplateParameterList &L) {
+      const auto *TemplateKW = Builder.findToken(L.getTemplateLoc());
+      auto R = llvm::makeArrayRef(TemplateKW, DeclarationRange.end());
+      foldTemplateDeclaration(R, TemplateKW, DeclarationRange);
+
+      DeclarationRange = R;
+    };
+    if (auto *S = llvm::dyn_cast<ClassTemplatePartialSpecializationDecl>(C))
+      ConsumeTemplateParameters(*S->getTemplateParameters());
+    for (unsigned I = C->getNumTemplateParameterLists(); 0 < I; --I)
+      ConsumeTemplateParameters(*C->getTemplateParameterList(I - 1));
     return true;
   }
 
   bool WalkUpFromTranslationUnitDecl(TranslationUnitDecl *TU) {
-    // (!) we do not want to call VisitDecl(), the declaration for translation
+    // We do not want to call VisitDecl(), the declaration for translation
     // unit is built by finalize().
     return true;
   }
@@ -401,10 +633,10 @@ public:
     if (auto *DS = llvm::dyn_cast_or_null<DeclStmt>(S)) {
       // We want to consume the semicolon, make sure SimpleDeclaration does not.
       for (auto *D : DS->decls())
-        Builder.noticeDeclaratorWithoutSemicolon(D);
+        Builder.noticeDeclWithoutSemicolon(D);
     } else if (auto *E = llvm::dyn_cast_or_null<Expr>(S)) {
-      // (!) do not recurse into subexpressions.
-      // we do not have syntax trees for expressions yet, so we only want to see
+      // Do not recurse into subexpressions.
+      // We do not have syntax trees for expressions yet, so we only want to see
       // the first top-level expression.
       return WalkUpFromExpr(E->IgnoreImplicit());
     }
@@ -420,7 +652,7 @@ public:
   }
 
   bool WalkUpFromNamespaceDecl(NamespaceDecl *S) {
-    auto Tokens = Builder.getRange(S);
+    auto Tokens = Builder.getDeclRange(S);
     if (Tokens.front().kind() == tok::coloncolon) {
       // Handle nested namespace definitions. Those start at '::' token, e.g.
       // namespace a^::b {}
@@ -428,6 +660,62 @@ public:
       return true;
     }
     Builder.foldNode(Tokens, new (allocator()) syntax::NamespaceDefinition);
+    return true;
+  }
+
+  bool TraverseParenTypeLoc(ParenTypeLoc L) {
+    // We reverse order of traversal to get the proper syntax structure.
+    if (!WalkUpFromParenTypeLoc(L))
+      return false;
+    return TraverseTypeLoc(L.getInnerLoc());
+  }
+
+  bool WalkUpFromParenTypeLoc(ParenTypeLoc L) {
+    Builder.markChildToken(L.getLParenLoc(), syntax::NodeRole::OpenParen);
+    Builder.markChildToken(L.getRParenLoc(), syntax::NodeRole::CloseParen);
+    Builder.foldNode(Builder.getRange(L.getLParenLoc(), L.getRParenLoc()),
+                     new (allocator()) syntax::ParenDeclarator);
+    return true;
+  }
+
+  // Declarator chunks, they are produced by type locs and some clang::Decls.
+  bool WalkUpFromArrayTypeLoc(ArrayTypeLoc L) {
+    Builder.markChildToken(L.getLBracketLoc(), syntax::NodeRole::OpenParen);
+    Builder.markExprChild(L.getSizeExpr(),
+                          syntax::NodeRole::ArraySubscript_sizeExpression);
+    Builder.markChildToken(L.getRBracketLoc(), syntax::NodeRole::CloseParen);
+    Builder.foldNode(Builder.getRange(L.getLBracketLoc(), L.getRBracketLoc()),
+                     new (allocator()) syntax::ArraySubscript);
+    return true;
+  }
+
+  bool WalkUpFromFunctionTypeLoc(FunctionTypeLoc L) {
+    Builder.markChildToken(L.getLParenLoc(), syntax::NodeRole::OpenParen);
+    for (auto *P : L.getParams())
+      Builder.markDelayedChild(
+          Builder.getDeclRange(P),
+          syntax::NodeRole::ParametersAndQualifiers_parameter);
+    Builder.markChildToken(L.getRParenLoc(), syntax::NodeRole::CloseParen);
+    Builder.foldNode(Builder.getRange(L.getLParenLoc(), L.getEndLoc()),
+                     new (allocator()) syntax::ParametersAndQualifiers);
+    return true;
+  }
+
+  bool WalkUpFromFunctionProtoTypeLoc(FunctionProtoTypeLoc L) {
+    if (!L.getTypePtr()->hasTrailingReturn())
+      return WalkUpFromFunctionTypeLoc(L);
+
+    auto TrailingReturnTokens = BuildTrailingReturn(L);
+    // Finish building the node for parameters.
+    Builder.markChild(TrailingReturnTokens,
+                      syntax::NodeRole::ParametersAndQualifiers_trailingReturn);
+    return WalkUpFromFunctionTypeLoc(L);
+  }
+
+  bool WalkUpFromMemberPointerTypeLoc(MemberPointerTypeLoc L) {
+    auto SR = L.getLocalSourceRange();
+    Builder.foldNode(Builder.getRange(SR.getBegin(), SR.getEnd()),
+                     new (allocator()) syntax::MemberPointer);
     return true;
   }
 
@@ -539,7 +827,7 @@ public:
   }
 
   bool WalkUpFromEmptyDecl(EmptyDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::EmptyDeclaration);
     return true;
   }
@@ -549,54 +837,115 @@ public:
                           syntax::NodeRole::StaticAssertDeclaration_condition);
     Builder.markExprChild(S->getMessage(),
                           syntax::NodeRole::StaticAssertDeclaration_message);
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::StaticAssertDeclaration);
     return true;
   }
 
   bool WalkUpFromLinkageSpecDecl(LinkageSpecDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::LinkageSpecificationDeclaration);
     return true;
   }
 
   bool WalkUpFromNamespaceAliasDecl(NamespaceAliasDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::NamespaceAliasDefinition);
     return true;
   }
 
   bool WalkUpFromUsingDirectiveDecl(UsingDirectiveDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::UsingNamespaceDirective);
     return true;
   }
 
   bool WalkUpFromUsingDecl(UsingDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::UsingDeclaration);
     return true;
   }
 
   bool WalkUpFromUnresolvedUsingValueDecl(UnresolvedUsingValueDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::UsingDeclaration);
     return true;
   }
 
   bool WalkUpFromUnresolvedUsingTypenameDecl(UnresolvedUsingTypenameDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::UsingDeclaration);
     return true;
   }
 
   bool WalkUpFromTypeAliasDecl(TypeAliasDecl *S) {
-    Builder.foldNode(Builder.getRange(S),
+    Builder.foldNode(Builder.getDeclRange(S),
                      new (allocator()) syntax::TypeAliasDeclaration);
     return true;
   }
 
 private:
+  /// Returns the range of the built node.
+  llvm::ArrayRef<syntax::Token> BuildTrailingReturn(FunctionProtoTypeLoc L) {
+    assert(L.getTypePtr()->hasTrailingReturn());
+
+    auto ReturnedType = L.getReturnLoc();
+    // Build node for the declarator, if any.
+    auto ReturnDeclaratorRange =
+        getDeclaratorRange(this->Builder.sourceManager(), ReturnedType,
+                           /*Name=*/SourceLocation(),
+                           /*Initializer=*/SourceLocation());
+    llvm::ArrayRef<syntax::Token> ReturnDeclaratorTokens;
+    if (ReturnDeclaratorRange.isValid()) {
+      ReturnDeclaratorTokens = Builder.getRange(
+          ReturnDeclaratorRange.getBegin(), ReturnDeclaratorRange.getEnd());
+      Builder.foldNode(ReturnDeclaratorTokens,
+                       new (allocator()) syntax::SimpleDeclarator);
+    }
+
+    // Build node for trailing return type.
+    auto Return =
+        Builder.getRange(ReturnedType.getBeginLoc(), ReturnedType.getEndLoc());
+    const auto *Arrow = Return.begin() - 1;
+    assert(Arrow->kind() == tok::arrow);
+    auto Tokens = llvm::makeArrayRef(Arrow, Return.end());
+    Builder.markChildToken(Arrow, syntax::NodeRole::TrailingReturnType_arrow);
+    if (!ReturnDeclaratorTokens.empty())
+      Builder.markChild(ReturnDeclaratorTokens,
+                        syntax::NodeRole::TrailingReturnType_declarator);
+    Builder.foldNode(Tokens, new (allocator()) syntax::TrailingReturnType);
+    return Tokens;
+  }
+
+  void
+  foldExplicitTemplateInstantiation(ArrayRef<syntax::Token> Range,
+                                    const syntax::Token *ExternKW,
+                                    const syntax::Token *TemplateKW,
+                                    ArrayRef<syntax::Token> InnerDeclaration) {
+    assert(!ExternKW || ExternKW->kind() == tok::kw_extern);
+    assert(TemplateKW && TemplateKW->kind() == tok::kw_template);
+    Builder.markChildToken(
+        ExternKW,
+        syntax::NodeRole::ExplicitTemplateInstantiation_externKeyword);
+    Builder.markChildToken(TemplateKW, syntax::NodeRole::IntroducerKeyword);
+    Builder.markChild(
+        InnerDeclaration,
+        syntax::NodeRole::ExplicitTemplateInstantiation_declaration);
+    Builder.foldNode(Range,
+                     new (allocator()) syntax::ExplicitTemplateInstantiation);
+  }
+
+  void foldTemplateDeclaration(ArrayRef<syntax::Token> Range,
+                               const syntax::Token *TemplateKW,
+                               ArrayRef<syntax::Token> TemplatedDeclaration) {
+    assert(TemplateKW && TemplateKW->kind() == tok::kw_template);
+    Builder.markChildToken(TemplateKW, syntax::NodeRole::IntroducerKeyword);
+    Builder.markMaybeDelayedChild(
+        TemplatedDeclaration,
+        syntax::NodeRole::TemplateDeclaration_declaration);
+    Builder.foldNode(Range, new (allocator()) syntax::TemplateDeclaration);
+  }
+
   /// A small helper to save some typing.
   llvm::BumpPtrAllocator &allocator() { return Builder.allocator(); }
 
@@ -610,15 +959,14 @@ void syntax::TreeBuilder::foldNode(llvm::ArrayRef<syntax::Token> Range,
   Pending.foldChildren(Arena, Range, New);
 }
 
-void syntax::TreeBuilder::noticeDeclaratorRange(
-    llvm::ArrayRef<syntax::Token> Range) {
+void syntax::TreeBuilder::noticeDeclRange(llvm::ArrayRef<syntax::Token> Range) {
   if (Pending.extendDelayedFold(Range))
     return;
   Pending.foldChildrenDelayed(Range,
                               new (allocator()) syntax::SimpleDeclaration);
 }
 
-void syntax::TreeBuilder::noticeDeclaratorWithoutSemicolon(Decl *D) {
+void syntax::TreeBuilder::noticeDeclWithoutSemicolon(Decl *D) {
   DeclsWithoutSemicolons.insert(D);
 }
 
@@ -626,6 +974,27 @@ void syntax::TreeBuilder::markChildToken(SourceLocation Loc, NodeRole Role) {
   if (Loc.isInvalid())
     return;
   Pending.assignRole(*findToken(Loc), Role);
+}
+
+void syntax::TreeBuilder::markChildToken(const syntax::Token *T, NodeRole R) {
+  if (!T)
+    return;
+  Pending.assignRole(*T, R);
+}
+
+void syntax::TreeBuilder::markChild(llvm::ArrayRef<syntax::Token> Range,
+                                    NodeRole R) {
+  Pending.assignRole(Range, R);
+}
+
+void syntax::TreeBuilder::markDelayedChild(llvm::ArrayRef<syntax::Token> Range,
+                                           NodeRole R) {
+  Pending.assignRoleDelayed(Range, R);
+}
+
+void syntax::TreeBuilder::markMaybeDelayedChild(
+    llvm::ArrayRef<syntax::Token> Range, NodeRole R) {
+  Pending.assignRoleMaybeDelayed(Range, R);
 }
 
 void syntax::TreeBuilder::markStmtChild(Stmt *Child, NodeRole Role) {
@@ -638,7 +1007,7 @@ void syntax::TreeBuilder::markStmtChild(Stmt *Child, NodeRole Role) {
   if (auto *E = dyn_cast<Expr>(Child)) {
     Pending.assignRole(getExprRange(E),
                        NodeRole::ExpressionStatement_expression);
-    // (!) 'getRange(Stmt)' ensures this already covers a trailing semicolon.
+    // 'getRange(Stmt)' ensures this already covers a trailing semicolon.
     Pending.foldChildren(Arena, Range,
                          new (allocator()) syntax::ExpressionStatement);
   }
@@ -653,6 +1022,8 @@ void syntax::TreeBuilder::markExprChild(Expr *Child, NodeRole Role) {
 }
 
 const syntax::Token *syntax::TreeBuilder::findToken(SourceLocation L) const {
+  if (L.isInvalid())
+    return nullptr;
   auto It = LocationToToken.find(L.getRawEncoding());
   assert(It != LocationToToken.end());
   return It->second;

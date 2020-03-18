@@ -22,13 +22,13 @@ class PredicateControl {
 }
 
 def HasTC161         : Predicate<"Subtarget->hasTC161Ops()">,
-                       AssemblerPredicate<"HasTC161Ops", "tc161">;
+                       AssemblerPredicate<(all_of HasTC161Ops), "tc161">;
 
 def HasTC162         : Predicate<"Subtarget->hasTC162Ops()">,
-                       AssemblerPredicate<"HasTC162Ops", "tc162">;
+                       AssemblerPredicate<(all_of HasTC162Ops), "tc162">;
 
 def HasTC18          : Predicate<"Subtarget->hasTC18Ops()">,
-                       AssemblerPredicate<"HasTC18Ops", "tc18">;
+                       AssemblerPredicate<(all_of HasTC18Ops), "tc18">;
 
 include "TriCoreInstrFormats.td"
 include "TriCoreInstrInfoOperands.td"

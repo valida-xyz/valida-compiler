@@ -109,10 +109,7 @@ namespace PR18152 {
 }
 
 template<typename T> void stmt_expr_1() {
-  // GCC doesn't check this: it appears to treat statement-expressions as being
-  // value-dependent if they appear in a dependent context, regardless of their
-  // contents.
-  static_assert( ({ false; }), "" ); // expected-error {{failed}}
+  static_assert( ({ false; }), "" );
 }
 void stmt_expr_2() {
   static_assert( ({ false; }), "" ); // expected-error {{failed}}
@@ -132,7 +129,7 @@ namespace PR45083 {
   template<typename> void f() {
     decltype(({})) x; // expected-error {{incomplete type}}
   }
-  template void f<int>();
+  template void f<int>(); // expected-note {{instantiation of}}
 
   template<typename> auto g() {
     auto c = [](auto, int) -> decltype(({})) {};
@@ -145,4 +142,34 @@ namespace PR45083 {
 
   void h(auto a, decltype(g<char>())*) {} // expected-note {{previous}}
   void h(auto a, void*) {} // expected-error {{redefinition}}
+
+  void i(auto a) {
+    [](auto a, int = ({decltype(a) i; i * 2;})){}(a); // expected-error {{no matching function}} expected-note {{substitution failure}}
+  }
+  void use_i() {
+    i(0);
+    i((void*)0); // expected-note {{instantiation of}}
+  }
+}
+
+namespace BindingInStmtExpr {
+  template<class ...Ts> struct overload : Ts... {
+    overload(Ts ...ts) : Ts(decltype(ts)(ts))... {}
+    using Ts::operator()...;
+  };
+
+  template<int> struct N {};
+
+  template<class T> auto num_bindings() {
+    auto f0 = [](auto t, unsigned) { return N<0>(); };
+    auto f1 = [](auto t, int) -> decltype(({ auto [_1] = t; N<1>(); })) { return {}; };
+    auto f2 = [](auto t, int) -> decltype(({ auto [_1, _2] = t; N<2>(); })) { return {}; };
+    auto f3 = [](auto t, int) -> decltype(({ auto [_1, _2, _3] = t; N<3>(); })) { return {}; };
+    return decltype(overload(f0, f1, f2, f3)(T(), 0))();
+  }
+
+  struct T { int a; int b; };
+  // Make sure we get a correct, non-dependent type back.
+  using U = decltype(num_bindings<T>()); // expected-note {{previous}}
+  using U = N<3>; // expected-error-re {{type alias redefinition with different types ('N<3>' vs {{.*}}N<2>}}
 }

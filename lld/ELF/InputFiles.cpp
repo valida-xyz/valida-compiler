@@ -138,8 +138,10 @@ static bool isCompatible(InputFile *file) {
       return true;
   }
 
-  if (!config->emulation.empty()) {
-    error(toString(file) + " is incompatible with " + config->emulation);
+  StringRef target =
+      !config->bfdname.empty() ? config->bfdname : config->emulation;
+  if (!target.empty()) {
+    error(toString(file) + " is incompatible with " + target);
     return false;
   }
 
@@ -148,8 +150,11 @@ static bool isCompatible(InputFile *file) {
     existing = objectFiles[0];
   else if (!sharedFiles.empty())
     existing = sharedFiles[0];
-  else
+  else if (!bitcodeFiles.empty())
     existing = bitcodeFiles[0];
+  else
+    llvm_unreachable("Must have -m, OUTPUT_FORMAT or existing input file to "
+                     "determine target emulation");
 
   error(toString(file) + " is incompatible with " + toString(existing));
   return false;
@@ -264,9 +269,17 @@ std::string InputFile::getSrcMsg(const Symbol &sym, InputSectionBase &sec,
   }
 }
 
-template <class ELFT> void ObjFile<ELFT>::initializeDwarf() {
-  dwarf = make<DWARFCache>(std::make_unique<DWARFContext>(
-      std::make_unique<LLDDwarfObj<ELFT>>(this)));
+template <class ELFT> DWARFCache *ObjFile<ELFT>::getDwarf() {
+  llvm::call_once(initDwarf, [this]() {
+    dwarf = std::make_unique<DWARFCache>(std::make_unique<DWARFContext>(
+        std::make_unique<LLDDwarfObj<ELFT>>(this), "",
+        [&](Error err) { warn(getName() + ": " + toString(std::move(err))); },
+        [&](Error warning) {
+          warn(getName() + ": " + toString(std::move(warning)));
+        }));
+  });
+
+  return dwarf.get();
 }
 
 // Returns the pair of file name and line number describing location of data
@@ -274,9 +287,7 @@ template <class ELFT> void ObjFile<ELFT>::initializeDwarf() {
 template <class ELFT>
 Optional<std::pair<std::string, unsigned>>
 ObjFile<ELFT>::getVariableLoc(StringRef name) {
-  llvm::call_once(initDwarfLine, [this]() { initializeDwarf(); });
-
-  return dwarf->getVariableLoc(name);
+  return getDwarf()->getVariableLoc(name);
 }
 
 // Returns source line information for a given offset
@@ -284,8 +295,6 @@ ObjFile<ELFT>::getVariableLoc(StringRef name) {
 template <class ELFT>
 Optional<DILineInfo> ObjFile<ELFT>::getDILineInfo(InputSectionBase *s,
                                                   uint64_t offset) {
-  llvm::call_once(initDwarfLine, [this]() { initializeDwarf(); });
-
   // Detect SectionIndex for specified section.
   uint64_t sectionIndex = object::SectionedAddress::UndefSection;
   ArrayRef<InputSectionBase *> sections = s->file->getSections();
@@ -296,7 +305,7 @@ Optional<DILineInfo> ObjFile<ELFT>::getDILineInfo(InputSectionBase *s,
     }
   }
 
-  return dwarf->getDILineInfo(offset, sectionIndex);
+  return getDwarf()->getDILineInfo(offset, sectionIndex);
 }
 
 ELFFileBase::ELFFileBase(Kind k, MemoryBufferRef mb) : InputFile(k, mb) {

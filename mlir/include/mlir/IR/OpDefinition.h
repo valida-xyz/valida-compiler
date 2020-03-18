@@ -870,16 +870,6 @@ public:
   }
 };
 
-/// This class adds property that the operation has no side effects.
-template <typename ConcreteType>
-class HasNoSideEffect : public TraitBase<ConcreteType, HasNoSideEffect> {
-public:
-  static AbstractOperation::OperationProperties getTraitProperties() {
-    return static_cast<AbstractOperation::OperationProperties>(
-        OperationProperty::NoSideEffect);
-  }
-};
-
 /// This class verifies that all operands of the specified op have a float type,
 /// a vector thereof, or a tensor thereof.
 template <typename ConcreteType>
@@ -909,6 +899,25 @@ class SameTypeOperands : public TraitBase<ConcreteType, SameTypeOperands> {
 public:
   static LogicalResult verifyTrait(Operation *op) {
     return impl::verifySameTypeOperands(op);
+  }
+};
+
+/// This class provides the API for a sub-set of ops that are known to be
+/// constant-like. These are non-side effecting operations with one result and
+/// zero operands that can always be folded to a specific attribute value.
+template <typename ConcreteType>
+class ConstantLike : public TraitBase<ConcreteType, ConstantLike> {
+public:
+  static LogicalResult verifyTrait(Operation *op) {
+    static_assert(ConcreteType::template hasTrait<OneResult>(),
+                  "expected operation to produce one result");
+    static_assert(ConcreteType::template hasTrait<ZeroOperands>(),
+                  "expected operation to take zero operands");
+    // TODO: We should verify that the operation can always be folded, but this
+    // requires that the attributes of the op already be verified. We should add
+    // support for verifying traits "after" the operation to enable this use
+    // case.
+    return success();
   }
 };
 
@@ -1286,6 +1295,10 @@ private:
   /// A pointer to the impl concept object.
   Concept *impl;
 };
+
+//===----------------------------------------------------------------------===//
+// Common Operation Folders/Parsers/Printers
+//===----------------------------------------------------------------------===//
 
 // These functions are out-of-line implementations of the methods in UnaryOp and
 // BinaryOp, which avoids them being template instantiated/duplicated.

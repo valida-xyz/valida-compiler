@@ -1243,4 +1243,36 @@ def int_arm_mve_vqmovn_predicated: Intrinsic<[llvm_anyvector_ty],
     llvm_i32_ty /* unsigned output */, llvm_i32_ty /* unsigned input */,
     llvm_i32_ty /* top half */, llvm_anyvector_ty /* pred */], [IntrNoMem]>;
 
+def int_arm_mve_fma_predicated: Intrinsic<[llvm_anyvector_ty],
+   [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* mult op #2 */,
+    LLVMMatchType<0> /* addend */, llvm_anyvector_ty /* pred */], [IntrNoMem]>;
+def int_arm_mve_vmla_n_predicated: Intrinsic<[llvm_anyvector_ty],
+   [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* addend */,
+    llvm_i32_ty /* mult op #2 (scalar) */, llvm_anyvector_ty /* pred */],
+   [IntrNoMem]>;
+def int_arm_mve_vmlas_n_predicated: Intrinsic<[llvm_anyvector_ty],
+   [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* mult op #2 */,
+    llvm_i32_ty /* addend (scalar) */, llvm_anyvector_ty /* pred */],
+   [IntrNoMem]>;
+
+defm int_arm_mve_vqdmlah: MVEPredicated<[llvm_anyvector_ty],
+  [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* addend */,
+   llvm_i32_ty /* mult op #2 (scalar) */]>;
+defm int_arm_mve_vqrdmlah: MVEPredicated<[llvm_anyvector_ty],
+  [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* addend */,
+   llvm_i32_ty /* mult op #2 (scalar) */]>;
+defm int_arm_mve_vqdmlash: MVEPredicated<[llvm_anyvector_ty],
+  [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* mult op #2 */,
+   llvm_i32_ty /* addend (scalar) */]>;
+defm int_arm_mve_vqrdmlash: MVEPredicated<[llvm_anyvector_ty],
+  [LLVMMatchType<0> /* mult op #1 */, LLVMMatchType<0> /* mult op #2 */,
+   llvm_i32_ty /* addend (scalar) */]>;
+
+// CDE (Custom Datapath Extension)
+
+def int_arm_cde_cx1: Intrinsic<
+  [llvm_i32_ty],
+  [llvm_i32_ty /* coproc */, llvm_i32_ty /* imm */],
+  [IntrNoMem, ImmArg<0>, ImmArg<1>]>;
+
 } // end TargetPrefix

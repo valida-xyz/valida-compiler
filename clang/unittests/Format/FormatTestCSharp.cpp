@@ -527,31 +527,37 @@ TEST_F(FormatTestCSharp, CSharpObjectInitializers) {
 
   verifyFormat(R"(//
 Shape[] shapes = new[] {
-    new Circle {
-        Radius = 2.7281,
-        Colour = Colours.Red,
-    },
-    new Square {
-        Side = 101.1,
-        Colour = Colours.Yellow,
-    },
+  new Circle {
+    Radius = 2.7281,
+    Colour = Colours.Red,
+  },
+  new Square {
+    Side = 101.1,
+    Colour = Colours.Yellow,
+  },
 };)",
                Style);
 
   // Omitted final `,`s will change the formatting.
   verifyFormat(R"(//
 Shape[] shapes = new[] { new Circle { Radius = 2.7281, Colour = Colours.Red },
-                         new Square {
-                             Side = 101.1,
-                             Colour = Colours.Yellow,
-                         } };)",
+                         new Square { Side = 101.1, Colour = Colours.Yellow } };)",
                Style);
 
   // Lambdas can be supplied as initialiser arguments.
   verifyFormat(R"(//
 private Transformer _transformer = new X.Y {
-    Filler = (Shape shape) => { return new Transform.Fill(shape, RED); },
-    Scaler = (Shape shape) => { return new Transform.Resize(shape, 0.1); },
+  Filler = (Shape shape) => { return new Transform.Fill(shape, RED); },
+  Scaler = (Shape shape) => { return new Transform.Resize(shape, 0.1); },
+};)",
+               Style);
+
+  // Dictionary initialisation.
+  verifyFormat(R"(//
+var myDict = new Dictionary<string, string> {
+  ["name"] = _donald,
+  ["age"] = Convert.ToString(DateTime.Today.Year - 1934),
+  ["type"] = _duck,
 };)",
                Style);
 }
@@ -621,6 +627,8 @@ TEST_F(FormatTestCSharp, CSharpSpaces) {
   verifyFormat(R"(taskContext.Factory.Run(async () => doThing(args);)", Style);
   verifyFormat(R"(catch (TestException) when (innerFinallyExecuted))", Style);
   verifyFormat(R"(private float[,] Values;)", Style);
+  verifyFormat(R"(Result this[Index x] => Foo(x);)", Style);
+  verifyFormat(R"(class ItemFactory<T> where T : new() {})", Style);
 
   Style.SpacesInSquareBrackets = true;
   verifyFormat(R"(private float[ , ] Values;)", Style);
@@ -644,14 +652,25 @@ public class A {
 
   verifyFormat(R"(int?[] arr = new int?[10];)",
                Style); // An array of a nullable type.
+
+  verifyFormat(R"(var x = (int?)y;)", Style); // Cast to a nullable type.
+
+  verifyFormat(R"(var x = new MyContainer<int?>();)", Style); // Generics.
 }
 
 TEST_F(FormatTestCSharp, CSharpArraySubscripts) {
   FormatStyle Style = getGoogleStyle(FormatStyle::LK_CSharp);
 
   // Do not format array subscript operators as attributes.
-  verifyFormat(R"(if (someThings[index].Contains(myThing)) {)", Style);
-  verifyFormat(R"(if (someThings[i][j][k].Contains(myThing)) {)", Style);
+  verifyFormat(R"(//
+if (someThings[index].Contains(myThing)) {
+})",
+               Style);
+
+  verifyFormat(R"(//
+if (someThings[i][j][k].Contains(myThing)) {
+})",
+               Style);
 }
 
 } // namespace format

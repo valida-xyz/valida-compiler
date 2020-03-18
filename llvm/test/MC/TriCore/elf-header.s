@@ -1,7 +1,7 @@
 # RUN: llvm-mc %s -filetype=obj -triple=tricore | llvm-readobj -h \
 # RUN:     | FileCheck -check-prefix=TC %s
 
-# TC: Format: ELF32-tricore
+# TC: Format: elf32-tricore
 # TC: Arch: tricore
 # TC: AddressSize: 32bit
 # TC: ElfHeader {

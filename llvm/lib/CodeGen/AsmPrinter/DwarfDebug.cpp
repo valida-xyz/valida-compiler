@@ -613,12 +613,15 @@ static void addToFwdRegWorklist(FwdRegWorklist &Worklist, unsigned Reg,
     // instructions we may have already created an expression for the
     // parameter when walking through the instructions. Append that to the
     // new expression.
+    std::vector<uint64_t> ParamElts = Param.Expr->getElements().vec();
+    // Avoid multiple DW_OP_stack_values.
+    if (Expr->isImplicit() && Param.Expr->isImplicit())
+      erase_if(ParamElts,
+               [](uint64_t Op) { return Op == dwarf::DW_OP_stack_value; });
     const DIExpression *CombinedExpr =
         (Param.Expr->getNumElements() > 0)
-            ? DIExpression::append(Expr, Param.Expr->getElements())
+            ? DIExpression::append(Expr, ParamElts)
             : Expr;
-    assert(CombinedExpr->isValid() && "Combined debug expression is invalid");
-
     ParamsForFwdReg.push_back({Param.ParamReg, CombinedExpr});
   }
 }
@@ -921,6 +924,9 @@ void DwarfDebug::finishUnitAttributes(const DICompileUnit *DIUnit,
   StringRef SysRoot = DIUnit->getSysRoot();
   if (!SysRoot.empty())
     NewCU.addString(Die, dwarf::DW_AT_LLVM_sysroot, SysRoot);
+  StringRef SDK = DIUnit->getSDK();
+  if (!SDK.empty())
+    NewCU.addString(Die, dwarf::DW_AT_APPLE_sdk, SDK);
 
   // Add DW_str_offsets_base to the unit DIE, except for split units.
   if (useSegmentedStringOffsetsTable() && !useSplitDwarf())

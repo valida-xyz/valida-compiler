@@ -27,10 +27,10 @@
 //===----------------------------------------------------------------------===//
 
 def Is16BitAllowed : Predicate<"Subtarget->isAllow16BitInst()">,
-                     AssemblerPredicate<"Allow16BitInstructions", "16bit">;
+                     AssemblerPredicate<(all_of Allow16BitInstructions), "16bit">;
 
 def Is32BitAllowed : Predicate<"Subtarget->isAllow32BitInst()">,
-                     AssemblerPredicate<"Allow32BitInstructions", "32bit">;
+                     AssemblerPredicate<(all_of Allow32BitInstructions), "32bit">;
 
 //===----------------------------------------------------------------------===//
 // Describe TriCore instructions formats
