@@ -186,6 +186,22 @@ body: |
 ...
 
 ---
+
+name:            test_smulh
+legalized:       true
+registers:
+  - { id: 0, class: _ }
+  - { id: 1, class: _ }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: test_smulh
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[SMULH:%[0-9]+]]:dataregbank(s32) = G_SMULH [[COPY]], [[COPY]]
+    %0(s32) = COPY $d4
+    %1(s32) = G_SMULH %0, %0
+...
+
+---
 name:            test_sdiv
 legalized:       true
 registers:
