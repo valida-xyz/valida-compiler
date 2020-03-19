@@ -55,3 +55,34 @@ body:             |
     %1:_(p0) = G_INTTOPTR %0(s32)
     $a2 = COPY %1(p0)
 ...
+
+---
+name:            test_int_to_ptr_s64
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_int_to_ptr_s64
+    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY]](s64)
+    ; CHECK: [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[TRUNC]](s32)
+    ; CHECK: $a2 = COPY [[INTTOPTR]](p0)
+    %0:_(s64) = COPY $e4
+    %1:_(p0) = G_INTTOPTR %0(s64)
+    $a2 = COPY %1(p0)
+...
+
+---
+name:            test_int_to_ptr_s16
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_int_to_ptr_s16
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d2
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY1]], [[C]]
+    ; CHECK: [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[AND]](s32)
+    ; CHECK: $a2 = COPY [[INTTOPTR]](p0)
+    %0:_(s32) = COPY $d2
+    %1:_(s16) = G_TRUNC %0(s32)
+    %2:_(p0) = G_INTTOPTR %1(s16)
+    $a2 = COPY %2(p0)
+...
