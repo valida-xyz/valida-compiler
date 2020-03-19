@@ -1,0 +1,17 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -global-isel-abort=2 -pass-remarks-missed='gisel*' -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+# XFAIL: *
+
+# ERROR-NOT: remark: <unknown>:0:0: unable to legalize instruction: %2:_(s64), %3:_(s1) = G_USUBO %0:_, %1:_ (in function: test_usubo_s64)
+
+---
+name:            test_usubo_s64
+body:             |
+  bb.0.entry:
+
+    %0:_(s64) = COPY $e4
+    %1:_(s64) = COPY $e6
+    %2:_(s64), %3:_(s1) = G_USUBO %0, %1
+    %4:_(s64) = G_ANYEXT %3
+    $e4 = COPY %2(s64)
+    $e6 = COPY %4(s64)
+...

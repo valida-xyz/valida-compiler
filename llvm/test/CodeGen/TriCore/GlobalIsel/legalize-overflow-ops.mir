@@ -18,6 +18,39 @@ body:             |
 ...
 
 ---
+name:            test_uaddo_s16
+body:             |
+  bb.0.entry:
+
+    ; CHECK-LABEL: name: test_uaddo_s16
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[C]]
+    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[AND1:%[0-9]+]]:_(s32) = G_AND [[COPY3]], [[C1]]
+    ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[AND]], [[AND1]]
+    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[AND2:%[0-9]+]]:_(s32) = G_AND [[ADD]], [[C2]]
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(ne), [[ADD]](s32), [[AND2]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[ADD]](s32)
+    ; CHECK: [[COPY5:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
+    ; CHECK: $d4 = COPY [[COPY4]](s32)
+    ; CHECK: $d5 = COPY [[COPY5]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s16) = G_TRUNC %0
+    %3:_(s16) = G_TRUNC %1
+    %4:_(s16), %5:_(s1) = G_UADDO %2, %3
+    %6:_(s32) = G_ANYEXT %4
+    %7:_(s32) = G_ANYEXT %5
+    $d4 = COPY %6(s32)
+    $d5 = COPY %7(s32)
+...
+
+---
 name:            test_uadde
 body:             |
   bb.0.entry:
@@ -49,6 +82,39 @@ body:             |
     %2:_(s32), %3:_(s1) = G_USUBO %0, %1
     $d2 = COPY %2(s32)
 
+...
+
+---
+name:            test_usubo_s16
+body:             |
+  bb.0.entry:
+
+    ; CHECK-LABEL: name: test_usubo_s16
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[C]]
+    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: [[AND1:%[0-9]+]]:_(s32) = G_AND [[COPY3]], [[C1]]
+    ; CHECK: [[SUB:%[0-9]+]]:_(s32) = G_SUB [[AND]], [[AND1]]
+    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[AND2:%[0-9]+]]:_(s32) = G_AND [[SUB]], [[C2]]
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(ne), [[SUB]](s32), [[AND2]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[SUB]](s32)
+    ; CHECK: [[COPY5:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
+    ; CHECK: $d4 = COPY [[COPY4]](s32)
+    ; CHECK: $d5 = COPY [[COPY5]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s16) = G_TRUNC %0
+    %3:_(s16) = G_TRUNC %1
+    %4:_(s16), %5:_(s1) = G_USUBO %2, %3
+    %6:_(s32) = G_ANYEXT %4
+    %7:_(s32) = G_ANYEXT %5
+    $d4 = COPY %6(s32)
+    $d5 = COPY %7(s32)
 ...
 
 ---

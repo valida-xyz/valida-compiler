@@ -224,8 +224,13 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // Overflow Ops
 
   // All variants of add/sub /w carry must produce an s32 result and an s1 carry
-  getActionDefinitionsBuilder({G_UADDE, G_USUBE, G_UADDO, G_USUBO})
-      .legalFor({{s32, s1}});
+  getActionDefinitionsBuilder({G_UADDE, G_USUBE}).legalFor({{s32, s1}});
+
+  // Add/sub with overflow must produce an s32 result and an s1 carry, and
+  // they need to be clamped to s32
+  getActionDefinitionsBuilder({G_UADDO, G_USUBO})
+      .legalFor({{s32, s1}})
+      .clampScalar(0, s32, s32);
 
   // G_UMULH/G_SMULH is a legalization artifact which has the correct type already
   getActionDefinitionsBuilder({G_UMULH, G_SMULH}).legalFor({s32});
