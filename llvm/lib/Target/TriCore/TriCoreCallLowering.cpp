@@ -67,10 +67,11 @@ struct IncomingArgHandler : public CallLowering::ValueHandler {
 
   void assignValueToAddress(Register ValVReg, Register Addr, uint64_t Size,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
-    // FIXME: Get alignment
+    MachineFunction &MF = MIRBuilder.getMF();
+    unsigned Align = inferAlignmentFromPtrInfo(MF, MPO);
     auto MMO = MIRBuilder.getMF().getMachineMemOperand(
         MPO, MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant, Size,
-        1);
+        Align);
     MIRBuilder.buildLoad(ValVReg, Addr, *MMO);
   }
 
@@ -147,8 +148,12 @@ struct OutgoingValueHandler : public CallLowering::ValueHandler {
 
   void assignValueToAddress(Register ValVReg, Register Addr, uint64_t Size,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
+    MachineFunction &MF = MIRBuilder.getMF();
+    const TargetFrameLowering *TFL = MF.getSubtarget().getFrameLowering();
+    unsigned Align = MinAlign(TFL->getStackAlignment(), MPO.Offset);
+
     auto MMO = MIRBuilder.getMF().getMachineMemOperand(
-        MPO, MachineMemOperand::MOStore, Size, 1);
+        MPO, MachineMemOperand::MOStore, Size, Align);
     MIRBuilder.buildStore(ValVReg, Addr, *MMO);
   }
 

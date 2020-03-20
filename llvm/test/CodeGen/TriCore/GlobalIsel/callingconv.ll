@@ -284,9 +284,9 @@ define i32 @args_stack1(i32 %d4, i32 %d5, i32 %d6, i32 %d7, i32 %stack1, i64 %st
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
   ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY $d7
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s64) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 8 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s64) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 8 from %fixed-stack.0, align 4)
   ; CHECK:   $d2 = COPY [[LOAD]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
 entry:
@@ -302,11 +302,11 @@ define i32 @args_stack2(i32 %d4, i32 %d5, i32 %d6, i32 %d7, [2 x i32] %stack1, i
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
   ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY $d7
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.2
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.2, align 1)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.2, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.1)
   ; CHECK:   [[FRAME_INDEX2:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 4 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 4 from %fixed-stack.0, align 8)
   ; CHECK:   $d2 = COPY [[LOAD]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
 entry:
@@ -322,9 +322,9 @@ define i32 @args_stack3(i32 %d4, i32 %d5, i32 %d6, [2 x i32] %stack1, i32 %d7) {
   ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.0)
   ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY $d7
   ; CHECK:   $d2 = COPY [[LOAD]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
@@ -346,9 +346,9 @@ define i32* @args_stack4(i32* %a4, i32 %d4, i32* %a5, i32 %d5, i32* %a6, i32 %d6
   ; CHECK:   [[COPY6:%[0-9]+]]:_(p0) = COPY $a7
   ; CHECK:   [[COPY7:%[0-9]+]]:_(s32) = COPY $d7
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(p0) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(p0) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 4 from %fixed-stack.1, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.0)
   ; CHECK:   $a2 = COPY [[LOAD]](p0)
   ; CHECK:   RET implicit $a11, implicit $a2
 entry:
@@ -364,11 +364,11 @@ define zeroext i8 @args_stack_mixed(i32 %d4, i32 %d5, i32 %d6, i32 %d7, i1 zeroe
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
   ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY $d7
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.2
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(s1) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 1 from %fixed-stack.2)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s1) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 1 from %fixed-stack.2, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s8) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 1 from %fixed-stack.1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s8) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 1 from %fixed-stack.1, align 4)
   ; CHECK:   [[FRAME_INDEX2:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s16) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 2 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s16) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 2 from %fixed-stack.0, align 8)
   ; CHECK:   [[ZEXT:%[0-9]+]]:_(s32) = G_ZEXT [[LOAD1]](s8)
   ; CHECK:   $d2 = COPY [[ZEXT]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
@@ -385,11 +385,11 @@ define half @args_stack_floats_mixed(half %d4, float %d5, double %e6, half %stac
   ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s64) = COPY $e6
   ; CHECK:   [[FRAME_INDEX:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.2
-  ; CHECK:   [[LOAD:%[0-9]+]]:_(s16) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 2 from %fixed-stack.2, align 1)
+  ; CHECK:   [[LOAD:%[0-9]+]]:_(s16) = G_LOAD [[FRAME_INDEX]](p0) :: (invariant load 2 from %fixed-stack.2, align 8)
   ; CHECK:   [[FRAME_INDEX1:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.1
-  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.1, align 1)
+  ; CHECK:   [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[FRAME_INDEX1]](p0) :: (invariant load 4 from %fixed-stack.1)
   ; CHECK:   [[FRAME_INDEX2:%[0-9]+]]:_(p0) = G_FRAME_INDEX %fixed-stack.0
-  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s64) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 8 from %fixed-stack.0, align 1)
+  ; CHECK:   [[LOAD2:%[0-9]+]]:_(s64) = G_LOAD [[FRAME_INDEX2]](p0) :: (invariant load 8 from %fixed-stack.0)
   ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[LOAD]](s16)
   ; CHECK:   $d2 = COPY [[ANYEXT]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
