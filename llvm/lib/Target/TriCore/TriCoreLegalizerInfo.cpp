@@ -593,6 +593,8 @@ bool TriCoreLegalizerInfo::legalizeCustom(MachineInstr &MI,
 bool TriCoreLegalizerInfo::legalizeIntrinsic(
     MachineInstr &MI, MachineIRBuilder &MIRBuilder,
     GISelChangeObserver &Observer) const {
+  MIRBuilder.setInstr(MI);
+
   switch (MI.getIntrinsicID()) {
   case Intrinsic::memcpy:
   case Intrinsic::memset:
@@ -602,6 +604,20 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
       return false;
     MI.eraseFromParent();
     return true;
+  case Intrinsic::vacopy: {
+      MachinePointerInfo MPO;
+
+      // 4 byte alignment is given by the ABI
+      auto Tmp = MIRBuilder.buildLoad(LLT::pointer(0, 32), MI.getOperand(2),
+                                      *MI.getMF()->getMachineMemOperand(
+                                      MPO, MachineMemOperand::MOLoad, 4, 4));
+
+      MIRBuilder.buildStore(Tmp, MI.getOperand(1),
+                            *MI.getMF()->getMachineMemOperand(
+                            MPO, MachineMemOperand::MOStore, 4, 4));
+      MI.eraseFromParent();
+      return true;
+    }
   default:
     break;
   }
