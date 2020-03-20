@@ -55,6 +55,13 @@ static LegalityPredicate isWideScalarExtTruncMemAccess() {
   };
 }
 
+static LegalityPredicate isNotMultipleOfN(unsigned TyIdx, unsigned N) {
+  return [=](const LegalityQuery &Query) -> bool {
+    const unsigned TySize = Query.Types[TyIdx].getSizeInBits();
+    return TySize % N != 0;
+  };
+}
+
 static LegalizeMutation narrowToAlignedMemAccess() {
   return [=](const LegalityQuery &Query) -> std::pair<unsigned, LLT> {
     const unsigned Align = Query.MMODescrs[0].AlignInBits;
@@ -67,6 +74,13 @@ static LegalizeMutation narrowToMemSize() {
     // Use the memory size as size for the new type
     const unsigned MemSize = Query.MMODescrs[0].SizeInBits;
     return std::make_pair(0, LLT::scalar(MemSize));
+  };
+}
+
+static LegalizeMutation widenToNextMultipleOfN(unsigned TyIdx, unsigned N) {
+  return [=](const LegalityQuery &Query) {
+    const unsigned TySize = Query.Types[TyIdx].getSizeInBits();
+    return std::make_pair(TyIdx, LLT::scalar(alignTo(TySize, N)));
   };
 }
 
@@ -498,6 +512,20 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .widenScalarToNextPow2(0)
       .clampScalar(0, s32, s32)
       .maxScalar(1, s32);
+
+  // G_EXTRACT needs to be lowered since type 1 cannot be equal in size to
+  // type 0. This prevents us from modelling it according to our EXTR_ddcc
+  // instruction. A post-legalizer combiner should combine the resulting
+  // lowering code to our target instruction. G_EXTRACT which can be mapped
+  // to a subregister COPY are already handled by the clampScalar narrowing.
+  // FIXME: Support lowering G_EXTRACT with pointer type.
+  getActionDefinitionsBuilder(G_EXTRACT)
+      // G_EXTRACT can only be narrowed if the source type is a multiple of the
+      // narrowing type
+      .widenScalarIf(isNotMultipleOfN(1, 32), widenToNextMultipleOfN(1, 32))
+      .clampScalar(1, s32, s32)
+      // Lower any left overs
+      .lower();
 
   // Branches
 

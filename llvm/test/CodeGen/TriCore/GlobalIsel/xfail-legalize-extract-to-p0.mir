@@ -1,0 +1,15 @@
+# RUN: not --crash llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s
+
+# Currently the legalizer does not support lowering G_EXTRACT with pointer.
+
+---
+name:            extract_p0_s64
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK: Copy Instruction is illegal with mismatching types
+    %0:_(s64) = COPY $e4
+    %1:_(p0) = G_EXTRACT %0, 0
+    $a4 = COPY %1
+...

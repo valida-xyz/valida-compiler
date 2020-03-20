@@ -1,0 +1,29 @@
+# RUN: not --crash llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - 2>&1 | FileCheck %s --check-prefix=ERROR
+
+# There is a bug in the narrowing code for G_EXTRACT where the resulting
+# narrowing cannot be merged back if the extracted segments have different size.
+# This happens for example with the following code:
+#
+# %1:_(s48) = G_EXTRACT %0(s64), 14
+#
+# becomes
+#
+# %2(s32), %3(s32) = G_UNMERGE_VALUES %0(s64)
+# %4(s18) = G_EXTRACT %2(s32), 14
+# %5(s30) = G_EXTRACT %3(s32), 0
+#
+# The lowering code now tries to merge %4 and %5, which results in a crash due
+# to both registers having different sizes.
+
+---
+name:            extract_s48_s64
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; ERROR: type mismatch in input list
+    %0:_(s64) = COPY $e4
+    %1:_(s48) = G_EXTRACT %0, 14
+    %2:_(s32) = G_TRUNC %1(s48)
+    $d4 = COPY %2
+...
