@@ -1,0 +1,81 @@
+# RUN: llc -mtriple=tricore -start-before=greedy -stop-before=tricore-expand-pseudo -verify-machineinstrs %s \
+# RUN:   -o - | FileCheck %s
+
+---
+name:            moveDataRegToUpperContext
+tracksRegLiveness: true
+body:             |
+  bb.1.entry:
+    liveins: $d4
+
+    ; CHECK-LABEL: name: moveDataRegToUpperContext
+
+    ; CHECK:      $d15 = MOV_dd $d4
+    ; CHECK-NEXT: CALL &dummy
+    ; CHECK-NEXT: $d2 = MOV_dd killed $d15
+
+    %0:dataregs = COPY $d4
+    $d4 = COPY %0
+    CALL &dummy_s32, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $d4
+    $d2 = COPY %0
+    RET implicit $a11, implicit $d2
+...
+
+---
+name:            moveExtDataRegToUpperContext
+tracksRegLiveness: true
+body:             |
+  bb.1.entry:
+    liveins: $e4
+    ; CHECK-LABEL: name: moveExtDataRegToUpperContext
+
+    ; CHECK:      $e8 = MOV_edd $d5, $d4
+    ; CHECK-NEXT: CALL &dummy
+    ; CHECK-NEXT: $e2 = MOV_edd killed $d9, killed $d8
+
+    %0:extdataregs = COPY $e4
+    $e4 = COPY %0
+    CALL &dummy_s64, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4
+    $e2 = COPY %0
+    RET implicit $a11, implicit $e2
+...
+
+---
+name:            movAddrRegToUpperContext
+tracksRegLiveness: true
+body:             |
+  bb.1.entry:
+    liveins: $a4
+    ; CHECK-LABEL: name: movAddrRegToUpperContext
+
+    ; CHECK:      $a15 = MOVAA_aa $a4
+    ; CHECK-NEXT: CALL &dummy
+    ; CHECK-NEXT: $a2 = MOVAA_aa killed $a15
+
+    %0:addrregs = COPY $a4
+    $a4 = COPY %0
+    CALL &dummy_p0, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4
+    $a2 = COPY %0
+    RET implicit $a11, implicit $a2
+...
+
+---
+name:            moveExtAddrRegToUpperContext
+tracksRegLiveness: true
+body:             |
+  bb.1.entry:
+    liveins: $p4
+    ; CHECK-LABEL: name: moveExtAddrRegToUpperContext
+
+    ; CHECK:      $a12 = MOVAA_aa $a4
+    ; CHECK:      $a13 = MOVAA_aa $a5
+    ; CHECK-NEXT: CALL &dummy
+    ; CHECK-NEXT: $a2 = MOVAA_aa killed $a12
+    ; CHECK-NEXT: $a3 = MOVAA_aa killed $a13
+
+    %0:extaddrregs = COPY $p4
+    $p4 = COPY %0
+    CALL &dummy_p64, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $p4
+    $p2 = COPY %0
+    RET implicit $a11, implicit $p2
+...

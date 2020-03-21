@@ -70,7 +70,6 @@ body:             |
     ; CHECK: [[MOVHA_ac2:%[0-9]+]]:addrregs = MOVHA_ac target-flags(tricore-hi) @b
     ; CHECK: [[LEA_aac2:%[0-9]+]]:addrregs = LEA_aac [[MOVHA_ac2]], target-flags(tricore-lo) @b
     ; CHECK: [[MOVImmExtDataReg:%[0-9]+]]:extdataregs = MOVImmExtDataReg 0
-    ; CHECK: STD_ace %stack.0, 0, [[MOVImmExtDataReg]] :: (store 8 into %stack.0, align 4)
     ; CHECK: [[LDD_eac:%[0-9]+]]:extdataregs = LDD_eac [[LEA_aac]], 0 :: (dereferenceable load 8 from @a, align 4, !tbaa !2)
     ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
     ; CHECK: $e4 = COPY [[LDD_eac]]
@@ -79,9 +78,8 @@ body:             |
     ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
     ; CHECK: STW_alcd [[LEA_aac1]], 0, [[COPY]] :: (store 4 into @c, !tbaa !6)
     ; CHECK: [[LDD_eac1:%[0-9]+]]:extdataregs = LDD_eac [[LEA_aac2]], 0 :: (dereferenceable load 8 from @b, align 4, !tbaa !8)
-    ; CHECK: [[LDD_eac2:%[0-9]+]]:extdataregs = LDD_eac %stack.0, 0 :: (load 8 from %stack.0, align 4)
-    ; CHECK: undef %10.dsub0:extdataregs = SUBX_ddd [[LDD_eac2]].dsub0, [[LDD_eac1]].dsub0, implicit-def $psw
-    ; CHECK: %10.dsub1:extdataregs = SUBC_ddd [[LDD_eac2]].dsub1, [[LDD_eac1]].dsub1, implicit-def $psw, implicit $psw
+    ; CHECK: undef %10.dsub0:extdataregs = SUBX_ddd [[MOVImmExtDataReg]].dsub0, [[LDD_eac1]].dsub0, implicit-def $psw
+    ; CHECK: %10.dsub1:extdataregs = SUBC_ddd [[MOVImmExtDataReg]].dsub1, [[LDD_eac1]].dsub1, implicit-def $psw, implicit $psw
     ; CHECK: STD_ace [[LEA_aac2]], 0, %10 :: (store 8 into @b, align 4, !tbaa !8)
     ; CHECK: RET implicit $a11, implicit undef $d2
     %19:addrregs = MOVHA_ac target-flags(tricore-hi) @a

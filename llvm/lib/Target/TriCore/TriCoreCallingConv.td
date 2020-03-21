@@ -77,10 +77,13 @@ def CC_TriCore_VarArg : CallingConv<[
 //===----------------------------------------------------------------------===//
 
 // Upper context registers are preserved across calls
+// The superregisters must be used, otherwise it will not be inferred that a
+// superregister covers a range of sub-registers.
 def CSR_TriCore_UpperContext
-    : CalleeSavedRegs<(add (sequence "D%u", 8, 15),
-                          (sequence "A%u", 10, 15),
-                          PSW, PCXI)>;
+    : CalleeSavedRegs<(add E8, E10, E12, E14,
+                           P10, P12, P14,
+                           PSW, PCXI)>;
+
 
 // Needed for implementation of TriCoreRegisterInfo::getNoPreservedMask()
 def CSR_NoRegs : CalleeSavedRegs<(add)>;
