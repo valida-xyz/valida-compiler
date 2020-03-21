@@ -26,9 +26,11 @@ class InstructionSelector;
 
 FunctionPass *createTriCoreExpandPseudoPass();
 FunctionPass *createTriCoreJumpTablePass();
+FunctionPass *createTriCorePreLegalizeCombiner(bool IsOptNone);
 
 void initializeTriCoreExpandPseudoPass(PassRegistry &);
 void initializeTriCoreJumpTablesPass(PassRegistry &);
+void initializeTriCorePreLegalizerCombinerPass(PassRegistry &);
 
 InstructionSelector *
 createTriCoreInstructionSelector(const TriCoreTargetMachine &,
