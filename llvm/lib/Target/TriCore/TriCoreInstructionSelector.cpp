@@ -88,12 +88,15 @@ private:
                      unsigned DstSize, unsigned SrcSize) const;
   bool selectExtZero(MachineInstr &I, MachineRegisterInfo &MRI,
                      unsigned DstSize, unsigned SrcSize) const;
+  bool selectFltRounds(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFPExt(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectFPTrunc(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectIntrinsicWithSideEffects(MachineInstr &I,
+                                      MachineRegisterInfo &MRI) const;
   bool selectMerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectLoadStore(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectPtrAdd(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -134,6 +137,17 @@ static bool checkType(const LLT &ExpectedTy, const LLT &ActualTy,
   }
 
   return true;
+}
+
+/// Helper function to find an intrinsic ID on a MachineInstr. Returns the
+/// ID if it exists, and 0 otherwise.
+static unsigned findIntrinsicID(MachineInstr &I) {
+  auto IntrinOp = find_if(I.operands(), [&](const MachineOperand &Op) {
+    return Op.isIntrinsicID();
+  });
+  if (IntrinOp == I.operands_end())
+    return 0;
+  return IntrinOp->getIntrinsicID();
 }
 
 // An OpcTable must have 10 entries (number of comparison predicates) each for
@@ -513,6 +527,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectICmp(I, MRI);
   case TargetOpcode::G_IMPLICIT_DEF:
     return selectImplicitDef(I, MRI);
+  case TargetOpcode::G_INTRINSIC_W_SIDE_EFFECTS:
+    return selectIntrinsicWithSideEffects(I, MRI);
   case TargetOpcode::G_INTTOPTR:
   case TargetOpcode::G_PTRTOINT:
     return selectCopy(I, MRI);
@@ -1530,6 +1546,41 @@ bool TriCoreInstructionSelector::selectFrameIndex(
   return true;
 }
 
+bool TriCoreInstructionSelector::selectFltRounds(
+    MachineInstr &I, MachineRegisterInfo &MRI) const {
+  Register DstReg = I.getOperand(0).getReg();
+  Register MfcrResult = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+  Register AddihResult = MRI.createVirtualRegister(&TriCore::DataRegsRegClass);
+
+  MachineIRBuilder MIRBuilder(I);
+
+  // Move status register PSW to a data register
+  auto Mfcr = MIRBuilder.buildInstr(TriCore::MFCR_dc)
+                  .addDef(MfcrResult)
+                  .addImm(TriCoreSysReg::psw)
+                  .addUse(TriCore::PSW, RegState::Implicit);
+
+  // Add 0x0100 to convert from TriCore format to C-Standard format
+  auto Addih = MIRBuilder.buildInstr(TriCore::ADDIH_ddc)
+                   .addDef(AddihResult)
+                   .addUse(MfcrResult)
+                   .addImm(0x0100);
+
+  // Extract rounding mode bits (bits #24 and #25)
+  auto Extru = MIRBuilder.buildInstr(TriCore::EXTRU_ddcc)
+                   .addDef(DstReg)
+                   .addUse(AddihResult)
+                   .addImm(24)
+                   .addImm(2);
+
+  constrainSelectedInstRegOperands(*Mfcr, TII, TRI, RBI);
+  constrainSelectedInstRegOperands(*Addih, TII, TRI, RBI);
+  constrainSelectedInstRegOperands(*Extru, TII, TRI, RBI);
+
+  I.eraseFromParent();
+  return true;
+}
+
 bool TriCoreInstructionSelector::selectFPExt(
     MachineInstr &I, const MachineRegisterInfo &MRI) const {
   Register DestReg = I.getOperand(0).getReg();
@@ -1716,6 +1767,27 @@ bool TriCoreInstructionSelector::selectICmp(
 
   I.removeFromParent();
   return true;
+}
+
+bool TriCoreInstructionSelector::selectIntrinsicWithSideEffects(
+    MachineInstr &I, MachineRegisterInfo &MRI) const {
+  assert(I.getOpcode() == TargetOpcode::G_INTRINSIC_W_SIDE_EFFECTS);
+
+  // Find the intrinsic ID.
+  unsigned IntrinID = findIntrinsicID(I);
+  if (!IntrinID) {
+    LLVM_DEBUG(dbgs() << "Could not find intrinsic ID!\n");
+    return false;
+  }
+
+  // Select the instruction.
+  switch (IntrinID) {
+  default:
+    LLVM_DEBUG(dbgs() << "Unsupported intrinsic: " << IntrinID << ".\n");
+    return false;
+  case Intrinsic::flt_rounds:
+    return selectFltRounds(I, MRI);
+  }
 }
 
 bool TriCoreInstructionSelector::selectMerge(MachineInstr &I,
