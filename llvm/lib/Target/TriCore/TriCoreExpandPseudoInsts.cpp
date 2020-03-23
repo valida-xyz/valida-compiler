@@ -88,6 +88,7 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MBBI,
                                            int32_t Imm, Register DstReg) {
   MachineInstr &MI = *MBBI;
+  bool DstIsDead = MI.getOperand(0).isDead();
 
   if (isInt<16>(Imm)) {
     // Can use single mov
@@ -95,7 +96,7 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
         dbgs() << Imm
                << ": fits into immediate operand of MOV_dc, select it\n");
     BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOV_dc))
-        .addReg(DstReg)
+        .addDef(DstReg, getDeadRegState(DstIsDead))
         .addImm(Imm);
     return;
   }
@@ -106,7 +107,7 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
         dbgs() << Imm
                << ": fits into immediate operand of MOVU_dc, select it\n");
     BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVU_dc))
-        .addReg(DstReg)
+        .addDef(DstReg, getDeadRegState(DstIsDead))
         .addImm(Imm);
     return;
   }
@@ -117,7 +118,7 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
   if (!Lower16) {
     LLVM_DEBUG(dbgs() << Imm << ": lower bits are all 0's, select MOVH_dc\n");
     BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVH_dc))
-        .addReg(DstReg)
+        .addDef(DstReg, getDeadRegState(DstIsDead))
         .addImm(Upper16);
     return;
   }
@@ -148,12 +149,12 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
       // shift instruction
       uint32_t HighBits = ((UImm << (16 - TrailingZeros)) >> 16) & 0xffff;
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVH_dc))
-          .addReg(DstReg)
+          .addDef(DstReg)
           .addImm(HighBits);
 
       int32_t ShiftAmount = -(16 - TrailingZeros);
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
-          .addReg(DstReg)
+          .addDef(DstReg, getDeadRegState(DstIsDead))
           .addReg(DstReg)
           .addImm(ShiftAmount);
 
@@ -170,12 +171,12 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
       // Again, pre-shift right by the minimum number of bits required
       uint32_t LowBits = (UImm >> (16 - LeadingZeros)) & 0xffff;
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVU_dc))
-          .addReg(DstReg)
+          .addDef(DstReg)
           .addImm(LowBits);
 
       uint32_t ShiftAmount = (16 - LeadingZeros);
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
-          .addReg(DstReg)
+          .addDef(DstReg, getDeadRegState(DstIsDead))
           .addReg(DstReg)
           .addImm(ShiftAmount);
 
@@ -194,12 +195,12 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
     if (32 - PopCnt == LeadingZeros) {
 
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOV_dc))
-          .addReg(DstReg)
+          .addDef(DstReg)
           .addImm(-1);
 
       int32_t ShiftAmount = -(LeadingZeros);
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
-          .addReg(DstReg)
+          .addDef(DstReg, getDeadRegState(DstIsDead))
           .addReg(DstReg)
           .addImm(ShiftAmount);
 
@@ -215,11 +216,11 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
       dbgs() << "MOVImmDataReg " << Imm
              << " could not be optimized, fall back to default handling\n");
   BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVU_dc))
-      .addReg(DstReg)
+      .addDef(DstReg)
       .addImm(Lower16);
 
   BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::ADDIH_ddc))
-      .addReg(DstReg)
+      .addDef(DstReg, getDeadRegState(DstIsDead))
       .addReg(DstReg)
       .addImm(Upper16);
 }
@@ -247,6 +248,7 @@ bool TriCoreExpandPseudo::expandMOVImmDataReg(
 bool TriCoreExpandPseudo::expandMOVImmExtDataReg(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI) {
   MachineInstr &MI = *MBBI;
+  bool DstIsDead = MI.getOperand(0).isDead();
   Register DstReg = MI.getOperand(0).getReg();
   int64_t Imm = MI.getOperand(1).getImm();
 
@@ -258,7 +260,7 @@ bool TriCoreExpandPseudo::expandMOVImmExtDataReg(
     LLVM_DEBUG(dbgs() << "MOVImmExtDataReg " << Imm
                       << " fits into immediate operand of MOV_ec, select it\n");
     BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOV_ec))
-        .addReg(DstReg)
+        .addDef(DstReg, getDeadRegState(DstIsDead))
         .addImm(Imm);
   } else {
 
@@ -287,6 +289,7 @@ void TriCoreExpandPseudo::expandImmAddrReg(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MBBI) {
 
   MachineInstr &MI = *MBBI;
+  bool DstIsDead = MI.getOperand(0).isDead();
   const Register DstReg = MI.getOperand(0).getReg();
   const int32_t Imm = MI.getOperand(1).getImm();
 
@@ -305,7 +308,7 @@ void TriCoreExpandPseudo::expandImmAddrReg(MachineBasicBlock &MBB,
                       << " fits into immediate operand of LEA_ac, select it\n");
 
     BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::LEA_ac))
-        .addReg(DstReg)
+        .addDef(DstReg, getDeadRegState(DstIsDead))
         .addImm(Imm);
 
     return;
@@ -316,11 +319,11 @@ void TriCoreExpandPseudo::expandImmAddrReg(MachineBasicBlock &MBB,
              << " could not be optimized, fall back to default handling\n");
   // As a last resort, use 2 32-bit instructions
   BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVHA_ac))
-      .addReg(DstReg)
+      .addDef(DstReg)
       .addImm(Upper16);
 
   BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::LEA_aac))
-      .addReg(DstReg)
+      .addDef(DstReg, getDeadRegState(DstIsDead))
       .addReg(DstReg)
       .addImm(Lower16);
 }
