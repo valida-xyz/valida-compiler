@@ -43,7 +43,6 @@ include "TriCoreCallingConv.td"
 //===----------------------------------------------------------------------===//
 
 include "TriCoreInstrInfo.td"
-include "TriCoreGISelPattern.td"
 
 def TriCoreInstrInfo : InstrInfo;
 

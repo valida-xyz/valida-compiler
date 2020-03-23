@@ -6,11 +6,13 @@ tablegen(LLVM TriCoreGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM TriCoreGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM TriCoreGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM TriCoreGenSubtargetInfo.inc -gen-subtarget)
-tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
 tablegen(LLVM TriCoreGenRegisterBank.inc -gen-register-bank)
 tablegen(LLVM TriCoreGenCallingConv.inc -gen-callingconv)
 tablegen(LLVM TriCoreGenDisassemblerTables.inc -gen-disassembler)
 tablegen(LLVM TriCoreGenSystemOperands.inc -gen-searchable-tables)
+
+set(LLVM_TARGET_DEFINITIONS TriCoreGISelPattern.td)
+tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
 
 add_public_tablegen_target(TriCoreCommonTableGen)
 
