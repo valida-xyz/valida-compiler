@@ -13,6 +13,7 @@
 #include "Utils/TriCoreBaseInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
@@ -764,6 +765,13 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   llvm_unreachable("Unknown match type detected!");
 }
 
+static bool matchRegisterNameHelper(StringRef Name, Register &RegNo) {
+  RegNo = MatchRegisterName(Name);
+  if (RegNo == TriCore::NoRegister)
+    RegNo = MatchRegisterAltName(Name);
+  return RegNo == TriCore::NoRegister;
+}
+
 bool TriCoreAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
                                      SMLoc &EndLoc) {
   const auto Res = tryParseRegister(RegNo, StartLoc, EndLoc);
@@ -778,17 +786,22 @@ OperandMatchResultTy TriCoreAsmParser::tryParseRegister(unsigned &RegNo,
                                                         SMLoc &EndLoc) {
   const AsmToken &Tok = getParser().getTok();
   StartLoc = Tok.getLoc();
-  EndLoc = Tok.getEndLoc();
-  RegNo = 0;
+
+  if (getLexer().is(AsmToken::Percent) && 
+      getLexer().peekTok().is(AsmToken::Identifier))
+    getLexer().Lex(); // eat '%'
+  else
+    return MatchOperand_NoMatch;
+
   StringRef Name = getLexer().getTok().getIdentifier();
 
-  RegNo = MatchRegisterName(Name);
-  if (RegNo == 0)
-    RegNo = MatchRegisterAltName(Name);
-  if (RegNo == 0)
+  if (matchRegisterNameHelper(Name, (Register&) RegNo))
     return MatchOperand_NoMatch;
 
   getParser().Lex(); // Eat identifier token.
+
+  EndLoc = SMLoc::getFromPointer(getLoc().getPointer() - 1);
+  
   return MatchOperand_Success;
 }
 
@@ -822,12 +835,9 @@ OperandMatchResultTy TriCoreAsmParser::parseRegister(OperandVector &Operands) {
   }
 
   // this will try to match with a register name
-  unsigned RegNo = MatchRegisterName(Name);
-  if (RegNo == 0) {
-    RegNo = MatchRegisterAltName(Name);
-    if (RegNo == 0)
-      return MatchOperand_NoMatch;
-  }
+  unsigned RegNo = 0;
+  if (matchRegisterNameHelper(Name, (Register&) RegNo))
+    return MatchOperand_NoMatch;
 
   // eat register (possibly with suffix)
   getLexer().Lex();
