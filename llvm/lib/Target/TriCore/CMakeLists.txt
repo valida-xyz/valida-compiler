@@ -15,6 +15,8 @@ set(LLVM_TARGET_DEFINITIONS TriCoreGISelPattern.td)
 tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
 tablegen(LLVM TriCoreGenPreLegalizerGICombiner.inc -gen-global-isel-combiner
   -combiners="TriCorePreLegalizerCombinerHelper")
+tablegen(LLVM TriCoreGenPostLegalizerGICombiner.inc -gen-global-isel-combiner
+  -combiners="TriCorePostLegalizerCombinerHelper")
 
 add_public_tablegen_target(TriCoreCommonTableGen)
 
@@ -31,6 +33,7 @@ add_llvm_target(TriCoreCodeGen
   TriCoreLegalizerInfo.cpp
   TriCoreMCInstLower.cpp
   TriCorePreLegalizerCombiner.cpp
+  TriCorePostLegalizerCombiner.cpp
   TriCoreRegisterBankInfo.cpp
   TriCoreRegisterInfo.cpp
   TriCoreTargetMachine.cpp

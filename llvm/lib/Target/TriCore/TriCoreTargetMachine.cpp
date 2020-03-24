@@ -31,6 +31,7 @@ extern "C" void LLVMInitializeTriCoreTarget() {
   initializeTriCoreExpandPseudoPass(*PR);
   initializeTriCoreJumpTablesPass(*PR);
   initializeTriCorePreLegalizerCombinerPass(*PR);
+  initializeTriCorePostLegalizerCombinerPass(*PR);
 }
 
 static std::string computeDataLayout(const Triple &TT) {
@@ -95,6 +96,7 @@ public:
   bool addIRTranslator() override;
   void addPreLegalizeMachineIR() override;
   bool addLegalizeMachineIR() override;
+  void addPreRegBankSelect() override;
   bool addRegBankSelect() override;
   bool addGlobalInstructionSelect() override;
 
@@ -121,6 +123,11 @@ void TriCorePassConfig::addPreLegalizeMachineIR() {
 bool TriCorePassConfig::addLegalizeMachineIR() {
   addPass(new Legalizer());
   return false;
+}
+
+void TriCorePassConfig::addPreRegBankSelect() {
+  bool IsOptNone = getOptLevel() == CodeGenOpt::None;
+  addPass(createTriCorePostLegalizerCombiner(IsOptNone));
 }
 
 bool TriCorePassConfig::addRegBankSelect() {
