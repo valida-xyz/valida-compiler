@@ -45,6 +45,7 @@ TriCoreSubtarget::TriCoreSubtarget(const Triple &TT, const std::string &CPU,
       FrameLowering(initializeSubtargetDependencies(CPU, FS)), InstrInfo(*this),
       RegInfo(), TLInfo(TM, *this) {
   CallLoweringInfo.reset(new TriCoreCallLowering(*getTargetLowering()));
+  InlineAsmLoweringInfo.reset(new InlineAsmLowering(getTargetLowering()));
   Legalizer.reset(new TriCoreLegalizerInfo(*this));
 
   auto *RBI = new TriCoreRegisterBankInfo(*getRegisterInfo());
@@ -55,6 +56,10 @@ TriCoreSubtarget::TriCoreSubtarget(const Triple &TT, const std::string &CPU,
 
 const CallLowering *TriCoreSubtarget::getCallLowering() const {
   return CallLoweringInfo.get();
+}
+
+const InlineAsmLowering *TriCoreSubtarget::getInlineAsmLowering() const {
+  return InlineAsmLoweringInfo.get();
 }
 
 InstructionSelector *TriCoreSubtarget::getInstructionSelector() const {

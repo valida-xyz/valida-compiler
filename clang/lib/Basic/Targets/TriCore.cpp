@@ -259,3 +259,15 @@ bool TriCoreTargetInfo::parseAndSetDerivative(const std::string &Feature) {
   // Otherwise return false
   return false;
 }
+
+bool TriCoreTargetInfo::validateAsmConstraint(
+    const char *&Name, TargetInfo::ConstraintInfo &Info) const {
+  switch (*Name) {
+  default:
+    return false;
+  case 'd':
+    // A 32-bit data register.
+    Info.setAllowsRegister();
+    return true;
+  }
+}

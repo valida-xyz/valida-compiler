@@ -85,9 +85,7 @@ public:
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override;
 
   bool validateAsmConstraint(const char *&Name,
-                             TargetInfo::ConstraintInfo &Info) const override {
-    return true;
-  }
+                             TargetInfo::ConstraintInfo &Info) const override;
 
   bool allowsLargerPreferedTypeAlignment() const override { return false; }
 };

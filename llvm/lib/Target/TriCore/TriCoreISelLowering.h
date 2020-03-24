@@ -29,7 +29,14 @@ public:
   bool functionArgumentNeedsConsecutiveRegisters(Type *Ty,
                                                  CallingConv::ID CallConv,
                                                  bool isVarArg) const override;
+
+  ConstraintType getConstraintType(StringRef Constraint) const override;
+
   unsigned int getJumpTableEncoding() const override;
+
+  std::pair<unsigned, const TargetRegisterClass *>
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT VT) const override;
 };
 } // namespace llvm
 

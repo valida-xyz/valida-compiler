@@ -48,6 +48,36 @@ bool TriCoreTargetLowering::functionArgumentNeedsConsecutiveRegisters(
   return Ty->isArrayTy();
 }
 
+TriCoreTargetLowering::ConstraintType
+TriCoreTargetLowering::getConstraintType(StringRef Constraint) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    default:
+      break;
+    case 'd':
+      return C_RegisterClass;
+    }
+  }
+  return TargetLowering::getConstraintType(Constraint);
+}
+
 unsigned int TriCoreTargetLowering::getJumpTableEncoding() const {
   return MachineJumpTableInfo::EK_Inline;
+}
+
+std::pair<unsigned, const TargetRegisterClass *>
+TriCoreTargetLowering::getRegForInlineAsmConstraint(
+    const TargetRegisterInfo *TRI, StringRef Constraint, MVT VT) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'd':
+      if (VT.getSizeInBits() == 64)
+        return std::make_pair(0U, &TriCore::ExtDataRegsRegClass);
+      return std::make_pair(0U, &TriCore::DataRegsRegClass);
+    }
+  }
+
+  // Use the default implementation in TargetLowering to convert the register
+  // constraint into a member of a register class.
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
