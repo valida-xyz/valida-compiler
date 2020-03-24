@@ -13,8 +13,8 @@ tablegen(LLVM TriCoreGenSystemOperands.inc -gen-searchable-tables)
 
 set(LLVM_TARGET_DEFINITIONS TriCoreGISelPattern.td)
 tablegen(LLVM TriCoreGenGlobalISel.inc -gen-global-isel)
-tablegen(LLVM TriCoreGenGICombiner.inc -gen-global-isel-combiner
-              -combiners="TriCorePreLegalizerCombinerHelper")
+tablegen(LLVM TriCoreGenPreLegalizerGICombiner.inc -gen-global-isel-combiner
+  -combiners="TriCorePreLegalizerCombinerHelper")
 
 add_public_tablegen_target(TriCoreCommonTableGen)
 

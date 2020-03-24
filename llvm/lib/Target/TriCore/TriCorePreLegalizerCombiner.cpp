@@ -28,12 +28,12 @@ using namespace llvm;
 using namespace MIPatternMatch;
 
 #define TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_DEPS
-#include "TriCoreGenGICombiner.inc"
+#include "TriCoreGenPreLegalizerGICombiner.inc"
 #undef TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_DEPS
 
 namespace {
 #define TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_H
-#include "TriCoreGenGICombiner.inc"
+#include "TriCoreGenPreLegalizerGICombiner.inc"
 #undef TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_H
 
 class TriCorePreLegalizerCombinerInfo : public CombinerInfo {
@@ -68,7 +68,7 @@ bool TriCorePreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
 }
 
 #define TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_CPP
-#include "TriCoreGenGICombiner.inc"
+#include "TriCoreGenPreLegalizerGICombiner.inc"
 #undef TRICOREPRELEGALIZERCOMBINERHELPER_GENCOMBINERHELPER_CPP
 
 // Pass boilerplate
