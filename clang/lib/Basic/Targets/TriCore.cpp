@@ -159,6 +159,30 @@ void TriCoreTargetInfo::getTargetDefines(const LangOptions &Opts,
   addHighTecDefines(Opts, Builder);
 }
 
+ArrayRef<const char *> TriCoreTargetInfo::getGCCRegNames() const {
+  static const char *const GCCRegNames[] = {
+      // 32-bit data registers
+      "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10", "d11",
+      "d12", "d13", "d14", "d15",
+
+      // 32-bit address registers
+      "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11",
+      "a12", "a13", "a14", "a15",
+
+      // 64-bit extended data registers
+      "e0", "e2", "e4", "e6", "e8", "e10", "e12", "e14",
+
+      // 64-bit extended address registers
+      "p0", "p2", "p4", "p6", "p8", "p10", "p12", "p14"};
+  return llvm::makeArrayRef(GCCRegNames);
+}
+
+ArrayRef<TargetInfo::GCCRegAlias> TriCoreTargetInfo::getGCCRegAliases() const {
+  static const TargetInfo::GCCRegAlias GCCRegAliases[] = {{{"sp"}, "a10"},
+                                                         {{"fp"}, "a14"}};
+  return llvm::makeArrayRef(GCCRegAliases);
+}
+
 bool TriCoreTargetInfo::isValidCPUName(StringRef Name) const {
   return llvm::find(ValidTargetCPUNames, Name) != std::end(ValidTargetCPUNames);
 }
