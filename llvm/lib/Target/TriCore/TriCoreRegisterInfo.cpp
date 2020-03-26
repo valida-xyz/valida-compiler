@@ -93,6 +93,9 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   const TriCoreInstrInfo *TII =
       MF.getSubtarget<TriCoreSubtarget>().getInstrInfo();
 
+  assert(!MI.isDebugValue() &&
+         "DBG_VALUE should have been handled by target-independent code");
+
   // Calculate the offset of the frame index and the frame register
   const int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   unsigned FrameReg;

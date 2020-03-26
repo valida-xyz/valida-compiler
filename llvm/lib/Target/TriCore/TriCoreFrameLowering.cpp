@@ -367,6 +367,10 @@ void TriCoreFrameLowering::processFunctionBeforeFrameFinalized(
   unsigned OffsetBits = -1;
   for (const MachineBasicBlock &MBB : MF) {
     for (const MachineInstr &MI : MBB) {
+      // Skip debug instructions
+      if (MI.isDebugInstr())
+        continue;
+
       // Only look at instructions which have a frame index operand
       for (const MachineOperand &MO : MI.operands()) {
         if (MO.isFI()) {
