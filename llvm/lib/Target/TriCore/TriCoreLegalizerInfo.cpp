@@ -617,7 +617,18 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
                             MPO, MachineMemOperand::MOStore, 4, Align(4)));
       MI.eraseFromParent();
       return true;
-    }
+  }
+  case Intrinsic::trap: {
+    // TriCore doesn't have a TRAP instruction, so this intrinsic must lower to
+    // a call to abort
+    LLVMContext &Ctx = MIRBuilder.getMF().getFunction().getContext();
+    auto *RetTy = Type::getVoidTy(Ctx);
+    if (!createLibcall(MIRBuilder, "abort", {{}, RetTy}, {}, CallingConv::C))
+      return LegalizerHelper::UnableToLegalize;
+
+    MI.eraseFromParent();
+    return true;
+  }
   default:
     break;
   }
