@@ -118,3 +118,37 @@ body:             |
     %2:_(s32) = G_SHL %0, %1(s32)
     $d2 = COPY %2(s32)
 ...
+---
+name:            test_shl_s33
+body:             |
+  bb.0.entry:
+    ; This test is modelled after an actual SuperTest failure
+    ; CHECK-LABEL: name: test_shl_s33
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 32
+    ; CHECK: [[SUB:%[0-9]+]]:_(s32) = G_SUB [[COPY1]], [[C]]
+    ; CHECK: [[SUB1:%[0-9]+]]:_(s32) = G_SUB [[C]], [[COPY1]]
+    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+    ; CHECK: [[ICMP:%[0-9]+]]:_(s32) = G_ICMP intpred(ult), [[COPY1]](s32), [[C]]
+    ; CHECK: [[ICMP1:%[0-9]+]]:_(s32) = G_ICMP intpred(eq), [[COPY1]](s32), [[C1]]
+    ; CHECK: [[SHL:%[0-9]+]]:_(s32) = G_SHL %21, [[COPY1]](s32)
+    ; CHECK: [[LSHR:%[0-9]+]]:_(s32) = G_LSHR %21, [[SUB1]](s32)
+    ; CHECK: [[SHL1:%[0-9]+]]:_(s32) = G_SHL %23, [[COPY1]](s32)
+    ; CHECK: [[OR:%[0-9]+]]:_(s32) = G_OR [[LSHR]], [[SHL1]]
+    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
+    ; CHECK: [[SHL2:%[0-9]+]]:_(s32) = G_SHL %21, [[SUB]](s32)
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
+    ; CHECK: [[SELECT:%[0-9]+]]:_(s32) = G_SELECT [[COPY2]](s32), [[SHL]], [[C2]]
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[ICMP]](s32)
+    ; CHECK: [[SELECT1:%[0-9]+]]:_(s32) = G_SELECT [[COPY3]](s32), [[OR]], [[SHL2]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[ICMP1]](s32)
+    ; CHECK: [[SELECT2:%[0-9]+]]:_(s32) = G_SELECT [[COPY4]](s32), [[SELECT2]], [[SELECT1]]
+    ; CHECK: $d2 = COPY [[SELECT]](s32)
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s33) = G_ZEXT %0
+    %3:_(s33) = G_SHL %3, %1
+    %4:_(s32) = G_TRUNC %3
+    $d2 = COPY %4(s32)
+...

@@ -159,7 +159,15 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // Binary Ops
 
   // Simple binary operators are only legal for s32 types.
-  getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR, G_MUL})
+  getActionDefinitionsBuilder({G_ADD, G_SUB, G_MUL})
+      .legalFor({s32})
+      // FIXME: Change to clampScalar once supported
+      // Narrowing requires the type to be a multiple of the narrow type
+      .widenScalarIf(isNotMultipleOfN(0, 32), widenToNextMultipleOfN(0, 32))
+      .maxScalar(0, s32);
+
+  // Bitwise-arithmetic is only legal for s32 types.
+  getActionDefinitionsBuilder({G_AND, G_OR, G_XOR})
       .legalFor({s32})
       .clampScalar(0, s32, s32);
 
@@ -285,7 +293,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   getActionDefinitionsBuilder({G_SHL, G_LSHR, G_ASHR})
       .legalFor({{s32, s32}})
       .clampScalar(1, s32, s32)
-      .clampScalar(0, s32, s32);
+      // Shifts must be divisible by the narrow type before narrowing
+      // FIXME: change to clampScalar once supported
+      .widenScalarIf(isNotMultipleOfN(0, 32), widenToNextMultipleOfN(0, 32))
+      .maxScalar(0, s32);
 
   // Comparisons & Select
 

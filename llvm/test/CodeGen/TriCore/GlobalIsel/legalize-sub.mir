@@ -122,3 +122,28 @@ body:             |
     RET implicit $a11, implicit $e2, implicit $e4, implicit $e6
 
 ...
+---
+name:            test_sub_uneven_scalar
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: test_sub_uneven_scalar
+    ; CHECK: [[COPY:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
+    ; CHECK: [[ZEXT:%[0-9]+]]:_(s64) = G_ZEXT [[COPY]](s32)
+    ; CHECK: [[ZEXT1:%[0-9]+]]:_(s64) = G_ZEXT [[COPY1]](s32)
+    ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[ZEXT]](s64)
+    ; CHECK: [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[ZEXT1]](s64)
+    ; CHECK: [[USUBO:%[0-9]+]]:_(s32), [[USUBO1:%[0-9]+]]:_(s1) = G_USUBO [[UV]], [[UV2]]
+    ; CHECK: [[USUBE:%[0-9]+]]:_(s32), [[USUBE1:%[0-9]+]]:_(s1) = G_USUBE [[UV1]], [[UV3]], [[USUBO1]]
+    ; CHECK: $d2 = COPY [[USUBO]](s32)
+    ; CHECK: RET implicit $a11, implicit $d2
+    %0:_(s32) = COPY $d4
+    %1:_(s32) = COPY $d5
+    %2:_(s33) = G_ZEXT %0
+    %3:_(s33) = G_ZEXT %1
+    %4:_(s33) = G_SUB %2, %3
+    %5:_(s32) = G_TRUNC %4
+    $d2 = COPY %5(s32)
+    RET implicit $a11, implicit $d2
+
+...
