@@ -98,6 +98,11 @@ public:
   TriCoreAsmParser(const MCSubtargetInfo &STI, MCAsmParser &Parser,
                    const MCInstrInfo &MII, const MCTargetOptions &Options)
       : MCTargetAsmParser(Options, STI, MII) {
+    // Alias .hword and .word to the target-independent .2byte and .4byte
+    // directives as they have the same form and semantics
+    Parser.addAliasForDirective(".hword", ".2byte");
+    Parser.addAliasForDirective(".word", ".4byte");
+
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
   }
 };
