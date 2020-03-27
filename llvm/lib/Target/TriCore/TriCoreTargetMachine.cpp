@@ -131,7 +131,12 @@ void TriCorePassConfig::addPreRegBankSelect() {
 }
 
 bool TriCorePassConfig::addRegBankSelect() {
-  addPass(new RegBankSelect());
+  // FIXME: We need to run compile-time and runtime-time benchmarks in order to
+  //  decide at which optimization level Greedy should be used.
+  bool UseGreedy = getOptLevel() >= CodeGenOpt::Default;
+  RegBankSelect::Mode Mode =
+      UseGreedy ? RegBankSelect::Mode::Greedy : RegBankSelect::Mode::Fast;
+  addPass(new RegBankSelect(Mode));
   return false;
 }
 
