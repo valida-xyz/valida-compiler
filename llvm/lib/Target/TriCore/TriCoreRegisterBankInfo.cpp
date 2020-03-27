@@ -298,6 +298,69 @@ TriCoreRegisterBankInfo::getCarryInstMapping(const MachineInstr &MI) const {
                                NumOperands);
 }
 
+RegisterBankInfo::InstructionMappings
+TriCoreRegisterBankInfo::getInstrAlternativeMappings(
+    const MachineInstr &MI) const {
+
+  const MachineFunction &MF = *MI.getParent()->getParent();
+  const TargetSubtargetInfo &STI = MF.getSubtarget();
+  const TargetRegisterInfo &TRI = *STI.getRegisterInfo();
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  switch (MI.getOpcode()) {
+  default:
+    break;
+  case TargetOpcode::G_PTR_ADD: {
+    // G_PTR_ADD may be selected to the data regbank and address regbank for the
+    // same cost
+    const unsigned PtrSize = getSizeInBits(MI.getOperand(0).getReg(), MRI, TRI);
+    const unsigned OffSize = getSizeInBits(MI.getOperand(2).getReg(), MRI, TRI);
+
+    // Sizes must be 32-bit to match the TriCore instructions
+    if (PtrSize != 32 && OffSize != 32)
+      break;
+
+    // Do not mess with any implicit-defs or uses
+    if (MI.getNumOperands() != 3)
+      break;
+
+    // Cost depends on the copy cost from moving the pointer to data regs or the
+    // offset scalar to address regs
+    // TODO: copyCost is equal in both cases so both mappings have the same
+    //  cost. Are both mappings really equal or not?
+    InstructionMappings AltMappings;
+    const InstructionMapping &DataMapping = getInstructionMapping(
+        /*ID*/ 1,
+        /*Cost*/ copyCost(TriCore::DataRegBank, TriCore::AddrRegBank, PtrSize),
+        getValueMapping(PMI_FirstDataReg, PtrSize), /*NumOperands*/ 3);
+    const InstructionMapping &AddrMapping = getInstructionMapping(
+        /*ID*/ 2,
+        /*Cost*/ copyCost(TriCore::AddrRegBank, TriCore::DataRegBank, OffSize),
+        getValueMapping(PMI_FirstAddrReg, OffSize), /*NumOperands*/ 3);
+
+    AltMappings.push_back(&DataMapping);
+    AltMappings.push_back(&AddrMapping);
+    return AltMappings;
+  }
+  }
+
+  return RegisterBankInfo::getInstrAlternativeMappings(MI);
+}
+
+void TriCoreRegisterBankInfo::applyMappingImpl(
+    const RegisterBankInfo::OperandsMapper &OpdMapper) const {
+  switch (OpdMapper.getMI().getOpcode()) {
+  case TargetOpcode::G_PTR_ADD:
+    // Mapping ID must match getInstrAlternativeMappings.
+    assert((OpdMapper.getInstrMapping().getID() >= 1 &&
+            OpdMapper.getInstrMapping().getID() <= 2) &&
+           "Don't know how to handle that ID!");
+    return applyDefaultMapping(OpdMapper);
+  default:
+    llvm_unreachable("Don't know how to handle that instruction");
+  }
+}
+
 const RegisterBankInfo::InstructionMapping &
 TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   unsigned OpCode = MI.getOpcode();

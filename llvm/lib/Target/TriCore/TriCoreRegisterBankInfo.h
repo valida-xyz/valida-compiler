@@ -127,8 +127,13 @@ public:
   const RegisterBank &getRegBankFromRegClass(const TargetRegisterClass &RC,
                                              LLT) const override;
 
+  InstructionMappings
+  getInstrAlternativeMappings(const MachineInstr &MI) const override;
+
   const InstructionMapping &
   getInstrMapping(const MachineInstr &MI) const override;
+
+  void applyMappingImpl(const OperandsMapper &OpdMapper) const override;
 };
 } // end namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREREGISTERBANKINFO_H
