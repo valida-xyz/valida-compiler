@@ -184,21 +184,21 @@ body:             |
     ; CHECK: $a13 = MOVHA_ac 0
     ; CHECK: $a15 = MOVHA_ac 0
     ; CHECK: STA_alca $a14, -4, killed $a6 :: (store 4 into %stack.2)
-    ; CHECK: $a2 = LEA_aac $a14, 65020
+    ; CHECK: $a2 = LEA_aac $a14, -516
     ; CHECK: $e2 = LDD_eac killed $a2, 0
-    ; CHECK: $a2 = LEA_aac $a14, 65012
+    ; CHECK: $a2 = LEA_aac $a14, -524
     ; CHECK: $e4 = LDD_eac killed $a2, 0
-    ; CHECK: $a2 = LEA_aac $a14, 65020
+    ; CHECK: $a2 = LEA_aac $a14, -516
     ; CHECK: $p2 = LDDA_pac killed $a2, 0
-    ; CHECK: $a4 = LEA_aac $a14, 65012
+    ; CHECK: $a4 = LEA_aac $a14, -524
     ; CHECK: $p4 = LDDA_pac killed $a4, 0
-    ; CHECK: $a6 = LEA_aac $a14, 65020
+    ; CHECK: $a6 = LEA_aac $a14, -516
     ; CHECK: STD_ace killed $a6, 0, $e4
-    ; CHECK: $a6 = LEA_aac $a14, 65012
+    ; CHECK: $a6 = LEA_aac $a14, -524
     ; CHECK: STD_ace killed $a6, 0, $e4
-    ; CHECK: $a6 = LEA_aac $a14, 65020
+    ; CHECK: $a6 = LEA_aac $a14, -516
     ; CHECK: STDA_acp killed $a6, 0, $p4
-    ; CHECK: $a6 = LEA_aac $a14, 65012
+    ; CHECK: $a6 = LEA_aac $a14, -524
     ; CHECK: STDA_acp killed $a6, 0, $p4
     ; CHECK: $a6 = LDA_aalc $a14, -4 :: (load 4 from %stack.2)
     ; CHECK: RET implicit $a11, implicit $d0, implicit $d1, implicit $d2, implicit $d3, implicit $d4, implicit $d5, implicit $d6, implicit $d7, implicit $d8, implicit $d9, implicit $d10, implicit $d11, implicit $d12, implicit $d13, implicit $d14, implicit $d15, implicit $a2, implicit $a3, implicit $a4, implicit $a5, implicit $a6, implicit $a7, implicit $a12, implicit $a13, implicit $a15

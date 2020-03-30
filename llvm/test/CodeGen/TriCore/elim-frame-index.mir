@@ -50,31 +50,31 @@ body:             |
     ; CHECK:      liveins: $d4
     ; CHECK:      $a14 = frame-setup MOVAA_aa $a10
     ; CHECK:      $a10 = frame-setup ADDIHA_aac $a10, 65528
-    ; CHECK:      $a10 = frame-setup LEA_aac $a10, 65520
+    ; CHECK:      $a10 = frame-setup LEA_aac $a10, -16
     ; CHECK:      frame-setup CFI_INSTRUCTION def_cfa $a14, 0
     ; CHECK:      $a2 = ADDIHA_aac $a14, 65532
-    ; CHECK-NEXT: $a2 = LEA_aac $a2, 65532
+    ; CHECK-NEXT: $a2 = LEA_aac $a2, -4
     ; CHECK:      $a3 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a3 = LEA_aac $a3, 65532
+    ; CHECK-NEXT: $a3 = LEA_aac $a3, -4
     ; CHECK:      $a4 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a4 = LEA_aac $a4, 65524
+    ; CHECK-NEXT: $a4 = LEA_aac $a4, -12
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65532
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65532
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -4
     ; CHECK-NEXT: STW_alcd killed $a15, 0, $d4 :: (store 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65532
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -4
     ; CHECK-NEXT: STW_alcd killed $a15, 0, $d4 :: (store 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65524
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -12
     ; CHECK-NEXT: STW_alcd killed $a15, 0, killed $d4 :: (store 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65532
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65532
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -4
     ; CHECK-NEXT: $d2 = LDW_dalc killed $a15, 0 :: (load 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65532
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -4
     ; CHECK-NEXT: $d3 = LDW_dalc killed $a15, 0 :: (load 4)
     ; CHECK:      $a15 = ADDIHA_aac $a14, 65528
-    ; CHECK-NEXT: $a15 = LEA_aac $a15, 65524
+    ; CHECK-NEXT: $a15 = LEA_aac $a15, -12
     ; CHECK-NEXT: $d4 = LDW_dalc killed $a15, 0 :: (load 4)
     $a2 = LEA_aac %stack.0.ptr0, 0
     $a3 = LEA_aac %stack.1.ptr1, 0
@@ -117,9 +117,9 @@ body:             |
     ; CHECK-DAG: id: [[ID2:[0-2]]], type: default, offset: 0, size: 4
     ; CHECK:     liveins: $d4, $d5, $d6, $d7
     ; CHECK:     $a14 = frame-setup MOVAA_aa $a10
-    ; CHECK:     $d15 = LDW_dalc $a14, 0 :: (invariant load 4 from %fixed-stack.[[ID2]], align 1)
-    ; CHECK:     $d8 = LDW_dalc $a14, 4 :: (invariant load 4 from %fixed-stack.[[ID1]], align 1)
-    ; CHECK:     $d9 = LDW_dalc $a14, 8 :: (invariant load 4 from %fixed-stack.[[ID0]], align 1)
+    ; CHECK:     $d15 = LDW_dalc $a14, 0 :: (invariant load 4 from %fixed-stack.0, align 1)
+    ; CHECK:     $d8 = LDW_dalc $a14, 4 :: (invariant load 4 from %fixed-stack.1, align 1)
+    ; CHECK:     $d9 = LDW_dalc $a14, 8 :: (invariant load 4 from %fixed-stack.2, align 1)
     $d15 = LDW_dalc %fixed-stack.2, 0 :: (invariant load 4 from %fixed-stack.2, align 1)
     $d8 = LDW_dalc %fixed-stack.1, 0 :: (invariant load 4 from %fixed-stack.1, align 1)
     $d9 = LDW_dalc %fixed-stack.0, 0 :: (invariant load 4 from %fixed-stack.0, align 1)
@@ -149,21 +149,21 @@ body:             |
     ; CHECK:      $a14 = frame-setup MOVAA_aa $a10
     ; CHECK:      $a10 = frame-setup LEA_aac $a10, -520
     ; CHECK:      frame-setup CFI_INSTRUCTION def_cfa $a14, 0
-    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK:      $a15 = LEA_aac $a14, -516
     ; CHECK-NEXT: STD_ace killed $a15, 0, $e4
-    ; CHECK:      $a15 = LEA_aac $a14, 65016
+    ; CHECK:      $a15 = LEA_aac $a14, -520
     ; CHECK-NEXT: STD_ace killed $a15, 0, $e4
-    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK:      $a15 = LEA_aac $a14, -516
     ; CHECK-NEXT: STDA_acp killed $a15, 0, $p4
-    ; CHECK:      $a15 = LEA_aac $a14, 65016
+    ; CHECK:      $a15 = LEA_aac $a14, -520
     ; CHECK-NEXT: STDA_acp killed $a15, 0, $p4
-    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK:      $a15 = LEA_aac $a14, -516
     ; CHECK-NEXT: $e2 = LDD_eac killed $a15, 0
-    ; CHECK:      $a15 = LEA_aac $a14, 65016
+    ; CHECK:      $a15 = LEA_aac $a14, -520
     ; CHECK-NEXT: $e4 = LDD_eac killed $a15, 0
-    ; CHECK:      $a15 = LEA_aac $a14, 65020
+    ; CHECK:      $a15 = LEA_aac $a14, -516
     ; CHECK-NEXT: $p2 = LDDA_pac killed $a15, 0
-    ; CHECK:      $a15 = LEA_aac $a14, 65016
+    ; CHECK:      $a15 = LEA_aac $a14, -520
     ; CHECK-NEXT: $p4 = LDDA_pac killed $a15, 0
     STD_ace %stack.0.ptr0, 0, $e4
     STD_ace %stack.1.ptr1, 0, $e4

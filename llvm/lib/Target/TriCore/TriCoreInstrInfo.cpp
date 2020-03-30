@@ -285,8 +285,8 @@ void TriCoreInstrInfo::emitFrameOffset(MachineBasicBlock &MBB,
 
   // Materialize the value using ADDIHA_aac and LEA_aac
   // Calculation taken from chapter 2.7 Address Arithmetic
-  const uint64_t Low16 = Val & 0xFFFFu;
-  const uint64_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
+  const int16_t Low16 = Val & 0xFFFFu;
+  const uint16_t High16 = ((Val + 0x8000u) >> 16u) & 0xFFFFu;
 
   if (High16) {
     BuildMI(MBB, MBBI, DL, get(TriCore::ADDIHA_aac), DstReg)

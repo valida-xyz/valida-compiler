@@ -183,7 +183,7 @@ body:             |
     ; CHECK-LABEL: name: stack32bitrandom
     ; CHECK: $a14 = frame-setup MOVAA_aa $a10
     ; CHECK: $a10 = frame-setup ADDIHA_aac $a10, 65245
-    ; CHECK: $a10 = frame-setup LEA_aac $a10, 47768
+    ; CHECK: $a10 = frame-setup LEA_aac $a10, -17768
     ; CHECK: $d2 = MOVU_dc 42
     ; CHECK: RET implicit $a11, implicit killed $d2
     $d2 = MOVU_dc 42
