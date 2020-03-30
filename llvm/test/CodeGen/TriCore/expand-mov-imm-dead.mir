@@ -60,7 +60,7 @@ body:             |
   bb.0:
     ; CHECK-LABEL: name: test_p0
     ; CHECK: $a0 = MOVHA_ac 16
-    ; CHECK: dead $a0 = LEA_aac $a0, 65535
+    ; CHECK: dead $a0 = LEA_aac $a0, -1
     ; CHECK: dead $a1 = LEA_ac 15
     dead $a0 = MOVImmAddrReg 1048575
     dead $a1 = MOVImmAddrReg 15

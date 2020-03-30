@@ -75,7 +75,7 @@ body:             |
 
     ; CHECK-LABEL: name: test_p0
     ; CHECK: $a0 = MOVHA_ac 16
-    ; CHECK: $a0 = LEA_aac $a0, 65535
+    ; CHECK: $a0 = LEA_aac $a0, -1
     ; CHECK: $a1 = LEA_ac 15
     ; CHECK: $a2 = LEA_ac 16
     $a0 = MOVImmAddrReg 1048575

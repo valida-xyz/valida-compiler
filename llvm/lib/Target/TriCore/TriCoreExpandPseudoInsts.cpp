@@ -112,8 +112,8 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
     return;
   }
 
-  const uint32_t Lower16 = Imm & 0xffff;
-  const uint32_t Upper16 = (Imm >> 16) & 0xffff;
+  const uint16_t Lower16 = Imm & 0xffff;
+  const uint16_t Upper16 = (Imm >> 16) & 0xffff;
 
   if (!Lower16) {
     LLVM_DEBUG(dbgs() << Imm << ": lower bits are all 0's, select MOVH_dc\n");
@@ -147,7 +147,7 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
       // Also, we pre-shift the immediate left only by the minumum number of
       // bits required (16 - TrailingZeros) to enable the compression of the
       // shift instruction
-      uint32_t HighBits = ((UImm << (16 - TrailingZeros)) >> 16) & 0xffff;
+      uint16_t HighBits = ((UImm << (16 - TrailingZeros)) >> 16) & 0xffff;
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVH_dc))
           .addDef(DstReg)
           .addImm(HighBits);
@@ -169,12 +169,12 @@ void TriCoreExpandPseudo::expandImmDataReg(MachineBasicBlock &MBB,
       // shift to enable the compression of the shift instruction.
 
       // Again, pre-shift right by the minimum number of bits required
-      uint32_t LowBits = (UImm >> (16 - LeadingZeros)) & 0xffff;
+      uint16_t LowBits = (UImm >> (16 - LeadingZeros)) & 0xffff;
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::MOVU_dc))
           .addDef(DstReg)
           .addImm(LowBits);
 
-      uint32_t ShiftAmount = (16 - LeadingZeros);
+      int32_t ShiftAmount = (16 - LeadingZeros);
       BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(TriCore::SH_ddc))
           .addDef(DstReg, getDeadRegState(DstIsDead))
           .addReg(DstReg)
@@ -268,9 +268,9 @@ bool TriCoreExpandPseudo::expandMOVImmExtDataReg(
                       << " needs to be split into two 32-bit loads\n");
     auto TRI = MBB.getParent()->getSubtarget().getRegisterInfo();
     Register LowerReg = TRI->getSubReg(DstReg, TriCore::dsub0);
-    uint32_t LowerBits = Imm & 0xffffffff;
+    int32_t LowerBits = Imm & 0xffffffff;
     Register UpperReg = TRI->getSubReg(DstReg, TriCore::dsub1);
-    uint32_t UpperBits = (Imm >> 32) & 0xffffffff;
+    int32_t UpperBits = (Imm >> 32) & 0xffffffff;
 
     LLVM_DEBUG(dbgs() << "MOVImmDataReg " << utohexstr(LowerBits)
                       << ": materialize lower bits\n");
@@ -297,8 +297,8 @@ void TriCoreExpandPseudo::expandImmAddrReg(MachineBasicBlock &MBB,
                     << utohexstr(Imm) << ")\n");
 
   // Calculation taken from chapter 2.7 Address Arithmetic
-  const uint32_t Lower16 = Imm & 0xFFFFu;
-  const uint32_t Upper16 = ((Imm + 0x8000u) >> 16u) & 0xFFFFu;
+  const int16_t Lower16 = Imm & 0xFFFFu;
+  const uint16_t Upper16 = ((Imm + 0x8000u) >> 16u) & 0xFFFFu;
 
   auto fitsInABSLea = [](uint32_t Val) { return (Val & 0xf0003fff) == Val; };
 
