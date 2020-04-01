@@ -79,6 +79,9 @@ void TriCoreTargetInfo::getTargetDefines(const LangOptions &Opts,
   Builder.defineMacro("__tricore__");
   Builder.defineMacro("__TRICORE__");
 
+  // Binary format specifier
+  Builder.defineMacro("__ELF__");
+
   // Architecture specifier
   StringRef TriCoreCore;
   switch (Derivative) {

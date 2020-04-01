@@ -16,6 +16,7 @@
 // COMMON-DAG: #define __tricore 1
 // COMMON-DAG: #define __tricore__ 1
 // COMMON-DAG: #define __TRICORE__ 1
+// COMMON-DAG: #define __ELF__ 1
 // COMMON-DAG: #define __TRICORE_CORE__ [[ARCH]]
 // COMMON-DAG: #define __TRICORE_NAME__ [[CPU]]
 
