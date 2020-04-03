@@ -46,6 +46,7 @@ def A6  : TriCoreReg<6,  "a6">, DwarfRegNum<[22]>;
 def A7  : TriCoreReg<7,  "a7">, DwarfRegNum<[23]>;
 def A8  : TriCoreReg<8,  "a8">, DwarfRegNum<[24]>;
 def A9  : TriCoreReg<9,  "a9">, DwarfRegNum<[25]>;
+let AltNames = ["SP", "sp"] in
 def A10 : TriCoreReg<10, "a10">, DwarfRegNum<[26]>;
 def A11 : TriCoreReg<11, "a11">, DwarfRegNum<[27]>;
 def A12 : TriCoreReg<12, "a12">, DwarfRegNum<[28]>;
