@@ -113,6 +113,11 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
   case FK_Data_4:
   case FK_Data_8:
     return Value;
+  case TriCore::fixup_hi:
+    return ((Value + 0x8000u) >> 16u) & 0xffffu;
+  case TriCore::fixup_lo:
+  case TriCore::fixup_lo2:
+    return Value & 0xffffu;
   case TriCore::fixup_24rel:
     if (!isInt<25>(Value))
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");

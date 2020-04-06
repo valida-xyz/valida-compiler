@@ -375,3 +375,41 @@ lea %a0, [%a0], lo:hi
 .code32
 lea %a0, [%a0], lo:lo
 # FIXUP: fixup A - offset: 0, value: lo:lo, kind: fixup_lo2
+
+
+### Testing symbol - symbol variants
+
+.code32
+movh.a %a0, hi:sym2-sym1
+# FIXUP: fixup A - offset: 0, value: hi:sym2-sym1, kind: fixup_hi
+# INSTR: movh.a %a0, 16
+
+.code32
+movh.a %a0, lo:sym2-sym1
+# FIXUP: fixup A - offset: 0, value: lo:sym2-sym1, kind: fixup_lo
+# INSTR: movh.a %a0, 65535
+
+.code32
+lea %a0, [%a0], lo:sym2-sym1
+# FIXUP: fixup A - offset: 0, value: lo:sym2-sym1, kind: fixup_lo2
+# INSTR: lea %a0, [%a0], -1
+
+.code32
+movh.a %a0, hi:sym1-sym2
+# FIXUP: fixup A - offset: 0, value: hi:sym1-sym2, kind: fixup_hi
+# INSTR: movh.a %a0, 65520
+
+.code32
+movh.a %a0, lo:sym1-sym2
+# FIXUP: fixup A - offset: 0, value: lo:sym1-sym2, kind: fixup_lo
+# INSTR: movh.a %a0, 1
+
+.code32
+lea %a0, [%a0], lo:sym1-sym2
+# FIXUP: fixup A - offset: 0, value: lo:sym1-sym2, kind: fixup_lo2
+# INSTR: lea %a0, [%a0], 1
+
+sym1:
+    .fill 1 << 20 - 1
+sym2:
+
