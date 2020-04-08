@@ -1644,9 +1644,10 @@ SDValue AMDGPUTargetLowering::LowerDIVREM24(SDValue Op, SelectionDAG &DAG,
   const AMDGPUMachineFunction *MFI = MF.getInfo<AMDGPUMachineFunction>();
 
   // float fr = mad(fqneg, fb, fa);
-  unsigned OpCode = MFI->getMode().allFP32Denormals() ?
-                    (unsigned)AMDGPUISD::FMAD_FTZ :
-                    (unsigned)ISD::FMAD;
+  unsigned OpCode = !MFI->getMode().allFP32Denormals() ?
+                    (unsigned)ISD::FMAD :
+                    (unsigned)AMDGPUISD::FMAD_FTZ;
+
   SDValue fr = DAG.getNode(OpCode, DL, FltVT, fqneg, fb, fa);
 
   // int iq = (int)fq;
@@ -1729,9 +1730,10 @@ void AMDGPUTargetLowering::LowerUDIVREM64(SDValue Op,
     const SIMachineFunctionInfo *MFI = MF.getInfo<SIMachineFunctionInfo>();
 
     // Compute denominator reciprocal.
-    unsigned FMAD = MFI->getMode().allFP32Denormals() ?
-                    (unsigned)AMDGPUISD::FMAD_FTZ :
-                    (unsigned)ISD::FMAD;
+    unsigned FMAD = !MFI->getMode().allFP32Denormals() ?
+                    (unsigned)ISD::FMAD :
+                    (unsigned)AMDGPUISD::FMAD_FTZ;
+
 
     SDValue Cvt_Lo = DAG.getNode(ISD::UINT_TO_FP, DL, MVT::f32, RHS_Lo);
     SDValue Cvt_Hi = DAG.getNode(ISD::UINT_TO_FP, DL, MVT::f32, RHS_Hi);
@@ -4581,6 +4583,29 @@ unsigned AMDGPUTargetLowering::ComputeNumSignBitsForTargetNode(
     return 16;
   case AMDGPUISD::FP_TO_FP16:
   case AMDGPUISD::FP16_ZEXT:
+    return 16;
+  default:
+    return 1;
+  }
+}
+
+unsigned AMDGPUTargetLowering::computeNumSignBitsForTargetInstr(
+  GISelKnownBits &Analysis, Register R,
+  const APInt &DemandedElts, const MachineRegisterInfo &MRI,
+  unsigned Depth) const {
+  const MachineInstr *MI = MRI.getVRegDef(R);
+  if (!MI)
+    return 1;
+
+  // TODO: Check range metadata on MMO.
+  switch (MI->getOpcode()) {
+  case AMDGPU::G_AMDGPU_BUFFER_LOAD_SBYTE:
+    return 25;
+  case AMDGPU::G_AMDGPU_BUFFER_LOAD_SSHORT:
+    return 17;
+  case AMDGPU::G_AMDGPU_BUFFER_LOAD_UBYTE:
+    return 24;
+  case AMDGPU::G_AMDGPU_BUFFER_LOAD_USHORT:
     return 16;
   default:
     return 1;

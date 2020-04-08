@@ -275,6 +275,7 @@ static const StringMap<MachineInfo> TargetMap{
     {"elf32-sparcel", {ELF::EM_SPARC, false, true}},
     // TriCore
     {"elf32-tricore", {ELF::EM_TRICORE, false, true}},
+    {"elf32-hexagon", {ELF::EM_HEXAGON, false, true}},
 };
 
 static Expected<TargetInfo>

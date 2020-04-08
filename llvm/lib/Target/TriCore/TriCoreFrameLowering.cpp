@@ -112,7 +112,7 @@ bool TriCoreFrameLowering::hasReservedCallFrame(
 
 int TriCoreFrameLowering::getFrameIndexReference(const MachineFunction &MF,
                                                  int FI,
-                                                 unsigned &FrameReg) const {
+                                                 Register &FrameReg) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   const TriCoreRegisterInfo *TRI =
       MF.getSubtarget<TriCoreSubtarget>().getRegisterInfo();

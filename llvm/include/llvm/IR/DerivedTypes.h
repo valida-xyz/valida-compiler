@@ -195,26 +195,6 @@ private:
   Value *Callee = nullptr;
 };
 
-/// Common super class of ArrayType, StructType and VectorType.
-class CompositeType : public Type {
-protected:
-  explicit CompositeType(LLVMContext &C, TypeID tid) : Type(C, tid) {}
-
-public:
-  /// Given an index value into the type, return the type of the element.
-  Type *getTypeAtIndex(const Value *V) const;
-  Type *getTypeAtIndex(unsigned Idx) const;
-  bool indexValid(const Value *V) const;
-  bool indexValid(unsigned Idx) const;
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast.
-  static bool classof(const Type *T) {
-    return T->getTypeID() == ArrayTyID ||
-           T->getTypeID() == StructTyID ||
-           T->getTypeID() == VectorTyID;
-  }
-};
-
 /// Class to represent struct types. There are two different kinds of struct
 /// types: Literal structs and Identified structs.
 ///
@@ -235,8 +215,8 @@ public:
 /// elements as defined by DataLayout (which is required to match what the code
 /// generator for a target expects).
 ///
-class StructType : public CompositeType {
-  StructType(LLVMContext &C) : CompositeType(C, StructTyID) {}
+class StructType : public Type {
+  StructType(LLVMContext &C) : Type(C, StructTyID) {}
 
   enum {
     /// This is the contents of the SubClassData field.
@@ -350,6 +330,11 @@ public:
     assert(N < NumContainedTys && "Element number out of range!");
     return ContainedTys[N];
   }
+  /// Given an index value into the type, return the type of the element.
+  Type *getTypeAtIndex(const Value *V) const;
+  Type *getTypeAtIndex(unsigned N) const { return getElementType(N); }
+  bool indexValid(const Value *V) const;
+  bool indexValid(unsigned Idx) const { return Idx < getNumElements(); }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast.
   static bool classof(const Type *T) {
@@ -369,46 +354,21 @@ Type *Type::getStructElementType(unsigned N) const {
   return cast<StructType>(this)->getElementType(N);
 }
 
-/// This is the superclass of the array and vector type classes. Both of these
-/// represent "arrays" in memory. The array type represents a specifically sized
-/// array, and the vector type represents a specifically sized array that allows
-/// for use of SIMD instructions. SequentialType holds the common features of
-/// both, which stem from the fact that both lay their components out in memory
-/// identically.
-class SequentialType : public CompositeType {
-  Type *ContainedType;               ///< Storage for the single contained type.
+/// Class to represent array types.
+class ArrayType : public Type {
+  /// The element type of the array.
+  Type *ContainedType;
+  /// Number of elements in the array.
   uint64_t NumElements;
 
-protected:
-  SequentialType(TypeID TID, Type *ElType, uint64_t NumElements)
-    : CompositeType(ElType->getContext(), TID), ContainedType(ElType),
-      NumElements(NumElements) {
-    ContainedTys = &ContainedType;
-    NumContainedTys = 1;
-  }
-
-public:
-  SequentialType(const SequentialType &) = delete;
-  SequentialType &operator=(const SequentialType &) = delete;
-
-  /// For scalable vectors, this will return the minimum number of elements
-  /// in the vector.
-  uint64_t getNumElements() const { return NumElements; }
-  Type *getElementType() const { return ContainedType; }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast.
-  static bool classof(const Type *T) {
-    return T->getTypeID() == ArrayTyID || T->getTypeID() == VectorTyID;
-  }
-};
-
-/// Class to represent array types.
-class ArrayType : public SequentialType {
   ArrayType(Type *ElType, uint64_t NumEl);
 
 public:
   ArrayType(const ArrayType &) = delete;
   ArrayType &operator=(const ArrayType &) = delete;
+
+  uint64_t getNumElements() const { return NumElements; }
+  Type *getElementType() const { return ContainedType; }
 
   /// This static method is the primary way to construct an ArrayType
   static ArrayType *get(Type *ElementType, uint64_t NumElements);
@@ -427,7 +387,7 @@ uint64_t Type::getArrayNumElements() const {
 }
 
 /// Class to represent vector types.
-class VectorType : public SequentialType {
+class VectorType : public Type {
   /// A fully specified VectorType is of the form <vscale x n x Ty>. 'n' is the
   /// minimum number of elements of type Ty contained within the vector, and
   /// 'vscale x' indicates that the total element count is an integer multiple
@@ -441,17 +401,27 @@ class VectorType : public SequentialType {
   /// <vscale x 4 x i32> - a vector containing an unknown integer multiple
   ///                      of 4 i32s
 
+  /// The element type of the vector.
+  Type *ContainedType;
+  /// Minumum number of elements in the vector.
+  uint64_t NumElements;
+
   VectorType(Type *ElType, unsigned NumEl, bool Scalable = false);
   VectorType(Type *ElType, ElementCount EC);
 
   // If true, the total number of elements is an unknown multiple of the
-  // minimum 'NumElements' from SequentialType. Otherwise the total number
-  // of elements is exactly equal to 'NumElements'.
+  // minimum 'NumElements'. Otherwise the total number of elements is exactly
+  // equal to 'NumElements'.
   bool Scalable;
 
 public:
   VectorType(const VectorType &) = delete;
   VectorType &operator=(const VectorType &) = delete;
+
+  /// For scalable vectors, this will return the minimum number of elements
+  /// in the vector.
+  uint64_t getNumElements() const { return NumElements; }
+  Type *getElementType() const { return ContainedType; }
 
   /// This static method is the primary way to construct an VectorType.
   static VectorType *get(Type *ElementType, ElementCount EC);

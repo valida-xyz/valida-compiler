@@ -119,6 +119,9 @@ private:
                         Callback<std::vector<SelectionRange>>);
   void onDocumentLink(const DocumentLinkParams &,
                       Callback<std::vector<DocumentLink>>);
+  void onSemanticTokens(const SemanticTokensParams &, Callback<SemanticTokens>);
+  void onSemanticTokensEdits(const SemanticTokensEditsParams &,
+                             Callback<SemanticTokensOrEdits>);
 
   std::vector<Fix> getFixes(StringRef File, const clangd::Diagnostic &D);
 
@@ -135,7 +138,8 @@ private:
   void applyConfiguration(const ConfigurationSettings &Settings);
 
   /// Sends a "publishSemanticHighlighting" notification to the LSP client.
-  void publishSemanticHighlighting(const SemanticHighlightingParams &);
+  void
+  publishTheiaSemanticHighlighting(const TheiaSemanticHighlightingParams &);
 
   /// Sends a "publishDiagnostics" notification to the LSP client.
   void publishDiagnostics(const PublishDiagnosticsParams &);
@@ -160,6 +164,9 @@ private:
   llvm::StringMap<DiagnosticToReplacementMap> FixItsMap;
   std::mutex HighlightingsMutex;
   llvm::StringMap<std::vector<HighlightingToken>> FileToHighlightings;
+  // Last semantic-tokens response, for incremental requests.
+  std::mutex SemanticTokensMutex;
+  llvm::StringMap<SemanticTokens> LastSemanticTokens;
 
   // Most code should not deal with Transport directly.
   // MessageHandler deals with incoming messages, use call() etc for outgoing.
@@ -181,7 +188,7 @@ private:
             CB(std::move(Rsp));
           } else {
             elog("Failed to decode {0} response", *RawResponse);
-            CB(llvm::make_error<LSPError>("failed to decode reponse",
+            CB(llvm::make_error<LSPError>("failed to decode response",
                                           ErrorCode::InvalidParams));
           }
         };

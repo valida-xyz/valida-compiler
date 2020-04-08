@@ -30,6 +30,7 @@
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/OrcRemoteTargetClient.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
 #include "llvm/ExecutionEngine/OrcMCJITReplacement.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/IRBuilder.h"
@@ -891,6 +892,11 @@ int runOrcLazyJIT(const char *ProgName) {
 
   auto J = ExitOnErr(Builder.create());
 
+  if (TT->isOSBinFormatELF())
+    static_cast<llvm::orc::RTDyldObjectLinkingLayer &>(J->getObjLinkingLayer())
+        .registerJITEventListener(
+            *JITEventListener::createGDBRegistrationListener());
+
   if (PerModuleLazy)
     J->setPartitionFunction(orc::CompileOnDemandLayer::compileWholeModule);
 
@@ -960,7 +966,7 @@ int runOrcLazyJIT(const char *ProgName) {
       auto JDItr = std::prev(IdxToDylib.lower_bound(EAIdx));
       auto &JD = *JDItr->second;
       JD.addGenerator(ExitOnErr(orc::StaticLibraryDefinitionGenerator::Load(
-          J->getObjLinkingLayer(), EAItr->c_str())));
+          J->getObjLinkingLayer(), EAItr->c_str(), *TT)));
     }
   }
 

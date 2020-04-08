@@ -438,14 +438,12 @@ static void assignCalleeSavedSpillSlots(MachineFunction &F,
       unsigned Size = RegInfo->getSpillSize(*RC);
       if (FixedSlot == FixedSpillSlots + NumFixedSpillSlots) {
         // Nope, just spill it anywhere convenient.
-        unsigned Align = RegInfo->getSpillAlignment(*RC);
-        unsigned StackAlign = TFI->getStackAlignment();
-
+        Align Alignment(RegInfo->getSpillAlignment(*RC));
         // We may not be able to satisfy the desired alignment specification of
         // the TargetRegisterClass if the stack alignment is smaller. Use the
         // min.
-        Align = std::min(Align, StackAlign);
-        FrameIdx = MFI.CreateStackObject(Size, Align, true);
+        Alignment = std::min(Alignment, TFI->getStackAlign());
+        FrameIdx = MFI.CreateStackObject(Size, Alignment, true);
         if ((unsigned)FrameIdx < MinCSFrameIndex) MinCSFrameIndex = FrameIdx;
         if ((unsigned)FrameIdx > MaxCSFrameIndex) MaxCSFrameIndex = FrameIdx;
       } else {
@@ -453,8 +451,6 @@ static void assignCalleeSavedSpillSlots(MachineFunction &F,
         FrameIdx = MFI.CreateFixedSpillStackObject(Size, FixedSlot->Offset);
       }
 
-      LLVM_DEBUG(dbgs() << "Assigned " << RegInfo->getName(Reg)
-                        << " to spill slot " << FrameIdx << "\n");
       CS.setFrameIdx(FrameIdx);
     }
   }
@@ -812,7 +808,7 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &MF) {
   for (unsigned i = 0, e = MFI.getObjectIndexEnd(); i != e; ++i)
     if (!MFI.isDeadObjectIndex(i) &&
         MFI.getStackID(i) == TargetStackID::Default)
-      assert(MFI.getObjectAlignment(i) <= MFI.getMaxAlignment() &&
+      assert(MFI.getObjectAlign(i) <= MFI.getMaxAlign() &&
              "MaxAlignment is invalid");
 #endif
 
@@ -1209,7 +1205,7 @@ void PEI::replaceFrameIndices(MachineBasicBlock *BB, MachineFunction &MF,
       if (MI.isDebugValue()) {
         assert(i == 0 && "Frame indices can only appear as the first "
                          "operand of a DBG_VALUE machine instruction");
-        unsigned Reg;
+        Register Reg;
         unsigned FrameIdx = MI.getOperand(0).getIndex();
         unsigned Size = MF.getFrameInfo().getObjectSize(FrameIdx);
 
@@ -1254,7 +1250,7 @@ void PEI::replaceFrameIndices(MachineBasicBlock *BB, MachineFunction &MF,
         assert((!MI.isDebugValue() || i == 0) &&
                "Frame indicies can only appear as the first operand of a "
                "DBG_VALUE machine instruction");
-        unsigned Reg;
+        Register Reg;
         MachineOperand &Offset = MI.getOperand(i + 1);
         int refOffset = TFI->getFrameIndexReferencePreferSP(
             MF, MI.getOperand(i).getIndex(), Reg, /*IgnoreSPUpdates*/ false);

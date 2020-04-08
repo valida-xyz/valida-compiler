@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 // UNSUPPORTED: libcpp-has-no-threads
+// REQUIRES: verify-support
 
 // [[nodiscard]] on constructors isn't supported by all compilers
 // UNSUPPORTED: clang-6, clang-7, clang-8, clang-9
@@ -26,13 +27,13 @@
 // Test that we properly apply [[nodiscard]] to lock_guard's constructors,
 // which is a libc++ extension.
 
-// MODULES_DEFINES: _LIBCPP_ENABLE_NODISCARD
-#define _LIBCPP_ENABLE_NODISCARD
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ENABLE_NODISCARD
+
 #include <mutex>
 
 int main(int, char**) {
     std::mutex m;
-    std::lock_guard<std::mutex>{m}; // expected-error{{ignoring temporary created by a constructor declared with 'nodiscard' attribute}}
-    std::lock_guard<std::mutex>{m, std::adopt_lock}; // expected-error{{ignoring temporary created by a constructor declared with 'nodiscard' attribute}}
+    std::lock_guard<std::mutex>{m}; // expected-warning {{ignoring temporary created by a constructor declared with 'nodiscard' attribute}}
+    std::lock_guard<std::mutex>{m, std::adopt_lock}; // expected-warning {{ignoring temporary created by a constructor declared with 'nodiscard' attribute}}
     return 0;
 }

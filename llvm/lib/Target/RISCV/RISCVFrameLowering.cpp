@@ -461,7 +461,7 @@ void RISCVFrameLowering::emitEpilogue(MachineFunction &MF,
 
 int RISCVFrameLowering::getFrameIndexReference(const MachineFunction &MF,
                                                int FI,
-                                               unsigned &FrameReg) const {
+                                               Register &FrameReg) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   const TargetRegisterInfo *RI = MF.getSubtarget().getRegisterInfo();
   const auto *RVFI = MF.getInfo<RISCVMachineFunctionInfo>();
@@ -631,7 +631,6 @@ RISCVFrameLowering::getFirstSPAdjustAmount(const MachineFunction &MF) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
   const std::vector<CalleeSavedInfo> &CSI = MFI.getCalleeSavedInfo();
   uint64_t StackSize = MFI.getStackSize();
-  uint64_t StackAlign = getStackAlignment();
 
   // Disable SplitSPAdjust if save-restore libcall used. The callee saved
   // registers will be pushed by the save-restore libcalls, so we don't have to
@@ -648,7 +647,7 @@ RISCVFrameLowering::getFirstSPAdjustAmount(const MachineFunction &MF) const {
     // load/store instruction and we have to stick with the stack alignment.
     // 2048 is 16-byte alignment. The stack alignment for RV32 and RV64 is 16,
     // for RV32E is 4. So (2048 - StackAlign) will satisfy the stack alignment.
-    return 2048 - StackAlign;
+    return 2048 - getStackAlign().value();
   }
   return 0;
 }

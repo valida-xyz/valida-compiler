@@ -140,7 +140,6 @@ static void printGenericOp(OpAsmPrinter &p, GenericOpType op) {
     p.printRegion(op.region());
   p.printOptionalAttrDict(op.getAttrs(), attrNames);
   p << ": " << op.getOperandTypes();
-
   auto outputTensorTypes = op.getResultTypes();
   if (!outputTensorTypes.empty())
     p << " -> " << outputTensorTypes;
@@ -532,30 +531,33 @@ getSymbolLessAffineMaps(ArrayRef<ArrayRef<AffineExpr>> reassociation) {
 }
 
 void mlir::linalg::ReshapeOp::build(
-    Builder *b, OperationState &result, Value view,
+    Builder *b, OperationState &result, Value src,
     ArrayRef<ArrayRef<AffineExpr>> reassociation,
     ArrayRef<NamedAttribute> attrs) {
   auto maps = getSymbolLessAffineMaps(reassociation);
-  auto memRefType = view.getType().cast<MemRefType>();
+  auto memRefType = src.getType().cast<MemRefType>();
   auto resultType = computeReshapeCollapsedType(memRefType, maps);
-  build(b, result, resultType, view, attrs);
+  build(b, result, resultType, src, attrs);
   result.addAttribute(ReshapeOp::getReassociationAttrName(),
                       b->getAffineMapArrayAttr(maps));
 }
 
 void mlir::linalg::ReshapeOp::build(
-    Builder *b, OperationState &result, Type resultType, Value view,
+    Builder *b, OperationState &result, Type resultType, Value src,
     ArrayRef<ArrayRef<AffineExpr>> reassociation,
     ArrayRef<NamedAttribute> attrs) {
   auto maps = getSymbolLessAffineMaps(reassociation);
-  build(b, result, resultType, view, attrs);
+  build(b, result, resultType, src, attrs);
   result.addAttribute(ReshapeOp::getReassociationAttrName(),
                       b->getAffineMapArrayAttr(maps));
 }
 
-static LogicalResult verify(ReshapeOp op) {
-  MemRefType expandedType = op.getViewType();
-  MemRefType collapsedType = op.getResult().getType().cast<MemRefType>();
+// Common verifier for reshape-like types. Fills `expandedType` and
+// `collapsedType` with the proper `src` or `result` type.
+template <typename Op, typename T>
+LogicalResult verifyReshapeLikeTypes(Op op, T &expandedType, T &collapsedType) {
+  expandedType = op.getSrcType();
+  collapsedType = op.getResultType();
   unsigned expandedRank = expandedType.getRank();
   unsigned collapsedRank = collapsedType.getRank();
   bool isCollapse = expandedRank > collapsedRank;
@@ -569,7 +571,7 @@ static LogicalResult verify(ReshapeOp op) {
     return op.emitOpError("expected to collapse or expand dims");
 
   if (collapsedRank != op.reassociation().size())
-    return op.emitOpError("expected rank of the collapsed view(")
+    return op.emitOpError("expected rank of the collapsed type(")
            << collapsedRank << ") to be the number of reassociation maps("
            << op.reassociation().size() << ")";
   auto maps = getAffineMaps(op.reassociation());
@@ -582,7 +584,84 @@ static LogicalResult verify(ReshapeOp op) {
   if (!isReassociationValid(maps, &invalidIdx))
     return op.emitOpError("expected reassociation map #")
            << invalidIdx << " to be valid and contiguous";
+  return success();
+}
+
+static LogicalResult verify(ReshapeOp op) {
+  MemRefType expandedType, collapsedType;
+  if (failed(verifyReshapeLikeTypes(op, expandedType, collapsedType)))
+    return failure();
+  auto maps = getAffineMaps(op.reassociation());
   MemRefType expectedType = computeReshapeCollapsedType(expandedType, maps);
+  if (collapsedType != expectedType)
+    return op.emitOpError("expected collapsed type to be ")
+           << expectedType << ", but got " << collapsedType;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TensorReshapeOp
+//===----------------------------------------------------------------------===//
+
+/// Compute the RankedTensorType obtained by applying `reassociation` to `type`.
+static RankedTensorType
+computeTensorReshapeCollapsedType(RankedTensorType type,
+                                  ArrayRef<AffineMap> reassociation) {
+  auto shape = type.getShape();
+  SmallVector<int64_t, 4> newShape;
+  newShape.reserve(reassociation.size());
+
+  // Use the fact that reassociation is valid to simplify the logic: only use
+  // each map's rank.
+  assert(isReassociationValid(reassociation) && "invalid reassociation");
+  unsigned currentDim = 0;
+  for (AffineMap m : reassociation) {
+    unsigned dim = m.getNumResults();
+    auto band = shape.drop_front(currentDim).take_front(dim);
+    int64_t size = 1;
+    if (llvm::is_contained(band, ShapedType::kDynamicSize))
+      size = ShapedType::kDynamicSize;
+    else
+      for (unsigned d = 0; d < dim; ++d)
+        size *= shape[currentDim + d];
+    newShape.push_back(size);
+    currentDim += dim;
+  }
+
+  return RankedTensorType::get(newShape, type.getElementType());
+}
+
+void mlir::linalg::TensorReshapeOp::build(
+    Builder *b, OperationState &result, Value src,
+    ArrayRef<ArrayRef<AffineExpr>> reassociation,
+    ArrayRef<NamedAttribute> attrs) {
+  auto maps = getSymbolLessAffineMaps(reassociation);
+  auto resultType = computeTensorReshapeCollapsedType(
+      src.getType().cast<RankedTensorType>(), maps);
+  build(b, result, resultType, src, attrs);
+  result.addAttribute(TensorReshapeOp::getReassociationAttrName(),
+                      b->getAffineMapArrayAttr(maps));
+}
+
+void mlir::linalg::TensorReshapeOp::build(
+    Builder *b, OperationState &result, Type resultType, Value src,
+    ArrayRef<ArrayRef<AffineExpr>> reassociation,
+    ArrayRef<NamedAttribute> attrs) {
+  auto maps = getSymbolLessAffineMaps(reassociation);
+  build(b, result, resultType, src, attrs);
+  result.addAttribute(TensorReshapeOp::getReassociationAttrName(),
+                      b->getAffineMapArrayAttr(maps));
+}
+
+static LogicalResult verify(TensorReshapeOp op) {
+  RankedTensorType expandedType, collapsedType;
+  if (failed(verifyReshapeLikeTypes(op, expandedType, collapsedType)))
+    return failure();
+  auto maps = getAffineMaps(op.reassociation());
+  // TODO(ntv): expanding a ? with a non-constant is under-specified. Error
+  // out.
+  RankedTensorType expectedType =
+      computeTensorReshapeCollapsedType(expandedType, maps);
   if (collapsedType != expectedType)
     return op.emitOpError("expected collapsed type to be ")
            << expectedType << ", but got " << collapsedType;
@@ -827,8 +906,10 @@ static LogicalResult verify(CopyOp op) {
   return success();
 }
 
-static LogicalResult
-verifyStrideOrDilation(ConvOp op, ArrayRef<Attribute> attrs, bool isStride) {
+template <typename LinalgPoolingOp>
+static LogicalResult verifyStrideOrDilation(LinalgPoolingOp op,
+                                            ArrayRef<Attribute> attrs,
+                                            bool isStride) {
   auto strideOrDilation = isStride ? "stride" : "dilation";
   if (attrs.size() != op.getNumWindowLoops())
     return op.emitOpError("expects num ")
@@ -858,6 +939,41 @@ static LogicalResult verify(ConvOp op) {
       return failure();
   }
   return success();
+}
+
+template <typename PoolingOp>
+static LogicalResult verifySingleInputPoolingOp(PoolingOp op) {
+  auto inputType = op.input().getType().template cast<MemRefType>();
+  auto outputType = op.output().getType().template cast<MemRefType>();
+  if (outputType.getElementType() != inputType.getElementType())
+    return op.emitOpError("expects memref elemental types to match");
+
+  auto windowDimsType = op.windowDims().getType().template cast<MemRefType>();
+  if (outputType.getRank() != inputType.getRank() ||
+      outputType.getRank() != windowDimsType.getRank())
+    return op.emitOpError("expects memref ranks to match");
+
+  if (auto strides = op.strides()) {
+    if (failed(
+            verifyStrideOrDilation(op, strides->getValue(), /*isStride=*/true)))
+      return failure();
+  }
+  if (auto dilations = op.dilations()) {
+    if (failed(verifyStrideOrDilation(op, dilations->getValue(),
+                                      /*isStride=*/false)))
+      return failure();
+  }
+  return success();
+}
+
+static LogicalResult verify(PoolingMaxOp op) {
+  return verifySingleInputPoolingOp(op);
+}
+static LogicalResult verify(PoolingMinOp op) {
+  return verifySingleInputPoolingOp(op);
+}
+static LogicalResult verify(PoolingSumOp op) {
+  return verifySingleInputPoolingOp(op);
 }
 
 namespace mlir {
@@ -894,20 +1010,33 @@ mlir::linalg::makeAffineDimExprs(unsigned num, unsigned &startIdx,
   return res;
 }
 
+template <typename PoolingOp>
 SmallVector<AffineExpr, 4>
-mlir::linalg::weightedConvInputIndex(ConvOp op, ArrayRef<AffineExpr> xs,
-                                     ArrayRef<AffineExpr> zs) {
-  assert(xs.size() == zs.size());
+mlir::linalg::weightedPoolingInputIndex(PoolingOp op,
+                                        ArrayRef<AffineExpr> outputDims,
+                                        ArrayRef<AffineExpr> windowDims) {
+  assert(outputDims.size() == windowDims.size());
   SmallVector<AffineExpr, 4> res;
-  res.reserve(xs.size());
-  for (unsigned i = 0, e = xs.size(); i < e; ++i) {
+  res.reserve(outputDims.size());
+  for (unsigned i = 0, e = outputDims.size(); i < e; ++i) {
     // TODO(ntv): add a level of indirection to linalg.generic.
-    auto expr =
-        op.getStride(i) * xs[i] + op.getDilation(i) * zs[i] - op.getLowPad(i);
+    auto expr = op.getStride(i) * outputDims[i] +
+                op.getDilation(i) * windowDims[i] - op.getLowPad(i);
     res.push_back(expr);
   }
   return res;
 }
+
+#define INSTANTIATE_WEIGHTED_POOLING_INPUT_INDEX(OP_TYPE)                      \
+  template SmallVector<AffineExpr, 4>                                          \
+  mlir::linalg::weightedPoolingInputIndex<OP_TYPE>(                            \
+      OP_TYPE op, ArrayRef<AffineExpr> outputDims,                             \
+      ArrayRef<AffineExpr> windowDims);
+
+INSTANTIATE_WEIGHTED_POOLING_INPUT_INDEX(ConvOp)
+INSTANTIATE_WEIGHTED_POOLING_INPUT_INDEX(PoolingMaxOp)
+INSTANTIATE_WEIGHTED_POOLING_INPUT_INDEX(PoolingMinOp)
+INSTANTIATE_WEIGHTED_POOLING_INPUT_INDEX(PoolingSumOp)
 
 SmallVector<AffineExpr, 4> mlir::linalg::concat(ArrayRef<AffineExpr> a,
                                                 ArrayRef<AffineExpr> b) {
@@ -957,6 +1086,18 @@ std::string mlir::linalg::generateLibraryCallName(Operation *op) {
 // where a Linalg "named" op **isa** LinalgOp.
 LogicalResult ConvOp::fold(ArrayRef<Attribute>,
                            SmallVectorImpl<OpFoldResult> &) {
+  return foldMemRefCast(*this);
+}
+LogicalResult PoolingMaxOp::fold(ArrayRef<Attribute>,
+                                 SmallVectorImpl<OpFoldResult> &) {
+  return foldMemRefCast(*this);
+}
+LogicalResult PoolingMinOp::fold(ArrayRef<Attribute>,
+                                 SmallVectorImpl<OpFoldResult> &) {
+  return foldMemRefCast(*this);
+}
+LogicalResult PoolingSumOp::fold(ArrayRef<Attribute>,
+                                 SmallVectorImpl<OpFoldResult> &) {
   return foldMemRefCast(*this);
 }
 LogicalResult CopyOp::fold(ArrayRef<Attribute>,

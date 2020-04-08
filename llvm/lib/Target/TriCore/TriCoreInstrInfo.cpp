@@ -219,13 +219,13 @@ void TriCoreInstrInfo::storeRegToStackSlot(
     const TargetRegisterInfo *TRI) const {
   MachineFunction &MF = *MBB.getParent();
   MachineFrameInfo &MFI = MF.getFrameInfo();
-  unsigned Align = MFI.getObjectAlignment(FrameIndex);
+  Align Alignment = MFI.getObjectAlign(FrameIndex);
 
   MachinePointerInfo PtrInfo =
       MachinePointerInfo::getFixedStack(MF, FrameIndex);
   MachineMemOperand *MMO =
       MF.getMachineMemOperand(PtrInfo, MachineMemOperand::MOStore,
-                              MFI.getObjectSize(FrameIndex), Align);
+                              MFI.getObjectSize(FrameIndex), Alignment);
 
   unsigned Opc =
       getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ false);
@@ -246,12 +246,13 @@ void TriCoreInstrInfo::loadRegFromStackSlot(
     const TargetRegisterInfo *TRI) const {
   MachineFunction &MF = *MBB.getParent();
   MachineFrameInfo &MFI = MF.getFrameInfo();
-  unsigned Align = MFI.getObjectAlignment(FrameIndex);
+  Align Alignment = MFI.getObjectAlign(FrameIndex);
 
   MachinePointerInfo PtrInfo =
       MachinePointerInfo::getFixedStack(MF, FrameIndex);
-  MachineMemOperand *MMO = MF.getMachineMemOperand(
-      PtrInfo, MachineMemOperand::MOLoad, MFI.getObjectSize(FrameIndex), Align);
+  MachineMemOperand *MMO =
+      MF.getMachineMemOperand(PtrInfo, MachineMemOperand::MOLoad,
+                              MFI.getObjectSize(FrameIndex), Alignment);
 
   unsigned Opc =
       getLoadStoreOpcode(TRI->getSpillSize(*RC), RC, /*IsLoad*/ true);

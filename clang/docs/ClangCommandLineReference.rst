@@ -2403,7 +2403,7 @@ Target-dependent compilation options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 .. option:: -G<size>, -G=<arg>, -msmall-data-threshold=<arg>
 
-Put objects of at most <size> bytes into small data section (MIPS / Hexagon)
+Put objects of at most <size> bytes into small data section (MIPS / Hexagon / RISCV)
 
 .. option:: -ffixed-x1
 
@@ -2624,6 +2624,10 @@ Use Intel MCU ABI
 .. option:: -mlong-calls, -mno-long-calls
 
 Generate branches with extended addressability, usually via indirect jumps.
+
+.. option:: -mlvi-cfi, -mno-lvi-cfi
+
+Enable only control-flow mitigations for Load Value Injection (LVI)
 
 .. option:: -mmacosx-version-min=<arg>, -mmacos-version-min=<arg>
 
@@ -3145,6 +3149,8 @@ X86
 
 .. option:: -msahf, -mno-sahf
 
+.. option:: -mserialize, -mno-serialize
+
 .. option:: -msgx, -mno-sgx
 
 .. option:: -msha, -mno-sha
@@ -3200,6 +3206,10 @@ Enable linker relaxation
 .. option:: -msave-restore, -mno-save-restore
 
 Enable using library calls for save and restore
+
+.. option:: -msmall-data-limit=<limit>
+
+Put global and static data smaller than the limit into a special section
 
 Long double flags
 -----------------

@@ -103,7 +103,7 @@ void WebAssemblyAsmPrinter::emitEndOfAsmFile(Module &M) {
     if (F.isDeclarationForLinker()) {
       SmallVector<MVT, 4> Results;
       SmallVector<MVT, 4> Params;
-      computeSignatureVTs(F.getFunctionType(), F, TM, Params, Results);
+      computeSignatureVTs(F.getFunctionType(), &F, F, TM, Params, Results);
       auto *Sym = cast<MCSymbolWasm>(getSymbol(&F));
       Sym->setType(wasm::WASM_SYMBOL_TYPE_FUNCTION);
       if (!Sym->getSignature()) {
@@ -122,14 +122,14 @@ void WebAssemblyAsmPrinter::emitEndOfAsmFile(Module &M) {
           F.hasFnAttribute("wasm-import-module")) {
         StringRef Name =
             F.getFnAttribute("wasm-import-module").getValueAsString();
-        Sym->setImportModule(Name);
+        Sym->setImportModule(storeName(Name));
         getTargetStreamer()->emitImportModule(Sym, Name);
       }
       if (TM.getTargetTriple().isOSBinFormatWasm() &&
           F.hasFnAttribute("wasm-import-name")) {
         StringRef Name =
             F.getFnAttribute("wasm-import-name").getValueAsString();
-        Sym->setImportName(Name);
+        Sym->setImportName(storeName(Name));
         getTargetStreamer()->emitImportName(Sym, Name);
       }
     }
@@ -137,7 +137,7 @@ void WebAssemblyAsmPrinter::emitEndOfAsmFile(Module &M) {
     if (F.hasFnAttribute("wasm-export-name")) {
       auto *Sym = cast<MCSymbolWasm>(getSymbol(&F));
       StringRef Name = F.getFnAttribute("wasm-export-name").getValueAsString();
-      Sym->setExportName(Name);
+      Sym->setExportName(storeName(Name));
       getTargetStreamer()->emitExportName(Sym, Name);
     }
   }
@@ -290,7 +290,8 @@ void WebAssemblyAsmPrinter::emitFunctionBodyStart() {
   const Function &F = MF->getFunction();
   SmallVector<MVT, 1> ResultVTs;
   SmallVector<MVT, 4> ParamVTs;
-  computeSignatureVTs(F.getFunctionType(), F, TM, ParamVTs, ResultVTs);
+  computeSignatureVTs(F.getFunctionType(), &F, F, TM, ParamVTs, ResultVTs);
+
   auto Signature = signatureFromMVTs(ResultVTs, ParamVTs);
   auto *WasmSym = cast<MCSymbolWasm>(CurrentFnSym);
   WasmSym->setSignature(Signature.get());

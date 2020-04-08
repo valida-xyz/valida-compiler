@@ -15,6 +15,7 @@
 #include "Protocol.h"
 #include "SemanticHighlighting.h"
 #include "SourceCode.h"
+#include "TUScheduler.h"
 #include "Trace.h"
 #include "URI.h"
 #include "refactor/Tweak.h"
@@ -148,21 +149,6 @@ llvm::Error validateEdits(const DraftStore &DraftMgr, const FileEdits &FE) {
       llvm::inconvertibleErrorCode(),
       "Files must be saved first: " + LastInvalidFile + " (and " +
           llvm::to_string(InvalidFileCount - 1) + " others)");
-}
-
-// Converts a list of Ranges to a LinkedList of SelectionRange.
-SelectionRange render(const std::vector<Range> &Ranges) {
-  if (Ranges.empty())
-    return {};
-  SelectionRange Result;
-  Result.range = Ranges[0];
-  auto *Next = &Result.parent;
-  for (const auto &R : llvm::make_range(Ranges.begin() + 1, Ranges.end())) {
-    *Next = std::make_unique<SelectionRange>();
-    Next->get()->range = R;
-    Next = &Next->get()->parent;
-  }
-  return Result;
 }
 
 } // namespace
@@ -473,6 +459,14 @@ void ClangdLSPServer::notify(llvm::StringRef Method, llvm::json::Value Params) {
   Transp.notify(Method, std::move(Params));
 }
 
+static std::vector<llvm::StringRef> semanticTokenTypes() {
+  std::vector<llvm::StringRef> Types;
+  for (unsigned I = 0; I <= static_cast<unsigned>(HighlightingKind::LastKind);
+       ++I)
+    Types.push_back(toSemanticTokenType(static_cast<HighlightingKind>(I)));
+  return Types;
+}
+
 void ClangdLSPServer::onInitialize(const InitializeParams &Params,
                                    Callback<llvm::json::Value> Reply) {
   // Determine character encoding first as it affects constructed ClangdServer.
@@ -485,8 +479,15 @@ void ClangdLSPServer::onInitialize(const InitializeParams &Params,
       }
   }
 
-  ClangdServerOpts.SemanticHighlighting =
-      Params.capabilities.SemanticHighlighting;
+  ClangdServerOpts.TheiaSemanticHighlighting =
+      Params.capabilities.TheiaSemanticHighlighting;
+  if (Params.capabilities.TheiaSemanticHighlighting &&
+      Params.capabilities.SemanticTokens) {
+    log("Client supports legacy semanticHighlights notification and standard "
+        "semanticTokens request, choosing the latter (no notifications).");
+    ClangdServerOpts.TheiaSemanticHighlighting = false;
+  }
+
   if (Params.rootUri && *Params.rootUri)
     ClangdServerOpts.WorkspaceRoot = std::string(Params.rootUri->file());
   else if (Params.rootPath && !Params.rootPath->empty())
@@ -584,6 +585,14 @@ void ClangdLSPServer::onInitialize(const InitializeParams &Params,
                  // trigger on '->' and '::'.
                  {"triggerCharacters", {".", ">", ":"}},
              }},
+            {"semanticTokensProvider",
+             llvm::json::Object{
+                 {"documentProvider", llvm::json::Object{{"edits", true}}},
+                 {"rangeProvider", false},
+                 {"legend",
+                  llvm::json::Object{{"tokenTypes", semanticTokenTypes()},
+                                     {"tokenModifiers", llvm::json::Array()}}},
+             }},
             {"signatureHelpProvider",
              llvm::json::Object{
                  {"triggerCharacters", {"(", ","}},
@@ -611,7 +620,7 @@ void ClangdLSPServer::onInitialize(const InitializeParams &Params,
         }}}};
   if (NegotiatedOffsetEncoding)
     Result["offsetEncoding"] = *NegotiatedOffsetEncoding;
-  if (Params.capabilities.SemanticHighlighting)
+  if (ClangdServerOpts.TheiaSemanticHighlighting)
     Result.getObject("capabilities")
         ->insert(
             {"semanticHighlighting",
@@ -824,6 +833,10 @@ void ClangdLSPServer::onDocumentDidClose(
   {
     std::lock_guard<std::mutex> HLock(HighlightingsMutex);
     FileToHighlightings.erase(File);
+  }
+  {
+    std::lock_guard<std::mutex> HLock(SemanticTokensMutex);
+    LastSemanticTokens.erase(File);
   }
   // clangd will not send updates for this file anymore, so we empty out the
   // list of diagnostics shown on the client (e.g. in the "Problems" pane of
@@ -1169,8 +1182,8 @@ void ClangdLSPServer::applyConfiguration(
   reparseOpenedFiles(ModifiedFiles);
 }
 
-void ClangdLSPServer::publishSemanticHighlighting(
-    const SemanticHighlightingParams &Params) {
+void ClangdLSPServer::publishTheiaSemanticHighlighting(
+    const TheiaSemanticHighlightingParams &Params) {
   notify("textDocument/semanticHighlighting", Params);
 }
 
@@ -1206,24 +1219,13 @@ void ClangdLSPServer::onSymbolInfo(const TextDocumentPositionParams &Params,
 void ClangdLSPServer::onSelectionRange(
     const SelectionRangeParams &Params,
     Callback<std::vector<SelectionRange>> Reply) {
-  if (Params.positions.size() != 1) {
-    elog("{0} positions provided to SelectionRange. Supports exactly one "
-         "position.",
-         Params.positions.size());
-    return Reply(llvm::make_error<LSPError>(
-        "SelectionRange supports exactly one position",
-        ErrorCode::InvalidRequest));
-  }
   Server->semanticRanges(
-      Params.textDocument.uri.file(), Params.positions[0],
+      Params.textDocument.uri.file(), Params.positions,
       [Reply = std::move(Reply)](
-          llvm::Expected<std::vector<Range>> Ranges) mutable {
-        if (!Ranges) {
+          llvm::Expected<std::vector<SelectionRange>> Ranges) mutable {
+        if (!Ranges)
           return Reply(Ranges.takeError());
-        }
-        std::vector<SelectionRange> Result;
-        Result.emplace_back(render(std::move(*Ranges)));
-        return Reply(std::move(Result));
+        return Reply(std::move(*Ranges));
       });
 }
 
@@ -1243,6 +1245,75 @@ void ClangdLSPServer::onDocumentLink(
           return Reply(Links.takeError());
         }
         return Reply(std::move(Links));
+      });
+}
+
+// Increment a numeric string: "" -> 1 -> 2 -> ... -> 9 -> 10 -> 11 ...
+static void increment(std::string &S) {
+  for (char &C : llvm::reverse(S)) {
+    if (C != '9') {
+      ++C;
+      return;
+    }
+    C = '0';
+  }
+  S.insert(S.begin(), '1');
+}
+
+void ClangdLSPServer::onSemanticTokens(const SemanticTokensParams &Params,
+                                       Callback<SemanticTokens> CB) {
+  Server->semanticHighlights(
+      Params.textDocument.uri.file(),
+      [this, File(Params.textDocument.uri.file().str()), CB(std::move(CB))](
+          llvm::Expected<std::vector<HighlightingToken>> HT) mutable {
+        if (!HT)
+          return CB(HT.takeError());
+        SemanticTokens Result;
+        Result.tokens = toSemanticTokens(*HT);
+        {
+          std::lock_guard<std::mutex> Lock(SemanticTokensMutex);
+          auto& Last = LastSemanticTokens[File];
+
+          Last.tokens = Result.tokens;
+          increment(Last.resultId);
+          Result.resultId = Last.resultId;
+        }
+        CB(std::move(Result));
+      });
+}
+
+void ClangdLSPServer::onSemanticTokensEdits(
+    const SemanticTokensEditsParams &Params,
+    Callback<SemanticTokensOrEdits> CB) {
+  Server->semanticHighlights(
+      Params.textDocument.uri.file(),
+      [this, PrevResultID(Params.previousResultId),
+       File(Params.textDocument.uri.file().str()), CB(std::move(CB))](
+          llvm::Expected<std::vector<HighlightingToken>> HT) mutable {
+        if (!HT)
+          return CB(HT.takeError());
+        std::vector<SemanticToken> Toks = toSemanticTokens(*HT);
+
+        SemanticTokensOrEdits Result;
+        {
+          std::lock_guard<std::mutex> Lock(SemanticTokensMutex);
+          auto& Last = LastSemanticTokens[File];
+
+          if (PrevResultID == Last.resultId) {
+            Result.edits = diffTokens(Last.tokens, Toks);
+          } else {
+            vlog("semanticTokens/edits: wanted edits vs {0} but last result "
+                 "had ID {1}. Returning full token list.",
+                 PrevResultID, Last.resultId);
+            Result.tokens = Toks;
+          }
+
+          Last.tokens = std::move(Toks);
+          increment(Last.resultId);
+          Result.resultId = Last.resultId;
+        }
+
+        CB(std::move(Result));
       });
 }
 
@@ -1293,10 +1364,13 @@ ClangdLSPServer::ClangdLSPServer(
   MsgHandler->bind("typeHierarchy/resolve", &ClangdLSPServer::onResolveTypeHierarchy);
   MsgHandler->bind("textDocument/selectionRange", &ClangdLSPServer::onSelectionRange);
   MsgHandler->bind("textDocument/documentLink", &ClangdLSPServer::onDocumentLink);
+  MsgHandler->bind("textDocument/semanticTokens", &ClangdLSPServer::onSemanticTokens);
+  MsgHandler->bind("textDocument/semanticTokens/edits", &ClangdLSPServer::onSemanticTokensEdits);
   // clang-format on
 }
 
-ClangdLSPServer::~ClangdLSPServer() { IsBeingDestroyed = true;
+ClangdLSPServer::~ClangdLSPServer() {
+  IsBeingDestroyed = true;
   // Explicitly destroy ClangdServer first, blocking on threads it owns.
   // This ensures they don't access any other members.
   Server.reset();
@@ -1376,12 +1450,12 @@ void ClangdLSPServer::onHighlightingsReady(
   // LSP allows us to send incremental edits of highlightings. Also need to diff
   // to remove highlightings from tokens that should no longer have them.
   std::vector<LineHighlightings> Diffed = diffHighlightings(Highlightings, Old);
-  SemanticHighlightingParams Notification;
+  TheiaSemanticHighlightingParams Notification;
   Notification.TextDocument.uri =
       URIForFile::canonicalize(File, /*TUPath=*/File);
   Notification.TextDocument.version = decodeVersion(Version);
-  Notification.Lines = toSemanticHighlightingInformation(Diffed);
-  publishSemanticHighlighting(Notification);
+  Notification.Lines = toTheiaSemanticHighlightingInformation(Diffed);
+  publishTheiaSemanticHighlighting(Notification);
 }
 
 void ClangdLSPServer::onDiagnosticsReady(PathRef File, llvm::StringRef Version,
@@ -1484,8 +1558,9 @@ void ClangdLSPServer::onFileUpdated(PathRef File, const TUStatus &Status) {
   // two statuses are running faster in practice, which leads the UI constantly
   // changing, and doesn't provide much value. We may want to emit status at a
   // reasonable time interval (e.g. 0.5s).
-  if (Status.Action.S == TUAction::BuildingFile ||
-      Status.Action.S == TUAction::RunningAction)
+  if (Status.PreambleActivity == PreambleAction::Idle &&
+      (Status.ASTActivity.K == ASTAction::Building ||
+       Status.ASTActivity.K == ASTAction::RunningAction))
     return;
   notify("textDocument/clangd.fileStatus", Status.render(File));
 }

@@ -128,7 +128,7 @@ public:
   /// Return the signedness semantics of this integer type.
   SignednessSemantics getSignedness() const;
 
-  /// Return true if this is a singless integer type.
+  /// Return true if this is a signless integer type.
   bool isSignless() const { return getSignedness() == Signless; }
   /// Return true if this is a signed integer type.
   bool isSigned() const { return getSignedness() == Signed; }
@@ -330,7 +330,7 @@ public:
     // element type within that dialect.
     return type.isa<ComplexType>() || type.isa<FloatType>() ||
            type.isa<IntegerType>() || type.isa<OpaqueType>() ||
-           type.isa<VectorType>() ||
+           type.isa<VectorType>() || type.isa<IndexType>() ||
            (type.getKind() > Type::Kind::LAST_STANDARD_TYPE);
   }
 
@@ -342,8 +342,8 @@ public:
 };
 
 /// Ranked tensor types represent multi-dimensional arrays that have a shape
-/// with a fixed number of dimensions. Each shape element can be a positive
-/// integer or unknown (represented -1).
+/// with a fixed number of dimensions. Each shape element can be a non-negative
+/// integer or unknown (represented by -1).
 class RankedTensorType
     : public Type::TypeBase<RankedTensorType, TensorType,
                             detail::RankedTensorTypeStorage> {
@@ -416,8 +416,8 @@ public:
 
 /// MemRef types represent a region of memory that have a shape with a fixed
 /// number of dimensions. Each shape element can be a non-negative integer or
-/// unknown (represented by any negative integer). MemRef types also have an
-/// affine map composition, represented as an array AffineMap pointers.
+/// unknown (represented by -1). MemRef types also have an affine map
+/// composition, represented as an array AffineMap pointers.
 class MemRefType : public Type::TypeBase<MemRefType, BaseMemRefType,
                                          detail::MemRefTypeStorage> {
 public:

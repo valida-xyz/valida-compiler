@@ -22,17 +22,16 @@
 // UNSUPPORTED: c++98, c++03
 // REQUIRES: verify-support
 
-// MODULES_DEFINES: _LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
-#define _LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
 
 #include <memory>
 #include "test_macros.h"
 
 int main(int, char**)
 {
-    typedef std::auto_ptr<int> AP; // expected-error{{'auto_ptr<int>' is deprecated}}
-    typedef std::auto_ptr<void> APV; // expected-error{{'auto_ptr<void>' is deprecated}}
-    typedef std::auto_ptr_ref<int> APR; // expected-error{{'auto_ptr_ref<int>' is deprecated}}
+    typedef std::auto_ptr<int> AP; // expected-warning {{'auto_ptr<int>' is deprecated}}
+    typedef std::auto_ptr<void> APV; // expected-warning {{'auto_ptr<void>' is deprecated}}
+    typedef std::auto_ptr_ref<int> APR; // expected-warning {{'auto_ptr_ref<int>' is deprecated}}
 
   return 0;
 }

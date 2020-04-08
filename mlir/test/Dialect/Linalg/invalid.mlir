@@ -485,7 +485,7 @@ func @reshape(%arg0: memref<?xf32>) {
 // -----
 
 func @reshape(%arg0: memref<?x?x?xf32>) {
-  // expected-error @+1 {{expected rank of the collapsed view(2) to be the number of reassociation maps(1)}}
+  // expected-error @+1 {{expected rank of the collapsed type(2) to be the number of reassociation maps(1)}}
   %0 = linalg.reshape %arg0 [affine_map<(i, j, k) -> (i, j)>] :
     memref<?x?x?xf32> into memref<?x?xf32, offset: 0, strides: [?, 1]>
 }
@@ -512,4 +512,15 @@ func @reshape(%arg0: memref<?x?x?xf32>) {
   // expected-error @+1 {{expected collapsed type to be 'memref<?x?xf32>', but got 'memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>'}}
   %0 = linalg.reshape %arg0 [affine_map<(i, j, k) -> (i, j)>, affine_map<(i, j, k) -> (k)>] :
     memref<?x?x?xf32> into memref<?x?xf32, affine_map<(d0, d1)[s0] -> (d0 * s0 + d1)>>
+}
+
+// -----
+
+func @pooling_rank_mismatch(%arg0: memref<?x?x?xf32>,
+                            %arg1: memref<2x3xf32>,
+                            %arg2: memref<?x?x?xf32>) {
+  // expected-error @+1 {{expects memref ranks to match}}
+  linalg.pooling_max(%arg0, %arg1, %arg2) {strides = [2, 1, 2]}:
+    memref<?x?x?xf32>, memref<2x3xf32>, memref<?x?x?xf32>
+  return
 }

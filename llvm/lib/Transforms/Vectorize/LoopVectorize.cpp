@@ -409,6 +409,9 @@ public:
   /// Widen a single instruction within the innermost loop.
   void widenInstruction(Instruction &I);
 
+  /// Widen a single call instruction within the innermost loop.
+  void widenCallInstruction(CallInst &I);
+
   /// Fix the vectorized code, taking care of header phi's, live-outs, and more.
   void fixVectorizedLoop();
 
@@ -486,8 +489,8 @@ public:
   /// non-null. Use \p State to translate given VPValues to IR values in the
   /// vectorized loop.
   void vectorizeMemoryInstruction(Instruction *Instr, VPTransformState &State,
-                                  VPValue *Addr,
-                                  VPValue *BlockInMask = nullptr);
+                                  VPValue *Addr, VPValue *StoredValue,
+                                  VPValue *BlockInMask);
 
   /// Set the debug location in the builder using the debug location in
   /// the instruction.
@@ -1806,51 +1809,31 @@ void InnerLoopVectorizer::widenIntOrFpInduction(PHINode *IV, TruncInst *Trunc) {
   auto ID = II->second;
   assert(IV->getType() == ID.getStartValue()->getType() && "Types must match");
 
-  // The scalar value to broadcast. This will be derived from the canonical
-  // induction variable.
-  Value *ScalarIV = nullptr;
-
   // The value from the original loop to which we are mapping the new induction
   // variable.
   Instruction *EntryVal = Trunc ? cast<Instruction>(Trunc) : IV;
 
-  // True if we have vectorized the induction variable.
-  auto VectorizedIV = false;
-
-  // Determine if we want a scalar version of the induction variable. This is
-  // true if the induction variable itself is not widened, or if it has at
-  // least one user in the loop that is not widened.
-  auto NeedsScalarIV = VF > 1 && needsScalarInduction(EntryVal);
+  auto &DL = OrigLoop->getHeader()->getModule()->getDataLayout();
 
   // Generate code for the induction step. Note that induction steps are
   // required to be loop-invariant
-  assert(PSE.getSE()->isLoopInvariant(ID.getStep(), OrigLoop) &&
-         "Induction step should be loop invariant");
-  auto &DL = OrigLoop->getHeader()->getModule()->getDataLayout();
-  Value *Step = nullptr;
-  if (PSE.getSE()->isSCEVable(IV->getType())) {
-    SCEVExpander Exp(*PSE.getSE(), DL, "induction");
-    Step = Exp.expandCodeFor(ID.getStep(), ID.getStep()->getType(),
-                             LoopVectorPreHeader->getTerminator());
-  } else {
-    Step = cast<SCEVUnknown>(ID.getStep())->getValue();
-  }
+  auto CreateStepValue = [&](const SCEV *Step) -> Value * {
+    assert(PSE.getSE()->isLoopInvariant(Step, OrigLoop) &&
+           "Induction step should be loop invariant");
+    if (PSE.getSE()->isSCEVable(IV->getType())) {
+      SCEVExpander Exp(*PSE.getSE(), DL, "induction");
+      return Exp.expandCodeFor(Step, Step->getType(),
+                               LoopVectorPreHeader->getTerminator());
+    }
+    return cast<SCEVUnknown>(Step)->getValue();
+  };
 
-  // Try to create a new independent vector induction variable. If we can't
-  // create the phi node, we will splat the scalar induction variable in each
-  // loop iteration.
-  if (VF > 1 && !shouldScalarizeInstruction(EntryVal)) {
-    createVectorIntOrFpInductionPHI(ID, Step, EntryVal);
-    VectorizedIV = true;
-  }
-
-  // If we haven't yet vectorized the induction variable, or if we will create
-  // a scalar one, we need to define the scalar induction variable and step
-  // values. If we were given a truncation type, truncate the canonical
+  // The scalar value to broadcast. This is derived from the canonical
+  // induction variable. If a truncation type is given, truncate the canonical
   // induction variable and step. Otherwise, derive these values from the
   // induction descriptor.
-  if (!VectorizedIV || NeedsScalarIV) {
-    ScalarIV = Induction;
+  auto CreateScalarIV = [&](Value *&Step) -> Value * {
+    Value *ScalarIV = Induction;
     if (IV != OldInduction) {
       ScalarIV = IV->getType()->isIntegerTy()
                      ? Builder.CreateSExtOrTrunc(Induction, IV->getType())
@@ -1866,12 +1849,12 @@ void InnerLoopVectorizer::widenIntOrFpInduction(PHINode *IV, TruncInst *Trunc) {
       ScalarIV = Builder.CreateTrunc(ScalarIV, TruncType);
       Step = Builder.CreateTrunc(Step, TruncType);
     }
-  }
+    return ScalarIV;
+  };
 
-  // If we haven't yet vectorized the induction variable, splat the scalar
-  // induction variable, and build the necessary step vectors.
-  // TODO: Don't do it unless the vectorized IV is really required.
-  if (!VectorizedIV) {
+  // Create the vector values from the scalar IV, in the absence of creating a
+  // vector IV.
+  auto CreateSplatIV = [&](Value *ScalarIV, Value *Step) {
     Value *Broadcasted = getBroadcastInstrs(ScalarIV);
     for (unsigned Part = 0; Part < UF; ++Part) {
       Value *EntryPart =
@@ -1881,16 +1864,45 @@ void InnerLoopVectorizer::widenIntOrFpInduction(PHINode *IV, TruncInst *Trunc) {
         addMetadata(EntryPart, Trunc);
       recordVectorLoopValueForInductionCast(ID, EntryVal, EntryPart, Part);
     }
+  };
+
+  // Now do the actual transformations, and start with creating the step value.
+  Value *Step = CreateStepValue(ID.getStep());
+  if (VF <= 1) {
+    Value *ScalarIV = CreateScalarIV(Step);
+    CreateSplatIV(ScalarIV, Step);
+    return;
   }
 
-  // If an induction variable is only used for counting loop iterations or
-  // calculating addresses, it doesn't need to be widened. Create scalar steps
-  // that can be used by instructions we will later scalarize. Note that the
-  // addition of the scalar steps will not increase the number of instructions
-  // in the loop in the common case prior to InstCombine. We will be trading
-  // one vector extract for each scalar step.
-  if (NeedsScalarIV)
+  // Determine if we want a scalar version of the induction variable. This is
+  // true if the induction variable itself is not widened, or if it has at
+  // least one user in the loop that is not widened.
+  auto NeedsScalarIV = needsScalarInduction(EntryVal);
+  if (!NeedsScalarIV) {
+    createVectorIntOrFpInductionPHI(ID, Step, EntryVal);
+    return;
+  }
+
+  // Try to create a new independent vector induction variable. If we can't
+  // create the phi node, we will splat the scalar induction variable in each
+  // loop iteration.
+  if (!shouldScalarizeInstruction(EntryVal)) {
+    createVectorIntOrFpInductionPHI(ID, Step, EntryVal);
+    Value *ScalarIV = CreateScalarIV(Step);
+    // Create scalar steps that can be used by instructions we will later
+    // scalarize. Note that the addition of the scalar steps will not increase
+    // the number of instructions in the loop in the common case prior to
+    // InstCombine. We will be trading one vector extract for each scalar step.
     buildScalarSteps(ScalarIV, Step, EntryVal, ID);
+    return;
+  }
+
+  // If we haven't yet vectorized the induction variable, splat the scalar
+  // induction variable, and build the necessary step vectors.
+  // TODO: Don't do it unless the vectorized IV is really required.
+  Value *ScalarIV = CreateScalarIV(Step);
+  CreateSplatIV(ScalarIV, Step);
+  buildScalarSteps(ScalarIV, Step, EntryVal, ID);
 }
 
 Value *InnerLoopVectorizer::getStepVector(Value *Val, int StartIdx, Value *Step,
@@ -2348,12 +2360,15 @@ void InnerLoopVectorizer::vectorizeInterleaveGroup(Instruction *Instr,
 void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr,
                                                      VPTransformState &State,
                                                      VPValue *Addr,
+                                                     VPValue *StoredValue,
                                                      VPValue *BlockInMask) {
   // Attempt to issue a wide load.
   LoadInst *LI = dyn_cast<LoadInst>(Instr);
   StoreInst *SI = dyn_cast<StoreInst>(Instr);
 
   assert((LI || SI) && "Invalid Load/Store instruction");
+  assert((!SI || StoredValue) && "No stored value provided for widened store");
+  assert((!LI || !StoredValue) && "Stored value provided for widened load");
 
   LoopVectorizationCostModel::InstWidening Decision =
       Cost->getWideningDecision(Instr, VF);
@@ -2425,7 +2440,7 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr,
 
     for (unsigned Part = 0; Part < UF; ++Part) {
       Instruction *NewSI = nullptr;
-      Value *StoredVal = getOrCreateVectorValue(SI->getValueOperand(), Part);
+      Value *StoredVal = State.get(StoredValue, Part);
       if (CreateGatherScatter) {
         Value *MaskPart = isMaskRequired ? BlockInMaskParts[Part] : nullptr;
         Value *VectorGep = State.get(Addr, Part);
@@ -2571,7 +2586,7 @@ Value *InnerLoopVectorizer::getOrCreateTripCount(Loop *L) {
   // compare. The only way that we get a backedge taken count is that the
   // induction variable was signed and as such will not overflow. In such a case
   // truncation is legal.
-  if (BackedgeTakenCount->getType()->getPrimitiveSizeInBits() >
+  if (SE->getTypeSizeInBits(BackedgeTakenCount->getType()) >
       IdxTy->getPrimitiveSizeInBits())
     BackedgeTakenCount = SE->getTruncateOrNoop(BackedgeTakenCount, IdxTy);
   BackedgeTakenCount = SE->getNoopOrZeroExtend(BackedgeTakenCount, IdxTy);
@@ -3393,7 +3408,7 @@ void InnerLoopVectorizer::truncateToMinimalBitwidths() {
         auto *O1 = B.CreateZExtOrTrunc(
             SI->getOperand(1), VectorType::get(ScalarTruncatedTy, Elements1));
 
-        NewI = B.CreateShuffleVector(O0, O1, SI->getMask());
+        NewI = B.CreateShuffleVector(O0, O1, SI->getShuffleMask());
       } else if (isa<LoadInst>(I) || isa<PHINode>(I)) {
         // Don't do anything with the operands, just extend the result.
         continue;
@@ -4212,6 +4227,7 @@ static bool mayDivideByZero(Instruction &I) {
 
 void InnerLoopVectorizer::widenInstruction(Instruction &I) {
   switch (I.getOpcode()) {
+  case Instruction::Call:
   case Instruction::Br:
   case Instruction::PHI:
   case Instruction::GetElementPtr:
@@ -4336,54 +4352,62 @@ void InnerLoopVectorizer::widenInstruction(Instruction &I) {
     }
     break;
   }
+  default:
+    // This instruction is not vectorized by simple widening.
+    LLVM_DEBUG(dbgs() << "LV: Found an unhandled instruction: " << I);
+    llvm_unreachable("Unhandled instruction!");
+  } // end of switch.
+}
 
-  case Instruction::Call: {
-    // Ignore dbg intrinsics.
-    if (isa<DbgInfoIntrinsic>(I))
-      break;
-    setDebugLocFromInst(Builder, &I);
+void InnerLoopVectorizer::widenCallInstruction(CallInst &I) {
+  // Ignore dbg intrinsics.
+  // TODO: Debug intrinsics should be skipped/handled during VPlan construction
+  // rather than dropping them here.
+  if (isa<DbgInfoIntrinsic>(I))
+    return;
+  setDebugLocFromInst(Builder, &I);
 
-    Module *M = I.getParent()->getParent()->getParent();
-    auto *CI = cast<CallInst>(&I);
+  Module *M = I.getParent()->getParent()->getParent();
+  auto *CI = cast<CallInst>(&I);
 
-    SmallVector<Type *, 4> Tys;
-    for (Value *ArgOperand : CI->arg_operands())
-      Tys.push_back(ToVectorTy(ArgOperand->getType(), VF));
+  SmallVector<Type *, 4> Tys;
+  for (Value *ArgOperand : CI->arg_operands())
+    Tys.push_back(ToVectorTy(ArgOperand->getType(), VF));
 
-    Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
+  Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
 
-    // The flag shows whether we use Intrinsic or a usual Call for vectorized
-    // version of the instruction.
-    // Is it beneficial to perform intrinsic call compared to lib call?
-    bool NeedToScalarize = false;
-    unsigned CallCost = Cost->getVectorCallCost(CI, VF, NeedToScalarize);
-    bool UseVectorIntrinsic =
-        ID && Cost->getVectorIntrinsicCost(CI, VF) <= CallCost;
-    assert((UseVectorIntrinsic || !NeedToScalarize) &&
-           "Instruction should be scalarized elsewhere.");
+  // The flag shows whether we use Intrinsic or a usual Call for vectorized
+  // version of the instruction.
+  // Is it beneficial to perform intrinsic call compared to lib call?
+  bool NeedToScalarize = false;
+  unsigned CallCost = Cost->getVectorCallCost(CI, VF, NeedToScalarize);
+  bool UseVectorIntrinsic =
+      ID && Cost->getVectorIntrinsicCost(CI, VF) <= CallCost;
+  assert((UseVectorIntrinsic || !NeedToScalarize) &&
+         "Instruction should be scalarized elsewhere.");
 
-    for (unsigned Part = 0; Part < UF; ++Part) {
-      SmallVector<Value *, 4> Args;
-      for (unsigned i = 0, ie = CI->getNumArgOperands(); i != ie; ++i) {
-        Value *Arg = CI->getArgOperand(i);
-        // Some intrinsics have a scalar argument - don't replace it with a
-        // vector.
-        if (!UseVectorIntrinsic || !hasVectorInstrinsicScalarOpd(ID, i))
-          Arg = getOrCreateVectorValue(CI->getArgOperand(i), Part);
-        Args.push_back(Arg);
-      }
+  for (unsigned Part = 0; Part < UF; ++Part) {
+    SmallVector<Value *, 4> Args;
+    for (unsigned i = 0, ie = CI->getNumArgOperands(); i != ie; ++i) {
+      Value *Arg = CI->getArgOperand(i);
+      // Some intrinsics have a scalar argument - don't replace it with a
+      // vector.
+      if (!UseVectorIntrinsic || !hasVectorInstrinsicScalarOpd(ID, i))
+        Arg = getOrCreateVectorValue(CI->getArgOperand(i), Part);
+      Args.push_back(Arg);
+    }
 
-      Function *VectorF;
-      if (UseVectorIntrinsic) {
-        // Use vector version of the intrinsic.
-        Type *TysForDecl[] = {CI->getType()};
-        if (VF > 1)
-          TysForDecl[0] = VectorType::get(CI->getType()->getScalarType(), VF);
-        VectorF = Intrinsic::getDeclaration(M, ID, TysForDecl);
-      } else {
-        // Use vector version of the function call.
-        const VFShape Shape =
-            VFShape::get(*CI, {VF, false} /*EC*/, false /*HasGlobalPred*/);
+    Function *VectorF;
+    if (UseVectorIntrinsic) {
+      // Use vector version of the intrinsic.
+      Type *TysForDecl[] = {CI->getType()};
+      if (VF > 1)
+        TysForDecl[0] = VectorType::get(CI->getType()->getScalarType(), VF);
+      VectorF = Intrinsic::getDeclaration(M, ID, TysForDecl);
+    } else {
+      // Use vector version of the function call.
+      const VFShape Shape =
+          VFShape::get(*CI, {VF, false} /*EC*/, false /*HasGlobalPred*/);
 #ifndef NDEBUG
         const SmallVector<VFInfo, 8> Infos = VFDatabase::getMappings(*CI);
         assert(std::find_if(Infos.begin(), Infos.end(),
@@ -4393,7 +4417,7 @@ void InnerLoopVectorizer::widenInstruction(Instruction &I) {
                "Vector function shape is missing from the database.");
 #endif
         VectorF = VFDatabase(*CI).getVectorizedFunction(Shape);
-      }
+    }
       assert(VectorF && "Can't create vector function.");
 
       SmallVector<OperandBundleDef, 1> OpBundles;
@@ -4405,16 +4429,7 @@ void InnerLoopVectorizer::widenInstruction(Instruction &I) {
 
       VectorLoopValueMap.setVectorValue(&I, Part, V);
       addMetadata(V, &I);
-    }
-
-    break;
   }
-
-  default:
-    // This instruction is not vectorized by simple widening.
-    LLVM_DEBUG(dbgs() << "LV: Found an unhandled instruction: " << I);
-    llvm_unreachable("Unhandled instruction!");
-  } // end of switch.
 }
 
 void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
@@ -5919,7 +5934,7 @@ unsigned LoopVectorizationCostModel::getInterleaveGroupCost(Instruction *I,
       Group->requiresScalarEpilogue() && !isScalarEpilogueAllowed();
   unsigned Cost = TTI.getInterleavedMemoryOpCost(
       I->getOpcode(), WideVecTy, Group->getFactor(), Indices,
-      Group->getAlignment(), AS, Legal->isMaskRequired(I), UseMaskForGaps);
+      Group->getAlign().value(), AS, Legal->isMaskRequired(I), UseMaskForGaps);
 
   if (Group->isReverse()) {
     // TODO: Add support for reversed masked interleaved access.
@@ -6807,7 +6822,12 @@ VPRecipeBuilder::tryToWidenMemory(Instruction *I, VFRange &Range,
     Mask = createBlockInMask(I->getParent(), Plan);
 
   VPValue *Addr = Plan->getOrAddVPValue(getLoadStorePointerOperand(I));
-  return new VPWidenMemoryInstructionRecipe(*I, Addr, Mask);
+  if (LoadInst *Load = dyn_cast<LoadInst>(I))
+    return new VPWidenMemoryInstructionRecipe(*Load, Addr, Mask);
+
+  StoreInst *Store = cast<StoreInst>(I);
+  VPValue *StoredValue = Plan->getOrAddVPValue(Store->getValueOperand());
+  return new VPWidenMemoryInstructionRecipe(*Store, Addr, StoredValue, Mask);
 }
 
 VPWidenIntOrFpInductionRecipe *
@@ -6867,14 +6887,47 @@ VPBlendRecipe *VPRecipeBuilder::tryToBlend(Instruction *I, VPlanPtr &Plan) {
   return new VPBlendRecipe(Phi, Masks);
 }
 
-bool VPRecipeBuilder::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
-                                 VFRange &Range) {
+VPWidenCallRecipe *VPRecipeBuilder::tryToWidenCall(Instruction *I,
+                                                   VFRange &Range) {
 
   bool IsPredicated = LoopVectorizationPlanner::getDecisionAndClampRange(
       [&](unsigned VF) { return CM.isScalarWithPredication(I, VF); }, Range);
 
+  CallInst *CI = dyn_cast<CallInst>(I);
+  if (IsPredicated || !CI)
+    return nullptr;
+
+  Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
+  if (ID && (ID == Intrinsic::assume || ID == Intrinsic::lifetime_end ||
+             ID == Intrinsic::lifetime_start || ID == Intrinsic::sideeffect))
+    return nullptr;
+
+  auto willWiden = [&](unsigned VF) -> bool {
+    Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
+    // The following case may be scalarized depending on the VF.
+    // The flag shows whether we use Intrinsic or a usual Call for vectorized
+    // version of the instruction.
+    // Is it beneficial to perform intrinsic call compared to lib call?
+    bool NeedToScalarize = false;
+    unsigned CallCost = CM.getVectorCallCost(CI, VF, NeedToScalarize);
+    bool UseVectorIntrinsic =
+        ID && CM.getVectorIntrinsicCost(CI, VF) <= CallCost;
+    return UseVectorIntrinsic || !NeedToScalarize;
+  };
+
+  if (!LoopVectorizationPlanner::getDecisionAndClampRange(willWiden, Range))
+    return nullptr;
+
+  // Success: widen this call.
+  return new VPWidenCallRecipe(*CI);
+}
+
+VPWidenRecipe *VPRecipeBuilder::tryToWiden(Instruction *I, VFRange &Range) {
+  bool IsPredicated = LoopVectorizationPlanner::getDecisionAndClampRange(
+      [&](unsigned VF) { return CM.isScalarWithPredication(I, VF); }, Range);
+
   if (IsPredicated)
-    return false;
+    return nullptr;
 
   auto IsVectorizableOpcode = [](unsigned Opcode) {
     switch (Opcode) {
@@ -6883,7 +6936,6 @@ bool VPRecipeBuilder::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
     case Instruction::AShr:
     case Instruction::BitCast:
     case Instruction::Br:
-    case Instruction::Call:
     case Instruction::FAdd:
     case Instruction::FCmp:
     case Instruction::FDiv:
@@ -6923,31 +6975,12 @@ bool VPRecipeBuilder::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
   };
 
   if (!IsVectorizableOpcode(I->getOpcode()))
-    return false;
-
-  if (CallInst *CI = dyn_cast<CallInst>(I)) {
-    Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
-    if (ID && (ID == Intrinsic::assume || ID == Intrinsic::lifetime_end ||
-               ID == Intrinsic::lifetime_start || ID == Intrinsic::sideeffect))
-      return false;
-  }
+    return nullptr;
 
   auto willWiden = [&](unsigned VF) -> bool {
     if (!isa<PHINode>(I) && (CM.isScalarAfterVectorization(I, VF) ||
                              CM.isProfitableToScalarize(I, VF)))
       return false;
-    if (CallInst *CI = dyn_cast<CallInst>(I)) {
-      Intrinsic::ID ID = getVectorIntrinsicIDForCall(CI, TLI);
-      // The following case may be scalarized depending on the VF.
-      // The flag shows whether we use Intrinsic or a usual Call for vectorized
-      // version of the instruction.
-      // Is it beneficial to perform intrinsic call compared to lib call?
-      bool NeedToScalarize;
-      unsigned CallCost = CM.getVectorCallCost(CI, VF, NeedToScalarize);
-      bool UseVectorIntrinsic =
-          ID && CM.getVectorIntrinsicCost(CI, VF) <= CallCost;
-      return UseVectorIntrinsic || !NeedToScalarize;
-    }
     if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
       assert(CM.getWideningDecision(I, VF) ==
                  LoopVectorizationCostModel::CM_Scalarize &&
@@ -6958,25 +6991,10 @@ bool VPRecipeBuilder::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
   };
 
   if (!LoopVectorizationPlanner::getDecisionAndClampRange(willWiden, Range))
-    return false;
-  // If this ingredient's recipe is to be recorded, keep its recipe a singleton
-  // to avoid having to split recipes later.
-  bool IsSingleton = Ingredient2Recipe.count(I);
+    return nullptr;
 
   // Success: widen this instruction.
-
-  // Use the default widening recipe. We optimize the common case where
-  // consecutive instructions can be represented by a single recipe.
-  if (!IsSingleton && !VPBB->empty() && LastExtensibleRecipe == &VPBB->back() &&
-      LastExtensibleRecipe->appendInstruction(I))
-    return true;
-
-  VPWidenRecipe *WidenRecipe = new VPWidenRecipe(I);
-  if (!IsSingleton)
-    LastExtensibleRecipe = WidenRecipe;
-  setRecipe(I, WidenRecipe);
-  VPBB->appendRecipe(WidenRecipe);
-  return true;
+  return new VPWidenRecipe(*I);
 }
 
 VPBasicBlock *VPRecipeBuilder::handleReplication(
@@ -7051,9 +7069,10 @@ bool VPRecipeBuilder::tryToCreateRecipe(Instruction *Instr, VFRange &Range,
                                         VPlanPtr &Plan, VPBasicBlock *VPBB) {
   VPRecipeBase *Recipe = nullptr;
 
-  // First, check for specific widening recipes that deal with memory
+  // First, check for specific widening recipes that deal with calls, memory
   // operations, inductions and Phi nodes.
-  if ((Recipe = tryToWidenMemory(Instr, Range, Plan)) ||
+  if ((Recipe = tryToWidenCall(Instr, Range)) ||
+      (Recipe = tryToWidenMemory(Instr, Range, Plan)) ||
       (Recipe = tryToOptimizeInduction(Instr, Range)) ||
       (Recipe = tryToBlend(Instr, Plan)) ||
       (isa<PHINode>(Instr) &&
@@ -7080,8 +7099,11 @@ bool VPRecipeBuilder::tryToCreateRecipe(Instruction *Instr, VFRange &Range,
 
   // Check if Instr is to be widened by a general VPWidenRecipe, after
   // having first checked for specific widening recipes.
-  if (tryToWiden(Instr, VPBB, Range))
+  if ((Recipe = tryToWiden(Instr, Range))) {
+    setRecipe(Instr, Recipe);
+    VPBB->appendRecipe(Recipe);
     return true;
+  }
 
   return false;
 }
@@ -7367,9 +7389,12 @@ void VPInterleaveRecipe::print(raw_ostream &O, const Twine &Indent,
         << Indent << "\"  " << VPlanIngredient(I) << " " << i << "\\l\"";
 }
 
+void VPWidenCallRecipe::execute(VPTransformState &State) {
+  State.ILV->widenCallInstruction(Ingredient);
+}
+
 void VPWidenRecipe::execute(VPTransformState &State) {
-  for (auto &Instr : make_range(Begin, End))
-    State.ILV->widenInstruction(Instr);
+  State.ILV->widenInstruction(Ingredient);
 }
 
 void VPWidenGEPRecipe::execute(VPTransformState &State) {
@@ -7515,7 +7540,9 @@ void VPPredInstPHIRecipe::execute(VPTransformState &State) {
 }
 
 void VPWidenMemoryInstructionRecipe::execute(VPTransformState &State) {
-  State.ILV->vectorizeMemoryInstruction(&Instr, State, getAddr(), getMask());
+  VPValue *StoredValue = isa<StoreInst>(Instr) ? getStoredValue() : nullptr;
+  State.ILV->vectorizeMemoryInstruction(&Instr, State, getAddr(), StoredValue,
+                                        getMask());
 }
 
 // Determine how to lower the scalar epilogue, which depends on 1) optimising

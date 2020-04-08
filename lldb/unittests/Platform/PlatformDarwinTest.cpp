@@ -19,11 +19,8 @@ using namespace lldb_private;
 
 struct PlatformDarwinTester : public PlatformDarwin {
 public:
+  using PlatformDarwin::FindComponentInPath;
   using PlatformDarwin::FindXcodeContentsDirectoryInPath;
-  static bool SDKSupportsModules(SDKType desired_type,
-                                 const lldb_private::FileSpec &sdk_path) {
-    return PlatformDarwin::SDKSupportsModules(desired_type, sdk_path);
-  }
 };
 
 TEST(PlatformDarwinTest, TestParseVersionBuildDir) {
@@ -52,24 +49,6 @@ TEST(PlatformDarwinTest, TestParseVersionBuildDir) {
 
   std::tie(V, D) = PlatformDarwin::ParseVersionBuildDir("3.4.5");
   EXPECT_EQ(llvm::VersionTuple(3, 4, 5), V);
-
-  std::string base = "/Applications/Xcode.app/Contents/Developer/Platforms/";
-  EXPECT_TRUE(PlatformDarwinTester::SDKSupportsModules(
-      PlatformDarwin::SDKType::iPhoneSimulator,
-      FileSpec(
-          base +
-          "iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator12.0.sdk")));
-  EXPECT_FALSE(PlatformDarwinTester::SDKSupportsModules(
-      PlatformDarwin::SDKType::iPhoneSimulator,
-      FileSpec(
-          base +
-          "iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator7.2.sdk")));
-  EXPECT_TRUE(PlatformDarwinTester::SDKSupportsModules(
-      PlatformDarwin::SDKType::MacOSX,
-      FileSpec(base + "MacOSX.platform/Developer/SDKs/MacOSX10.10.sdk")));
-  EXPECT_FALSE(PlatformDarwinTester::SDKSupportsModules(
-      PlatformDarwin::SDKType::MacOSX,
-      FileSpec(base + "MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk")));
 }
 
 TEST(PlatformDarwinTest, FindXcodeContentsDirectoryInPath) {
@@ -110,25 +89,19 @@ TEST(PlatformDarwinTest, FindXcodeContentsDirectoryInPath) {
                     no_capitalization));
 }
 
-TEST(PlatformDarwinTest, GetSDKNameForType) {
-  EXPECT_EQ("macosx",
-            PlatformDarwin::GetSDKNameForType(PlatformDarwin::SDKType::MacOSX));
-  EXPECT_EQ("iphonesimulator", PlatformDarwin::GetSDKNameForType(
-                                   PlatformDarwin::SDKType::iPhoneSimulator));
-  EXPECT_EQ("iphoneos", PlatformDarwin::GetSDKNameForType(
-                            PlatformDarwin::SDKType::iPhoneOS));
-  EXPECT_EQ("appletvsimulator", PlatformDarwin::GetSDKNameForType(
-                                    PlatformDarwin::SDKType::AppleTVSimulator));
-  EXPECT_EQ("appletvos", PlatformDarwin::GetSDKNameForType(
-                             PlatformDarwin::SDKType::AppleTVOS));
-  EXPECT_EQ("watchsimulator", PlatformDarwin::GetSDKNameForType(
-                                  PlatformDarwin::SDKType::WatchSimulator));
-  EXPECT_EQ("watchos", PlatformDarwin::GetSDKNameForType(
-                           PlatformDarwin::SDKType::watchOS));
-  EXPECT_EQ("linux",
-            PlatformDarwin::GetSDKNameForType(PlatformDarwin::SDKType::Linux));
-  EXPECT_EQ("", PlatformDarwin::GetSDKNameForType(
-                    PlatformDarwin::SDKType::numSDKTypes));
-  EXPECT_EQ(
-      "", PlatformDarwin::GetSDKNameForType(PlatformDarwin::SDKType::unknown));
+TEST(PlatformDarwinTest, FindComponentInPath) {
+  EXPECT_EQ("/path/to/foo",
+            PlatformDarwinTester::FindComponentInPath("/path/to/foo/", "foo"));
+
+  EXPECT_EQ("/path/to/foo",
+            PlatformDarwinTester::FindComponentInPath("/path/to/foo", "foo"));
+
+  EXPECT_EQ("/path/to/foobar", PlatformDarwinTester::FindComponentInPath(
+                                   "/path/to/foobar", "foo"));
+
+  EXPECT_EQ("/path/to/foobar", PlatformDarwinTester::FindComponentInPath(
+                                   "/path/to/foobar", "bar"));
+
+  EXPECT_EQ("",
+            PlatformDarwinTester::FindComponentInPath("/path/to/foo", "bar"));
 }

@@ -78,13 +78,25 @@ namespace llvm {
 // remove all existing edges between two blocks.
 template <typename NodePtr, bool InverseGraph = false> class GraphDiff {
   using UpdateMapType = SmallDenseMap<NodePtr, SmallVector<NodePtr, 2>>;
-  UpdateMapType SuccInsert;
-  UpdateMapType SuccDelete;
-  UpdateMapType PredInsert;
-  UpdateMapType PredDelete;
+  struct EdgesInsertedDeleted {
+    UpdateMapType Succ;
+    UpdateMapType Pred;
+  };
+  // Store Deleted edges on position 0, and Inserted edges on position 1.
+  EdgesInsertedDeleted Edges[2];
+  // By default, it is assumed that, given a CFG and a set of updates, we wish
+  // to apply these updates as given. If UpdatedAreReverseApplied is set, the
+  // updates will be applied in reverse: deleted edges are considered re-added
+  // and inserted edges are considered deleted when returning children.
+  bool UpdatedAreReverseApplied;
   // Using a singleton empty vector for all node requests with no
   // children.
-  SmallVector<NodePtr, 1> Empty;
+  SmallVector<NodePtr, 0> Empty;
+
+  // Keep the list of legalized updates for a deterministic order of updates
+  // when using a GraphDiff for incremental updates in the DominatorTree.
+  // The list is kept in reverse to allow popping from end.
+  SmallVector<cfg::Update<NodePtr>, 4> LegalizedUpdates;
 
   void printMap(raw_ostream &OS, const UpdateMapType &M) const {
     for (auto Pair : M)
@@ -99,24 +111,53 @@ template <typename NodePtr, bool InverseGraph = false> class GraphDiff {
   }
 
 public:
-  GraphDiff() {}
-  GraphDiff(ArrayRef<cfg::Update<NodePtr>> Updates) {
-    SmallVector<cfg::Update<NodePtr>, 4> LegalizedUpdates;
-    cfg::LegalizeUpdates<NodePtr>(Updates, LegalizedUpdates, InverseGraph);
+  GraphDiff() : UpdatedAreReverseApplied(false) {}
+  GraphDiff(ArrayRef<cfg::Update<NodePtr>> Updates,
+            bool ReverseApplyUpdates = false) {
+    cfg::LegalizeUpdates<NodePtr>(Updates, LegalizedUpdates, InverseGraph,
+                                  /*ReverseResultOrder=*/true);
+    // The legalized updates are stored in reverse so we can pop_back when doing
+    // incremental updates.
     for (auto U : LegalizedUpdates) {
-      if (U.getKind() == cfg::UpdateKind::Insert) {
-        SuccInsert[U.getFrom()].push_back(U.getTo());
-        PredInsert[U.getTo()].push_back(U.getFrom());
-      } else {
-        SuccDelete[U.getFrom()].push_back(U.getTo());
-        PredDelete[U.getTo()].push_back(U.getFrom());
-      }
+      unsigned IsInsert =
+          (U.getKind() == cfg::UpdateKind::Insert) == !ReverseApplyUpdates;
+      Edges[IsInsert].Succ[U.getFrom()].push_back(U.getTo());
+      Edges[IsInsert].Pred[U.getTo()].push_back(U.getFrom());
     }
+    UpdatedAreReverseApplied = ReverseApplyUpdates;
+  }
+
+  auto getLegalizedUpdates() const {
+    return make_range(LegalizedUpdates.begin(), LegalizedUpdates.end());
+  }
+
+  unsigned getNumLegalizedUpdates() const { return LegalizedUpdates.size(); }
+
+  cfg::Update<NodePtr> popUpdateForIncrementalUpdates() {
+    assert(!LegalizedUpdates.empty() && "No updates to apply!");
+    auto U = LegalizedUpdates.pop_back_val();
+    unsigned IsInsert =
+        (U.getKind() == cfg::UpdateKind::Insert) == !UpdatedAreReverseApplied;
+    auto &SuccList = Edges[IsInsert].Succ[U.getFrom()];
+    assert(SuccList.back() == U.getTo());
+    SuccList.pop_back();
+    if (SuccList.empty())
+      Edges[IsInsert].Succ.erase(U.getFrom());
+
+    auto &PredList = Edges[IsInsert].Pred[U.getTo()];
+    assert(PredList.back() == U.getFrom());
+    PredList.pop_back();
+    if (PredList.empty())
+      Edges[IsInsert].Pred.erase(U.getTo());
+    return U;
   }
 
   bool ignoreChild(const NodePtr BB, NodePtr EdgeEnd, bool InverseEdge) const {
+    // Used to filter nullptr in clang.
+    if (EdgeEnd == nullptr)
+      return true;
     auto &DeleteChildren =
-        (InverseEdge != InverseGraph) ? PredDelete : SuccDelete;
+        (InverseEdge != InverseGraph) ? Edges[0].Pred : Edges[0].Succ;
     auto It = DeleteChildren.find(BB);
     if (It == DeleteChildren.end())
       return false;
@@ -127,7 +168,7 @@ public:
   iterator_range<typename SmallVectorImpl<NodePtr>::const_iterator>
   getAddedChildren(const NodePtr BB, bool InverseEdge) const {
     auto &InsertChildren =
-        (InverseEdge != InverseGraph) ? PredInsert : SuccInsert;
+        (InverseEdge != InverseGraph) ? Edges[1].Pred : Edges[1].Succ;
     auto It = InsertChildren.find(BB);
     if (It == InsertChildren.end())
       return make_range(Empty.begin(), Empty.end());
@@ -139,13 +180,13 @@ public:
           "===== (Note: notion of children/inverse_children depends on "
           "the direction of edges and the graph.)\n";
     OS << "Children to insert:\n\t";
-    printMap(OS, SuccInsert);
+    printMap(OS, Edges[1].Succ);
     OS << "Children to delete:\n\t";
-    printMap(OS, SuccDelete);
+    printMap(OS, Edges[0].Succ);
     OS << "Inverse_children to insert:\n\t";
-    printMap(OS, PredInsert);
+    printMap(OS, Edges[1].Pred);
     OS << "Inverse_children to delete:\n\t";
-    printMap(OS, PredDelete);
+    printMap(OS, Edges[0].Pred);
     OS << "\n";
   }
 
@@ -158,58 +199,45 @@ template <typename GraphT, bool InverseGraph = false, bool InverseEdge = false,
           typename GT = GraphTraits<GraphT>>
 struct CFGViewChildren {
   using DataRef = const GraphDiff<typename GT::NodeRef, InverseGraph> *;
-  using RawNodeRef = typename GT::NodeRef;
-  using NodeRef = std::pair<DataRef, RawNodeRef>;
+  using NodeRef = std::pair<DataRef, typename GT::NodeRef>;
 
-  using ExistingChildIterator =
-      WrappedPairNodeDataIterator<typename GT::ChildIteratorType, NodeRef,
-                                  DataRef>;
-  struct DeletedEdgesFilter {
-    RawNodeRef BB;
-    DeletedEdgesFilter(RawNodeRef BB) : BB(BB){};
-    bool operator()(NodeRef N) const {
-      return !N.first->ignoreChild(BB, N.second, InverseEdge);
-    }
-  };
-  using FilterExistingChildrenIterator =
-      filter_iterator<ExistingChildIterator, DeletedEdgesFilter>;
-
-  using vec_iterator = typename SmallVectorImpl<RawNodeRef>::const_iterator;
-  using AddNewChildrenIterator =
-      WrappedPairNodeDataIterator<vec_iterator, NodeRef, DataRef>;
-  using ChildIteratorType =
-      concat_iterator<NodeRef, FilterExistingChildrenIterator,
-                      AddNewChildrenIterator>;
-
-  static ChildIteratorType child_begin(NodeRef N) {
-    auto InsertVec = N.first->getAddedChildren(N.second, InverseEdge);
-    // filter iterator init:
-    auto firstit = make_filter_range(
-        make_range<ExistingChildIterator>({GT::child_begin(N.second), N.first},
-                                          {GT::child_end(N.second), N.first}),
-        DeletedEdgesFilter(N.second));
-    // new inserts iterator init:
-    auto secondit = make_range<AddNewChildrenIterator>(
-        {InsertVec.begin(), N.first}, {InsertVec.end(), N.first});
-
-    return concat_iterator<NodeRef, FilterExistingChildrenIterator,
-                           AddNewChildrenIterator>(firstit, secondit);
+  template<typename Range>
+  static auto makeChildRange(Range &&R, DataRef DR) {
+    using Iter = WrappedPairNodeDataIterator<decltype(std::forward<Range>(R).begin()), NodeRef, DataRef>;
+    return make_range(Iter(R.begin(), DR), Iter(R.end(), DR));
   }
 
-  static ChildIteratorType child_end(NodeRef N) {
-    auto InsertVec = N.first->getAddedChildren(N.second, InverseEdge);
-    // filter iterator init:
-    auto firstit = make_filter_range(
-        make_range<ExistingChildIterator>({GT::child_end(N.second), N.first},
-                                          {GT::child_end(N.second), N.first}),
-        DeletedEdgesFilter(N.second));
-    // new inserts iterator init:
-    auto secondit = make_range<AddNewChildrenIterator>(
-        {InsertVec.end(), N.first}, {InsertVec.end(), N.first});
+  static auto children(NodeRef N) {
 
-    return concat_iterator<NodeRef, FilterExistingChildrenIterator,
-                           AddNewChildrenIterator>(firstit, secondit);
+    // filter iterator init:
+    auto R = make_range(GT::child_begin(N.second), GT::child_end(N.second));
+    // This lambda is copied into the iterators and persists to callers, ensure
+    // captures are by value or otherwise have sufficient lifetime.
+    auto First = make_filter_range(makeChildRange(R, N.first), [N](NodeRef C) {
+      return !C.first->ignoreChild(N.second, C.second, InverseEdge);
+    });
+
+    // new inserts iterator init:
+    auto InsertVec = N.first->getAddedChildren(N.second, InverseEdge);
+    auto Second = makeChildRange(InsertVec, N.first);
+
+    auto CR = concat<NodeRef>(First, Second);
+
+    // concat_range contains references to other ranges, returning it would
+    // leave those references dangling - the iterators contain
+    // other iterators by value so they're safe to return.
+    return make_range(CR.begin(), CR.end());
   }
+
+  static auto child_begin(NodeRef N) {
+    return children(N).begin();
+  }
+
+  static auto child_end(NodeRef N) {
+    return children(N).end();
+  }
+
+  using ChildIteratorType = decltype(child_end(std::declval<NodeRef>()));
 };
 
 template <typename T, bool B>

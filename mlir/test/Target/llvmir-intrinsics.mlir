@@ -27,6 +27,15 @@ llvm.func @exp_test(%arg0: !llvm.float, %arg1: !llvm<"<8 x float>">) {
   llvm.return
 }
 
+// CHECK-LABEL: @exp2_test
+llvm.func @exp2_test(%arg0: !llvm.float, %arg1: !llvm<"<8 x float>">) {
+  // CHECK: call float @llvm.exp2.f32
+  "llvm.intr.exp2"(%arg0) : (!llvm.float) -> !llvm.float
+  // CHECK: call <8 x float> @llvm.exp2.v8f32
+  "llvm.intr.exp2"(%arg1) : (!llvm<"<8 x float>">) -> !llvm<"<8 x float>">
+  llvm.return
+}
+
 // CHECK-LABEL: @log_test
 llvm.func @log_test(%arg0: !llvm.float, %arg1: !llvm<"<8 x float>">) {
   // CHECK: call float @llvm.log.f32
@@ -152,6 +161,20 @@ llvm.func @matrix_intrinsics(%A: !llvm<"<64 x float>">, %B: !llvm<"<48 x float>"
   llvm.return
 }
 
+// CHECK-LABEL: @masked_intrinsics
+llvm.func @masked_intrinsics(%A: !llvm<"<7 x float>*">, %mask: !llvm<"<7 x i1>">) {
+  // CHECK: call <7 x float> @llvm.masked.load.v7f32.p0v7f32(<7 x float>* %{{.*}}, i32 1, <7 x i1> %{{.*}}, <7 x float> undef)
+  %a = llvm.intr.masked.load %A, %mask { alignment = 1: i32} :
+    (!llvm<"<7 x float>*">, !llvm<"<7 x i1>">) -> !llvm<"<7 x float>">
+  // CHECK: call <7 x float> @llvm.masked.load.v7f32.p0v7f32(<7 x float>* %{{.*}}, i32 1, <7 x i1> %{{.*}}, <7 x float> %{{.*}})
+  %b = llvm.intr.masked.load %A, %mask, %a { alignment = 1: i32} :
+    (!llvm<"<7 x float>*">, !llvm<"<7 x i1>">, !llvm<"<7 x float>">) -> !llvm<"<7 x float>">
+  // CHECK: call void @llvm.masked.store.v7f32.p0v7f32(<7 x float> %{{.*}}, <7 x float>* %0, i32 {{.*}}, <7 x i1> %{{.*}})
+  llvm.intr.masked.store %b, %A, %mask { alignment = 1: i32} :
+    !llvm<"<7 x float>">, !llvm<"<7 x i1>"> into !llvm<"<7 x float>*">
+  llvm.return
+}
+
 // Check that intrinsics are declared with appropriate types.
 // CHECK-DAG: declare float @llvm.fma.f32(float, float, float)
 // CHECK-DAG: declare <8 x float> @llvm.fma.v8f32(<8 x float>, <8 x float>, <8 x float>) #0
@@ -179,3 +202,5 @@ llvm.func @matrix_intrinsics(%A: !llvm<"<64 x float>">, %B: !llvm<"<48 x float>"
 // CHECK-DAG: declare <48 x float> @llvm.matrix.transpose.v48f32(<48 x float>, i32 immarg, i32 immarg)
 // CHECK-DAG: declare <48 x float> @llvm.matrix.columnwise.load.v48f32.p0f32(float*, i32, i32 immarg, i32 immarg)
 // CHECK-DAG: declare void @llvm.matrix.columnwise.store.v48f32.p0f32(<48 x float>, float* writeonly, i32, i32 immarg, i32 immarg)
+// CHECK-DAG: declare <7 x float> @llvm.masked.load.v7f32.p0v7f32(<7 x float>*, i32 immarg, <7 x i1>, <7 x float>)
+// CHECK-DAG: declare void @llvm.masked.store.v7f32.p0v7f32(<7 x float>, <7 x float>*, i32 immarg, <7 x i1>)

@@ -9,6 +9,7 @@ from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 import lldbvscode_testcase
+import time
 import os
 
 
@@ -34,6 +35,31 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
         lines = output.splitlines()
         self.assertTrue(program in lines[0],
                         "make sure program path is in first argument")
+
+    @skipIfWindows
+    @skipIfRemote
+    def test_termination(self):
+        '''
+            Tests the correct termination of lldb-vscode upon a 'disconnect'
+            request.
+        '''
+        self.create_debug_adaptor()
+        # The underlying lldb-vscode process must be alive
+        self.assertEqual(self.vscode.process.poll(), None)
+
+        # The lldb-vscode process should finish even though
+        # we didn't close the communication socket explicitly
+        self.vscode.request_disconnect()
+
+        # Wait until the underlying lldb-vscode process dies.
+        # We need to do this because the popen.wait function in python2.7
+        # doesn't have a timeout argument.
+        for _ in range(10):
+            time.sleep(1)
+            if self.vscode.process.poll() is not None:
+                break
+        # Check the return code
+        self.assertEqual(self.vscode.process.poll(), 0)
 
     @skipIfWindows
     @skipIfRemote
@@ -304,7 +330,7 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
         second_line = line_number(source, '// breakpoint 2')
         lines = [first_line, second_line]
 
-        # Set 2 breakoints so we can verify that "stopCommands" get run as the
+        # Set 2 breakpoints so we can verify that "stopCommands" get run as the
         # breakpoints get hit
         breakpoint_ids = self.set_source_breakpoints(source, lines)
         self.assertEquals(len(breakpoint_ids), len(lines),
@@ -343,7 +369,7 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
         source = 'main.c'
         first_line = line_number(source, '// breakpoint 1')
         second_line = line_number(source, '// breakpoint 2')
-        # Set target binary and 2 breakoints
+        # Set target binary and 2 breakpoints
         # then we can varify the "launchCommands" get run
         # also we can verify that "stopCommands" get run as the
         # breakpoints get hit

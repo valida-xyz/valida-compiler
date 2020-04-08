@@ -205,8 +205,7 @@ define void @test_call_stack(i64 %e4, i64 %e6) {
   ; CHECK:   [[COPY1:%[0-9]+]]:_(s64) = COPY $e6
   ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 42
   ; CHECK:   [[C1:%[0-9]+]]:_(s64) = G_CONSTANT i64 12
-  ; CHECK:   [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
-  ; CHECK:   [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[C2]](s32)
+  ; CHECK:   [[C2:%[0-9]+]]:_(p0) = G_CONSTANT i32 0
   ; CHECK:   ADJCALLSTACKDOWN 16, 0, implicit-def $a10, implicit $a10
   ; CHECK:   $e4 = COPY [[COPY]](s64)
   ; CHECK:   $e6 = COPY [[COPY1]](s64)
@@ -218,14 +217,14 @@ define void @test_call_stack(i64 %e4, i64 %e6) {
   ; CHECK:   [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
   ; CHECK:   [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY3]], [[C4]](s32)
   ; CHECK:   G_STORE [[C1]](s64), [[PTR_ADD1]](p0) :: (store 8 into stack + 4, align 4)
-  ; CHECK:   $a4 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a5 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a6 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a7 = COPY [[INTTOPTR]](p0)
+  ; CHECK:   $a4 = COPY [[C2]](p0)
+  ; CHECK:   $a5 = COPY [[C2]](p0)
+  ; CHECK:   $a6 = COPY [[C2]](p0)
+  ; CHECK:   $a7 = COPY [[C2]](p0)
   ; CHECK:   [[COPY4:%[0-9]+]]:_(p0) = COPY $a10
   ; CHECK:   [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 12
   ; CHECK:   [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY4]], [[C5]](s32)
-  ; CHECK:   G_STORE [[INTTOPTR]](p0), [[PTR_ADD2]](p0) :: (store 4 into stack + 12)
+  ; CHECK:   G_STORE [[C2]](p0), [[PTR_ADD2]](p0) :: (store 4 into stack + 12)
   ; CHECK:   CALL @test_stack_slots, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit $e6, implicit $a4, implicit $a5, implicit $a6, implicit $a7
   ; CHECK:   ADJCALLSTACKUP 16, 0, implicit-def $a10, implicit $a10
   ; CHECK:   RET implicit $a11
@@ -332,8 +331,7 @@ define void @test_call_stack_mixed(i64 %e4, i64 %e6) {
   ; CHECK:   [[C2:%[0-9]+]]:_(s32) = G_FCONSTANT float 2.000000e+00
   ; CHECK:   [[C3:%[0-9]+]]:_(s64) = G_CONSTANT i64 12
   ; CHECK:   [[C4:%[0-9]+]]:_(s64) = G_FCONSTANT double 3.000000e+00
-  ; CHECK:   [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 0
-  ; CHECK:   [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[C5]](s32)
+  ; CHECK:   [[C5:%[0-9]+]]:_(p0) = G_CONSTANT i32 0
   ; CHECK:   ADJCALLSTACKDOWN 32, 0, implicit-def $a10, implicit $a10
   ; CHECK:   $e4 = COPY [[COPY]](s64)
   ; CHECK:   $e6 = COPY [[COPY1]](s64)
@@ -357,14 +355,14 @@ define void @test_call_stack_mixed(i64 %e4, i64 %e6) {
   ; CHECK:   [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 20
   ; CHECK:   [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY6]], [[C10]](s32)
   ; CHECK:   G_STORE [[C4]](s64), [[PTR_ADD4]](p0) :: (store 8 into stack + 20, align 4)
-  ; CHECK:   $a4 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a5 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a6 = COPY [[INTTOPTR]](p0)
-  ; CHECK:   $a7 = COPY [[INTTOPTR]](p0)
+  ; CHECK:   $a4 = COPY [[C5]](p0)
+  ; CHECK:   $a5 = COPY [[C5]](p0)
+  ; CHECK:   $a6 = COPY [[C5]](p0)
+  ; CHECK:   $a7 = COPY [[C5]](p0)
   ; CHECK:   [[COPY7:%[0-9]+]]:_(p0) = COPY $a10
   ; CHECK:   [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 28
   ; CHECK:   [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY7]], [[C11]](s32)
-  ; CHECK:   G_STORE [[INTTOPTR]](p0), [[PTR_ADD5]](p0) :: (store 4 into stack + 28)
+  ; CHECK:   G_STORE [[C5]](p0), [[PTR_ADD5]](p0) :: (store 4 into stack + 28)
   ; CHECK:   CALL @test_stack_slots_mixed, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $e4, implicit $e6, implicit $a4, implicit $a5, implicit $a6, implicit $a7
   ; CHECK:   ADJCALLSTACKUP 32, 0, implicit-def $a10, implicit $a10
   ; CHECK:   RET implicit $a11

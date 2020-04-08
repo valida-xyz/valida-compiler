@@ -23,6 +23,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -2430,7 +2431,7 @@ void ento::registerCStringModeling(CheckerManager &Mgr) {
   Mgr.registerChecker<CStringChecker>();
 }
 
-bool ento::shouldRegisterCStringModeling(const LangOptions &LO) {
+bool ento::shouldRegisterCStringModeling(const CheckerManager &mgr) {
   return true;
 }
 
@@ -2441,7 +2442,7 @@ bool ento::shouldRegisterCStringModeling(const LangOptions &LO) {
     checker->Filter.CheckName##name = mgr.getCurrentCheckerName();             \
   }                                                                            \
                                                                                \
-  bool ento::shouldRegister##name(const LangOptions &LO) { return true; }
+  bool ento::shouldRegister##name(const CheckerManager &mgr) { return true; }
 
 REGISTER_CHECKER(CStringNullArg)
 REGISTER_CHECKER(CStringOutOfBounds)

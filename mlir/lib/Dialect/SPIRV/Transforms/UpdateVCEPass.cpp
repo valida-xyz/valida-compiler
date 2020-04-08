@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "PassDetail.h"
 #include "mlir/Dialect/SPIRV/Passes.h"
 #include "mlir/Dialect/SPIRV/SPIRVDialect.h"
 #include "mlir/Dialect/SPIRV/SPIRVOps.h"
@@ -26,30 +27,24 @@ using namespace mlir;
 namespace {
 /// Pass to deduce minimal version/extension/capability requirements for a
 /// spirv::ModuleOp.
-class UpdateVCEPass final
-    : public OperationPass<UpdateVCEPass, spirv::ModuleOp> {
-private:
+class UpdateVCEPass final : public SPIRVUpdateVCEBase<UpdateVCEPass> {
   void runOnOperation() override;
 };
 } // namespace
 
 /// Checks that `candidates` extension requirements are possible to be satisfied
-/// with the given `allowedExtensions` and updates `deducedExtensions` if so.
-/// Emits errors attaching to the given `op` on failures.
+/// with the given `targetEnv` and updates `deducedExtensions` if so. Emits
+/// errors attaching to the given `op` on failures.
 ///
 ///  `candidates` is a vector of vector for extension requirements following
 /// ((Extension::A OR Extension::B) AND (Extension::C OR Extension::D))
 /// convention.
 static LogicalResult checkAndUpdateExtensionRequirements(
-    Operation *op, const llvm::SmallSet<spirv::Extension, 4> &allowedExtensions,
+    Operation *op, const spirv::TargetEnv &targetEnv,
     const spirv::SPIRVType::ExtensionArrayRefVector &candidates,
     llvm::SetVector<spirv::Extension> &deducedExtensions) {
   for (const auto &ors : candidates) {
-    auto chosen = llvm::find_if(ors, [&](spirv::Extension ext) {
-      return allowedExtensions.count(ext);
-    });
-
-    if (chosen != ors.end()) {
+    if (Optional<spirv::Extension> chosen = targetEnv.allows(ors)) {
       deducedExtensions.insert(*chosen);
     } else {
       SmallVector<StringRef, 4> extStrings;
@@ -66,23 +61,18 @@ static LogicalResult checkAndUpdateExtensionRequirements(
 }
 
 /// Checks that `candidates`capability requirements are possible to be satisfied
-/// with the given `allowedCapabilities` and updates `deducedCapabilities` if
-/// so. Emits errors attaching to the given `op` on failures.
+/// with the given `targetEnv` and updates `deducedCapabilities` if so. Emits
+/// errors attaching to the given `op` on failures.
 ///
 ///  `candidates` is a vector of vector for capability requirements following
 /// ((Capability::A OR Capability::B) AND (Capability::C OR Capability::D))
 /// convention.
 static LogicalResult checkAndUpdateCapabilityRequirements(
-    Operation *op,
-    const llvm::SmallSet<spirv::Capability, 8> &allowedCapabilities,
+    Operation *op, const spirv::TargetEnv &targetEnv,
     const spirv::SPIRVType::CapabilityArrayRefVector &candidates,
     llvm::SetVector<spirv::Capability> &deducedCapabilities) {
   for (const auto &ors : candidates) {
-    auto chosen = llvm::find_if(ors, [&](spirv::Capability cap) {
-      return allowedCapabilities.count(cap);
-    });
-
-    if (chosen != ors.end()) {
+    if (Optional<spirv::Capability> chosen = targetEnv.allows(ors)) {
       deducedCapabilities.insert(*chosen);
     } else {
       SmallVector<StringRef, 4> capStrings;
@@ -101,32 +91,14 @@ static LogicalResult checkAndUpdateCapabilityRequirements(
 void UpdateVCEPass::runOnOperation() {
   spirv::ModuleOp module = getOperation();
 
-  spirv::TargetEnvAttr targetEnv = spirv::lookupTargetEnv(module);
-  if (!targetEnv) {
+  spirv::TargetEnvAttr targetAttr = spirv::lookupTargetEnv(module);
+  if (!targetAttr) {
     module.emitError("missing 'spv.target_env' attribute");
     return signalPassFailure();
   }
 
-  spirv::Version allowedVersion = targetEnv.getVersion();
-
-  // Build a set for available extensions in the target environment.
-  llvm::SmallSet<spirv::Extension, 4> allowedExtensions;
-  for (spirv::Extension ext : targetEnv.getExtensions())
-    allowedExtensions.insert(ext);
-
-  // Add extensions implied by the current version.
-  for (spirv::Extension ext : spirv::getImpliedExtensions(allowedVersion))
-    allowedExtensions.insert(ext);
-
-  // Build a set for available capabilities in the target environment.
-  llvm::SmallSet<spirv::Capability, 8> allowedCapabilities;
-  for (spirv::Capability cap : targetEnv.getCapabilities()) {
-    allowedCapabilities.insert(cap);
-
-    // Add capabilities implied by the current capability.
-    for (spirv::Capability c : spirv::getRecursiveImpliedCapabilities(cap))
-      allowedCapabilities.insert(c);
-  }
+  spirv::TargetEnv targetEnv(targetAttr);
+  spirv::Version allowedVersion = targetAttr.getVersion();
 
   spirv::Version deducedVersion = spirv::Version::V_1_0;
   llvm::SetVector<spirv::Extension> deducedExtensions;
@@ -148,15 +120,14 @@ void UpdateVCEPass::runOnOperation() {
 
     // Op extension requirements
     if (auto extensions = dyn_cast<spirv::QueryExtensionInterface>(op))
-      if (failed(checkAndUpdateExtensionRequirements(op, allowedExtensions,
-                                                     extensions.getExtensions(),
-                                                     deducedExtensions)))
+      if (failed(checkAndUpdateExtensionRequirements(
+              op, targetEnv, extensions.getExtensions(), deducedExtensions)))
         return WalkResult::interrupt();
 
     // Op capability requirements
     if (auto capabilities = dyn_cast<spirv::QueryCapabilityInterface>(op))
       if (failed(checkAndUpdateCapabilityRequirements(
-              op, allowedCapabilities, capabilities.getCapabilities(),
+              op, targetEnv, capabilities.getCapabilities(),
               deducedCapabilities)))
         return WalkResult::interrupt();
 
@@ -176,13 +147,13 @@ void UpdateVCEPass::runOnOperation() {
       typeExtensions.clear();
       valueType.cast<spirv::SPIRVType>().getExtensions(typeExtensions);
       if (failed(checkAndUpdateExtensionRequirements(
-              op, allowedExtensions, typeExtensions, deducedExtensions)))
+              op, targetEnv, typeExtensions, deducedExtensions)))
         return WalkResult::interrupt();
 
       typeCapabilities.clear();
       valueType.cast<spirv::SPIRVType>().getCapabilities(typeCapabilities);
       if (failed(checkAndUpdateCapabilityRequirements(
-              op, allowedCapabilities, typeCapabilities, deducedCapabilities)))
+              op, targetEnv, typeCapabilities, deducedCapabilities)))
         return WalkResult::interrupt();
     }
 
@@ -201,12 +172,7 @@ void UpdateVCEPass::runOnOperation() {
   module.setAttr(spirv::ModuleOp::getVCETripleAttrName(), triple);
 }
 
-std::unique_ptr<OpPassBase<spirv::ModuleOp>>
+std::unique_ptr<OperationPass<spirv::ModuleOp>>
 mlir::spirv::createUpdateVersionCapabilityExtensionPass() {
   return std::make_unique<UpdateVCEPass>();
 }
-
-static PassRegistration<UpdateVCEPass>
-    pass("spirv-update-vce",
-         "Deduce and attach minimal (version, capabilities, extensions) "
-         "requirements to spv.module ops");

@@ -136,7 +136,7 @@ int f_struct_stack(STACK s) {
   return s.x;
 }
 
-// CHECK-LABEL: define void @f_sret(%struct.struct_stack* noalias sret %agg.result, i32 %x)
+// CHECK-LABEL: define void @f_sret(%struct.struct_stack* noalias sret align 4 %agg.result, i32 %x)
 STACK f_sret(int x) {
   return (STACK) { 0, 1, 2};
 }
@@ -145,7 +145,7 @@ STACK f_sret(int x) {
 // the presence of large return values that consume a register due to the need
 // to pass a pointer.
 
-// CHECK-LABEL: define void @f_sret_2(%struct.struct_stack* noalias sret %agg.result, i32 %a, i64 %b, i64 %c, double %d, i8 zeroext %e, i8 signext %f, i8 zeroext %g)
+// CHECK-LABEL: define void @f_sret_2(%struct.struct_stack* noalias sret align 4 %agg.result, i32 %a, i64 %b, i64 %c, double %d, i8 zeroext %e, i8 signext %f, i8 zeroext %g)
 STACK f_sret_2(int32_t a, int64_t b, int64_t c, long double d,
                uint8_t e, int8_t f, uint8_t g) {
   return (STACK){a, e, f};

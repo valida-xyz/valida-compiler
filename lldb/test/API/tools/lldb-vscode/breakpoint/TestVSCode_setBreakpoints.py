@@ -24,7 +24,7 @@ class TestVSCode_setBreakpoints(lldbvscode_testcase.VSCodeTestCaseBase):
            is no "clearBreakpoints" packet. Source file and line breakpoints
            are set by sending a "setBreakpoints" packet with a source file
            specified and zero or more source lines. If breakpoints have been
-           set in the source file before, any exising breakpoints must remain
+           set in the source file before, any existing breakpoints must remain
            set, and any new breakpoints must be created, and any breakpoints
            that were in previous requests and are not in the current request
            must be removed. This function tests this setting and clearing
@@ -36,7 +36,7 @@ class TestVSCode_setBreakpoints(lldbvscode_testcase.VSCodeTestCaseBase):
         first_line = line_number('main.cpp', 'break 12')
         second_line = line_number('main.cpp', 'break 13')
         third_line = line_number('main.cpp', 'break 14')
-        lines = [first_line, second_line, third_line]
+        lines = [first_line, third_line, second_line]
 
         # Visual Studio Code Debug Adaptors have no way to specify the file
         # without launching or attaching to a process, so we must start a
@@ -44,15 +44,16 @@ class TestVSCode_setBreakpoints(lldbvscode_testcase.VSCodeTestCaseBase):
         program = self.getBuildArtifact("a.out")
         self.build_and_launch(program)
 
-        # Set 3 breakoints and verify that they got set correctly
+        # Set 3 breakpoints and verify that they got set correctly
         response = self.vscode.request_setBreakpoints(source_path, lines)
         line_to_id = {}
         if response:
             breakpoints = response['body']['breakpoints']
             self.assertEquals(len(breakpoints), len(lines),
                             "expect %u source breakpoints" % (len(lines)))
-            for breakpoint in breakpoints:
+            for (breakpoint, index) in zip(breakpoints, range(len(lines))):
                 line = breakpoint['line']
+                self.assertTrue(line, lines[index])
                 # Store the "id" of the breakpoint that was set for later
                 line_to_id[line] = breakpoint['id']
                 self.assertTrue(line in lines, "line expected in lines array")
@@ -67,15 +68,16 @@ class TestVSCode_setBreakpoints(lldbvscode_testcase.VSCodeTestCaseBase):
         # breakpoint and set it again at the same location. We also need to
         # verify that the second line location was actually removed.
         lines.remove(second_line)
-        # Set 2 breakoints and verify that the previous breakoints that were
+        # Set 2 breakpoints and verify that the previous breakpoints that were
         # set above are still set.
         response = self.vscode.request_setBreakpoints(source_path, lines)
         if response:
             breakpoints = response['body']['breakpoints']
             self.assertEquals(len(breakpoints), len(lines),
                             "expect %u source breakpoints" % (len(lines)))
-            for breakpoint in breakpoints:
+            for (breakpoint, index) in zip(breakpoints, range(len(lines))):
                 line = breakpoint['line']
+                self.assertTrue(line, lines[index])
                 # Verify the same breakpoints are still set within LLDB by
                 # making sure the breakpoint ID didn't change
                 self.assertEquals(line_to_id[line], breakpoint['id'],
@@ -193,7 +195,7 @@ class TestVSCode_setBreakpoints(lldbvscode_testcase.VSCodeTestCaseBase):
                         "existing breakpoint should have its condition "
                         "updated")
 
-        # Continue with a hitContidtion of 2 and expect it to skip 1 value
+        # Continue with a hitCondition of 2 and expect it to skip 1 value
         self.continue_to_breakpoints(breakpoint_ids)
         i = int(self.vscode.get_local_variable_value('i'))
         self.assertEquals(i, 6,

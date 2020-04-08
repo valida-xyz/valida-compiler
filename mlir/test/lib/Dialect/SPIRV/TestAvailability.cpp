@@ -20,7 +20,8 @@ using namespace mlir;
 
 namespace {
 /// A pass for testing SPIR-V op availability.
-struct PrintOpAvailability : public FunctionPass<PrintOpAvailability> {
+struct PrintOpAvailability
+    : public PassWrapper<PrintOpAvailability, FunctionPass> {
   void runOnFunction() override;
 };
 } // end anonymous namespace
@@ -88,7 +89,8 @@ void registerPrintOpAvailabilityPass() {
 
 namespace {
 /// A pass for testing SPIR-V op availability.
-struct ConvertToTargetEnv : public FunctionPass<ConvertToTargetEnv> {
+struct ConvertToTargetEnv
+    : public PassWrapper<ConvertToTargetEnv, FunctionPass> {
   void runOnFunction() override;
 };
 
@@ -130,7 +132,12 @@ void ConvertToTargetEnv::runOnFunction() {
   auto targetEnv = fn.getOperation()
                        ->getAttr(spirv::getTargetEnvAttrName())
                        .cast<spirv::TargetEnvAttr>();
-  auto target = spirv::SPIRVConversionTarget::get(targetEnv, context);
+  if (!targetEnv) {
+    fn.emitError("missing 'spv.target_env' attribute");
+    return signalPassFailure();
+  }
+
+  auto target = spirv::SPIRVConversionTarget::get(targetEnv);
 
   OwningRewritePatternList patterns;
   patterns.insert<ConvertToAtomCmpExchangeWeak, ConvertToBitReverse,

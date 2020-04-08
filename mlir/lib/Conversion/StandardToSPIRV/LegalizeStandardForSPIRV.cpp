@@ -11,12 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "../PassDetail.h"
 #include "mlir/Conversion/StandardToSPIRV/ConvertStandardToSPIRV.h"
 #include "mlir/Conversion/StandardToSPIRV/ConvertStandardToSPIRVPass.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/StandardTypes.h"
-#include "mlir/Pass/Pass.h"
 
 using namespace mlir;
 
@@ -160,7 +160,8 @@ void mlir::populateStdLegalizationPatternsForSPIRVLowering(
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct SPIRVLegalization final : public OperationPass<SPIRVLegalization> {
+struct SPIRVLegalization final
+    : public LegalizeStandardForSPIRVBase<SPIRVLegalization> {
   void runOnOperation() override;
 };
 } // namespace
@@ -175,6 +176,3 @@ void SPIRVLegalization::runOnOperation() {
 std::unique_ptr<Pass> mlir::createLegalizeStdOpsForSPIRVLoweringPass() {
   return std::make_unique<SPIRVLegalization>();
 }
-
-static PassRegistration<SPIRVLegalization>
-    pass("legalize-std-for-spirv", "Legalize standard ops for SPIR-V lowering");

@@ -51,12 +51,16 @@ buildSequentialConstant(ArrayRef<llvm::Constant *> &constants,
     return result;
   }
 
-  if (!isa<llvm::SequentialType>(type)) {
+  llvm::Type *elementType;
+  if (auto *arrayTy = dyn_cast<llvm::ArrayType>(type)) {
+    elementType = arrayTy->getElementType();
+  } else if (auto *vectorTy = dyn_cast<llvm::VectorType>(type)) {
+    elementType = vectorTy->getElementType();
+  } else {
     emitError(loc) << "expected sequential LLVM types wrapping a scalar";
     return nullptr;
   }
 
-  llvm::Type *elementType = type->getSequentialElementType();
   SmallVector<llvm::Constant *, 8> nested;
   nested.reserve(shape.front());
   for (int64_t i = 0; i < shape.front(); ++i) {
@@ -74,9 +78,15 @@ buildSequentialConstant(ArrayRef<llvm::Constant *> &constants,
 
 /// Returns the first non-sequential type nested in sequential types.
 static llvm::Type *getInnermostElementType(llvm::Type *type) {
-  while (isa<llvm::SequentialType>(type))
-    type = type->getSequentialElementType();
-  return type;
+  do {
+    if (auto *arrayTy = dyn_cast<llvm::ArrayType>(type)) {
+      type = arrayTy->getElementType();
+    } else if (auto *vectorTy = dyn_cast<llvm::VectorType>(type)) {
+      type = vectorTy->getElementType();
+    } else {
+      return type;
+    }
+  } while (1);
 }
 
 /// Create an LLVM IR constant of `llvmType` from the MLIR attribute `attr`.
@@ -92,33 +102,45 @@ llvm::Constant *ModuleTranslation::getLLVMConstant(llvm::Type *llvmType,
     emitError(loc, "struct types are not supported in constants");
     return nullptr;
   }
+  // For integer types, we allow a mismatch in sizes as the index type in
+  // MLIR might have a different size than the index type in the LLVM module.
   if (auto intAttr = attr.dyn_cast<IntegerAttr>())
-    return llvm::ConstantInt::get(llvmType, intAttr.getValue());
+    return llvm::ConstantInt::get(
+        llvmType,
+        intAttr.getValue().sextOrTrunc(llvmType->getIntegerBitWidth()));
   if (auto boolAttr = attr.dyn_cast<BoolAttr>())
     return llvm::ConstantInt::get(llvmType, boolAttr.getValue());
   if (auto floatAttr = attr.dyn_cast<FloatAttr>())
     return llvm::ConstantFP::get(llvmType, floatAttr.getValue());
   if (auto funcAttr = attr.dyn_cast<FlatSymbolRefAttr>())
-    return functionMapping.lookup(funcAttr.getValue());
+    return llvm::ConstantExpr::getBitCast(
+        functionMapping.lookup(funcAttr.getValue()), llvmType);
   if (auto splatAttr = attr.dyn_cast<SplatElementsAttr>()) {
-    auto *sequentialType = cast<llvm::SequentialType>(llvmType);
-    auto elementType = sequentialType->getElementType();
-    uint64_t numElements = sequentialType->getNumElements();
+    llvm::Type *elementType;
+    uint64_t numElements;
+    if (auto *arrayTy = dyn_cast<llvm::ArrayType>(llvmType)) {
+      elementType = arrayTy->getElementType();
+      numElements = arrayTy->getNumElements();
+    } else {
+      auto *vectorTy = cast<llvm::VectorType>(llvmType);
+      elementType = vectorTy->getElementType();
+      numElements = vectorTy->getNumElements();
+    }
     // Splat value is a scalar. Extract it only if the element type is not
     // another sequence type. The recursion terminates because each step removes
     // one outer sequential type.
+    bool elementTypeSequential =
+        isa<llvm::ArrayType>(elementType) || isa<llvm::VectorType>(elementType);
     llvm::Constant *child = getLLVMConstant(
         elementType,
-        isa<llvm::SequentialType>(elementType) ? splatAttr
-                                               : splatAttr.getSplatValue(),
-        loc);
+        elementTypeSequential ? splatAttr : splatAttr.getSplatValue(), loc);
     if (!child)
       return nullptr;
     if (llvmType->isVectorTy())
       return llvm::ConstantVector::getSplat(
           llvm::ElementCount(numElements, /*Scalable=*/false), child);
     if (llvmType->isArrayTy()) {
-      auto arrayType = llvm::ArrayType::get(elementType, numElements);
+      auto *arrayType = llvm::ArrayType::get(elementType, numElements);
       SmallVector<llvm::Constant *, 8> constants(numElements, child);
       return llvm::ConstantArray::get(arrayType, constants);
     }
@@ -353,6 +375,7 @@ LogicalResult ModuleTranslation::convertOperation(Operation &opInst,
       if (auto constOperand = dyn_cast<llvm::Constant>(operand))
         lpi->addClause(constOperand);
     }
+    valueMapping[lpOp.getResult()] = lpi;
     return success();
   }
 
@@ -470,7 +493,8 @@ LogicalResult ModuleTranslation::convertGlobals() {
 
     auto linkage = convertLinkageToLLVM(op.linkage());
     bool anyExternalLinkage =
-        (linkage == llvm::GlobalVariable::ExternalLinkage ||
+        ((linkage == llvm::GlobalVariable::ExternalLinkage &&
+          isa<llvm::UndefValue>(cst)) ||
          linkage == llvm::GlobalVariable::ExternalWeakLinkage);
     auto addrSpace = op.addr_space().getLimitedValue();
     auto *var = new llvm::GlobalVariable(
@@ -553,6 +577,83 @@ static llvm::SetVector<Block *> topologicalSort(LLVMFuncOp f) {
   return blocks;
 }
 
+/// Attempts to add an attribute identified by `key`, optionally with the given
+/// `value` to LLVM function `llvmFunc`. Reports errors at `loc` if any. If the
+/// attribute has a kind known to LLVM IR, create the attribute of this kind,
+/// otherwise keep it as a string attribute. Performs additional checks for
+/// attributes known to have or not have a value in order to avoid assertions
+/// inside LLVM upon construction.
+static LogicalResult checkedAddLLVMFnAttribute(Location loc,
+                                               llvm::Function *llvmFunc,
+                                               StringRef key,
+                                               StringRef value = StringRef()) {
+  auto kind = llvm::Attribute::getAttrKindFromName(key);
+  if (kind == llvm::Attribute::None) {
+    llvmFunc->addFnAttr(key, value);
+    return success();
+  }
+
+  if (llvm::Attribute::doesAttrKindHaveArgument(kind)) {
+    if (value.empty())
+      return emitError(loc) << "LLVM attribute '" << key << "' expects a value";
+
+    int result;
+    if (!value.getAsInteger(/*Radix=*/0, result))
+      llvmFunc->addFnAttr(
+          llvm::Attribute::get(llvmFunc->getContext(), kind, result));
+    else
+      llvmFunc->addFnAttr(key, value);
+    return success();
+  }
+
+  if (!value.empty())
+    return emitError(loc) << "LLVM attribute '" << key
+                          << "' does not expect a value, found '" << value
+                          << "'";
+
+  llvmFunc->addFnAttr(kind);
+  return success();
+}
+
+/// Attaches the attributes listed in the given array attribute to `llvmFunc`.
+/// Reports error to `loc` if any and returns immediately. Expects `attributes`
+/// to be an array attribute containing either string attributes, treated as
+/// value-less LLVM attributes, or array attributes containing two string
+/// attributes, with the first string being the name of the corresponding LLVM
+/// attribute and the second string beings its value. Note that even integer
+/// attributes are expected to have their values expressed as strings.
+static LogicalResult
+forwardPassthroughAttributes(Location loc, Optional<ArrayAttr> attributes,
+                             llvm::Function *llvmFunc) {
+  if (!attributes)
+    return success();
+
+  for (Attribute attr : *attributes) {
+    if (auto stringAttr = attr.dyn_cast<StringAttr>()) {
+      if (failed(
+              checkedAddLLVMFnAttribute(loc, llvmFunc, stringAttr.getValue())))
+        return failure();
+      continue;
+    }
+
+    auto arrayAttr = attr.dyn_cast<ArrayAttr>();
+    if (!arrayAttr || arrayAttr.size() != 2)
+      return emitError(loc)
+             << "expected 'passthrough' to contain string or array attributes";
+
+    auto keyAttr = arrayAttr[0].dyn_cast<StringAttr>();
+    auto valueAttr = arrayAttr[1].dyn_cast<StringAttr>();
+    if (!keyAttr || !valueAttr)
+      return emitError(loc)
+             << "expected arrays within 'passthrough' to contain two strings";
+
+    if (failed(checkedAddLLVMFnAttribute(loc, llvmFunc, keyAttr.getValue(),
+                                         valueAttr.getValue())))
+      return failure();
+  }
+  return success();
+}
+
 LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
   // Clear the block and value mappings, they are only relevant within one
   // function.
@@ -582,6 +683,14 @@ LogicalResult ModuleTranslation::convertOneFunction(LLVMFuncOp func) {
     }
     valueMapping[mlirArg] = &llvmArg;
     argIdx++;
+  }
+
+  // Check the personality and set it.
+  if (func.personality().hasValue()) {
+    llvm::Type *ty = llvm::Type::getInt8PtrTy(llvmFunc->getContext());
+    if (llvm::Constant *pfunc =
+            getLLVMConstant(ty, func.personalityAttr(), func.getLoc()))
+      llvmFunc->setPersonalityFn(pfunc);
   }
 
   // First, create all blocks so we can jump to them.
@@ -622,9 +731,13 @@ LogicalResult ModuleTranslation::convertFunctions() {
     llvm::FunctionCallee llvmFuncCst = llvmModule->getOrInsertFunction(
         function.getName(),
         cast<llvm::FunctionType>(function.getType().getUnderlyingType()));
-    assert(isa<llvm::Function>(llvmFuncCst.getCallee()));
-    functionMapping[function.getName()] =
-        cast<llvm::Function>(llvmFuncCst.getCallee());
+    llvm::Function *llvmFunc = cast<llvm::Function>(llvmFuncCst.getCallee());
+    functionMapping[function.getName()] = llvmFunc;
+
+    // Forward the pass-through attributes to LLVM.
+    if (failed(forwardPassthroughAttributes(function.getLoc(),
+                                            function.passthrough(), llvmFunc)))
+      return failure();
   }
 
   // Convert functions.
@@ -645,8 +758,10 @@ SmallVector<llvm::Value *, 8>
 ModuleTranslation::lookupValues(ValueRange values) {
   SmallVector<llvm::Value *, 8> remapped;
   remapped.reserve(values.size());
-  for (Value v : values)
+  for (Value v : values) {
+    assert(valueMapping.count(v) && "referencing undefined value");
     remapped.push_back(valueMapping.lookup(v));
+  }
   return remapped;
 }
 

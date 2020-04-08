@@ -273,7 +273,6 @@ module LLVM_intrinsic_gen {
   module IR_PatternMatch { header "IR/PatternMatch.h" export * }
   module IR_SafepointIRVerifier { header "IR/SafepointIRVerifier.h" export * }
   module IR_Statepoint { header "IR/Statepoint.h" export * }
-  module IR_KnowledgeRetention { header "IR/KnowledgeRetention.h" export * }
 
   export *
 }
@@ -291,6 +290,7 @@ module LLVM_IR {
   textual header "IR/Metadata.def"
   textual header "IR/FixedMetadataKinds.def"
   textual header "IR/Value.def"
+  textual header "IR/VPIntrinsics.def"
   textual header "IR/RuntimeLibcalls.def"
 }
 

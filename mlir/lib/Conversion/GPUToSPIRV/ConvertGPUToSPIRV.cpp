@@ -56,7 +56,7 @@ public:
 };
 
 /// Pattern lowering GPU block/thread size/id to loading SPIR-V invocation
-/// builin variables.
+/// builtin variables.
 template <typename SourceOp, spirv::BuiltIn builtin>
 class LaunchConfigConversion : public SPIRVOpLowering<SourceOp> {
 public:
@@ -69,7 +69,7 @@ public:
 
 /// This is separate because in Vulkan workgroup size is exposed to shaders via
 /// a constant with WorkgroupSize decoration. So here we cannot generate a
-/// builtin variable; instead the infromation in the `spv.entry_point_abi`
+/// builtin variable; instead the information in the `spv.entry_point_abi`
 /// attribute on the surrounding FuncOp is used to replace the gpu::BlockDimOp.
 class WorkGroupSizeConversion : public SPIRVOpLowering<gpu::BlockDimOp> {
 public:
@@ -350,9 +350,22 @@ LogicalResult GPUFuncOpConversion::matchAndRewrite(
     return failure();
 
   SmallVector<spirv::InterfaceVarABIAttr, 4> argABI;
-  for (auto argNum : llvm::seq<unsigned>(0, funcOp.getNumArguments())) {
-    argABI.push_back(spirv::getInterfaceVarABIAttr(
-        0, argNum, spirv::StorageClass::StorageBuffer, rewriter.getContext()));
+  for (auto argIndex : llvm::seq<unsigned>(0, funcOp.getNumArguments())) {
+    // If the ABI is already specified, use it.
+    auto abiAttr = funcOp.getArgAttrOfType<spirv::InterfaceVarABIAttr>(
+        argIndex, spirv::getInterfaceVarABIAttrName());
+    if (abiAttr) {
+      argABI.push_back(abiAttr);
+      continue;
+    }
+    // todo(ravishankarm): Use the "default ABI". Remove this in a follow up
+    // CL. Staging this to make this easy to revert in case of breakages out of
+    // tree.
+    Optional<spirv::StorageClass> sc;
+    if (funcOp.getArgument(argIndex).getType().isIntOrIndexOrFloat())
+      sc = spirv::StorageClass::StorageBuffer;
+    argABI.push_back(
+        spirv::getInterfaceVarABIAttr(0, argIndex, sc, rewriter.getContext()));
   }
 
   auto entryPointAttr = spirv::lookupEntryPointABI(funcOp);

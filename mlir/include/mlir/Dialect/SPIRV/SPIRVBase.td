@@ -53,16 +53,6 @@ def SPIRV_Dialect : Dialect {
 
   let extraClassDeclaration = [{
     //===------------------------------------------------------------------===//
-    // Type
-    //===------------------------------------------------------------------===//
-
-    /// Checks if the given `type` is valid in SPIR-V dialect.
-    static bool isValidType(Type type);
-
-    /// Checks if the given `scalar type` is valid in SPIR-V dialect.
-    static bool isValidScalarType(Type type);
-
-    //===------------------------------------------------------------------===//
     // Attribute
     //===------------------------------------------------------------------===//
 
@@ -3295,7 +3285,7 @@ def SPV_OpcodeAttr :
 class SPV_Op<string mnemonic, list<OpTrait> traits = []> :
     Op<SPIRV_Dialect, mnemonic, !listconcat(traits, [
          // TODO(antiagainst): We don't need all of the following traits for
-         // every op; only the suitabble ones should be added automatically
+         // every op; only the suitable ones should be added automatically
          // after ODS supports dialect-specific contents.
          DeclareOpInterfaceMethods<QueryMinVersionInterface>,
          DeclareOpInterfaceMethods<QueryMaxVersionInterface>,

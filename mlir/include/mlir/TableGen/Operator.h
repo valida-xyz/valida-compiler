@@ -165,10 +165,19 @@ public:
   // requiring the raw MLIR trait here.
   const OpTrait *getTrait(llvm::StringRef trait) const;
 
+  // Regions.
+  using const_region_iterator = const NamedRegion *;
+  const_region_iterator region_begin() const;
+  const_region_iterator region_end() const;
+  llvm::iterator_range<const_region_iterator> getRegions() const;
+
   // Returns the number of regions.
   unsigned getNumRegions() const;
   // Returns the `index`-th region.
   const NamedRegion &getRegion(unsigned index) const;
+
+  // Returns the number of variadic regions in this operation.
+  unsigned getNumVariadicRegions() const;
 
   // Successors.
   using const_successor_iterator = const NamedSuccessor *;
@@ -197,6 +206,10 @@ public:
   StringRef getDescription() const;
   bool hasSummary() const;
   StringRef getSummary() const;
+
+  // Query functions for the assembly format of the operator.
+  bool hasAssemblyFormat() const;
+  StringRef getAssemblyFormat() const;
 
   // Returns this op's extra class declaration code.
   StringRef getExtraClassDeclaration() const;

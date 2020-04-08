@@ -610,11 +610,11 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
       // 4 byte alignment is given by the ABI
       auto Tmp = MIRBuilder.buildLoad(LLT::pointer(0, 32), MI.getOperand(2),
                                       *MI.getMF()->getMachineMemOperand(
-                                      MPO, MachineMemOperand::MOLoad, 4, 4));
+                                      MPO, MachineMemOperand::MOLoad, 4, Align(4)));
 
       MIRBuilder.buildStore(Tmp, MI.getOperand(1),
                             *MI.getMF()->getMachineMemOperand(
-                            MPO, MachineMemOperand::MOStore, 4, 4));
+                            MPO, MachineMemOperand::MOStore, 4, Align(4)));
       MI.eraseFromParent();
       return true;
     }
@@ -772,7 +772,7 @@ bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
 
   MIRBuilder.setInstr(MI);
   MachineFunction &MF = MIRBuilder.getMF();
-  const unsigned Align = MI.getOperand(2).getImm();
+  const unsigned Alignment = MI.getOperand(2).getImm();
   const Register Dst = MI.getOperand(0).getReg();
   const Register ListPtr = MI.getOperand(1).getReg();
 
@@ -785,16 +785,16 @@ bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
   auto List = MIRBuilder.buildLoad(
       PtrTy, ListPtr,
       *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOLoad,
-                               PtrSize, /* Align = */ PtrSize));
+                               PtrSize, Align(PtrSize)));
 
   MachineInstrBuilder DstPtr;
-  if (Align > PtrSize) {
+  if (Alignment > PtrSize) {
     // Realign the list to the actual required alignment.
-    auto AlignMinus1 = MIRBuilder.buildConstant(IntPtrTy, Align - 1);
+    auto AlignMinus1 = MIRBuilder.buildConstant(IntPtrTy, Alignment - 1);
 
     auto ListTmp = MIRBuilder.buildPtrAdd(PtrTy, List, AlignMinus1.getReg(0));
 
-    DstPtr = MIRBuilder.buildPtrMask(PtrTy, ListTmp, Log2_64(Align));
+    DstPtr = MIRBuilder.buildPtrMask(PtrTy, ListTmp, Log2_64(Alignment));
   } else
     DstPtr = List;
 
@@ -804,7 +804,7 @@ bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
   MIRBuilder.buildLoad(
       Dst, DstPtr,
       *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOLoad,
-                               ValSize, std::max(Align, PtrSize)));
+                               ValSize, Align(std::max(Alignment, PtrSize))));
 
   auto Size = MIRBuilder.buildConstant(IntPtrTy, alignTo(ValSize, PtrSize));
 
@@ -812,10 +812,10 @@ bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
   auto NewList = MIRBuilder.buildPtrAdd(PtrTy, DstPtr, Size.getReg(0));
 
   // Storing the advanced va_list pointer
-  MIRBuilder.buildStore(
-      NewList, ListPtr,
-      *MF.getMachineMemOperand(MachinePointerInfo(), MachineMemOperand::MOStore,
-                               PtrSize, /* Align = */ PtrSize));
+  MIRBuilder.buildStore(NewList, ListPtr,
+                        *MF.getMachineMemOperand(MachinePointerInfo(),
+                                                 MachineMemOperand::MOStore,
+                                                 PtrSize, Align(PtrSize)));
 
   MI.eraseFromParent();
   return true;

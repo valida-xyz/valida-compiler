@@ -87,6 +87,14 @@ New checks
   result of a memory allocation function (``malloc()``, ``calloc()``,
   ``realloc()``, ``alloca()``) instead of its argument.
 
+- New :doc:`bugprone-spuriously-wake-up-functions
+  <clang-tidy/checks/bugprone-spuriously-wake-up-functions>` check.
+
+  Finds ``cnd_wait``, ``cnd_timedwait``, ``wait``, ``wait_for``, or
+  ``wait_until`` function calls when the function is not invoked from a loop
+  that checks whether a condition predicate holds or the function has a 
+  condition parameter.
+
 - New :doc:`bugprone-reserved-identifier
   <clang-tidy/checks/bugprone-reserved-identifier>` check.
 
@@ -104,6 +112,11 @@ New checks
 
   Flags use of the `C` standard library functions ``memset``, ``memcpy`` and
   ``memcmp`` and similar derivatives on non-trivial types.
+
+- New :doc:`llvmlibc-implementation-in-namespace
+  <clang-tidy/checks/llvmlibc-implementation-in-namespace>` check.
+
+  Checks all llvm-libc implementation is within the correct namespace.
 
 - New :doc:`llvmlibc-restrict-system-libc-headers
   <clang-tidy/checks/llvmlibc-restrict-system-libc-headers>` check.
@@ -123,6 +136,16 @@ New checks
 
 New check aliases
 ^^^^^^^^^^^^^^^^^
+
+- New alias :doc:`cert-con36-c
+  <clang-tidy/checks/cert-con36-c>` to
+  :doc:`bugprone-spuriously-wake-up-functions
+  <clang-tidy/checks/bugprone-spuriously-wake-up-functions>` was added.
+
+- New alias :doc:`cert-con54-cpp
+  <clang-tidy/checks/cert-con54-cpp>` to
+  :doc:`bugprone-spuriously-wake-up-functions
+  <clang-tidy/checks/bugprone-spuriously-wake-up-functions>` was added.
 
 - New alias :doc:`cert-dcl37-c
   <clang-tidy/checks/cert-dcl37-c>` to

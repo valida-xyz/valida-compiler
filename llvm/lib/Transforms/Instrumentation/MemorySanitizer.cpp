@@ -1867,10 +1867,9 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
   }
 
   void visitShuffleVectorInst(ShuffleVectorInst &I) {
-    insertShadowCheck(I.getOperand(2), &I);
     IRBuilder<> IRB(&I);
     setShadow(&I, IRB.CreateShuffleVector(getShadow(&I, 0), getShadow(&I, 1),
-              I.getOperand(2), "_msprop"));
+                                          I.getShuffleMask(), "_msprop"));
     setOriginForNaryOp(I);
   }
 
@@ -2133,7 +2132,7 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
     Type *Ty = ConstArg->getType();
     if (Ty->isVectorTy()) {
       unsigned NumElements = Ty->getVectorNumElements();
-      Type *EltTy = Ty->getSequentialElementType();
+      Type *EltTy = Ty->getVectorElementType();
       SmallVector<Constant *, 16> Elements;
       for (unsigned Idx = 0; Idx < NumElements; ++Idx) {
         if (ConstantInt *Elt =

@@ -1,6 +1,10 @@
-set(LLVM_LINK_COMPONENTS support)
+set(LLVM_LINK_COMPONENTS
+  FrontendOpenMP
+  Support
+  )
 
 add_clang_library(clangTidyLLVMLibcModule
+  ImplementationInNamespaceCheck.cpp
   LLVMLibcTidyModule.cpp
   RestrictSystemLibcHeadersCheck.cpp
 
@@ -10,6 +14,7 @@ add_clang_library(clangTidyLLVMLibcModule
   clangBasic
   clangLex
   clangTidy
+  clangTidyPortabilityModule
   clangTidyUtils
   clangTooling
   )

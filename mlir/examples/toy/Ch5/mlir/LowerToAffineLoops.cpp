@@ -15,7 +15,7 @@
 #include "toy/Dialect.h"
 #include "toy/Passes.h"
 
-#include "mlir/Dialect/AffineOps/AffineOps.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -155,9 +155,15 @@ struct ConstantOpLowering : public OpRewritePattern<toy::ConstantOp> {
     // operations.
     auto valueShape = memRefType.getShape();
     SmallVector<Value, 8> constantIndices;
-    for (auto i : llvm::seq<int64_t>(
-             0, *std::max_element(valueShape.begin(), valueShape.end())))
-      constantIndices.push_back(rewriter.create<ConstantIndexOp>(loc, i));
+
+    if (!valueShape.empty()) {
+      for (auto i : llvm::seq<int64_t>(
+              0, *std::max_element(valueShape.begin(), valueShape.end())))
+       constantIndices.push_back(rewriter.create<ConstantIndexOp>(loc, i));
+    } else {
+      // This is the case of a tensor of rank 0.
+      constantIndices.push_back(rewriter.create<ConstantIndexOp>(loc, 0));
+    }
 
     // The constant operation represents a multi-dimensional constant, so we
     // will need to generate a store for each of the elements. The following
@@ -254,7 +260,8 @@ struct TransposeOpLowering : public ConversionPattern {
 /// computationally intensive (like matmul for example...) while keeping the
 /// rest of the code in the Toy dialect.
 namespace {
-struct ToyToAffineLoweringPass : public FunctionPass<ToyToAffineLoweringPass> {
+struct ToyToAffineLoweringPass
+    : public PassWrapper<ToyToAffineLoweringPass, FunctionPass> {
   void runOnFunction() final;
 };
 } // end anonymous namespace.
@@ -280,7 +287,7 @@ void ToyToAffineLoweringPass::runOnFunction() {
   // We define the specific operations, or dialects, that are legal targets for
   // this lowering. In our case, we are lowering to a combination of the
   // `Affine` and `Standard` dialects.
-  target.addLegalDialect<AffineOpsDialect, StandardOpsDialect>();
+  target.addLegalDialect<AffineDialect, StandardOpsDialect>();
 
   // We also define the Toy dialect as Illegal so that the conversion will fail
   // if any of these operations are *not* converted. Given that we actually want

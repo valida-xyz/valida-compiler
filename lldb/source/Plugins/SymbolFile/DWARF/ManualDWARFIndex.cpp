@@ -185,12 +185,6 @@ void ManualDWARFIndex::IndexUnitImpl(DWARFUnit &unit,
             is_declaration = form_value.Unsigned() != 0;
           break;
 
-        //                case DW_AT_artificial:
-        //                    if (attributes.ExtractFormValueAtIndex(i,
-        //                    form_value))
-        //                        is_artificial = form_value.Unsigned() != 0;
-        //                    break;
-
         case DW_AT_MIPS_linkage_name:
         case DW_AT_linkage_name:
           if (attributes.ExtractFormValueAtIndex(i, form_value))
@@ -223,20 +217,6 @@ void ManualDWARFIndex::IndexUnitImpl(DWARFUnit &unit,
                 // location describes a hard coded address, but we don't want
                 // the performance penalty of that right now.
                 is_global_or_static_variable = false;
-                // if (attributes.ExtractFormValueAtIndex(dwarf, i,
-                //                                        form_value)) {
-                //   // If we have valid block data, then we have location
-                //   // expression bytesthat are fixed (not a location list).
-                //   const uint8_t *block_data = form_value.BlockData();
-                //   if (block_data) {
-                //     uint32_t block_length = form_value.Unsigned();
-                //     if (block_length == 1 +
-                //     attributes.UnitAtIndex(i)->GetAddressByteSize()) {
-                //       if (block_data[0] == DW_OP_addr)
-                //         add_die = true;
-                //     }
-                //   }
-                // }
                 parent_die = nullptr; // Terminate the while loop.
                 break;
 
@@ -426,8 +406,9 @@ void ManualDWARFIndex::GetFunctions(ConstString name, SymbolFileDWARF &dwarf,
       DWARFDIE die = dwarf.GetDIE(die_ref);
       if (!die)
         continue;
-      if (SymbolFileDWARF::DIEInDeclContext(parent_decl_ctx, die))
-        dies.push_back(die);
+      if (!SymbolFileDWARF::DIEInDeclContext(parent_decl_ctx, die))
+        continue;
+      dies.push_back(die);
     }
   }
   if (name_type_mask & eFunctionNameTypeBase) {
@@ -437,18 +418,20 @@ void ManualDWARFIndex::GetFunctions(ConstString name, SymbolFileDWARF &dwarf,
       DWARFDIE die = dwarf.GetDIE(die_ref);
       if (!die)
         continue;
-      if (SymbolFileDWARF::DIEInDeclContext(parent_decl_ctx, die))
-        dies.push_back(die);
+      if (!SymbolFileDWARF::DIEInDeclContext(parent_decl_ctx, die))
+        continue;
+      dies.push_back(die);
     }
-    offsets.clear();
   }
 
   if (name_type_mask & eFunctionNameTypeMethod && !parent_decl_ctx.IsValid()) {
     DIEArray offsets;
     m_set.function_methods.Find(name, offsets);
     for (const DIERef &die_ref: offsets) {
-      if (DWARFDIE die = dwarf.GetDIE(die_ref))
-        dies.push_back(die);
+      DWARFDIE die = dwarf.GetDIE(die_ref);
+      if (!die)
+        continue;
+      dies.push_back(die);
     }
   }
 
@@ -457,8 +440,10 @@ void ManualDWARFIndex::GetFunctions(ConstString name, SymbolFileDWARF &dwarf,
     DIEArray offsets;
     m_set.function_selectors.Find(name, offsets);
     for (const DIERef &die_ref: offsets) {
-      if (DWARFDIE die = dwarf.GetDIE(die_ref))
-        dies.push_back(die);
+      DWARFDIE die = dwarf.GetDIE(die_ref);
+      if (!die)
+        continue;
+      dies.push_back(die);
     }
   }
 }

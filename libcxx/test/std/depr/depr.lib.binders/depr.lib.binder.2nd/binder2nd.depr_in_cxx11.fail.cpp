@@ -13,9 +13,7 @@
 // UNSUPPORTED: clang-4.0
 // UNSUPPORTED: c++98, c++03
 // REQUIRES: verify-support
-
-// MODULES_DEFINES: _LIBCPP_ENABLE_CXX17_REMOVED_BINDERS
-#define _LIBCPP_ENABLE_CXX17_REMOVED_BINDERS
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ENABLE_CXX17_REMOVED_BINDERS
 
 #include <functional>
 
@@ -24,7 +22,7 @@
 
 int main(int, char**)
 {
-    typedef std::binder2nd<test_func> B2ND; // expected-error{{'binder2nd<test_func>' is deprecated}}
+    typedef std::binder2nd<test_func> B2ND; // expected-warning {{'binder2nd<test_func>' is deprecated}}
 
-  return 0;
+    return 0;
 }

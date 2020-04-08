@@ -124,28 +124,28 @@ define i32* @f7_0(i32* %ptr) {
   ret i32* %ptr
 }
 
-; ATTRIBUTOR: define void @f7_1(i32* nonnull dereferenceable(4) %ptr, i1 %c)
+; ATTRIBUTOR: define void @f7_1(i32* nonnull align 4 dereferenceable(4) %ptr, i1 %c)
 define void @f7_1(i32* %ptr, i1 %c) {
 
-; ATTRIBUTOR:   %A = tail call i32 @unkown_f(i32* nonnull dereferenceable(4) %ptr)
+; ATTRIBUTOR:   %A = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(4) %ptr)
   %A = tail call i32 @unkown_f(i32* %ptr)
 
   %ptr.0 = load i32, i32* %ptr
   ; deref 4 hold
 
 ; FIXME: this should be %B = tail call i32 @unkown_f(i32* nonnull dereferenceable(4) %ptr)
-; ATTRIBUTOR:   %B = tail call i32 @unkown_f(i32* nonnull dereferenceable(4) %ptr)
+; ATTRIBUTOR:   %B = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(4) %ptr)
   %B = tail call i32 @unkown_f(i32* dereferenceable(1) %ptr)
 
   br i1%c, label %if.true, label %if.false
 if.true:
-; ATTRIBUTOR:   %C = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %C = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
   %C = tail call i32 @unkown_f(i32* %ptr)
 
-; ATTRIBUTOR:   %D = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %D = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
   %D = tail call i32 @unkown_f(i32* dereferenceable(8) %ptr)
 
-; ATTRIBUTOR:   %E = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %E = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
   %E = tail call i32 @unkown_f(i32* %ptr)
 
   ret void
@@ -159,26 +159,26 @@ define void @f7_2(i1 %c) {
 
   %ptr =  tail call i32* @unkown_ptr()
 
-; ATTRIBUTOR:   %A = tail call i32 @unkown_f(i32* nonnull dereferenceable(4) %ptr)
+; ATTRIBUTOR:   %A = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(4) %ptr)
   %A = tail call i32 @unkown_f(i32* %ptr)
 
   %arg_a.0 = load i32, i32* %ptr
   ; deref 4 hold
 
-; ATTRIBUTOR:   %B = tail call i32 @unkown_f(i32* nonnull dereferenceable(4) %ptr)
+; ATTRIBUTOR:   %B = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(4) %ptr)
   %B = tail call i32 @unkown_f(i32* dereferenceable(1) %ptr)
 
   br i1%c, label %if.true, label %if.false
 if.true:
 
-; ATTRIBUTOR:   %C = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %C = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
   %C = tail call i32 @unkown_f(i32* %ptr)
 
-; ATTRIBUTOR:   %D = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %D = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
   %D = tail call i32 @unkown_f(i32* dereferenceable(8) %ptr)
 
   %E = tail call i32 @unkown_f(i32* %ptr)
-; ATTRIBUTOR:   %E = tail call i32 @unkown_f(i32* nonnull dereferenceable(8) %ptr)
+; ATTRIBUTOR:   %E = tail call i32 @unkown_f(i32* nonnull align 4 dereferenceable(8) %ptr)
 
   ret void
 
@@ -195,14 +195,14 @@ define i32* @f7_3() {
 
 define i32* @test_for_minus_index(i32* %p) {
 ; FIXME: This should have a return dereferenceable(8) but we need to make sure it will work in loops as well.
-; ATTRIBUTOR: define nonnull i32* @test_for_minus_index(i32* nofree nonnull writeonly "no-capture-maybe-returned" %p)
+; ATTRIBUTOR: define nonnull align 4 i32* @test_for_minus_index(i32* nofree nonnull writeonly align 4 "no-capture-maybe-returned" %p)
   %q = getelementptr inbounds i32, i32* %p, i32 -2
   store i32 1, i32* %q
   ret i32* %q
 }
 
 define void @deref_or_null_and_nonnull(i32* dereferenceable_or_null(100) %0) {
-; ATTRIBUTOR: define void @deref_or_null_and_nonnull(i32* nocapture nofree nonnull writeonly dereferenceable(100) %0)
+; ATTRIBUTOR: define void @deref_or_null_and_nonnull(i32* nocapture nofree nonnull writeonly align 4 dereferenceable(100) %0)
   store i32 1, i32* %0
   ret void
 }
@@ -454,6 +454,68 @@ if.else6:                                         ; preds = %if.else3
 if.end8:                                          ; preds = %if.then5, %if.else6, %if.then2, %if.else
   ret void
 }
+
+declare void @unknown()
+define void @nonnull_assume_pos(i8* %arg1, i8* %arg2, i8* %arg3, i8* %arg4) {
+; ATTRIBUTOR-LABEL: define {{[^@]+}}@nonnull_assume_pos
+; ATTRIBUTOR-SAME: (i8* nocapture nofree nonnull readnone dereferenceable(101) [[ARG1:%.*]], i8* nocapture nofree readnone dereferenceable_or_null(31) [[ARG2:%.*]], i8* nocapture nofree nonnull readnone [[ARG3:%.*]], i8* nocapture nofree readnone dereferenceable_or_null(42) [[ARG4:%.*]])
+; ATTRIBUTOR-NEXT:    call void @llvm.assume(i1 true) #6 [ "nonnull"(i8* undef), "dereferenceable"(i8* undef, i64 1), "dereferenceable"(i8* undef, i64 2), "dereferenceable"(i8* undef, i64 101), "dereferenceable_or_null"(i8* undef, i64 31), "dereferenceable_or_null"(i8* undef, i64 42) ]
+; ATTRIBUTOR-NEXT:    call void @unknown()
+; ATTRIBUTOR-NEXT:    ret void
+;
+  call void @llvm.assume(i1 true) [ "nonnull"(i8* %arg3), "dereferenceable"(i8* %arg1, i64 1), "dereferenceable"(i8* %arg1, i64 2), "dereferenceable"(i8* %arg1, i64 101), "dereferenceable_or_null"(i8* %arg2, i64 31), "dereferenceable_or_null"(i8* %arg4, i64 42)]
+  call void @unknown()
+  ret void
+}
+define void @nonnull_assume_neg(i8* %arg1, i8* %arg2, i8* %arg3) {
+; ATTRIBUTOR-LABEL: define {{[^@]+}}@nonnull_assume_neg
+; ATTRIBUTOR-SAME: (i8* nocapture nofree readnone [[ARG1:%.*]], i8* nocapture nofree readnone [[ARG2:%.*]], i8* nocapture nofree readnone [[ARG3:%.*]])
+; ATTRIBUTOR-NEXT:    call void @unknown()
+; ATTRIBUTOR-NEXT:    call void @llvm.assume(i1 true) [ "dereferenceable"(i8* undef, i64 101), "dereferenceable"(i8* undef, i64 -2), "dereferenceable_or_null"(i8* undef, i64 31) ]
+; ATTRIBUTOR-NEXT:    ret void
+;
+  call void @unknown()
+  call void @llvm.assume(i1 true) ["dereferenceable"(i8* %arg1, i64 101), "dereferenceable"(i8* %arg2, i64 -2), "dereferenceable_or_null"(i8* %arg3, i64 31)]
+  ret void
+}
+define void @nonnull_assume_call(i8* %arg1, i8* %arg2, i8* %arg3, i8* %arg4) {
+; ATTRIBUTOR-LABEL: define {{[^@]+}}@nonnull_assume_call
+; ATTRIBUTOR-SAME: (i8* [[ARG1:%.*]], i8* [[ARG2:%.*]], i8* [[ARG3:%.*]], i8* [[ARG4:%.*]])
+; ATTRIBUTOR-NEXT:    call void @unknown()
+; ATTRIBUTOR-NEXT:    [[P:%.*]] = call nonnull dereferenceable(101) i32* @unkown_ptr()
+; ATTRIBUTOR-NEXT:    call void @unknown_use32(i32* nonnull dereferenceable(101) [[P]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(42) [[ARG4]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull [[ARG3]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(31) [[ARG2]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(2) [[ARG1]])
+; ATTRIBUTOR-NEXT:    call void @llvm.assume(i1 true) [ "nonnull"(i8* [[ARG3]]), "dereferenceable"(i8* [[ARG1]], i64 1), "dereferenceable"(i8* [[ARG1]], i64 2), "dereferenceable"(i32* [[P]], i64 101), "dereferenceable_or_null"(i8* [[ARG2]], i64 31), "dereferenceable_or_null"(i8* [[ARG4]], i64 42) ]
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(2) [[ARG1]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(31) [[ARG2]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull [[ARG3]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use8(i8* nonnull dereferenceable(42) [[ARG4]])
+; ATTRIBUTOR-NEXT:    call void @unknown_use32(i32* nonnull dereferenceable(101) [[P]])
+; ATTRIBUTOR-NEXT:    call void @unknown()
+; ATTRIBUTOR-NEXT:    ret void
+;
+  call void @unknown()
+  %p = call i32* @unkown_ptr()
+  call void @unknown_use32(i32* %p)
+  call void @unknown_use8(i8* %arg4)
+  call void @unknown_use8(i8* %arg3)
+  call void @unknown_use8(i8* %arg2)
+  call void @unknown_use8(i8* %arg1)
+  call void @llvm.assume(i1 true) [ "nonnull"(i8* %arg3), "dereferenceable"(i8* %arg1, i64 1), "dereferenceable"(i8* %arg1, i64 2), "dereferenceable"(i32* %p, i64 101), "dereferenceable_or_null"(i8* %arg2, i64 31), "dereferenceable_or_null"(i8* %arg4, i64 42)]
+  call void @unknown_use8(i8* %arg1)
+  call void @unknown_use8(i8* %arg2)
+  call void @unknown_use8(i8* %arg3)
+  call void @unknown_use8(i8* %arg4)
+  call void @unknown_use32(i32* %p)
+  call void @unknown()
+  ret void
+}
+declare void @unknown_use8(i8*) willreturn nounwind
+declare void @unknown_use32(i32*) willreturn nounwind
+declare void @llvm.assume(i1)
 
 !0 = !{i64 10, i64 100}
 

@@ -98,7 +98,7 @@ void TriCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   // Calculate the offset of the frame index and the frame register
   const int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
-  unsigned FrameReg;
+  Register FrameReg;
 
   assert(MI.getOperand(FIOperandNum + 1).getImm() == 0 &&
          "Unexpected offset operand");

@@ -13,7 +13,8 @@
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 
-#include "mlir/Dialect/AffineOps/AffineOps.h"
+#include "../PassDetail.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LoopOps/LoopOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExprVisitor.h"
@@ -258,7 +259,7 @@ static Value buildMinMaxReductionSeq(Location loc, CmpIPredicate predicate,
   return value;
 }
 
-/// Emit instructions that correspond to computing the maximum value amoung the
+/// Emit instructions that correspond to computing the maximum value among the
 /// values of a (potentially) multi-output affine map applied to `operands`.
 static Value lowerAffineMapMax(OpBuilder &builder, Location loc, AffineMap map,
                                ValueRange operands) {
@@ -267,7 +268,7 @@ static Value lowerAffineMapMax(OpBuilder &builder, Location loc, AffineMap map,
   return nullptr;
 }
 
-/// Emit instructions that correspond to computing the minimum value amoung the
+/// Emit instructions that correspond to computing the minimum value among the
 /// values of a (potentially) multi-output affine map applied to `operands`.
 static Value lowerAffineMapMin(OpBuilder &builder, Location loc, AffineMap map,
                                ValueRange operands) {
@@ -577,7 +578,7 @@ void mlir::populateAffineToStdConversionPatterns(
 }
 
 namespace {
-class LowerAffinePass : public FunctionPass<LowerAffinePass> {
+class LowerAffinePass : public ConvertAffineToStandardBase<LowerAffinePass> {
   void runOnFunction() override {
     OwningRewritePatternList patterns;
     populateAffineToStdConversionPatterns(patterns, &getContext());
@@ -591,10 +592,6 @@ class LowerAffinePass : public FunctionPass<LowerAffinePass> {
 
 /// Lowers If and For operations within a function into their lower level CFG
 /// equivalent blocks.
-std::unique_ptr<OpPassBase<FuncOp>> mlir::createLowerAffinePass() {
+std::unique_ptr<OperationPass<FuncOp>> mlir::createLowerAffinePass() {
   return std::make_unique<LowerAffinePass>();
 }
-
-static PassRegistration<LowerAffinePass>
-    pass("lower-affine",
-         "Lower If, For, AffineApply operations to primitive equivalents");

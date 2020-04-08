@@ -132,7 +132,8 @@ TypeSize Type::getPrimitiveSizeInBits() const {
 }
 
 unsigned Type::getScalarSizeInBits() const {
-  return getScalarType()->getPrimitiveSizeInBits();
+  // It is safe to assume that the scalar types have a fixed size.
+  return getScalarType()->getPrimitiveSizeInBits().getFixedSize();
 }
 
 int Type::getFPMantissaWidth() const {
@@ -529,52 +530,22 @@ StructType *Module::getTypeByName(StringRef Name) const {
   return getContext().pImpl->NamedStructTypes.lookup(Name);
 }
 
-//===----------------------------------------------------------------------===//
-//                       CompositeType Implementation
-//===----------------------------------------------------------------------===//
-
-Type *CompositeType::getTypeAtIndex(const Value *V) const {
-  if (auto *STy = dyn_cast<StructType>(this)) {
-    unsigned Idx =
-      (unsigned)cast<Constant>(V)->getUniqueInteger().getZExtValue();
-    assert(indexValid(Idx) && "Invalid structure index!");
-    return STy->getElementType(Idx);
-  }
-
-  return cast<SequentialType>(this)->getElementType();
+Type *StructType::getTypeAtIndex(const Value *V) const {
+  unsigned Idx = (unsigned)cast<Constant>(V)->getUniqueInteger().getZExtValue();
+  assert(indexValid(Idx) && "Invalid structure index!");
+  return getElementType(Idx);
 }
 
-Type *CompositeType::getTypeAtIndex(unsigned Idx) const{
-  if (auto *STy = dyn_cast<StructType>(this)) {
-    assert(indexValid(Idx) && "Invalid structure index!");
-    return STy->getElementType(Idx);
-  }
-
-  return cast<SequentialType>(this)->getElementType();
-}
-
-bool CompositeType::indexValid(const Value *V) const {
-  if (auto *STy = dyn_cast<StructType>(this)) {
-    // Structure indexes require (vectors of) 32-bit integer constants.  In the
-    // vector case all of the indices must be equal.
-    if (!V->getType()->isIntOrIntVectorTy(32))
-      return false;
-    const Constant *C = dyn_cast<Constant>(V);
-    if (C && V->getType()->isVectorTy())
-      C = C->getSplatValue();
-    const ConstantInt *CU = dyn_cast_or_null<ConstantInt>(C);
-    return CU && CU->getZExtValue() < STy->getNumElements();
-  }
-
-  // Sequential types can be indexed by any integer.
-  return V->getType()->isIntOrIntVectorTy();
-}
-
-bool CompositeType::indexValid(unsigned Idx) const {
-  if (auto *STy = dyn_cast<StructType>(this))
-    return Idx < STy->getNumElements();
-  // Sequential types can be indexed by any integer.
-  return true;
+bool StructType::indexValid(const Value *V) const {
+  // Structure indexes require (vectors of) 32-bit integer constants.  In the
+  // vector case all of the indices must be equal.
+  if (!V->getType()->isIntOrIntVectorTy(32))
+    return false;
+  const Constant *C = dyn_cast<Constant>(V);
+  if (C && V->getType()->isVectorTy())
+    C = C->getSplatValue();
+  const ConstantInt *CU = dyn_cast_or_null<ConstantInt>(C);
+  return CU && CU->getZExtValue() < getNumElements();
 }
 
 //===----------------------------------------------------------------------===//
@@ -582,7 +553,11 @@ bool CompositeType::indexValid(unsigned Idx) const {
 //===----------------------------------------------------------------------===//
 
 ArrayType::ArrayType(Type *ElType, uint64_t NumEl)
-  : SequentialType(ArrayTyID, ElType, NumEl) {}
+    : Type(ElType->getContext(), ArrayTyID), ContainedType(ElType),
+      NumElements(NumEl) {
+  ContainedTys = &ContainedType;
+  NumContainedTys = 1;
+}
 
 ArrayType *ArrayType::get(Type *ElementType, uint64_t NumElements) {
   assert(isValidElementType(ElementType) && "Invalid type for array element!");
@@ -609,7 +584,11 @@ bool ArrayType::isValidElementType(Type *ElemTy) {
 //===----------------------------------------------------------------------===//
 
 VectorType::VectorType(Type *ElType, ElementCount EC)
-  : SequentialType(VectorTyID, ElType, EC.Min), Scalable(EC.Scalable) {}
+    : Type(ElType->getContext(), VectorTyID), ContainedType(ElType),
+      NumElements(EC.Min), Scalable(EC.Scalable) {
+  ContainedTys = &ContainedType;
+  NumContainedTys = 1;
+}
 
 VectorType *VectorType::get(Type *ElementType, ElementCount EC) {
   assert(EC.Min > 0 && "#Elements of a VectorType must be greater than 0");

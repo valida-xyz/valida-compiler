@@ -316,6 +316,10 @@ static ClangASTMap &GetASTMap() {
   return *g_map_ptr;
 }
 
+TypePayloadClang::TypePayloadClang(bool is_complete_objc_class) {
+  SetIsCompleteObjCClass(is_complete_objc_class);
+}
+
 char TypeSystemClang::ID;
 
 bool TypeSystemClang::IsOperator(llvm::StringRef name,
@@ -1439,7 +1443,7 @@ TypeSystemClang::CreateTemplateTemplateParmDecl(const char *template_name) {
 
   // LLDB needs to create those decls only to be able to display a
   // type that includes a template template argument. Only the name matters for
-  // this purpose, so we use dummy values for the other characterisitcs of the
+  // this purpose, so we use dummy values for the other characteristics of the
   // type.
   return TemplateTemplateParmDecl::Create(
       ast, decl_ctx, SourceLocation(),
@@ -4661,6 +4665,8 @@ lldb::Encoding TypeSystemClang::GetEncoding(lldb::opaque_compiler_type_t type,
     case clang::BuiltinType::Kind::OCLReserveID:
     case clang::BuiltinType::Kind::OCLSampler:
     case clang::BuiltinType::Kind::OMPArraySection:
+    case clang::BuiltinType::Kind::OMPArrayShaping:
+    case clang::BuiltinType::Kind::OMPIterator:
     case clang::BuiltinType::Kind::Overload:
     case clang::BuiltinType::Kind::PseudoObject:
     case clang::BuiltinType::Kind::UnknownAny:
@@ -8413,7 +8419,7 @@ static bool DumpEnumValue(const clang::QualType &qual_type, Stream *s,
   // Try to find an exact match for the value.
   // At the same time, we're applying a heuristic to determine whether we want
   // to print this enum as a bitfield. We're likely dealing with a bitfield if
-  // every enumrator is either a one bit value or a superset of the previous
+  // every enumerator is either a one bit value or a superset of the previous
   // enumerators. Also 0 doesn't make sense when the enumerators are used as
   // flags.
   for (auto enumerator : enum_decl->enumerators()) {

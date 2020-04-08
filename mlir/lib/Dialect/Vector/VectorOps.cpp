@@ -1013,7 +1013,7 @@ static LogicalResult verify(ReshapeOp op) {
     return op.emitError("invalid output shape for vector type ")
            << outputVectorType;
 
-  // Verify that the 'fixedVectorSizes' match a input/output vector shape
+  // Verify that the 'fixedVectorSizes' match an input/output vector shape
   // suffix.
   unsigned inputVectorRank = inputVectorType.getRank();
   for (unsigned i = 0; i < numFixedVectorSizes; ++i) {
@@ -1483,6 +1483,10 @@ static void print(OpAsmPrinter &p, TypeCastOp op) {
 }
 
 static LogicalResult verify(TypeCastOp op) {
+  MemRefType canonicalType = canonicalizeStridedLayout(op.getMemRefType());
+  if (!canonicalType.getAffineMaps().empty())
+    return op.emitOpError("expects operand to be a memref with no layout");
+
   auto resultType = inferVectorTypeCastResultType(op.getMemRefType());
   if (op.getResultMemRefType() != resultType)
     return op.emitOpError("expects result type to be: ") << resultType;
@@ -1515,6 +1519,105 @@ static void print(OpAsmPrinter &p, TupleOp op) {
 }
 
 static LogicalResult verify(TupleOp op) { return success(); }
+
+//===----------------------------------------------------------------------===//
+// TransposeOp
+//===----------------------------------------------------------------------===//
+
+// Eliminates transpose operations, which produce values identical to their
+// input values. This happens when the dimensions of the input vector remain in
+// their original order after the transpose operation.
+OpFoldResult TransposeOp::fold(ArrayRef<Attribute> operands) {
+  SmallVector<int64_t, 4> transp;
+  getTransp(transp);
+
+  // Check if the permutation of the dimensions contains sequential values:
+  // {0, 1, 2, ...}.
+  for (int64_t i = 0, e = transp.size(); i < e; i++) {
+    if (transp[i] != i)
+      return {};
+  }
+
+  return vector();
+}
+
+static LogicalResult verify(TransposeOp op) {
+  VectorType vectorType = op.getVectorType();
+  VectorType resultType = op.getResultType();
+  int64_t rank = resultType.getRank();
+  if (vectorType.getRank() != rank)
+    return op.emitOpError("vector result rank mismatch: ") << rank;
+  // Verify transposition array.
+  auto transpAttr = op.transp().getValue();
+  int64_t size = transpAttr.size();
+  if (rank != size)
+    return op.emitOpError("transposition length mismatch: ") << size;
+  SmallVector<bool, 8> seen(rank, false);
+  for (auto ta : llvm::enumerate(transpAttr)) {
+    int64_t i = ta.value().cast<IntegerAttr>().getInt();
+    if (i < 0 || i >= rank)
+      return op.emitOpError("transposition index out of range: ") << i;
+    if (seen[i])
+      return op.emitOpError("duplicate position index: ") << i;
+    seen[i] = true;
+    if (resultType.getDimSize(ta.index()) != vectorType.getDimSize(i))
+      return op.emitOpError("dimension size mismatch at: ") << i;
+  }
+  return success();
+}
+
+namespace {
+
+// Rewrites two back-to-back TransposeOp operations into a single TransposeOp.
+class TransposeFolder final : public OpRewritePattern<TransposeOp> {
+public:
+  using OpRewritePattern<TransposeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TransposeOp transposeOp,
+                                PatternRewriter &rewriter) const override {
+    // Wrapper around TransposeOp::getTransp() for cleaner code.
+    auto getPermutation = [](TransposeOp transpose) {
+      SmallVector<int64_t, 4> permutation;
+      transpose.getTransp(permutation);
+      return permutation;
+    };
+
+    // Composes two permutations: result[i] = permutation1[permutation2[i]].
+    auto composePermutations = [](ArrayRef<int64_t> permutation1,
+                                  ArrayRef<int64_t> permutation2) {
+      SmallVector<int64_t, 4> result;
+      for (auto index : permutation2)
+        result.push_back(permutation1[index]);
+      return result;
+    };
+
+    // Return if the input of 'transposeOp' is not defined by another transpose.
+    TransposeOp parentTransposeOp =
+        dyn_cast_or_null<TransposeOp>(transposeOp.vector().getDefiningOp());
+    if (!parentTransposeOp)
+      return failure();
+
+    SmallVector<int64_t, 4> permutation = composePermutations(
+        getPermutation(parentTransposeOp), getPermutation(transposeOp));
+    // Replace 'transposeOp' with a new transpose operation.
+    rewriter.replaceOpWithNewOp<TransposeOp>(
+        transposeOp, transposeOp.getResult().getType(),
+        parentTransposeOp.vector(),
+        vector::getVectorSubscriptAttr(rewriter, permutation));
+    return success();
+  }
+};
+
+} // end anonymous namespace
+
+void TransposeOp::getCanonicalizationPatterns(OwningRewritePatternList &results,
+                                              MLIRContext *context) {
+  results.insert<TransposeFolder>(context);
+}
+
+void TransposeOp::getTransp(SmallVectorImpl<int64_t> &results) {
+  populateFromInt64AttrArray(transp(), results);
+}
 
 //===----------------------------------------------------------------------===//
 // TupleGetOp
@@ -1650,7 +1753,8 @@ void CreateMaskOp::getCanonicalizationPatterns(
 
 void mlir::vector::populateVectorToVectorCanonicalizationPatterns(
     OwningRewritePatternList &patterns, MLIRContext *context) {
-  patterns.insert<CreateMaskFolder, StridedSliceConstantMaskFolder>(context);
+  patterns.insert<CreateMaskFolder, StridedSliceConstantMaskFolder,
+                  TransposeFolder>(context);
 }
 
 namespace mlir {

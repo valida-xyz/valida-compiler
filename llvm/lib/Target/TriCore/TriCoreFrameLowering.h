@@ -35,7 +35,7 @@ public:
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
 
   int getFrameIndexReference(const MachineFunction &MF, int FI,
-                             unsigned &FrameReg) const override;
+                             Register &FrameReg) const override;
 
   void determineFrameLayout(MachineFunction &MF) const;
   static void adjustStackPointer(MachineBasicBlock &MBB,

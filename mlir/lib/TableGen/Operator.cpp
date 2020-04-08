@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/TableGen/Operator.h"
+#include "mlir/ADT/TypeSwitch.h"
 #include "mlir/TableGen/OpTrait.h"
 #include "mlir/TableGen/Predicate.h"
 #include "mlir/TableGen/Type.h"
@@ -172,10 +173,26 @@ const tblgen::OpTrait *tblgen::Operator::getTrait(StringRef trait) const {
   return nullptr;
 }
 
+auto tblgen::Operator::region_begin() const -> const_region_iterator {
+  return regions.begin();
+}
+auto tblgen::Operator::region_end() const -> const_region_iterator {
+  return regions.end();
+}
+auto tblgen::Operator::getRegions() const
+    -> llvm::iterator_range<const_region_iterator> {
+  return {region_begin(), region_end()};
+}
+
 unsigned tblgen::Operator::getNumRegions() const { return regions.size(); }
 
 const tblgen::NamedRegion &tblgen::Operator::getRegion(unsigned index) const {
   return regions[index];
+}
+
+unsigned tblgen::Operator::getNumVariadicRegions() const {
+  return llvm::count_if(regions,
+                        [](const NamedRegion &c) { return c.isVariadic(); });
 }
 
 auto tblgen::Operator::successor_begin() const -> const_successor_iterator {
@@ -387,7 +404,16 @@ void tblgen::Operator::populateOpStructure() {
       PrintFatalError(def.getLoc(),
                       Twine("undefined kind for region #") + Twine(i));
     }
-    regions.push_back({name, Region(regionInit->getDef())});
+    Region region(regionInit->getDef());
+    if (region.isVariadic()) {
+      // Only support variadic regions if it is the last one for now.
+      if (i != e - 1)
+        PrintFatalError(def.getLoc(), "only the last region can be variadic");
+      if (name.empty())
+        PrintFatalError(def.getLoc(), "variadic regions must be named");
+    }
+
+    regions.push_back({name, region});
   }
 
   LLVM_DEBUG(print(llvm::dbgs()));
@@ -409,6 +435,17 @@ bool tblgen::Operator::hasSummary() const {
 
 StringRef tblgen::Operator::getSummary() const {
   return def.getValueAsString("summary");
+}
+
+bool tblgen::Operator::hasAssemblyFormat() const {
+  auto *valueInit = def.getValueInit("assemblyFormat");
+  return isa<llvm::CodeInit>(valueInit) || isa<llvm::StringInit>(valueInit);
+}
+
+StringRef tblgen::Operator::getAssemblyFormat() const {
+  return TypeSwitch<llvm::Init *, StringRef>(def.getValueInit("assemblyFormat"))
+      .Case<llvm::StringInit, llvm::CodeInit>(
+          [&](auto *init) { return init->getValue(); });
 }
 
 void tblgen::Operator::print(llvm::raw_ostream &os) const {

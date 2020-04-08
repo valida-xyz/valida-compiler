@@ -14,11 +14,13 @@
 #ifndef LLVM_TARGET_TARGETOPTIONS_H
 #define LLVM_TARGET_TARGETOPTIONS_H
 
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/MC/MCTargetOptions.h"
 
 #include <memory>
 
 namespace llvm {
+  struct fltSemantics;
   class MachineFunction;
   class MemoryBuffer;
   class Module;
@@ -54,15 +56,6 @@ namespace llvm {
     enum Model {
       POSIX,  // POSIX Threads
       Single  // Single Threaded Environment
-    };
-  }
-
-  namespace FPDenormal {
-    enum DenormalMode {
-      IEEE,           // IEEE 754 denormal numbers
-      PreserveSign,   // the sign of a flushed-to-zero number is preserved in
-                      // the sign of 0
-      PositiveZero    // denormals are flushed to positive zero
     };
   }
 
@@ -134,8 +127,9 @@ namespace llvm {
           EmulatedTLS(false), ExplicitEmulatedTLS(false), EnableIPRA(false),
           EmitStackSizeSection(false), EnableMachineOutliner(false),
           SupportsDefaultOutlining(false), EmitAddrsig(false),
-          EmitCallSiteInfo(false), EnableDebugEntryValues(false),
-          ForceDwarfFrameSection(false) {}
+          EmitCallSiteInfo(false), SupportsDebugEntryValues(false),
+          EnableDebugEntryValues(false), ForceDwarfFrameSection(false),
+          FPDenormalMode(DenormalMode::IEEE, DenormalMode::IEEE) {}
 
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
     /// option is specified on the command line, and should enable debugging
@@ -286,8 +280,16 @@ namespace llvm {
     /// info, and it is restricted only to optimized code. This can be used for
     /// something else, so that should be controlled in the frontend.
     unsigned EmitCallSiteInfo : 1;
-    /// Emit debug info about parameter's entry values.
-    unsigned EnableDebugEntryValues : 1;
+    /// Set if the target supports the debug entry values by default.
+    unsigned SupportsDebugEntryValues : 1;
+    /// When set to true, the EnableDebugEntryValues option forces production
+    /// of debug entry values even if the target does not officially support
+    /// it. Useful for testing purposes only. This flag should never be checked
+    /// directly, always use \ref ShouldEmitDebugEntryValues instead.
+     unsigned EnableDebugEntryValues : 1;
+    /// NOTE: There are targets that still do not support the debug entry values
+    /// production.
+    bool ShouldEmitDebugEntryValues() const;
 
     /// Emit DWARF debug frame section.
     unsigned ForceDwarfFrameSection : 1;
@@ -328,9 +330,32 @@ namespace llvm {
     /// Which debugger to tune for.
     DebuggerKind DebuggerTuning = DebuggerKind::Default;
 
-    /// FPDenormalMode - This flags specificies which denormal numbers the code
-    /// is permitted to require.
-    FPDenormal::DenormalMode FPDenormalMode = FPDenormal::IEEE;
+  private:
+    /// Flushing mode to assume in default FP environment.
+    DenormalMode FPDenormalMode;
+
+    /// Flushing mode to assume in default FP environment, for float/vector of
+    /// float.
+    DenormalMode FP32DenormalMode;
+
+  public:
+    void setFPDenormalMode(DenormalMode Mode) {
+      FPDenormalMode = Mode;
+    }
+
+    void setFP32DenormalMode(DenormalMode Mode) {
+      FP32DenormalMode = Mode;
+    }
+
+    DenormalMode getRawFPDenormalMode() const {
+      return FPDenormalMode;
+    }
+
+    DenormalMode getRawFP32DenormalMode() const {
+      return FP32DenormalMode;
+    }
+
+    DenormalMode getDenormalMode(const fltSemantics &FPType) const;
 
     /// What exception model to use
     ExceptionHandling ExceptionModel = ExceptionHandling::None;

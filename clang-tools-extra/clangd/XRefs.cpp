@@ -43,6 +43,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -226,23 +227,21 @@ locateASTReferent(SourceLocation CurLoc, const syntax::Token *TouchedIdentifier,
   llvm::DenseMap<SymbolID, size_t> ResultIndex;
 
   auto AddResultDecl = [&](const NamedDecl *D) {
-    const NamedDecl *Def = getDefinition(D);
-    const NamedDecl *Preferred = Def ? Def : D;
-
-    auto Loc = makeLocation(AST.getASTContext(), nameLocation(*Preferred, SM),
-                            MainFilePath);
+    D = llvm::cast<NamedDecl>(D->getCanonicalDecl());
+    auto Loc =
+        makeLocation(AST.getASTContext(), nameLocation(*D, SM), MainFilePath);
     if (!Loc)
       return;
 
     Result.emplace_back();
-    Result.back().Name = printName(AST.getASTContext(), *Preferred);
+    Result.back().Name = printName(AST.getASTContext(), *D);
     Result.back().PreferredDeclaration = *Loc;
-    // Preferred is always a definition if possible, so this check works.
-    if (Def == Preferred)
-      Result.back().Definition = *Loc;
+    if (const NamedDecl *Def = getDefinition(D))
+      Result.back().Definition = makeLocation(
+          AST.getASTContext(), nameLocation(*Def, SM), MainFilePath);
 
     // Record SymbolID for index lookup later.
-    if (auto ID = getSymbolID(Preferred))
+    if (auto ID = getSymbolID(D))
       ResultIndex[*ID] = Result.size() - 1;
   };
 
@@ -373,6 +372,18 @@ locateSymbolNamedTextuallyAt(ParsedAST &AST, const SymbolIndex *Index,
     return {};
   unsigned WordOffset = Word.data() - Code.data();
   SourceLocation WordStart = SM.getComposedLoc(File, WordOffset);
+
+  // Attempt to determine the kind of token that contains the word,
+  // and bail if it's a string literal. Note that we cannot always
+  // determine the token kind (e.g. comments, for which we do want
+  // to activate, are not retained by TokenBuffer).
+  for (syntax::Token T :
+       syntax::spelledTokensTouching(WordStart, AST.getTokens())) {
+    if (T.range(AST.getSourceManager()).touches(WordOffset + Word.size())) {
+      if (isStringLiteral(T.kind()))
+        return {};
+    }
+  }
 
   // Do not consider tokens that survived preprocessing.
   // We are erring on the safe side here, as a user may expect to get
@@ -573,13 +584,11 @@ public:
                        SourceLocation Loc,
                        index::IndexDataConsumer::ASTNodeInfo ASTNode) override {
     assert(D->isCanonicalDecl() && "expect D to be a canonical declaration");
-    if (!CanonicalTargets.count(D))
+    const SourceManager &SM = AST.getSourceManager();
+    if (!CanonicalTargets.count(D) || !isInsideMainFile(Loc, SM))
       return true;
     const auto &TB = AST.getTokens();
-    const SourceManager &SM = AST.getSourceManager();
     Loc = SM.getFileLoc(Loc);
-    // We are only traversing decls *inside* the main file, so this should hold.
-    assert(isInsideMainFile(Loc, SM));
     if (const auto *Tok = TB.spelledTokenAt(Loc))
       References.push_back({*Tok, Roles});
     return true;

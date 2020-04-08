@@ -907,6 +907,14 @@ namespace llvm {
     bool isFMAFasterThanFMulAndFAdd(const MachineFunction &MF,
                                     EVT VT) const override;
 
+    bool isFMAFasterThanFMulAndFAdd(const Function &F, Type *Ty) const override;
+
+    /// isProfitableToHoist - Check if it is profitable to hoist instruction
+    /// \p I to its dominator block.
+    /// For example, it is not profitable if \p I and it's only user can form a
+    /// FMA instruction, because Powerpc prefers FMADD.
+    bool isProfitableToHoist(Instruction *I) const override;
+
     const MCPhysReg *getScratchRegisters(CallingConv::ID CC) const override;
 
     // Should we expand the build vector with shuffles?
@@ -983,7 +991,7 @@ namespace llvm {
       MachinePointerInfo MPI;
       bool IsDereferenceable = false;
       bool IsInvariant = false;
-      unsigned Alignment = 0;
+      Align Alignment;
       AAMDNodes AAInfo;
       const MDNode *Ranges = nullptr;
 

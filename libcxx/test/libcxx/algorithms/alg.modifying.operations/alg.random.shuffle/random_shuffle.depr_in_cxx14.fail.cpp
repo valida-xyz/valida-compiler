@@ -21,8 +21,7 @@
 // UNSUPPORTED: c++98, c++03, c++11
 // REQUIRES: verify-support
 
-// MODULES_DEFINES: _LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE
-#define _LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE
+// ADDITIONAL_COMPILE_FLAGS: -D_LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE
 
 #include <algorithm>
 #include <cstddef>
@@ -41,9 +40,9 @@ struct gen
 int main(int, char**)
 {
     int v[1] = {1};
-    std::random_shuffle(&v[0], &v[1]); // expected-error{{'random_shuffle<int *>' is deprecated}}
+    std::random_shuffle(&v[0], &v[1]); // expected-warning {{'random_shuffle<int *>' is deprecated}}
     gen r;
-    std::random_shuffle(&v[0], &v[1], r); // expected-error{{'random_shuffle<int *, gen &>' is deprecated}}
+    std::random_shuffle(&v[0], &v[1], r); // expected-warning {{'random_shuffle<int *, gen &>' is deprecated}}
 
   return 0;
 }

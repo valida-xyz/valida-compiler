@@ -358,15 +358,15 @@ TEST(LocateSymbol, All) {
       )cpp",
 
       R"cpp(// Forward class declaration
-        class Foo;
-        class [[Foo]] {};
+        class $decl[[Foo]];
+        class $def[[Foo]] {};
         F^oo* foo();
       )cpp",
 
       R"cpp(// Function declaration
-        void foo();
+        void $decl[[foo]]();
         void g() { f^oo(); }
-        void [[foo]]() {}
+        void $def[[foo]]() {}
       )cpp",
 
       R"cpp(
@@ -644,7 +644,8 @@ TEST(LocateSymbol, Textual) {
         // Comment mentioning M^yClass
       )cpp",
       R"cpp(// String
-        struct [[MyClass]] {};
+        struct MyClass {};
+        // Not triggered for string literal tokens.
         const char* s = "String literal mentioning M^yClass";
       )cpp",
       R"cpp(// Ifdef'ed out code
@@ -696,7 +697,7 @@ TEST(LocateSymbol, Textual) {
       EXPECT_EQ(Results[0].PreferredDeclaration.range, *WantDecl) << Test;
     }
   }
-}
+} // namespace
 
 TEST(LocateSymbol, Ambiguous) {
   auto T = Annotations(R"cpp(
@@ -1118,6 +1119,30 @@ TEST(FindReferences, WithinAST) {
                 ElementsAreArray(ExpectedLocations))
         << Test;
   }
+}
+
+TEST(FindReferences, MainFileReferencesOnly) {
+  llvm::StringRef Test =
+      R"cpp(
+        void test() {
+          int [[fo^o]] = 1;
+          // refs not from main file should not be included.
+          #include "foo.inc"
+        })cpp";
+
+  Annotations Code(Test);
+  auto TU = TestTU::withCode(Code.code());
+  TU.AdditionalFiles["foo.inc"] = R"cpp(
+      foo = 3;
+    )cpp";
+  auto AST = TU.build();
+
+  std::vector<Matcher<Location>> ExpectedLocations;
+  for (const auto &R : Code.ranges())
+    ExpectedLocations.push_back(RangeIs(R));
+  EXPECT_THAT(findReferences(AST, Code.point(), 0).References,
+              ElementsAreArray(ExpectedLocations))
+      << Test;
 }
 
 TEST(FindReferences, ExplicitSymbols) {

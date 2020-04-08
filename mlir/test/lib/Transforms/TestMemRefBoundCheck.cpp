@@ -14,9 +14,8 @@
 #include "mlir/ADT/TypeSwitch.h"
 #include "mlir/Analysis/AffineAnalysis.h"
 #include "mlir/Analysis/AffineStructures.h"
-#include "mlir/Analysis/Passes.h"
 #include "mlir/Analysis/Utils.h"
-#include "mlir/Dialect/AffineOps/AffineOps.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
@@ -29,15 +28,12 @@ using namespace mlir;
 namespace {
 
 /// Checks for out of bound memef access subscripts..
-struct TestMemRefBoundCheck : public FunctionPass<TestMemRefBoundCheck> {
+struct TestMemRefBoundCheck
+    : public PassWrapper<TestMemRefBoundCheck, FunctionPass> {
   void runOnFunction() override;
 };
 
 } // end anonymous namespace
-
-std::unique_ptr<OpPassBase<FuncOp>> mlir::createTestMemRefBoundCheckPass() {
-  return std::make_unique<TestMemRefBoundCheck>();
-}
 
 void TestMemRefBoundCheck::runOnFunction() {
   getFunction().walk([](Operation *opInst) {

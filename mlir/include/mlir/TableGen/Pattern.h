@@ -159,6 +159,9 @@ public:
   // value.
   bool isReplaceWithValue() const;
 
+  // Returns whether this DAG represents the location of an op creation.
+  bool isLocationDirective() const;
+
   // Returns true if this DAG node is wrapping native code call.
   bool isNativeCodeCall() const;
 
@@ -308,7 +311,7 @@ public:
   const_iterator find(StringRef key) const;
 
   // Returns the number of static values of the given `symbol` corresponds to.
-  // A static value is a operand/result declared in ODS. Normally a symbol only
+  // A static value is an operand/result declared in ODS. Normally a symbol only
   // represents one static value, but symbols bound to op results can represent
   // more than one if the op is a multi-result op.
   int getStaticValueCount(StringRef symbol) const;
