@@ -89,14 +89,14 @@ def uimm2_l : Operand<OtherVT> {
 // A 3-bit unsigned immediate.
 def uimm3 : GenericUnsignedImmediate<3>;
 
-// A 16 bit unsigned immediate left-shifted by 3
+// A 16 bit unsigned immediate with 2 LSB set to 0
 def sysreg : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"SysReg">;
   let DecoderMethod = "decodeSysReg";
   let PrintMethod = "printSystemRegister";
 }
 
-// A 16 bit unsigned immediate left-shifted by 3
+// A 16 bit unsigned immediate with 3 LSB set to 0
 def double_sysreg : Operand<OtherVT> {
   let ParserMatchClass = GenericImmOperand<"DoubleSysReg">;
   let DecoderMethod = "decodeSysReg";
@@ -159,11 +159,20 @@ def simm9 : GenericSignedImmediate<9, i32>,
 def uimm9 : GenericUnsignedImmediate<9, i32>,
             ImmLeaf<i32, [{ return Imm >= 0 && Imm < 512; }]>;
 
+// For instuctions with signed 10 bit variants which also has superior BOL 
+// versions, therefore they should never be generated, but should be able
+// to disassemble them
+def simm10_disas : Operand<i32>,
+                    ImmLeaf<i32, [{ return false; }]> {
+  let ParserMatchClass = GenericImmOperand<"SImm10_disas">;
+  let DecoderMethod = "decodeSignedImmediate<10>";
+}
+
 // A 16-bit signed immediate of BOL format
 // It is defined earlier than simm10 to enforce generating BOL versions
 // of an instruction rather then BO
 def simm16_BOL : Operand<i16>,
-                 ImmLeaf<i16, [{ return Imm >= 0 && Imm < 65536; }]> {
+                 ImmLeaf<i16, [{ return Imm >= -32768 && Imm < 32768; }]> {
   let ParserMatchClass = GenericImmOperand<"SImm16_BOL">;
   let DecoderMethod = "decodeSignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";

@@ -407,14 +407,19 @@ let mayLoad = 1, mayStore = 0 in {
 
   class LOAD_BO_BASE<bits<8> opc1, bits<6> opc2, string mnemonic, 
                     RegisterClass RC, string post,
-                    RegisterClass RC2 = AddrRegs>
+                    RegisterClass RC2 = AddrRegs, Operand imm = simm10>
                   :  BO<opc1, opc2, (outs RC:$s1_d),
-                        (ins RC2:$s2, simm10:$off10),
+                        (ins RC2:$s2, imm:$off10),
                         mnemonic, "\t$s1_d, [${s2}" #post# "], $off10">;
 
   class LOAD_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
                 RegisterClass RC = DataRegs>
                   :  LOAD_BO_BASE<opc1, opc2, mnemonic, RC, "">;
+
+  class LOAD_BO_DEPR<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                     RegisterClass RC = DataRegs>
+                  :  LOAD_BO_BASE<opc1, opc2, mnemonic, RC, "", AddrRegs, 
+                                  simm10_disas>;
 
   let off10 = 0 in
   class LOAD_BO_BR<bits<8> opc1, bits<6> opc2, string mnemonic,
@@ -481,14 +486,19 @@ let mayLoad = 0, mayStore = 1 in {
 
   class STORE_BO_BASE<bits<8> opc1, bits<6> opc2, string mnemonic, 
                       RegisterClass RC, string post, 
-                      RegisterClass RC2 = AddrRegs>
+                      RegisterClass RC2 = AddrRegs, Operand imm = simm10>
                   :  BO<opc1, opc2, (outs),
-                        (ins RC2:$s2, simm10:$off10, RC:$s1_d),
+                        (ins RC2:$s2, imm:$off10, RC:$s1_d),
                         mnemonic, "\t[${s2}" #post# "], $off10, $s1_d">;
 
   class STORE_BO<bits<8> opc1, bits<6> opc2, string mnemonic, 
                 RegisterClass RC = DataRegs>
                   : STORE_BO_BASE<opc1, opc2, mnemonic, RC, "">;
+
+  class STORE_BO_DEPR<bits<8> opc1, bits<6> opc2, string mnemonic, 
+                      RegisterClass RC = DataRegs>
+                  : STORE_BO_BASE<opc1, opc2, mnemonic, RC, "", AddrRegs,
+                                  simm10_disas>;
 
   let off10 = 0 in
   class STORE_BO_BR<bits<8> opc1, bits<6> opc2, string mnemonic,

@@ -1358,7 +1358,7 @@ let isReMaterializable = 1 in {
                               "lea", "\t$s1_d, $off18">;
 
   def LEA_aasc           :  BO<0x49, 0x28, (outs AddrRegs:$s1_d),
-                              (ins AddrRegs:$s2, simm10:$off10),
+                              (ins AddrRegs:$s2, simm10_disas:$off10),
                               "lea", "\t$s1_d, [$s2], $off10">;
 
   def LEA_aac            : BOL<0xD9, (outs AddrRegs:$s1_d),
@@ -1616,7 +1616,7 @@ let isBranch = 1, isTerminator = 1 in {
 
 // LD.A
 def LDA_ac          : LOAD_ABS<     0x85, 0x02, "ld.a", AddrRegs>;
-def LDA_aac         : LOAD_BO<      0x09, 0x26, "ld.a", AddrRegs>;
+def LDA_aac         : LOAD_BO_DEPR< 0x09, 0x26, "ld.a", AddrRegs>;
 def LDA_ap          : LOAD_BO_BR<   0x29, 0x06, "ld.a", AddrRegs>;
 def LDA_apc         : LOAD_BO_CR<   0x29, 0x16, "ld.a", AddrRegs>;
 
@@ -1646,7 +1646,7 @@ def LDA_16_a15ac    : LOAD_SRO<0xCC,  "ld.a", ImplAddrReg, uimm4_lsb00>;
 
 // LD.B
 def LDB_dc          : LOAD_ABS<     0x05, 0x00, "ld.b">;
-def LDB_dac         : LOAD_BO<      0x09, 0x20, "ld.b">;
+def LDB_dac         : LOAD_BO_DEPR< 0x09, 0x20, "ld.b">;
 def LDB_dp          : LOAD_BO_BR<   0x29, 0x00, "ld.b">;
 def LDB_dpc         : LOAD_BO_CR<   0x29, 0x10, "ld.b">;
 def LDB_dac_poi     : LOAD_BO_POST< 0x09, 0x00, "ld.b">;
@@ -1655,7 +1655,7 @@ def LDB_dalc        : LOAD_BOL<           0x79, "ld.b">;
 
 // LD.BU
 def LDBU_dc         : LOAD_ABS<     0x05, 0x01, "ld.bu">;
-def LDBU_dac        : LOAD_BO<      0x09, 0x21, "ld.bu">;
+def LDBU_dac        : LOAD_BO_DEPR< 0x09, 0x21, "ld.bu">;
 def LDBU_dp         : LOAD_BO_BR<   0x29, 0x01, "ld.bu">;
 def LDBU_dpc        : LOAD_BO_CR<   0x29, 0x11, "ld.bu">;
 def LDBU_dac_poi    : LOAD_BO_POST< 0x09, 0x01, "ld.bu">;
@@ -1688,7 +1688,7 @@ def LDDA_pac_pri    : LOAD_BO_PRE<  0x09, 0x17, "ld.da", ExtAddrRegs>;
 
 // LD.H
 def LDH_dc          : LOAD_ABS<     0x05, 0x02, "ld.h">;
-def LDH_dac         : LOAD_BO<      0x09, 0x22, "ld.h">;
+def LDH_dac         : LOAD_BO_DEPR< 0x09, 0x22, "ld.h">;
 def LDH_dp          : LOAD_BO_BR<   0x29, 0x02, "ld.h">;
 def LDH_dpc         : LOAD_BO_CR<   0x29, 0x12, "ld.h">;
 def LDH_dac_poi     : LOAD_BO_POST< 0x09, 0x02, "ld.h">;
@@ -1705,7 +1705,7 @@ def LDH_16_d15ac    : LOAD_SRO<0x8C,  "ld.h", ImplDataReg, uimm4_lsb0>;
 
 // LD.HU
 def LDHU_dc         : LOAD_ABS<     0x05, 0x03, "ld.hu">;
-def LDHU_dac        : LOAD_BO<      0x09, 0x23, "ld.hu">;
+def LDHU_dac        : LOAD_BO_DEPR< 0x09, 0x23, "ld.hu">;
 def LDHU_dp         : LOAD_BO_BR<   0x29, 0x03, "ld.hu">;
 def LDHU_dpc        : LOAD_BO_CR<   0x29, 0x13, "ld.hu">;
 def LDHU_dac_poi    : LOAD_BO_POST< 0x09, 0x03, "ld.hu">;
@@ -1722,7 +1722,7 @@ def LDQ_dac_pri     : LOAD_BO_PRE<  0x09, 0x18, "ld.q">;
 
 // LD.W
 def LDW_dc         : LOAD_ABS<      0x85, 0x00, "ld.w">;
-def LDW_dac        : LOAD_BO<       0x09, 0x24, "ld.w">;
+def LDW_dac        : LOAD_BO_DEPR<  0x09, 0x24, "ld.w">;
 def LDW_dp         : LOAD_BO_BR<    0x29, 0x04, "ld.w">;
 def LDW_dpc        : LOAD_BO_CR<    0x29, 0x14, "ld.w">;
 def LDW_dac_poi    : LOAD_BO_POST<  0x09, 0x04, "ld.w">;
@@ -1746,7 +1746,7 @@ def LDW_16_d15ac   : LOAD_SRO<0x4C,  "ld.w", ImplDataReg, uimm4_lsb00>;
 
 // ST.A
 def STA_ca          : STORE_ABS<    0xA5, 0x02, "st.a", AddrRegs>;
-def STA_aca         : STORE_BO<     0x89, 0x26, "st.a", AddrRegs>;
+def STA_aca         : STORE_BO_DEPR<0x89, 0x26, "st.a", AddrRegs>;
 def STA_pa          : STORE_BO_BR<  0xA9, 0x06, "st.a", AddrRegs>;
 def STA_pca         : STORE_BO_CR<  0xA9, 0x16, "st.a", AddrRegs>;
 
@@ -1776,7 +1776,7 @@ def STA_16_a15ca    : STORE_SSRO<0xE8, "st.a", AddrRegs,    uimm4_lsb00>;
 
 // ST.B
 def STB_cd          : STORE_ABS<    0x25, 0x00, "st.b">;
-def STB_acd         : STORE_BO<     0x89, 0x20, "st.b">;
+def STB_acd         : STORE_BO_DEPR<0x89, 0x20, "st.b">;
 def STB_pd          : STORE_BO_BR<  0xA9, 0x00, "st.b">;
 def STB_pcd         : STORE_BO_CR<  0xA9, 0x10, "st.b">;
 def STB_acd_poi     : STORE_BO_POST<0x89, 0x00, "st.b">;
@@ -1810,7 +1810,7 @@ def STDA_acp_pri    : STORE_BO_PRE< 0x89, 0x17, "st.da", ExtAddrRegs>;
 
 // ST.H
 def STH_cd          : STORE_ABS<    0x25, 0x02, "st.h">;
-def STH_acd         : STORE_BO<     0x89, 0x22, "st.h">;
+def STH_acd         : STORE_BO_DEPR<0x89, 0x22, "st.h">;
 def STH_pd          : STORE_BO_BR<  0xA9, 0x02, "st.h">;
 def STH_pcd         : STORE_BO_CR<  0xA9, 0x12, "st.h">;
 def STH_acd_poi     : STORE_BO_POST<0x89, 0x02, "st.h">;
@@ -1836,7 +1836,7 @@ def STQ_acd_pri     : STORE_BO_PRE< 0x89, 0x18, "st.q">;
 
 // ST.W
 def STW_cd          : STORE_ABS<    0xA5, 0x00, "st.w">;
-def STW_acd         : STORE_BO<     0x89, 0x24, "st.w">;
+def STW_acd         : STORE_BO_DEPR<0x89, 0x24, "st.w">;
 def STW_pd          : STORE_BO_BR<  0xA9, 0x04, "st.w">;
 def STW_pcd         : STORE_BO_CR<  0xA9, 0x14, "st.w">;
 def STW_acd_poi     : STORE_BO_POST<0x89, 0x04, "st.w">;

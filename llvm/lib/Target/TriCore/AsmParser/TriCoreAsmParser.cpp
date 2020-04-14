@@ -286,7 +286,7 @@ public:
     if (!IsConstantImm)
       IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
     else
-      IsValid = (Imm & ~0xf0003fff) == 0;
+      IsValid = isUInt<32>(Imm) && (Imm & ~0xf0003fff) == 0;
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
@@ -305,7 +305,7 @@ public:
     if (!IsConstantImm)
       IsValid = false; // symbols for this operand type is not allowed yet
     else
-      IsValid = (Imm & ~0xffffc000) == 0;
+      IsValid = isUInt<32>(Imm) && (Imm & ~0xffffc000) == 0;
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
@@ -343,7 +343,7 @@ public:
     if (!IsConstantImm)
       IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
     else
-      IsValid = (Imm & ~0xf01ffffe) == 0;
+      IsValid = isUInt<32>(Imm) && (Imm & ~0xf01ffffe) == 0;
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
@@ -386,7 +386,7 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
-  template <unsigned S> bool isUImm16ShiftS() const {
+  template <unsigned N> bool isUImm16LSBZeroN() const {
     int64_t Imm;
     TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
     bool IsValid;
@@ -399,16 +399,16 @@ public:
     if (!IsConstantImm)
       IsValid = false; // symbols for this operand type is not allowed yet
     else
-      IsValid = isShiftedUInt<16 - S, S>(Imm);
+      IsValid = isShiftedUInt<16 - N, N>(Imm);
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
-  // checking if in the range of 16 bit unsigned immediate
-  bool isSysReg() const { return isUImm16ShiftS<2>(); }
+  // checking if in the range of 16 bit unsigned immediate with 2 LSB are 0
+  bool isSysReg() const { return isUImm16LSBZeroN<2>(); }
 
-  // checking if in the range of 16 bit unsigned immediate
-  bool isDoubleSysReg() const { return isUImm16ShiftS<3>(); }
+  // checking if in the range of 16 bit unsigned immediate with 3 LSB are 0
+  bool isDoubleSysReg() const { return isUImm16LSBZeroN<3>(); }
 
   // checking if in the range of 2 bit unsigned immediate
   bool isUImm2_l() const {
@@ -428,6 +428,8 @@ public:
 
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
+
+  bool isSImm10_disas() const { return false;}
 
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
@@ -526,6 +528,7 @@ public:
 } // end anonymous namespace.
 
 #define GET_REGISTER_MATCHER
+#define GET_SUBTARGET_FEATURE_NAME
 #define GET_MATCHER_IMPLEMENTATION
 #include "TriCoreGenAsmMatcher.inc"
 
@@ -599,9 +602,17 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                                uint64_t &ErrorInfo,
                                                bool MatchingInlineAsm) {
   MCInst Inst;
+  FeatureBitset MissingFeatures;
   SMLoc ErrorLoc;
+  auto MatchResult = MatchInstructionImpl(Operands, Inst, ErrorInfo,
+                                          MissingFeatures, MatchingInlineAsm);
 
-  switch (MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm)) {
+  if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
+    setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
+    setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
+  }
+
+  switch (MatchResult) {
   default:
     break;
   case Match_Success: {
@@ -616,14 +627,22 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
 
     Inst.setLoc(IDLoc);
     Out.emitInstruction(Inst, getSTI());
-    if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
-      setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
-      setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
-    }
+
     return false;
   }
-  case Match_MissingFeature:
-    return Error(IDLoc, "instruction use requires an option to be enabled");
+  case Match_MissingFeature: {
+    assert(MissingFeatures.any() && "Unknown missing features!");
+    bool FirstFeature = true;
+    std::string Msg = "Instruction requires the following features:";
+    for (unsigned i = 0, e = MissingFeatures.size(); i != e; ++i) {
+      if (MissingFeatures[i]) {
+        Msg += FirstFeature ? " " : ", ";
+        Msg += getSubtargetFeatureName(i);
+        FirstFeature = false;
+      }
+    }
+    return Error(IDLoc, Msg);
+  }
   case Match_MnemonicFail:
     return Error(IDLoc, "unrecognized instruction mnemonic");
   case Match_InvalidOperand:
@@ -637,6 +656,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         ErrorLoc = IDLoc;
     }
     return Error(ErrorLoc, "invalid operand for instruction");
+  case Match_InvalidUImm1:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
   case Match_InvalidUImm2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 2) - 1,
@@ -645,6 +669,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidUImm2_l:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, 1,
+        "Operand prefixes and symbol expressions are not allowed for this "
+        "operand and it must be in the integer range");
+  case Match_InvalidUImm3:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 3) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
   case Match_InvalidSImm4:
@@ -656,7 +685,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -32, -2,
         "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be even number in the integer range");
+        "operand and it must be an even number in the integer range");
   case Match_InvalidUImm4:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 4) - 1,
@@ -711,17 +740,22 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 1,
         "Operand must be a valid symbol with optional operand prefix lo or sm "
-        "OR it must be an the integer in the range");
+        "OR it must be in the integer range");
   case Match_InvalidSImm16_RLC:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 1,
         "Operand must be a valid symbol with optional operand prefix lo or hi "
-        "OR it must be an the integer in the range");
+        "OR it must be in the integer range");
+  case Match_InvalidUImm16_RLC:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 16) - 1,
+        "Operand must be a valid symbol with optional operand prefix lo or hi "
+        "OR it must be in the integer range");
   case Match_InvalidUImm4_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 2,
         "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be even number in the integer range");
+        "operand and it must be an even number in the integer range");
   case Match_InvalidUImm4_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 4,
@@ -731,7 +765,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
         "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be even number in the integer range");
+        "operand and it must be an even number in the integer range");
   case Match_InvalidUImm8_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 8) - 1) * 4,
@@ -759,7 +793,7 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 16 * 2, (15 + 16) * 2,
         "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be even number in the integer range");
+        "operand and it must be an even number in the integer range");
   case Match_InvalidDisp24Abs:
     ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
     return Error(ErrorLoc,
