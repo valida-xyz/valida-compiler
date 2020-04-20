@@ -77,8 +77,7 @@ class GenericUImmLsbNIsZero<int width, int shift> : Operand<OtherVT> {
 def uimm1 : GenericUnsignedImmediate<1>;
 
 // A 2-bit unsigned immediate.
-def uimm2 : GenericUnsignedImmediate<2, i32>,
-            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 4; }]>;
+def uimm2 : GenericUnsignedImmediate<2, i32>;
 
 // A 2 bit unsigned immediate encoded in 1 bit
 def uimm2_l : Operand<OtherVT> {
@@ -104,8 +103,7 @@ def double_sysreg : Operand<OtherVT> {
 }
 
 // A 4-bit signed immediate.
-def simm4 : GenericSignedImmediate<4, i32>,
-            ImmLeaf<i32, [{ return Imm >= -8 && Imm < 8; }]>;
+def simm4 : GenericSignedImmediate<4, i32>;
 
 // A 4 bit value which comply: {27b’111111111111111111111111111, disp4, 0}.
 def simm4_1 : Operand<OtherVT> {
@@ -115,8 +113,7 @@ def simm4_1 : Operand<OtherVT> {
 }
 
 // A 4-bit unsigned immediate.
-def uimm4 : GenericUnsignedImmediate<4, i32>,
-            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 16; }]>;
+def uimm4 : GenericUnsignedImmediate<4, i32>;
 
 // A 4-bit unsigned immediate, shifted left by 1
 def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>;
@@ -125,12 +122,10 @@ def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>;
 def uimm4_lsb00 : GenericUImmLsbNIsZero<4, 2>;
 
 // A 5-bit unsigned immediate.
-def uimm5 : GenericUnsignedImmediate<5, i32>,
-            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 32; }]>;
+def uimm5 : GenericUnsignedImmediate<5, i32>;
 
 // A 8-bit unsigned immediate.
-def uimm8 : GenericUnsignedImmediate<8, i8>,
-            ImmLeaf<i8, [{ return Imm >= 0 && Imm < 256; }]>;
+def uimm8 : GenericUnsignedImmediate<8, i8>;
 
 // A 8-bit signed immediate, shifted left by 1
 def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>;
@@ -162,8 +157,7 @@ def uimm9 : GenericUnsignedImmediate<9, i32>,
 // For instuctions with signed 10 bit variants which also has superior BOL 
 // versions, therefore they should never be generated, but should be able
 // to disassemble them
-def simm10_disas : Operand<i32>,
-                    ImmLeaf<i32, [{ return false; }]> {
+def simm10_disas : Operand<i32> {
   let ParserMatchClass = GenericImmOperand<"SImm10_disas">;
   let DecoderMethod = "decodeSignedImmediate<10>";
 }
@@ -171,16 +165,14 @@ def simm10_disas : Operand<i32>,
 // A 16-bit signed immediate of BOL format
 // It is defined earlier than simm10 to enforce generating BOL versions
 // of an instruction rather then BO
-def simm16_BOL : Operand<i16>,
-                 ImmLeaf<i16, [{ return Imm >= -32768 && Imm < 32768; }]> {
+def simm16_BOL : Operand<i16> {
   let ParserMatchClass = GenericImmOperand<"SImm16_BOL">;
   let DecoderMethod = "decodeSignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";
 }
 
 // A 10-bit signed immediate.
-def simm10 : GenericSignedImmediate<10, i32>,
-             ImmLeaf<i32, [{ return Imm >= -512 && Imm < 512; }]>;
+def simm10 : GenericSignedImmediate<10, i32>;
 
 // A 16-bit signed immediate of RLC format
 def simm16_RLC : Operand<i32>,
@@ -191,8 +183,7 @@ def simm16_RLC : Operand<i32>,
 }
 
 // A 16-bit unsigned immediate of RLC format
-def uimm16_RLC : Operand<i16>,
-                 ImmLeaf<i16, [{ return Imm >= 0 && Imm < 65536; }]> {
+def uimm16_RLC : Operand<i16> {
   let ParserMatchClass = GenericImmOperand<"UImm16_RLC">;
   let DecoderMethod = "decodeUnsignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";
