@@ -336,6 +336,7 @@ bool TriCoreInstrInfo::doesOffsetFitInOffsetOperand(unsigned Opcode,
   unsigned Bits = getOffsetBits(Opcode);
   return isIntN(Bits, Offset);
 }
+
 unsigned int
 TriCoreInstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   // Meta-instructions emit no code.
