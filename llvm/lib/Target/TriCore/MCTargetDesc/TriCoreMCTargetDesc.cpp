@@ -14,6 +14,7 @@
 #include "InstPrinter/TriCoreInstPrinter.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
 #include "TriCoreMCAsmInfo.h"
+#include "Utils/TriCoreBaseInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCInstrInfo.h"
