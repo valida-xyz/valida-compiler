@@ -29,9 +29,9 @@
 
 using namespace llvm;
 
-TriCoreInstrInfo::TriCoreInstrInfo()
+TriCoreInstrInfo::TriCoreInstrInfo(TriCoreSubtarget &STI)
     : TriCoreGenInstrInfo(TriCore::ADJCALLSTACKDOWN, TriCore::ADJCALLSTACKUP),
-      TRI() {}
+      TRI(), STI(STI) {}
 
 std::pair<unsigned int, unsigned int>
 TriCoreInstrInfo::decomposeMachineOperandsTargetFlags(unsigned int TF) const {
@@ -366,4 +366,208 @@ TriCoreInstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   }
 
   return NumBytes;
+}
+
+bool TriCoreInstrInfo::verifyInstruction(const MachineInstr &MI,
+                                         StringRef &ErrInfo) const {
+  const MCInstrInfo *MCII = STI.getInstrInfo();
+  const MCInstrDesc &Desc = MCII->get(MI.getOpcode());
+
+  // TODO: Check other things than just immediate operands
+
+  for (auto &OI : enumerate(Desc.operands())) {
+    const unsigned OpType = OI.value().OperandType;
+
+    // Skip non-target specific operands
+    if (OpType < TriCoreOp::OPERAND_FIRST_TRICORE_IMM ||
+        OpType > TriCoreOp::OPERAND_LAST_TRICORE_IMM)
+      continue;
+
+    const MachineOperand &MO = MI.getOperand(OI.index());
+
+    // We can only verify immediates
+    if (!MO.isImm())
+      continue;
+
+    const int64_t Imm = MO.getImm();
+
+    switch (OpType) {
+    default:
+      llvm_unreachable("Unexpected operand type");
+    case TriCoreOp::OPERAND_UIMM1:
+    case TriCoreOp::OPERAND_UIMM2_L:
+      if (!isUInt<1>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 1-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM2:
+      if (!isUInt<2>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 2-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM3:
+      if (!isUInt<3>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 3-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM4:
+      if (!isInt<4>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 4-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM4_1:
+      if (!(Imm >= -32 && Imm <= -2 && (Imm % 2 == 0))) {
+        ErrInfo =
+            "Invalid immediate: must be signed, even 4-bit between -32 and -2";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM4:
+      if (!isUInt<4>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 4-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM4_LSB0:
+      if (!isShiftedUInt<4, 1>(Imm)) {
+        ErrInfo =
+            "Invalid immediate: must be unsigned 4-bit, left-shifted by 1";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM4_LSB00:
+      if (!isShiftedUInt<4, 2>(Imm)) {
+        ErrInfo =
+            "Invalid immediate: must be unsigned 4-bit, left-shifted by 2";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM5:
+      if (!isUInt<5>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 5-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM8:
+      if (!isUInt<8>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 8-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM8_LSB0:
+      if (!isShiftedInt<8, 1>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 8-bit, left-shifted by 1";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM8_LSB00:
+      if (!isShiftedUInt<8, 2>(Imm)) {
+        ErrInfo =
+            "Invalid immediate: must be unsigned 8-bit, left-shifted by 2";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM9_SHIFT:
+      if (!isInt<6>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 6-bit, encoded in 9-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM9_SHIFT5:
+      if (!isInt<5>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 5-bit, encoded in 9-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM9:
+      if (!isInt<9>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 9-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM9:
+      if (!isUInt<9>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 9-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM10:
+      if (!isInt<10>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 10-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM15_LSB0:
+      if (!isShiftedInt<15, 1>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 15-bit, left-shifted by 1";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM16_BOL:
+    case TriCoreOp::OPERAND_SIMM16_RLC:
+      if (!isInt<16>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 16-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_UIMM16_RLC:
+      if (!isUInt<16>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 16-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SIMM24_LSB0:
+      if (!isShiftedInt<24, 1>(Imm)) {
+        ErrInfo = "Invalid immediate: must be signed 24-bit, left-shifted by 1";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_OFF18_ABS:
+      if ((Imm & ~0xf0003fff) != 0) {
+        ErrInfo = "Invalid immediate: must be 18-bit matching the following "
+                  "format: {off18[17:14], 14'b0, off18[13:0]}";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_OFF18_ABS_V2:
+      if ((Imm & ~0xffffc000) != 0) {
+        ErrInfo = "Invalid immediate: must be 18-bit matching the following "
+                  "format: {off18[17:0], 14'b0}";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_DISP4_16:
+      if (!(Imm >= 32 && Imm <= 62 && (Imm % 2 == 0))) {
+        ErrInfo = "Invalid immediate: must be 4-bit matching the following "
+                  "format: zero_ext(disp4 + 16) * 2";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_DISP24_ABS:
+      if ((Imm & ~0xf01ffffe) != 0) {
+        ErrInfo = "Invalid immediate: must be 24-bit matching the following "
+                  "format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0}";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_SYSREG:
+      if (!isShiftedUInt<14, 2>(Imm)) {
+        ErrInfo = "Invalid immediate: must be 4-aligned unsigned 16-bit";
+        return false;
+      }
+      break;
+    case TriCoreOp::OPERAND_DOUBLE_SYSREG:
+      if (!isShiftedUInt<13, 3>(Imm)) {
+        ErrInfo = "Invalid immediate: must be 8-aligned unsigned 16-bit";
+        return false;
+      }
+      break;
+    }
+  }
+
+  return true;
 }

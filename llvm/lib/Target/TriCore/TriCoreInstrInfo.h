@@ -21,11 +21,14 @@
 
 namespace llvm {
 
+class TriCoreSubtarget;
+
 class TriCoreInstrInfo : public TriCoreGenInstrInfo {
   const TriCoreRegisterInfo TRI;
+  const TriCoreSubtarget &STI;
 
 public:
-  TriCoreInstrInfo();
+  explicit TriCoreInstrInfo(TriCoreSubtarget &STI);
 
   std::pair<unsigned int, unsigned int>
   decomposeMachineOperandsTargetFlags(unsigned int TF) const override;
@@ -58,6 +61,9 @@ public:
   unsigned getOffsetBits(unsigned Opcode) const;
 
   bool doesOffsetFitInOffsetOperand(unsigned Opcode, int64_t Offset) const;
+
+  bool verifyInstruction(const MachineInstr &MI,
+                         StringRef &ErrInfo) const override;
 };
 } // namespace llvm
 #endif // LLVM_LIB_TARGET_TRICORE_TRICOREINSTRINFO_H

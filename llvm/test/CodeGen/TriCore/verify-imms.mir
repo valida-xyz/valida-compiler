@@ -1,0 +1,318 @@
+# RUN: not --crash llc -mtriple=tricore -run-pass=machineverifier %s -o - 2>&1 | FileCheck %s
+
+---
+name: verify_instr
+body: |
+  bb.0:
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 1-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 1-bit ***
+    STT_ccc 0, 0, -1
+    STT_ccc 0, 0, 0
+    STT_ccc 0, 0, 1
+    STT_ccc 0, 0, 2
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 2-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 2-bit ***
+    $d0 = ADDSCA_aadc $a0, $d1, -1
+    $d0 = ADDSCA_aadc $a0, $d1, 0
+    $d0 = ADDSCA_aadc $a0, $d1, 3
+    $d0 = ADDSCA_aadc $a0, $d1, 4
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 1-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 1-bit ***
+    $d0 = MADDRH_ddddc_ll $d0, $d1, $d2, -1, implicit-def $psw
+    $d0 = MADDRH_ddddc_ll $d0, $d1, $d2, 0, implicit-def $psw
+    $d0 = MADDRH_ddddc_ll $d0, $d1, $d2, 1, implicit-def $psw
+    $d0 = MADDRH_ddddc_ll $d0, $d1, $d2, 2, implicit-def $psw
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 3-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 3-bit ***
+    STT_ccc 0, -1, 0
+    STT_ccc 0, 0, 0
+    STT_ccc 0, 7, 0
+    STT_ccc 0, 8, 0
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 4-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 4-bit ***
+    $d0 = MOV_16_dc -9
+    $d0 = MOV_16_dc -8
+    $d0 = MOV_16_dc 7
+    $d0 = MOV_16_dc 8
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed, even 4-bit between -32 and -2 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed, even 4-bit between -32 and -2 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed, even 4-bit between -32 and -2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed, even 4-bit between -32 and -2 ***
+    $a0 = LOOP_16_ac $a0, -33
+    $a0 = LOOP_16_ac $a0, -32
+    $a0 = LOOP_16_ac $a0, -3
+    $a0 = LOOP_16_ac $a0, -2
+    $a0 = LOOP_16_ac $a0, -1
+    $a0 = LOOP_16_ac $a0, 0
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit ***
+    $d0 = INSERT_ddccc $d0, -1, 0, 0
+    $d0 = INSERT_ddccc $d0, 0, 0, 0
+    $d0 = INSERT_ddccc $d0, 15, 0, 0
+    $d0 = INSERT_ddccc $d0, 16, 0, 0
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit ***
+    $d0 = INSERT_ddccc $d0, -1, 0, 0
+    $d0 = INSERT_ddccc $d0, 0, 0, 0
+    $d0 = INSERT_ddccc $d0, 15, 0, 0
+    $d0 = INSERT_ddccc $d0, 16, 0, 0
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 1 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 1 ***
+    JNE_16_d15cc $d15, 0, -1
+    JNE_16_d15cc $d15, 0, 0
+    JNE_16_d15cc $d15, 0, 30
+    JNE_16_d15cc $d15, 0, 31
+    JNE_16_d15cc $d15, 0, 32
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 2 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 2 ***
+    $a0 = LDA_16_aa15c $a15, -1
+    $a0 = LDA_16_aa15c $a15, 0
+    $a0 = LDA_16_aa15c $a15, 60
+    $a0 = LDA_16_aa15c $a15, 61
+    $a0 = LDA_16_aa15c $a15, 62
+    $a0 = LDA_16_aa15c $a15, 64
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 5-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 5-bit ***
+    $d0 = INSERT_ddccc $d0, 0, -1, 0
+    $d0 = INSERT_ddccc $d0, 0, 0, 0
+    $d0 = INSERT_ddccc $d0, 0, 63, 0
+    $d0 = INSERT_ddccc $d0, 0, 64, 0
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit ***
+    $d15 = MOV_16_d15c -1
+    $d15 = MOV_16_d15c 0
+    $d15 = MOV_16_d15c 255
+    $d15 = MOV_16_d15c 256
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 8-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 8-bit, left-shifted by 1 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 8-bit, left-shifted by 1 ***
+    JNZ_16_d15c $d15, -256
+    JNZ_16_d15c $d15, -255
+    JNZ_16_d15c $d15, 254
+    JNZ_16_d15c $d15, 255
+    JNZ_16_d15c $d15, 256
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit, left-shifted by 2 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit, left-shifted by 2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit, left-shifted by 2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 8-bit, left-shifted by 2 ***
+    $a15 = LDA_16_a15a10c $a10, -1
+    $a15 = LDA_16_a15a10c $a10, 0
+    $a15 = LDA_16_a15a10c $a10, 1020
+    $a15 = LDA_16_a15a10c $a10, 1021
+    $a15 = LDA_16_a15a10c $a10, 1022
+    $a15 = LDA_16_a15a10c $a10, 1024
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 6-bit, encoded in 9-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 6-bit, encoded in 9-bit ***
+    $d0 = SH_ddc $d0, -33
+    $d0 = SH_ddc $d0, -32
+    $d0 = SH_ddc $d0, 31
+    $d0 = SH_ddc $d0, 32
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 5-bit, encoded in 9-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 5-bit, encoded in 9-bit ***
+    $d0 = SHH_ddc $d0, -17
+    $d0 = SHH_ddc $d0, -16
+    $d0 = SHH_ddc $d0, 15
+    $d0 = SHH_ddc $d0, 16
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 9-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 9-bit ***
+    $e0 = MUL_edc $d0, -257, implicit-def $psw
+    $e0 = MUL_edc $d0, -256, implicit-def $psw
+    $e0 = MUL_edc $d0, 255, implicit-def $psw
+    $e0 = MUL_edc $d0, 256, implicit-def $psw
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 9-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 9-bit ***
+    $e0 = MULU_edc $d0, -1, implicit-def $psw
+    $e0 = MULU_edc $d0, 0, implicit-def $psw
+    $e0 = MULU_edc $d0, 511, implicit-def $psw
+    $e0 = MULU_edc $d0, 512, implicit-def $psw
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 10-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 10-bit ***
+    $a0 = LEA_aasc $a0, -513
+    $a0 = LEA_aasc $a0, -512
+    $a0 = LEA_aasc $a0, 511
+    $a0 = LEA_aasc $a0, 512
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 15-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 15-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 15-bit, left-shifted by 1 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 15-bit, left-shifted by 1 ***
+    JNZA_ac $a0, -32769
+    JNZA_ac $a0, -32768
+    JNZA_ac $a0, -32767
+    JNZA_ac $a0, 32766
+    JNZA_ac $a0, 32767
+    JNZA_ac $a0, 32768
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 16-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 16-bit ***
+    $a0 = LEA_aac $a0, -32769
+    $a0 = LEA_aac $a0, -32768
+    $a0 = LEA_aac $a0, 32767
+    $a0 = LEA_aac $a0, 32768
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 16-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 16-bit ***
+    $d0 = MOV_dc  -32769
+    $d0 = MOV_dc  -32768
+    $d0 = MOV_dc  32767
+    $d0 = MOV_dc  32768
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 16-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 16-bit ***
+    $d0 = ADDIH_ddc $d0, -1, implicit-def $psw
+    $d0 = ADDIH_ddc $d0, 0, implicit-def $psw
+    $d0 = ADDIH_ddc $d0, 65535, implicit-def $psw
+    $d0 = ADDIH_ddc $d0, 65536, implicit-def $psw
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 24-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 24-bit, left-shifted by 1 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 24-bit, left-shifted by 1 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be signed 24-bit, left-shifted by 1 ***
+    J -16777217
+    J -16777216
+    J -16777215
+    J 16777214
+    J 16777215
+    J 16777216
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:14], 14'b0, off18[13:0]} ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:14], 14'b0, off18[13:0]} ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:14], 14'b0, off18[13:0]} ***
+    $a0 = LEA_ac -268402689
+    $a0 = LEA_ac -268419073
+    $a0 = LEA_ac 1879064575
+    $a0 = LEA_ac 1879080959
+    $a0 = LEA_ac 2013282303
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:0], 14'b0} ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:0], 14'b0} ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 18-bit matching the following format: {off18[17:0], 14'b0} ***
+    $a0 = LHA_ac -16383
+    $a0 = LHA_ac -16384
+    $a0 = LHA_ac -8192
+    $a0 = LHA_ac 2147467264
+    $a0 = LHA_ac 2147467265
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-bit matching the following format: zero_ext(disp4 + 16) * 2 ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-bit matching the following format: zero_ext(disp4 + 16) * 2 ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-bit matching the following format: zero_ext(disp4 + 16) * 2 ***
+    JEQ_16_d15clc $d15, 0, 31
+    JEQ_16_d15clc $d15, 0, 32
+    JEQ_16_d15clc $d15, 0, 62
+    JEQ_16_d15clc $d15, 0, 63
+    JEQ_16_d15clc $d15, 0, 64
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 24-bit matching the following format: {disp24[23:20], 7'b0, disp24[19:0], 1'b0} ***
+    JA -266338305
+    JA -266338306
+    JA -264241154
+    JA -132120578
+    JA 1881145342
+    JA 1881145343
+    JA 1883242494
+    JA 2015363070
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-aligned unsigned 16-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-aligned unsigned 16-bit ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 4-aligned unsigned 16-bit ***
+    $d0 = MFCR_dc -1
+    $d0 = MFCR_dc 0
+    $d0 = MFCR_dc 65532
+    $d0 = MFCR_dc 65533
+    $d0 = MFCR_dc 65536
+
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 8-aligned unsigned 16-bit ***
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK-NOT: Invalid immediate
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 8-aligned unsigned 16-bit ***
+    ; CHECK: *** Bad machine code: Invalid immediate: must be 8-aligned unsigned 16-bit ***
+    $e0 = MFDCR_ec -1
+    $e0 = MFDCR_ec 0
+    $e0 = MFDCR_ec 65528
+    $e0 = MFDCR_ec 65529
+    $e0 = MFDCR_ec 65536
+...
