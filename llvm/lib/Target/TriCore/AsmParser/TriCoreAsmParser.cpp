@@ -240,12 +240,13 @@ public:
 
     bool IsConstantImm = evaluateConstantImm(Imm, VK);
 
-    // only allow symbols when the operand is: simm15_lsb0 or simm24_lsb0
-    // which are corresponds to _15REL and _24REL relocations
+    // only allow symbols when the operand is: uimm4_lsb0/simm15_lsb0
+    // /simm24_lsb0 which correspond to _4REL/_15REL/_24REL relocations
     if (!IsConstantImm)
-      IsValid = (WIDTH == 15 || WIDTH == 24) && SIGNED
-                    ? TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm)
-                    : false;
+      IsValid =
+          ((WIDTH == 15 || WIDTH == 24) && SIGNED) || (WIDTH == 4 && !SIGNED)
+              ? TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm)
+              : false;
     else
       IsValid = SIGNED ? isShiftedInt<WIDTH, SHIFT>(Imm)
                        : isShiftedUInt<WIDTH, SHIFT>(Imm);
@@ -607,10 +608,17 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   auto MatchResult = MatchInstructionImpl(Operands, Inst, ErrorInfo,
                                           MissingFeatures, MatchingInlineAsm);
 
-  if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
-    setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
-    setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
-  }
+  // RAII to reset 16 and 32 bit code emission flags
+  struct CodeBitsReset {
+    TriCoreAsmParser *p;
+    CodeBitsReset(TriCoreAsmParser *p) : p(p) {}
+    ~CodeBitsReset() {
+      if (!(p->getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
+        p->setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
+        p->setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
+      }
+    }
+  } c(this);
 
   switch (MatchResult) {
   default:

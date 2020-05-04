@@ -12,6 +12,8 @@
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/MC/MCValue.h"
+#include "llvm/MC/MCContext.h"
 
 using namespace llvm;
 
@@ -54,7 +56,8 @@ unsigned TriCoreELFObjectWriter::getRelocType(MCContext &Ctx,
   unsigned Kind = Fixup.getTargetKind();
   switch (Kind) {
   default:
-    llvm_unreachable("invalid fixup kind!");
+    Ctx.reportFatalError(Fixup.getLoc(), "unsupported relocation on symbol");
+    return ELF::R_TRICORE_NONE;
   case FK_Data_4:
     return ELF::R_TRICORE_32ABS;
   case TriCore::fixup_24rel:

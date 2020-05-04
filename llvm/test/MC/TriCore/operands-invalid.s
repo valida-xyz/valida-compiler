@@ -203,10 +203,6 @@ jz.t %d15, 0, 1
 .code16
 jz.t %d15, 0, 32
 
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-jz.t %d15, 0, foo
 
 
 ### Testing uimm4_lsb00
@@ -322,10 +318,6 @@ ld.a %a15, [%a10], 2
 .code16
 ld.a %a15, [%a10], 1024
 
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-ld.a %a15, [%a10], foo
 
 
 ### Testing simm9_shift
@@ -452,10 +444,6 @@ jeq %d15, 0, 33
 .code16
 jeq %d15, 0, 64
 
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-jeq %d15, 0, foo
 
 
 ### Testing simm15_lsb0
