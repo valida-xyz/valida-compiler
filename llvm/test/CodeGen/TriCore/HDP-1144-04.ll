@@ -1,5 +1,4 @@
 ; RUN: llc -mtriple=tricore -o - %s | FileCheck %s
-; XFAIL: *
 
 ; This is a test case from the GCC bug HDP-1144.
 ;
@@ -19,6 +18,11 @@
 ;    6:    89 e4 40 f9     st.d [%a14]-64,%e4   ; This is the affected part, uses the Frame Pointer to store with a negative offset -64.
 ;    a:    20 40           sub.a %sp,64         ; The stack frame is reserved just at this point.
 ;    c:    40 5f           mov.aa %a15,%a5
+
+; CHECK-LABEL: LocalFunction:
+; CHECK:      # %bb.0:                                # %entry
+; CHECK-NEXT:   mov.aa  %a14, %a10
+; CHECK-NEXT:   lea	%a10, [%a10], -40
 
 ; ModuleID = 'HDP-1144-04.c'
 source_filename = "HDP-1144-04.c"
