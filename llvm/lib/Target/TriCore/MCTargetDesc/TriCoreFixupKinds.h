@@ -50,6 +50,13 @@ enum Fixups {
   // EA = {off18[17:0], 14b'0}
   fixup_lha,
 
+  // 4 bit pc-relative immediate used in SBR format (internally multiplied by 2)
+  fixup_4rel,
+
+  // 4 bit pc-relative immediate used in SBR format (internally add 16
+  // and multiplied by 2)
+  fixup_4rel2,
+
   fixup_invalid,
   // the number of fixups for this target
   NumTargetFixupKinds = fixup_invalid - FirstTargetFixupKind
