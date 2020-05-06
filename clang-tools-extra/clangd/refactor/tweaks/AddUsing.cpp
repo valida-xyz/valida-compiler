@@ -8,8 +8,8 @@
 
 #include "AST.h"
 #include "FindTarget.h"
-#include "Logger.h"
 #include "refactor/Tweak.h"
+#include "support/Logger.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 
@@ -206,9 +206,11 @@ bool AddUsing::prepare(const Selection &Inputs) {
     Name = D->getDecl()->getName();
   } else if (auto *T = Node->ASTNode.get<TypeLoc>()) {
     if (auto E = T->getAs<ElaboratedTypeLoc>()) {
-      QualifierToRemove = E.getQualifierLoc();
-      Name =
-          E.getType().getUnqualifiedType().getBaseTypeIdentifier()->getName();
+      if (auto *BaseTypeIdentifier =
+              E.getType().getUnqualifiedType().getBaseTypeIdentifier()) {
+        Name = BaseTypeIdentifier->getName();
+        QualifierToRemove = E.getQualifierLoc();
+      }
     }
   }
 

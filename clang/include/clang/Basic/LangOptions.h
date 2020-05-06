@@ -19,6 +19,7 @@
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Sanitizers.h"
 #include "clang/Basic/Visibility.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include <string>
@@ -53,6 +54,7 @@ enum class MSVtorDispMode { Never, ForVBaseOverride, ForVFTable };
 class LangOptions : public LangOptionsBase {
 public:
   using Visibility = clang::Visibility;
+  using RoundingMode = llvm::RoundingMode;
 
   enum GCMode { NonGC, GCOnly, HybridGC };
   enum StackProtectorMode { SSPOff, SSPOn, SSPStrong, SSPReq };
@@ -190,23 +192,9 @@ public:
     FEA_On
   };
 
-  // Values of the following enumerations correspond to metadata arguments
-  // specified for constrained floating-point intrinsics:
-  // http://llvm.org/docs/LangRef.html#constrained-floating-point-intrinsics.
-
-  /// Possible rounding modes.
-  enum FPRoundingModeKind {
-    /// Rounding to nearest, corresponds to "round.tonearest".
-    FPR_ToNearest,
-    /// Rounding toward -Inf, corresponds to "round.downward".
-    FPR_Downward,
-    /// Rounding toward +Inf, corresponds to "round.upward".
-    FPR_Upward,
-    /// Rounding toward zero, corresponds to "round.towardzero".
-    FPR_TowardZero,
-    /// Is determined by runtime environment, corresponds to "round.dynamic".
-    FPR_Dynamic
-  };
+  /// Alias for RoundingMode::NearestTiesToEven.
+  static constexpr unsigned FPR_ToNearest =
+      static_cast<unsigned>(llvm::RoundingMode::NearestTiesToEven);
 
   /// Possible floating point exception behavior.
   enum FPExceptionModeKind {
@@ -386,28 +374,43 @@ public:
 
 /// Floating point control options
 class FPOptions {
+  using RoundingMode = llvm::RoundingMode;
+
 public:
-  FPOptions() : fp_contract(LangOptions::FPC_Off),
-                fenv_access(LangOptions::FEA_Off),
-                rounding(LangOptions::FPR_ToNearest),
-                exceptions(LangOptions::FPE_Ignore)
-        {}
+  FPOptions()
+      : fp_contract(LangOptions::FPC_Off), fenv_access(LangOptions::FEA_Off),
+        rounding(LangOptions::FPR_ToNearest),
+        exceptions(LangOptions::FPE_Ignore), allow_reassoc(0), no_nans(0),
+        no_infs(0), no_signed_zeros(0), allow_reciprocal(0), approx_func(0) {}
 
   // Used for serializing.
-  explicit FPOptions(unsigned I)
-      : fp_contract(static_cast<LangOptions::FPContractModeKind>(I & 3)),
-        fenv_access(static_cast<LangOptions::FEnvAccessModeKind>((I >> 2) & 1)),
-        rounding(static_cast<LangOptions::FPRoundingModeKind>((I >> 3) & 7)),
-        exceptions(static_cast<LangOptions::FPExceptionModeKind>((I >> 6) & 3))
-        {}
+  explicit FPOptions(unsigned I) { getFromOpaqueInt(I); }
 
   explicit FPOptions(const LangOptions &LangOpts)
       : fp_contract(LangOpts.getDefaultFPContractMode()),
         fenv_access(LangOptions::FEA_Off),
-        rounding(LangOptions::FPR_ToNearest),
-        exceptions(LangOptions::FPE_Ignore)
-        {}
+        rounding(static_cast<unsigned>(LangOpts.getFPRoundingMode())),
+        exceptions(LangOpts.getFPExceptionMode()),
+        allow_reassoc(LangOpts.FastMath || LangOpts.AllowFPReassoc),
+        no_nans(LangOpts.FastMath || LangOpts.NoHonorNaNs),
+        no_infs(LangOpts.FastMath || LangOpts.NoHonorInfs),
+        no_signed_zeros(LangOpts.FastMath || LangOpts.NoSignedZero),
+        allow_reciprocal(LangOpts.FastMath || LangOpts.AllowRecip),
+        approx_func(LangOpts.FastMath || LangOpts.ApproxFunc) {}
   // FIXME: Use getDefaultFEnvAccessMode() when available.
+
+  void setFastMath(bool B = true) {
+    allow_reassoc = no_nans = no_infs = no_signed_zeros = approx_func =
+        allow_reciprocal = B;
+  }
+
+  /// Return the default value of FPOptions that's used when trailing
+  /// storage isn't required.
+  static FPOptions defaultWithoutTrailingStorage(const LangOptions &LO);
+
+  /// Does this FPOptions require trailing storage when stored in various
+  /// AST nodes, or can it be recreated using `defaultWithoutTrailingStorage`?
+  bool requiresTrailingStorage(const LangOptions &LO);
 
   bool allowFPContractWithinStatement() const {
     return fp_contract == LangOptions::FPC_On;
@@ -435,14 +438,26 @@ public:
     fenv_access = LangOptions::FEA_On;
   }
 
-  void setDisallowFEnvAccess() { fenv_access = LangOptions::FEA_Off; }
-
-  LangOptions::FPRoundingModeKind getRoundingMode() const {
-    return static_cast<LangOptions::FPRoundingModeKind>(rounding);
+  void setFPPreciseEnabled(bool Value) {
+    if (Value) {
+      /* Precise mode implies fp_contract=on and disables ffast-math */
+      setFastMath(false);
+      setAllowFPContractWithinStatement();
+    } else {
+      /* Precise mode implies fp_contract=fast and enables ffast-math */
+      setFastMath(true);
+      setAllowFPContractAcrossStatement();
+    }
   }
 
-  void setRoundingMode(LangOptions::FPRoundingModeKind RM) {
-    rounding = RM;
+  void setDisallowFEnvAccess() { fenv_access = LangOptions::FEA_Off; }
+
+  RoundingMode getRoundingMode() const {
+    return static_cast<RoundingMode>(rounding);
+  }
+
+  void setRoundingMode(RoundingMode RM) {
+    rounding = static_cast<unsigned>(RM);
   }
 
   LangOptions::FPExceptionModeKind getExceptionMode() const {
@@ -453,16 +468,48 @@ public:
     exceptions = EM;
   }
 
+  /// FMF Flag queries
+  bool allowAssociativeMath() const { return allow_reassoc; }
+  bool noHonorNaNs() const { return no_nans; }
+  bool noHonorInfs() const { return no_infs; }
+  bool noSignedZeros() const { return no_signed_zeros; }
+  bool allowReciprocalMath() const { return allow_reciprocal; }
+  bool allowApproximateFunctions() const { return approx_func; }
+
+  /// Flag setters
+  void setAllowAssociativeMath(bool B = true) { allow_reassoc = B; }
+  void setNoHonorNaNs(bool B = true) { no_nans = B; }
+  void setNoHonorInfs(bool B = true) { no_infs = B; }
+  void setNoSignedZeros(bool B = true) { no_signed_zeros = B; }
+  void setAllowReciprocalMath(bool B = true) { allow_reciprocal = B; }
+  void setAllowApproximateFunctions(bool B = true) { approx_func = B; }
+
   bool isFPConstrained() const {
-    return getRoundingMode() != LangOptions::FPR_ToNearest ||
+    return getRoundingMode() != RoundingMode::NearestTiesToEven ||
            getExceptionMode() != LangOptions::FPE_Ignore ||
            allowFEnvAccess();
   }
 
   /// Used to serialize this.
-  unsigned getInt() const {
-    return fp_contract | (fenv_access << 2) | (rounding << 3)
-        | (exceptions << 6);
+  unsigned getAsOpaqueInt() const {
+    return fp_contract | (fenv_access << 2) | (rounding << 3) |
+           (exceptions << 6) | (allow_reassoc << 8) | (no_nans << 9) |
+           (no_infs << 10) | (no_signed_zeros << 11) |
+           (allow_reciprocal << 12) | (approx_func << 13);
+  }
+
+  /// Used with getAsOpaqueInt() to manage the float_control pragma stack.
+  void getFromOpaqueInt(unsigned I) {
+    fp_contract = (static_cast<LangOptions::FPContractModeKind>(I & 3));
+    fenv_access = (static_cast<LangOptions::FEnvAccessModeKind>((I >> 2) & 1));
+    rounding = static_cast<unsigned>(static_cast<RoundingMode>((I >> 3) & 7));
+    exceptions = (static_cast<LangOptions::FPExceptionModeKind>((I >> 6) & 3));
+    allow_reassoc = ((I >> 8) & 1);
+    no_nans = ((I >> 9) & 1);
+    no_infs = ((I >> 10) & 1);
+    no_signed_zeros = ((I >> 11) & 1);
+    allow_reciprocal = ((I >> 12) & 1);
+    approx_func = ((I >> 13) & 1);
   }
 
 private:
@@ -473,6 +520,25 @@ private:
   unsigned fenv_access : 1;
   unsigned rounding : 3;
   unsigned exceptions : 2;
+  /// Allow reassociation transformations for floating-point instructions.
+  unsigned allow_reassoc : 1;
+  /// No NaNs - Allow optimizations to assume the arguments and result
+  /// are not NaN. If an argument is a nan, or the result would be a nan,
+  /// it produces a :ref:`poison value <poisonvalues>` instead.
+  unsigned no_nans : 1;
+  /// No Infs - Allow optimizations to assume the arguments and result
+  /// are not +/-Inf. If an argument is +/-Inf, or the result would be +/-Inf,
+  /// it produces a :ref:`poison value <poisonvalues>` instead.
+  unsigned no_infs : 1;
+  /// No Signed Zeros - Allow optimizations to treat the sign of a zero
+  /// argument or result as insignificant.
+  unsigned no_signed_zeros : 1;
+  /// Allow Reciprocal - Allow optimizations to use the reciprocal
+  /// of an argument rather than perform division.
+  unsigned allow_reciprocal : 1;
+  /// Approximate functions - Allow substitution of approximate calculations
+  /// for functions (sin, log, sqrt, etc).
+  unsigned approx_func : 1;
 };
 
 /// Describes the kind of translation unit being processed.

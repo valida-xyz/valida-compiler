@@ -225,6 +225,26 @@ int PPCInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
   return Latency;
 }
 
+/// This is an architecture-specific helper function of reassociateOps.
+/// Set special operand attributes for new instructions after reassociation.
+void PPCInstrInfo::setSpecialOperandAttr(MachineInstr &OldMI1,
+                                         MachineInstr &OldMI2,
+                                         MachineInstr &NewMI1,
+                                         MachineInstr &NewMI2) const {
+  // Propagate FP flags from the original instructions.
+  // But clear poison-generating flags because those may not be valid now.
+  uint16_t IntersectedFlags = OldMI1.getFlags() & OldMI2.getFlags();
+  NewMI1.setFlags(IntersectedFlags);
+  NewMI1.clearFlag(MachineInstr::MIFlag::NoSWrap);
+  NewMI1.clearFlag(MachineInstr::MIFlag::NoUWrap);
+  NewMI1.clearFlag(MachineInstr::MIFlag::IsExact);
+
+  NewMI2.setFlags(IntersectedFlags);
+  NewMI2.clearFlag(MachineInstr::MIFlag::NoSWrap);
+  NewMI2.clearFlag(MachineInstr::MIFlag::NoUWrap);
+  NewMI2.clearFlag(MachineInstr::MIFlag::IsExact);
+}
+
 // This function does not list all associative and commutative operations, but
 // only those worth feeding through the machine combiner in an attempt to
 // reduce the critical path. Mostly, this means floating-point operations,
@@ -258,7 +278,8 @@ bool PPCInstrInfo::isAssociativeAndCommutative(const MachineInstr &Inst) const {
   case PPC::QVFMUL:
   case PPC::QVFMULS:
   case PPC::QVFMULSs:
-    return true;
+    return Inst.getFlag(MachineInstr::MIFlag::FmReassoc) &&
+           Inst.getFlag(MachineInstr::MIFlag::FmNsz);
   default:
     return false;
   }
@@ -270,10 +291,6 @@ bool PPCInstrInfo::getMachineCombinerPatterns(
   // Using the machine combiner in this way is potentially expensive, so
   // restrict to when aggressive optimizations are desired.
   if (Subtarget.getTargetMachine().getOptLevel() != CodeGenOpt::Aggressive)
-    return false;
-
-  // FP reassociation is only legal when we don't need strict IEEE semantics.
-  if (!Root.getParent()->getParent()->getTarget().Options.UnsafeFPMath)
     return false;
 
   return TargetInstrInfo::getMachineCombinerPatterns(Root, Patterns);
@@ -1435,17 +1452,6 @@ bool PPCInstrInfo::isPredicated(const MachineInstr &MI) const {
   return false;
 }
 
-bool PPCInstrInfo::isUnpredicatedTerminator(const MachineInstr &MI) const {
-  if (!MI.isTerminator())
-    return false;
-
-  // Conditional branch is a special case.
-  if (MI.isBranch() && !MI.isBarrier())
-    return true;
-
-  return !isPredicated(MI);
-}
-
 bool PPCInstrInfo::PredicateInstruction(MachineInstr &MI,
                                         ArrayRef<MachineOperand> Pred) const {
   unsigned OpC = MI.getOpcode();
@@ -2046,7 +2052,10 @@ ArrayRef<std::pair<unsigned, const char *>>
 PPCInstrInfo::getSerializableBitmaskMachineOperandTargetFlags() const {
   using namespace PPCII;
   static const std::pair<unsigned, const char *> TargetFlags[] = {
-      {MO_PLT, "ppc-plt"}, {MO_PIC_FLAG, "ppc-pic"}};
+      {MO_PLT, "ppc-plt"},
+      {MO_PIC_FLAG, "ppc-pic"},
+      {MO_PCREL_FLAG, "ppc-pcrel"},
+      {MO_GOT_FLAG, "ppc-got"}};
   return makeArrayRef(TargetFlags);
 }
 

@@ -394,6 +394,11 @@ StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
                                    ArrayRef<Stmt *> Elts, bool isStmtExpr) {
   const unsigned NumElts = Elts.size();
 
+  // Mark the current function as usng floating point constrained intrinsics
+  if (getCurFPFeatures().isFPConstrained())
+    if (FunctionDecl *F = dyn_cast<FunctionDecl>(CurContext))
+      F->setUsesFPIntrin(true);
+
   // If we're in C89 mode, check that we don't have any decls after stmts.  If
   // so, emit an extension diagnostic.
   if (!getLangOpts().C99 && !getLangOpts().CPlusPlus) {
@@ -2669,7 +2674,8 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
     // trying to determine whether this would be a valid range.
     if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
       AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
-      if (LoopVar->isInvalidDecl())
+      if (LoopVar->isInvalidDecl() ||
+          (LoopVar->getInit() && LoopVar->getInit()->containsErrors()))
         NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
     }
   }
@@ -3630,6 +3636,12 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       if (isa<CXXBoolLiteralExpr>(RetValExp))
         Diag(ReturnLoc, diag::warn_main_returns_bool_literal)
           << RetValExp->getSourceRange();
+    if (FD->hasAttr<CmseNSEntryAttr>() && RetValExp) {
+      if (const auto *RT = dyn_cast<RecordType>(FnRetType.getCanonicalType())) {
+        if (RT->getDecl()->isOrContainsUnion())
+          Diag(RetValExp->getBeginLoc(), diag::warn_cmse_nonsecure_union) << 1;
+      }
+    }
   } else if (ObjCMethodDecl *MD = getCurMethodDecl()) {
     FnRetType = MD->getReturnType();
     isObjCMethod = true;

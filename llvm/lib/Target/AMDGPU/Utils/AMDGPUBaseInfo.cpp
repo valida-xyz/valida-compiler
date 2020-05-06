@@ -1083,6 +1083,11 @@ bool isSISrcInlinableOperand(const MCInstrDesc &Desc, unsigned OpNo) {
 // (move from MC* level to Target* level). Return size in bits.
 unsigned getRegBitWidth(unsigned RCID) {
   switch (RCID) {
+  case AMDGPU::VGPR_LO16RegClassID:
+  case AMDGPU::VGPR_HI16RegClassID:
+  case AMDGPU::SGPR_LO16RegClassID:
+  case AMDGPU::AGPR_LO16RegClassID:
+    return 16;
   case AMDGPU::SGPR_32RegClassID:
   case AMDGPU::VGPR_32RegClassID:
   case AMDGPU::VRegOrLds_32RegClassID:
@@ -1104,6 +1109,7 @@ unsigned getRegBitWidth(unsigned RCID) {
   case AMDGPU::SGPR_96RegClassID:
   case AMDGPU::SReg_96RegClassID:
   case AMDGPU::VReg_96RegClassID:
+  case AMDGPU::AReg_96RegClassID:
     return 96;
   case AMDGPU::SGPR_128RegClassID:
   case AMDGPU::SReg_128RegClassID:
@@ -1113,14 +1119,24 @@ unsigned getRegBitWidth(unsigned RCID) {
   case AMDGPU::SGPR_160RegClassID:
   case AMDGPU::SReg_160RegClassID:
   case AMDGPU::VReg_160RegClassID:
+  case AMDGPU::AReg_160RegClassID:
     return 160;
+  case AMDGPU::SGPR_192RegClassID:
+  case AMDGPU::SReg_192RegClassID:
+  case AMDGPU::VReg_192RegClassID:
+  case AMDGPU::AReg_192RegClassID:
+    return 192;
+  case AMDGPU::SGPR_256RegClassID:
   case AMDGPU::SReg_256RegClassID:
   case AMDGPU::VReg_256RegClassID:
+  case AMDGPU::AReg_256RegClassID:
     return 256;
+  case AMDGPU::SGPR_512RegClassID:
   case AMDGPU::SReg_512RegClassID:
   case AMDGPU::VReg_512RegClassID:
   case AMDGPU::AReg_512RegClassID:
     return 512;
+  case AMDGPU::SGPR_1024RegClassID:
   case AMDGPU::SReg_1024RegClassID:
   case AMDGPU::VReg_1024RegClassID:
   case AMDGPU::AReg_1024RegClassID:

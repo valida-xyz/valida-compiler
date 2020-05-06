@@ -124,9 +124,14 @@ public:
 
   // Main entry point for this pass.
   bool runOnMachineFunction(MachineFunction &MF) override {
+    initialize(MF);
+    // At this point, TOC pointer should not be used in a function that uses
+    // PC-Relative addressing.
+    assert((MF.getRegInfo().use_empty(PPC::X2) ||
+            !MF.getSubtarget<PPCSubtarget>().isUsingPCRelativeCalls()) &&
+           "TOC pointer used in a function using PC-Relative addressing!");
     if (skipFunction(MF.getFunction()))
       return false;
-    initialize(MF);
     return simplifyCode();
   }
 };

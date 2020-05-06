@@ -256,9 +256,6 @@ def no_nmagic: F<"no-nmagic">, MetaVarName<"<magic>">,
 def no_omagic: F<"no-omagic">, MetaVarName<"<magic>">,
   HelpText<"Do not set the text data sections to be writable, page align sections (default)">;
 
-def no_rosegment: F<"no-rosegment">,
-  HelpText<"Do not put read-only non-executable sections in their own segment">;
-
 def no_undefined: F<"no-undefined">,
   HelpText<"Report unresolved symbols even if the linker is creating a shared library">;
 
@@ -297,6 +294,10 @@ defm print_icf_sections: B<"print-icf-sections",
     "List identical folded sections",
     "Do not list identical folded sections (default)">;
 
+def print_archive_stats: J<"print-archive-stats=">,
+  HelpText<"Write archive usage statistics to the specified file. "
+           "Print the numbers of members and fetched members for each archive">;
+
 defm print_symbol_order: Eq<"print-symbol-order",
   "Print a symbol order specified by --call-graph-ordering-file into the specified file">;
 
@@ -310,6 +311,10 @@ def print_map: F<"print-map">,
   HelpText<"Print a link map to the standard output">;
 
 defm reproduce: Eq<"reproduce", "Write a tar file containing input files and command line options to reproduce link">;
+
+defm rosegment: B<"rosegment",
+  "Put read-only non-executable sections in their own segment (default)",
+  "Do not put read-only non-executable sections in their own segment">;
 
 defm rpath: Eq<"rpath", "Add a DT_RUNPATH to the output">;
 
@@ -403,6 +408,12 @@ defm warn_backrefs: B<"warn-backrefs",
     "Warn about backward symbol references to fetch archive members",
     "Do not warn about backward symbol references to fetch archive members (default)">;
 
+defm warn_backrefs_exclude
+    : Eq<"warn-backrefs-exclude",
+         "Glob describing an archive (or an object file within --start-lib) "
+         "which should be ignored for --warn-backrefs.">,
+      MetaVarName<"<glob>">;
+
 defm warn_common: B<"warn-common",
     "Warn about duplicate common symbols",
     "Do not warn about duplicate common symbols (default)">;
@@ -477,6 +488,8 @@ def lto_aa_pipeline: J<"lto-aa-pipeline=">,
   HelpText<"AA pipeline to run during LTO. Used in conjunction with -lto-newpm-passes">;
 def lto_debug_pass_manager: F<"lto-debug-pass-manager">,
   HelpText<"Debug new pass manager">;
+def lto_emit_asm: F<"lto-emit-asm">,
+  HelpText<"Emit assembly code">;
 def lto_new_pass_manager: F<"lto-new-pass-manager">,
   HelpText<"Use new pass manager">;
 def lto_newpm_passes: J<"lto-newpm-passes=">,
@@ -504,7 +517,6 @@ def opt_remarks_with_hotness: Flag<["--"], "opt-remarks-with-hotness">,
   HelpText<"Include hotness information in the optimization remarks file">;
 def opt_remarks_format: Separate<["--"], "opt-remarks-format">,
   HelpText<"The format used for serializing remarks (default: YAML)">;
-defm plugin_opt: Eq<"plugin-opt", "specifies LTO options for compatibility with GNU linkers">;
 def save_temps: F<"save-temps">;
 def lto_basicblock_sections: J<"lto-basicblock-sections=">,
   HelpText<"Enable basic block sections for LTO">;
@@ -530,6 +542,8 @@ def: F<"plugin-opt=debug-pass-manager">,
 def: F<"plugin-opt=disable-verify">, Alias<disable_verify>, HelpText<"Alias for --disable-verify">;
 def plugin_opt_dwo_dir_eq: J<"plugin-opt=dwo_dir=">,
   HelpText<"Directory to store .dwo files when LTO and debug fission are used">;
+def plugin_opt_emit_asm: F<"plugin-opt=emit-asm">,
+  Alias<lto_emit_asm>, HelpText<"Alias for --lto-emit-asm">;
 def plugin_opt_emit_llvm: F<"plugin-opt=emit-llvm">;
 def: J<"plugin-opt=jobs=">, Alias<thinlto_jobs>, HelpText<"Alias for --thinlto-jobs">;
 def: J<"plugin-opt=lto-partitions=">, Alias<lto_partitions>, HelpText<"Alias for --lto-partitions">;
@@ -571,10 +585,17 @@ def: J<"plugin-opt=thinlto-prefix-replace=">,
 // --version output.
 defm plugin: Eq<"plugin", "Ignored for compatibility with GNU linkers">;
 
-def plugin_opt_fresolution_eq: J<"plugin-opt=-fresolution=">;
-def plugin_opt_pass_through_eq: J<"plugin-opt=-pass-through=">;
-def plugin_opt_thinlto: J<"plugin-opt=thinlto">;
-def plugin_opt_slash: J<"plugin-opt=/">;
+def plugin_opt_eq_minus: J<"plugin-opt=-">,
+  HelpText<"Specify an LLVM option for compatibility with LLVMgold.so">;
+def: J<"plugin-opt=thinlto">;
+
+// Ignore GCC collect2 LTO plugin related options. Note that we don't support
+// GCC LTO, but GCC collect2 passes these options even in non-LTO mode.
+def: J<"plugin-opt=-fresolution=">;
+def: J<"plugin-opt=-pass-through=">;
+// This may be either an unhandled LLVMgold.so feature or GCC passed
+// -plugin-opt=path/to/{liblto_plugin.so,lto-wrapper}
+def plugin_opt_eq : J<"plugin-opt=">;
 
 // Options listed below are silently ignored for now for compatibility.
 def: F<"detect-odr-violations">;

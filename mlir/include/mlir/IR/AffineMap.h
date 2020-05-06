@@ -49,13 +49,13 @@ public:
   static AffineMap get(unsigned dimCount, unsigned symbolCount,
                        MLIRContext *context);
 
-  /// Returns an affine map with `dimCount` dimensions and `symbolCount` symbols
-  /// mapping to the given results. The array of results cannot be empty.
+  /// Returns an affine map with `dimCount` dimensions and `symbolCount` mapping
+  /// to a single output dimension
   static AffineMap get(unsigned dimCount, unsigned symbolCount,
-                       ArrayRef<AffineExpr> results);
+                       AffineExpr result);
 
   /// Returns an affine map with `dimCount` dimensions and `symbolCount` mapping
-  /// to the given results, where the number of results can be zero.
+  /// to the given results.
   static AffineMap get(unsigned dimCount, unsigned symbolCount,
                        ArrayRef<AffineExpr> results, MLIRContext *context);
 
@@ -65,6 +65,11 @@ public:
   /// Returns an AffineMap with 'numDims' identity result dim exprs.
   static AffineMap getMultiDimIdentityMap(unsigned numDims,
                                           MLIRContext *context);
+
+  /// Returns an identity affine map (d0, ..., dn) -> (dp, ..., dn) on the most
+  /// minor dimensions.
+  static AffineMap getMinorIdentityMap(unsigned dims, unsigned results,
+                                       MLIRContext *context);
 
   /// Returns an AffineMap representing a permutation.
   /// The permutation is expressed as a non-empty vector of integers.
@@ -93,6 +98,10 @@ public:
   /// An identity affine map corresponds to an identity affine function on the
   /// dimensional identifiers.
   bool isIdentity() const;
+
+  /// Returns true if the map is a minor identity map, i.e. an identity affine
+  /// map (d0, ..., dn) -> (dp, ..., dn) on the most minor dimensions.
+  static bool isMinorIdentity(AffineMap map);
 
   /// Returns true if this affine map is an empty map, i.e., () -> ().
   bool isEmpty() const;
@@ -224,9 +233,9 @@ AffineMap removeDuplicateExprs(AffineMap map);
 
 /// Returns a map of codomain to domain dimensions such that the first codomain
 /// dimension for a particular domain dimension is selected.
-/// Returns an empty map if the input map is empty or if `map` is not invertible
-/// (i.e. `map` does not contain a subset that is a permutation of full domain
-/// rank).
+/// Returns an empty map if the input map is empty.
+/// Returns null map (not empty map) if `map` is not invertible (i.e. `map` does
+/// not contain a subset that is a permutation of full domain rank).
 ///
 /// Prerequisites:
 ///   1. `map` has no symbols.

@@ -114,7 +114,7 @@ getTriCoreArchFeaturesFromMArch(const Driver &D, const Arg *MArch,
                                 std::vector<StringRef> &Features,
                                 tricore::ArchKind CPUArch) {
   // Try to parse a valid -march option
-  const StringRef ArchStr = getArgValueLowerCase(MArch);
+  const std::string &ArchStr = getArgValueLowerCase(MArch);
   const auto Arch = llvm::StringSwitch<tricore::ArchKind>(ArchStr)
                         .Case("tc161", tricore::TC161)
                         .Case("tc162", tricore::TC162)

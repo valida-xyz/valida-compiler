@@ -418,7 +418,16 @@ void EventThreadFunction() {
               bp.MatchesName(BreakpointBase::GetBreakpointLabel())) {
             auto bp_event = CreateEventObject("breakpoint");
             llvm::json::Object body;
-            body.try_emplace("breakpoint", CreateBreakpoint(bp));
+            // As VSCode already knows the path of this breakpoint, we don't
+            // need to send it back as part of a "changed" event. This
+            // prevent us from sending to VSCode paths that should be source
+            // mapped. Note that CreateBreakpoint doesn't apply source mapping.
+            // Besides, the current implementation of VSCode ignores the
+            // "source" element of breakpoint events.
+            llvm::json::Value source_bp = CreateBreakpoint(bp);
+            source_bp.getAsObject()->erase("source");
+
+            body.try_emplace("breakpoint", source_bp);
             body.try_emplace("reason", "changed");
             bp_event.try_emplace("body", std::move(body));
             g_vsc.SendJSON(llvm::json::Value(std::move(bp_event)));
@@ -521,16 +530,17 @@ void request_attach(const llvm::json::Object &request) {
   g_vsc.stop_commands = GetStrings(arguments, "stopCommands");
   g_vsc.exit_commands = GetStrings(arguments, "exitCommands");
   auto attachCommands = GetStrings(arguments, "attachCommands");
-  g_vsc.stop_at_entry = GetBoolean(arguments, "stopOnEntry", false);
-  const auto debuggerRoot = GetString(arguments, "debuggerRoot");
+  llvm::StringRef core_file = GetString(arguments, "coreFile");
+  g_vsc.stop_at_entry =
+      core_file.empty() ? GetBoolean(arguments, "stopOnEntry", false) : true;
+  const llvm::StringRef debuggerRoot = GetString(arguments, "debuggerRoot");
 
   // This is a hack for loading DWARF in .o files on Mac where the .o files
   // in the debug map of the main executable have relative paths which require
   // the lldb-vscode binary to have its working directory set to that relative
   // root for the .o files in order to be able to load debug info.
-  if (!debuggerRoot.empty()) {
-    llvm::sys::fs::set_current_path(debuggerRoot.data());
-  }
+  if (!debuggerRoot.empty())
+    llvm::sys::fs::set_current_path(debuggerRoot);
 
   // Run any initialize LLDB commands the user specified in the launch.json
   g_vsc.RunInitCommands();
@@ -560,7 +570,10 @@ void request_attach(const llvm::json::Object &request) {
     // Disable async events so the attach will be successful when we return from
     // the launch call and the launch will happen synchronously
     g_vsc.debugger.SetAsync(false);
-    g_vsc.target.Attach(attach_info, error);
+    if (core_file.empty())
+      g_vsc.target.Attach(attach_info, error);
+    else
+      g_vsc.target.LoadCore(core_file.data(), error);
     // Reenable async events
     g_vsc.debugger.SetAsync(true);
   } else {
@@ -575,7 +588,7 @@ void request_attach(const llvm::json::Object &request) {
 
   SetSourceMapFromArguments(*arguments);
 
-  if (error.Success()) {
+  if (error.Success() && core_file.empty()) {
     auto attached_pid = g_vsc.target.GetProcess().GetProcessID();
     if (attached_pid == LLDB_INVALID_PROCESS_ID) {
       if (attachCommands.empty())
@@ -1354,22 +1367,21 @@ void request_launch(const llvm::json::Object &request) {
   g_vsc.exit_commands = GetStrings(arguments, "exitCommands");
   auto launchCommands = GetStrings(arguments, "launchCommands");
   g_vsc.stop_at_entry = GetBoolean(arguments, "stopOnEntry", false);
-  const auto debuggerRoot = GetString(arguments, "debuggerRoot");
+  const llvm::StringRef debuggerRoot = GetString(arguments, "debuggerRoot");
 
   // This is a hack for loading DWARF in .o files on Mac where the .o files
   // in the debug map of the main executable have relative paths which require
   // the lldb-vscode binary to have its working directory set to that relative
   // root for the .o files in order to be able to load debug info.
-  if (!debuggerRoot.empty()) {
-    llvm::sys::fs::set_current_path(debuggerRoot.data());
-  }
-
-  SetSourceMapFromArguments(*arguments);
+  if (!debuggerRoot.empty())
+    llvm::sys::fs::set_current_path(debuggerRoot);
 
   // Run any initialize LLDB commands the user specified in the launch.json.
   // This is run before target is created, so commands can't do anything with
   // the targets - preRunCommands are run with the target.
   g_vsc.RunInitCommands();
+
+  SetSourceMapFromArguments(*arguments);
 
   lldb::SBError status;
   g_vsc.SetTarget(g_vsc.CreateTargetFromArguments(*arguments, status));
@@ -1766,13 +1778,14 @@ void request_setBreakpoints(const llvm::json::Object &request) {
         const auto &existing_bp = existing_source_bps->second.find(src_bp.line);
         if (existing_bp != existing_source_bps->second.end()) {
           existing_bp->second.UpdateBreakpoint(src_bp);
-          AppendBreakpoint(existing_bp->second.bp, response_breakpoints);
+          AppendBreakpoint(existing_bp->second.bp, response_breakpoints, path,
+                           src_bp.line);
           continue;
         }
       }
       // At this point the breakpoint is new
       src_bp.SetBreakpoint(path.data());
-      AppendBreakpoint(src_bp.bp, response_breakpoints);
+      AppendBreakpoint(src_bp.bp, response_breakpoints, path, src_bp.line);
       g_vsc.source_breakpoints[path][src_bp.line] = std::move(src_bp);
     }
   }

@@ -10,11 +10,7 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_CLANGDSERVER_H
 
 #include "../clang-tidy/ClangTidyOptions.h"
-#include "Cancellation.h"
 #include "CodeComplete.h"
-#include "FSProvider.h"
-#include "FormattedString.h"
-#include "Function.h"
 #include "GlobalCompilationDatabase.h"
 #include "Hover.h"
 #include "Protocol.h"
@@ -26,6 +22,9 @@
 #include "index/Index.h"
 #include "refactor/Rename.h"
 #include "refactor/Tweak.h"
+#include "support/Cancellation.h"
+#include "support/FSProvider.h"
+#include "support/Function.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -304,14 +303,14 @@ public:
   void semanticHighlights(PathRef File,
                           Callback<std::vector<HighlightingToken>>);
 
-  /// Returns estimated memory usage for each of the currently open files.
-  /// The order of results is unspecified.
+  /// Returns estimated memory usage and other statistics for each of the
+  /// currently open files.
   /// Overall memory usage of clangd may be significantly more than reported
   /// here, as this metric does not account (at least) for:
   ///   - memory occupied by static and dynamic index,
   ///   - memory required for in-flight requests,
   /// FIXME: those metrics might be useful too, we should add them.
-  std::vector<std::pair<Path, std::size_t>> getUsedBytesPerFile() const;
+  llvm::StringMap<TUScheduler::FileStats> fileStats() const;
 
   // Blocks the main thread until the server is idle. Only for use in tests.
   // Returns false if the timeout expires.

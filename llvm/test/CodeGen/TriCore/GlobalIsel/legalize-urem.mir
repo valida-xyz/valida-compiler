@@ -107,16 +107,14 @@ body:     |
     ; CHECK: [[COPY4:%[0-9]+]]:_(s64) = COPY $e2
     ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
     ; CHECK: [[UV8:%[0-9]+]]:_(s32), [[UV9:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY4]](s64)
-    ; CHECK: [[UV10:%[0-9]+]]:_(s32), [[UV11:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[MV1]](s64)
-    ; CHECK: [[MUL:%[0-9]+]]:_(s32) = G_MUL [[UV8]], [[UV10]]
-    ; CHECK: [[MUL1:%[0-9]+]]:_(s32) = G_MUL [[UV9]], [[UV10]]
-    ; CHECK: [[MUL2:%[0-9]+]]:_(s32) = G_MUL [[UV8]], [[UV11]]
-    ; CHECK: [[UMULH:%[0-9]+]]:_(s32) = G_UMULH [[UV8]], [[UV10]]
+    ; CHECK: [[MUL:%[0-9]+]]:_(s32) = G_MUL [[UV8]], [[AND2]]
+    ; CHECK: [[MUL1:%[0-9]+]]:_(s32) = G_MUL [[UV9]], [[AND2]]
+    ; CHECK: [[MUL2:%[0-9]+]]:_(s32) = G_MUL [[UV8]], [[AND3]]
+    ; CHECK: [[UMULH:%[0-9]+]]:_(s32) = G_UMULH [[UV8]], [[AND2]]
     ; CHECK: [[ADD:%[0-9]+]]:_(s32) = G_ADD [[MUL1]], [[MUL2]]
     ; CHECK: [[ADD1:%[0-9]+]]:_(s32) = G_ADD [[ADD]], [[UMULH]]
-    ; CHECK: [[UV12:%[0-9]+]]:_(s32), [[UV13:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[MV]](s64)
-    ; CHECK: [[USUBO:%[0-9]+]]:_(s32), [[USUBO1:%[0-9]+]]:_(s1) = G_USUBO [[UV12]], [[MUL]]
-    ; CHECK: [[USUBE:%[0-9]+]]:_(s32), [[USUBE1:%[0-9]+]]:_(s1) = G_USUBE [[UV13]], [[ADD1]], [[USUBO1]]
+    ; CHECK: [[USUBO:%[0-9]+]]:_(s32), [[USUBO1:%[0-9]+]]:_(s1) = G_USUBO [[AND]], [[MUL]]
+    ; CHECK: [[USUBE:%[0-9]+]]:_(s32), [[USUBE1:%[0-9]+]]:_(s1) = G_USUBE [[AND1]], [[ADD1]], [[USUBO1]]
     ; CHECK: [[MV2:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[USUBO]](s32), [[USUBE]](s32)
     ; CHECK: [[COPY5:%[0-9]+]]:_(s64) = COPY [[MV2]](s64)
     ; CHECK: $e2 = COPY [[COPY5]](s64)

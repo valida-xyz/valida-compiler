@@ -864,6 +864,7 @@ bool GCNPassConfig::addPreISel() {
   addPass(&AMDGPUUnifyDivergentExitNodesID);
   if (!LateCFGStructurize) {
     if (EnableStructurizerWorkarounds) {
+      addPass(createFixIrreduciblePass());
       addPass(createUnifyLoopExitsPass());
     }
     addPass(createStructurizeCFGPass(false)); // true -> SkipUniformRegions
@@ -915,6 +916,12 @@ bool GCNPassConfig::addInstSelector() {
   AMDGPUPassConfig::addInstSelector();
   addPass(&SIFixSGPRCopiesID);
   addPass(createSILowerI1CopiesPass());
+  // TODO: We have to add FinalizeISel
+  // to expand V_ADD/SUB_U64_PSEUDO before SIFixupVectorISel
+  // that expects V_ADD/SUB -> A_ADDC/SUBB pairs expanded.
+  // Will be removed as soon as SIFixupVectorISel is changed
+  // to work with V_ADD/SUB_U64_PSEUDO instead.
+  addPass(&FinalizeISelID);
   addPass(createSIFixupVectorISelPass());
   addPass(createSIAddIMGInitPass());
   return false;
@@ -1068,8 +1075,7 @@ bool GCNTargetMachine::parseMachineFunctionInfo(
   MFI->initializeBaseYamlFields(YamlMFI);
 
   auto parseRegister = [&](const yaml::StringValue &RegName, Register &RegVal) {
-    // FIXME: Update parseNamedRegsiterReference to take a Register.
-    unsigned TempReg;
+    Register TempReg;
     if (parseNamedRegisterReference(PFS, TempReg, RegName.Value, Error)) {
       SourceRange = RegName.SourceRange;
       return true;
@@ -1120,7 +1126,7 @@ bool GCNTargetMachine::parseMachineFunctionInfo(
       return false;
 
     if (A->IsRegister) {
-      unsigned Reg;
+      Register Reg;
       if (parseNamedRegisterReference(PFS, Reg, A->RegisterName.Value, Error)) {
         SourceRange = A->RegisterName.SourceRange;
         return true;

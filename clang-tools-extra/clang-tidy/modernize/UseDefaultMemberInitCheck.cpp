@@ -186,8 +186,8 @@ static bool sameValue(const Expr *E1, const Expr *E2) {
 UseDefaultMemberInitCheck::UseDefaultMemberInitCheck(StringRef Name,
                                                      ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context),
-      UseAssignment(Options.get("UseAssignment", 0) != 0),
-      IgnoreMacros(Options.getLocalOrGlobal("IgnoreMacros", true) != 0) {}
+      UseAssignment(Options.get("UseAssignment", false)),
+      IgnoreMacros(Options.getLocalOrGlobal("IgnoreMacros", true)) {}
 
 void UseDefaultMemberInitCheck::storeOptions(
     ClangTidyOptions::OptionMap &Opts) {
@@ -217,7 +217,7 @@ void UseDefaultMemberInitCheck::registerMatchers(MatchFinder *Finder) {
           isDefaultConstructor(), unless(isInstantiated()),
           forEachConstructorInitializer(
               cxxCtorInitializer(
-                  forField(unless(anyOf(getLangOpts().CPlusPlus2a
+                  forField(unless(anyOf(getLangOpts().CPlusPlus20
                                             ? unless(anything())
                                             : isBitField(),
                                         hasInClassInitializer(anything()),

@@ -30,7 +30,7 @@ class SPV_GroupNonUniformArithmeticOp<string mnemonic, Type type,
     SPV_ScopeAttr:$execution_scope,
     SPV_GroupOperationAttr:$group_operation,
     SPV_ScalarOrVectorOf<type>:$value,
-    SPV_Optional<SPV_Integer>:$cluster_size
+    Optional<SPV_Integer>:$cluster_size
   );
 
   let results = (outs
@@ -147,7 +147,7 @@ def SPV_GroupNonUniformElectOp : SPV_Op<"GroupNonUniformElect", []> {
   );
 
   let builders = [
-    OpBuilder<[{Builder *builder, OperationState &state, spirv::Scope}]>
+    OpBuilder<[{OpBuilder &builder, OperationState &state, spirv::Scope}]>
   ];
 
   let assemblyFormat = "$execution_scope attr-dict `:` type($result)";

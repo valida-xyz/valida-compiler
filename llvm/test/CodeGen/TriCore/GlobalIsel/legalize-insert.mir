@@ -272,34 +272,3 @@ body:             |
     %3:_(s64) = G_INSERT %0, %2, 0
     $e4 = COPY %3
 ...
-
----
-name:            insert_s80_s8
-body:             |
-  bb.0:
-    liveins: $d4, $e4
-
-    ; CHECK-LABEL: name: insert_s80_s8
-    ; CHECK: [[COPY:%[0-9]+]]:_(s64) = COPY $e4
-    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d4
-    ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY]](s64)
-    ; CHECK: [[DEF:%[0-9]+]]:_(s64) = G_IMPLICIT_DEF
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[DEF]](s64)
-    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s32) = G_TRUNC [[DEF]](s64)
-    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
-    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
-    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[C]]
-    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 -256
-    ; CHECK: [[AND1:%[0-9]+]]:_(s32) = G_AND [[TRUNC1]], [[C1]]
-    ; CHECK: [[OR:%[0-9]+]]:_(s32) = G_OR [[AND1]], [[AND]]
-    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[OR]](s32)
-    ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[UV]](s32), [[TRUNC]](s32)
-    ; CHECK: $e4 = COPY [[MV]](s64)
-    %0:_(s64) = COPY $e4
-    %1:_(s32) = COPY $d4
-    %2:_(s80) = G_ANYEXT %0
-    %3:_(s8) = G_TRUNC %1
-    %4:_(s80) = G_INSERT %2, %3, 64
-    %5:_(s64) = G_TRUNC %4
-    $e4 = COPY %5
-...

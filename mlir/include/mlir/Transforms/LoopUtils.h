@@ -38,12 +38,17 @@ LogicalResult loopUnrollFull(AffineForOp forOp);
 
 /// Unrolls this for operation by the specified unroll factor. Returns failure
 /// if the loop cannot be unrolled either due to restrictions or due to invalid
-/// unroll factors.
+/// unroll factors. Requires positive loop bounds and step.
 LogicalResult loopUnrollByFactor(AffineForOp forOp, uint64_t unrollFactor);
+LogicalResult loopUnrollByFactor(loop::ForOp forOp, uint64_t unrollFactor);
 
 /// Unrolls this loop by the specified unroll factor or its trip count,
 /// whichever is lower.
 LogicalResult loopUnrollUpToFactor(AffineForOp forOp, uint64_t unrollFactor);
+
+/// Returns true if `loops` is a perfectly nested loop nest, where loops appear
+/// in it from outermost to innermost.
+bool LLVM_ATTRIBUTE_UNUSED isPerfectlyNested(ArrayRef<AffineForOp> loops);
 
 /// Get perfectly nested sequence of loops starting at root of loop nest
 /// (the first op being another AffineFor, and the second op - a terminator).
@@ -64,9 +69,10 @@ LogicalResult loopUnrollJamByFactor(AffineForOp forOp,
 LogicalResult loopUnrollJamUpToFactor(AffineForOp forOp,
                                       uint64_t unrollJamFactor);
 
-/// Promotes the loop body of a AffineForOp to its containing block if the
-/// AffineForOp was known to have a single iteration.
+/// Promotes the loop body of a AffineForOp/loop::ForOp to its containing block
+/// if the loop was known to have a single iteration.
 LogicalResult promoteIfSingleIteration(AffineForOp forOp);
+LogicalResult promoteIfSingleIteration(loop::ForOp forOp);
 
 /// Promotes all single iteration AffineForOp's in the Function, i.e., moves
 /// their body into the containing Block.
@@ -84,10 +90,12 @@ LogicalResult affineForOpBodySkew(AffineForOp forOp, ArrayRef<uint64_t> shifts,
 /// Tiles the specified band of perfectly nested loops creating tile-space loops
 /// and intra-tile loops. A band is a contiguous set of loops. `tiledNest` when
 /// non-null is set to the loops of the tiled nest from outermost to innermost.
+/// Loops in `input` are erased when the tiling is successful.
 LLVM_NODISCARD
-LogicalResult tileCodeGen(MutableArrayRef<AffineForOp> band,
-                          ArrayRef<unsigned> tileSizes,
-                          SmallVectorImpl<AffineForOp> *tiledNest = nullptr);
+LogicalResult
+tilePerfectlyNested(MutableArrayRef<AffineForOp> input,
+                    ArrayRef<unsigned> tileSizes,
+                    SmallVectorImpl<AffineForOp> *tiledNest = nullptr);
 
 /// Performs loop interchange on 'forOpA' and 'forOpB'. Requires that 'forOpA'
 /// and 'forOpB' are part of a perfectly nested sequence of loops.

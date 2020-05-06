@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/SPIRV/Serialization.h"
 
-#include "mlir/ADT/TypeSwitch.h"
 #include "mlir/Dialect/SPIRV/SPIRVAttributes.h"
 #include "mlir/Dialect/SPIRV/SPIRVBinaryUtils.h"
 #include "mlir/Dialect/SPIRV/SPIRVDialect.h"
@@ -21,11 +20,12 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/RegionGraphTraits.h"
 #include "mlir/Support/LogicalResult.h"
-#include "mlir/Support/StringExtras.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -41,7 +41,7 @@ static LogicalResult encodeInstructionInto(SmallVectorImpl<uint32_t> &binary,
                                            ArrayRef<uint32_t> operands) {
   uint32_t wordCount = 1 + operands.size();
   binary.push_back(spirv::getPrefixedOpcode(wordCount, op));
-    binary.append(operands.begin(), operands.end());
+  binary.append(operands.begin(), operands.end());
   return success();
 }
 
@@ -132,7 +132,7 @@ namespace {
 class Serializer {
 public:
   /// Creates a serializer for the given SPIR-V `module`.
-  explicit Serializer(spirv::ModuleOp module);
+  explicit Serializer(spirv::ModuleOp module, bool emitDebugInfo = false);
 
   /// Serializes the remembered SPIR-V module.
   LogicalResult serialize();
@@ -189,6 +189,8 @@ private:
 
   void processCapability();
 
+  void processDebugInfo();
+
   void processExtension();
 
   void processMemoryModel();
@@ -239,8 +241,8 @@ private:
 
   bool isVoidType(Type type) const { return type.isa<NoneType>(); }
 
-  /// Returns true if the given type is a pointer type to a struct in Uniform or
-  /// StorageBuffer storage class.
+  /// Returns true if the given type is a pointer type to a struct in some
+  /// interface storage class.
   bool isInterfaceStructPtrType(Type type) const;
 
   /// Main dispatch method for serializing a type. The result <id> of the
@@ -375,12 +377,23 @@ private:
   LogicalResult emitDecoration(uint32_t target, spirv::Decoration decoration,
                                ArrayRef<uint32_t> params = {});
 
+  /// Emits an OpLine instruction with the given `loc` location information into
+  /// the given `binary` vector.
+  LogicalResult emitDebugLine(SmallVectorImpl<uint32_t> &binary, Location loc);
+
 private:
   /// The SPIR-V module to be serialized.
   spirv::ModuleOp module;
 
   /// An MLIR builder for getting MLIR constructs.
   mlir::Builder mlirBuilder;
+
+  /// A flag which indicates if the debuginfo should be emitted.
+  bool emitDebugInfo = false;
+
+  /// The <id> of the OpString instruction, which specifies a file name, for
+  /// use by other debug instructions.
+  uint32_t fileID = 0;
 
   /// The next available result <id>.
   uint32_t nextID = 1;
@@ -394,7 +407,7 @@ private:
   SmallVector<uint32_t, 3> memoryModel;
   SmallVector<uint32_t, 0> entryPoints;
   SmallVector<uint32_t, 4> executionModes;
-  // TODO(antiagainst): debug instructions
+  SmallVector<uint32_t, 0> debug;
   SmallVector<uint32_t, 0> names;
   SmallVector<uint32_t, 0> decorations;
   SmallVector<uint32_t, 0> typesGlobalValues;
@@ -482,8 +495,9 @@ private:
 };
 } // namespace
 
-Serializer::Serializer(spirv::ModuleOp module)
-    : module(module), mlirBuilder(module.getContext()) {}
+Serializer::Serializer(spirv::ModuleOp module, bool emitDebugInfo)
+    : module(module), mlirBuilder(module.getContext()),
+      emitDebugInfo(emitDebugInfo) {}
 
 LogicalResult Serializer::serialize() {
   LLVM_DEBUG(llvm::dbgs() << "+++ starting serialization +++\n");
@@ -495,6 +509,7 @@ LogicalResult Serializer::serialize() {
   processCapability();
   processExtension();
   processMemoryModel();
+  processDebugInfo();
 
   // Iterate over the module body to serialize it. Assumptions are that there is
   // only one basic block in the moduleOp
@@ -525,6 +540,7 @@ void Serializer::collect(SmallVectorImpl<uint32_t> &binary) {
   binary.append(memoryModel.begin(), memoryModel.end());
   binary.append(entryPoints.begin(), entryPoints.end());
   binary.append(executionModes.begin(), executionModes.end());
+  binary.append(debug.begin(), debug.end());
   binary.append(names.begin(), names.end());
   binary.append(decorations.begin(), decorations.end());
   binary.append(typesGlobalValues.begin(), typesGlobalValues.end());
@@ -567,6 +583,19 @@ void Serializer::processCapability() {
   for (auto cap : module.vce_triple()->getCapabilities())
     encodeInstructionInto(capabilities, spirv::Opcode::OpCapability,
                           {static_cast<uint32_t>(cap)});
+}
+
+void Serializer::processDebugInfo() {
+  if (!emitDebugInfo)
+    return;
+  auto fileLoc = module.getLoc().dyn_cast<FileLineColLoc>();
+  auto fileName = fileLoc ? fileLoc.getFilename() : "<unknown>";
+  fileID = getNextID();
+  SmallVector<uint32_t, 16> operands;
+  operands.push_back(fileID);
+  spirv::encodeStringLiteralInto(operands, fileName);
+  encodeInstructionInto(debug, spirv::Opcode::OpString, operands);
+  // TODO: Encode more debug instructions.
 }
 
 void Serializer::processExtension() {
@@ -627,7 +656,7 @@ LogicalResult Serializer::processUndefOp(spirv::UndefOp op) {
 LogicalResult Serializer::processDecoration(Location loc, uint32_t resultID,
                                             NamedAttribute attr) {
   auto attrName = attr.first.strref();
-  auto decorationName = mlir::convertToCamelCase(attrName, true);
+  auto decorationName = llvm::convertToCamelFromSnakeCase(attrName, true);
   auto decoration = spirv::symbolizeDecoration(decorationName);
   if (!decoration) {
     return emitError(
@@ -676,10 +705,19 @@ namespace {
 template <>
 LogicalResult Serializer::processTypeDecoration<spirv::ArrayType>(
     Location loc, spirv::ArrayType type, uint32_t resultID) {
-  if (type.hasLayout()) {
+  if (unsigned stride = type.getArrayStride()) {
     // OpDecorate %arrayTypeSSA ArrayStride strideLiteral
-    return emitDecoration(resultID, spirv::Decoration::ArrayStride,
-                          {static_cast<uint32_t>(type.getArrayStride())});
+    return emitDecoration(resultID, spirv::Decoration::ArrayStride, {stride});
+  }
+  return success();
+}
+
+template <>
+LogicalResult Serializer::processTypeDecoration<spirv::RuntimeArrayType>(
+    Location Loc, spirv::RuntimeArrayType type, uint32_t resultID) {
+  if (unsigned stride = type.getArrayStride()) {
+    // OpDecorate %arrayTypeSSA ArrayStride strideLiteral
+    return emitDecoration(resultID, spirv::Decoration::ArrayStride, {stride});
   }
   return success();
 }
@@ -818,7 +856,7 @@ LogicalResult Serializer::processVariableOp(spirv::VariableOp op) {
                         operands);
   for (auto attr : op.getAttrs()) {
     if (llvm::any_of(elidedAttrs,
-                     [&](StringRef elided) { return attr.first.is(elided); })) {
+                     [&](StringRef elided) { return attr.first == elided; })) {
       continue;
     }
     if (failed(processDecoration(op.getLoc(), resultID, attr))) {
@@ -886,7 +924,7 @@ Serializer::processGlobalVariableOp(spirv::GlobalVariableOp varOp) {
   // Encode decorations.
   for (auto attr : varOp.getAttrs()) {
     if (llvm::any_of(elidedAttrs,
-                     [&](StringRef elided) { return attr.first.is(elided); })) {
+                     [&](StringRef elided) { return attr.first == elided; })) {
       continue;
     }
     if (failed(processDecoration(varOp.getLoc(), resultID, attr))) {
@@ -900,12 +938,19 @@ Serializer::processGlobalVariableOp(spirv::GlobalVariableOp varOp) {
 // Type
 //===----------------------------------------------------------------------===//
 
+// According to the SPIR-V spec "Validation Rules for Shader Capabilities":
+// "Composite objects in the StorageBuffer, PhysicalStorageBuffer, Uniform, and
+// PushConstant Storage Classes must be explicitly laid out."
 bool Serializer::isInterfaceStructPtrType(Type type) const {
   if (auto ptrType = type.dyn_cast<spirv::PointerType>()) {
-    auto storageClass = ptrType.getStorageClass();
-    if (storageClass == spirv::StorageClass::Uniform ||
-        storageClass == spirv::StorageClass::StorageBuffer) {
+    switch (ptrType.getStorageClass()) {
+    case spirv::StorageClass::PhysicalStorageBuffer:
+    case spirv::StorageClass::PushConstant:
+    case spirv::StorageClass::StorageBuffer:
+    case spirv::StorageClass::Uniform:
       return ptrType.getPointeeType().isa<spirv::StructType>();
+    default:
+      break;
     }
   }
   return false;
@@ -1004,9 +1049,9 @@ Serializer::prepareBasicType(Location loc, Type type, uint32_t resultID,
                            elementTypeID))) {
       return failure();
     }
-    operands.push_back(elementTypeID);
     typeEnum = spirv::Opcode::OpTypeRuntimeArray;
-    return success();
+    operands.push_back(elementTypeID);
+    return processTypeDecoration(loc, runtimeArrayType, resultID);
   }
 
   if (auto structType = type.dyn_cast<spirv::StructType>()) {
@@ -1822,13 +1867,26 @@ LogicalResult Serializer::emitDecoration(uint32_t target,
   return success();
 }
 
+LogicalResult Serializer::emitDebugLine(SmallVectorImpl<uint32_t> &binary,
+                                        Location loc) {
+  if (!emitDebugInfo)
+    return success();
+
+  auto fileLoc = loc.dyn_cast<FileLineColLoc>();
+  if (fileLoc)
+    encodeInstructionInto(binary, spirv::Opcode::OpLine,
+                          {fileID, fileLoc.getLine(), fileLoc.getColumn()});
+  return success();
+}
+
 LogicalResult spirv::serialize(spirv::ModuleOp module,
-                               SmallVectorImpl<uint32_t> &binary) {
+                               SmallVectorImpl<uint32_t> &binary,
+                               bool emitDebugInfo) {
   if (!module.vce_triple().hasValue())
     return module.emitError(
         "module must have 'vce_triple' attribute to be serializeable");
 
-  Serializer serializer(module);
+  Serializer serializer(module, emitDebugInfo);
 
   if (failed(serializer.serialize()))
     return failure();

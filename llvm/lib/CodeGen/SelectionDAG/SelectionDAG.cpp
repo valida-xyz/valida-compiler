@@ -2276,14 +2276,41 @@ bool SelectionDAG::MaskedValueIsAllOnes(SDValue V, const APInt &Mask,
 }
 
 /// isSplatValue - Return true if the vector V has the same value
-/// across all DemandedElts.
+/// across all DemandedElts. For scalable vectors it does not make
+/// sense to specify which elements are demanded or undefined, therefore
+/// they are simply ignored.
 bool SelectionDAG::isSplatValue(SDValue V, const APInt &DemandedElts,
                                 APInt &UndefElts) {
-  if (!DemandedElts)
-    return false; // No demanded elts, better to assume we don't know anything.
-
   EVT VT = V.getValueType();
   assert(VT.isVector() && "Vector type expected");
+
+  if (!VT.isScalableVector() && !DemandedElts)
+    return false; // No demanded elts, better to assume we don't know anything.
+
+  // Deal with some common cases here that work for both fixed and scalable
+  // vector types.
+  switch (V.getOpcode()) {
+  case ISD::SPLAT_VECTOR:
+    return true;
+  case ISD::ADD:
+  case ISD::SUB:
+  case ISD::AND: {
+    APInt UndefLHS, UndefRHS;
+    SDValue LHS = V.getOperand(0);
+    SDValue RHS = V.getOperand(1);
+    if (isSplatValue(LHS, DemandedElts, UndefLHS) &&
+        isSplatValue(RHS, DemandedElts, UndefRHS)) {
+      UndefElts = UndefLHS | UndefRHS;
+      return true;
+    }
+    break;
+  }
+  }
+
+  // We don't support other cases than those above for scalable vectors at
+  // the moment.
+  if (VT.isScalableVector())
+    return false;
 
   unsigned NumElts = VT.getVectorNumElements();
   assert(NumElts == DemandedElts.getBitWidth() && "Vector size mismatch");
@@ -2341,19 +2368,6 @@ bool SelectionDAG::isSplatValue(SDValue V, const APInt &DemandedElts,
     }
     break;
   }
-  case ISD::ADD:
-  case ISD::SUB:
-  case ISD::AND: {
-    APInt UndefLHS, UndefRHS;
-    SDValue LHS = V.getOperand(0);
-    SDValue RHS = V.getOperand(1);
-    if (isSplatValue(LHS, DemandedElts, UndefLHS) &&
-        isSplatValue(RHS, DemandedElts, UndefRHS)) {
-      UndefElts = UndefLHS | UndefRHS;
-      return true;
-    }
-    break;
-  }
   }
 
   return false;
@@ -2363,10 +2377,13 @@ bool SelectionDAG::isSplatValue(SDValue V, const APInt &DemandedElts,
 bool SelectionDAG::isSplatValue(SDValue V, bool AllowUndefs) {
   EVT VT = V.getValueType();
   assert(VT.isVector() && "Vector type expected");
-  unsigned NumElts = VT.getVectorNumElements();
 
   APInt UndefElts;
-  APInt DemandedElts = APInt::getAllOnesValue(NumElts);
+  APInt DemandedElts;
+
+  // For now we don't support this with scalable vectors.
+  if (!VT.isScalableVector())
+    DemandedElts = APInt::getAllOnesValue(VT.getVectorNumElements());
   return isSplatValue(V, DemandedElts, UndefElts) &&
          (AllowUndefs || !UndefElts);
 }
@@ -2379,19 +2396,35 @@ SDValue SelectionDAG::getSplatSourceVector(SDValue V, int &SplatIdx) {
   switch (Opcode) {
   default: {
     APInt UndefElts;
-    APInt DemandedElts = APInt::getAllOnesValue(VT.getVectorNumElements());
+    APInt DemandedElts;
+
+    if (!VT.isScalableVector())
+      DemandedElts = APInt::getAllOnesValue(VT.getVectorNumElements());
+
     if (isSplatValue(V, DemandedElts, UndefElts)) {
-      // Handle case where all demanded elements are UNDEF.
-      if (DemandedElts.isSubsetOf(UndefElts)) {
+      if (VT.isScalableVector()) {
+        // DemandedElts and UndefElts are ignored for scalable vectors, since
+        // the only supported cases are SPLAT_VECTOR nodes.
         SplatIdx = 0;
-        return getUNDEF(VT);
+      } else {
+        // Handle case where all demanded elements are UNDEF.
+        if (DemandedElts.isSubsetOf(UndefElts)) {
+          SplatIdx = 0;
+          return getUNDEF(VT);
+        }
+        SplatIdx = (UndefElts & DemandedElts).countTrailingOnes();
       }
-      SplatIdx = (UndefElts & DemandedElts).countTrailingOnes();
       return V;
     }
     break;
   }
+  case ISD::SPLAT_VECTOR:
+    SplatIdx = 0;
+    return V;
   case ISD::VECTOR_SHUFFLE: {
+    if (VT.isScalableVector())
+      return SDValue();
+
     // Check if this is a shuffle node doing a splat.
     // TODO - remove this and rely purely on SelectionDAG::isSplatValue,
     // getTargetVShiftNode currently struggles without the splat source.
@@ -2757,35 +2790,23 @@ KnownBits SelectionDAG::computeKnownBits(SDValue Op, const APInt &DemandedElts,
     break;
   }
   case ISD::AND:
-    // If either the LHS or the RHS are Zero, the result is zero.
     Known = computeKnownBits(Op.getOperand(1), DemandedElts, Depth + 1);
     Known2 = computeKnownBits(Op.getOperand(0), DemandedElts, Depth + 1);
 
-    // Output known-1 bits are only known if set in both the LHS & RHS.
-    Known.One &= Known2.One;
-    // Output known-0 are known to be clear if zero in either the LHS | RHS.
-    Known.Zero |= Known2.Zero;
+    Known &= Known2;
     break;
   case ISD::OR:
     Known = computeKnownBits(Op.getOperand(1), DemandedElts, Depth + 1);
     Known2 = computeKnownBits(Op.getOperand(0), DemandedElts, Depth + 1);
 
-    // Output known-0 bits are only known if clear in both the LHS & RHS.
-    Known.Zero &= Known2.Zero;
-    // Output known-1 are known to be set if set in either the LHS | RHS.
-    Known.One |= Known2.One;
+    Known |= Known2;
     break;
-  case ISD::XOR: {
+  case ISD::XOR:
     Known = computeKnownBits(Op.getOperand(1), DemandedElts, Depth + 1);
     Known2 = computeKnownBits(Op.getOperand(0), DemandedElts, Depth + 1);
 
-    // Output known-0 bits are known if clear or set in both the LHS & RHS.
-    APInt KnownZeroOut = (Known.Zero & Known2.Zero) | (Known.One & Known2.One);
-    // Output known-1 are known to be set if set in only one of the LHS, RHS.
-    Known.One = (Known.Zero & Known2.One) | (Known.One & Known2.Zero);
-    Known.Zero = KnownZeroOut;
+    Known ^= Known2;
     break;
-  }
   case ISD::MUL: {
     Known = computeKnownBits(Op.getOperand(1), DemandedElts, Depth + 1);
     Known2 = computeKnownBits(Op.getOperand(0), DemandedElts, Depth + 1);
@@ -4252,6 +4273,8 @@ static SDValue FoldBUILD_VECTOR(const SDLoc &DL, EVT VT,
                                 SelectionDAG &DAG) {
   int NumOps = Ops.size();
   assert(NumOps != 0 && "Can't build an empty vector!");
+  assert(!VT.isScalableVector() &&
+         "BUILD_VECTOR cannot be used with scalable types");
   assert(VT.getVectorNumElements() == (unsigned)NumOps &&
          "Incorrect element count in BUILD_VECTOR!");
 
@@ -5625,8 +5648,11 @@ SDValue SelectionDAG::getNode(unsigned Opcode, const SDLoc &DL, EVT VT,
     llvm_unreachable("should use getVectorShuffle constructor!");
   case ISD::INSERT_VECTOR_ELT: {
     ConstantSDNode *N3C = dyn_cast<ConstantSDNode>(N3);
-    // INSERT_VECTOR_ELT into out-of-bounds element is an UNDEF
-    if (N3C && N3C->getZExtValue() >= N1.getValueType().getVectorNumElements())
+    // INSERT_VECTOR_ELT into out-of-bounds element is an UNDEF, except
+    // for scalable vectors where we will generate appropriate code to
+    // deal with out-of-bounds cases correctly.
+    if (N3C && N1.getValueType().isFixedLengthVector() &&
+        N3C->getZExtValue() >= N1.getValueType().getVectorNumElements())
       return getUNDEF(VT);
 
     // Undefined index can be assumed out-of-bounds, so that's UNDEF too.
@@ -9470,6 +9496,37 @@ std::pair<EVT, EVT> SelectionDAG::GetSplitDestVTs(const EVT &VT) const {
   else
     LoVT = HiVT = VT.getHalfNumVectorElementsVT(*getContext());
 
+  return std::make_pair(LoVT, HiVT);
+}
+
+/// GetDependentSplitDestVTs - Compute the VTs needed for the low/hi parts of a
+/// type, dependent on an enveloping VT that has been split into two identical
+/// pieces. Sets the HiIsEmpty flag when hi type has zero storage size.
+std::pair<EVT, EVT>
+SelectionDAG::GetDependentSplitDestVTs(const EVT &VT, const EVT &EnvVT,
+                                       bool *HiIsEmpty) const {
+  EVT EltTp = VT.getVectorElementType();
+  bool IsScalable = VT.isScalableVector();
+  // Examples:
+  //   custom VL=8  with enveloping VL=8/8 yields 8/0 (hi empty)
+  //   custom VL=9  with enveloping VL=8/8 yields 8/1
+  //   custom VL=10 with enveloping VL=8/8 yields 8/2
+  //   etc.
+  unsigned VTNumElts = VT.getVectorNumElements();
+  unsigned EnvNumElts = EnvVT.getVectorNumElements();
+  EVT LoVT, HiVT;
+  if (VTNumElts > EnvNumElts) {
+    LoVT = EnvVT;
+    HiVT = EVT::getVectorVT(*getContext(), EltTp, VTNumElts - EnvNumElts,
+                            IsScalable);
+    *HiIsEmpty = false;
+  } else {
+    // Flag that hi type has zero storage size, but return split envelop type
+    // (this would be easier if vector types with zero elements were allowed).
+    LoVT = EVT::getVectorVT(*getContext(), EltTp, VTNumElts, IsScalable);
+    HiVT = EnvVT;
+    *HiIsEmpty = true;
+  }
   return std::make_pair(LoVT, HiVT);
 }
 

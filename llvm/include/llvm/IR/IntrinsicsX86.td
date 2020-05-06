@@ -284,7 +284,7 @@ let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
   def int_x86_sse_ldmxcsr :
               Intrinsic<[], [llvm_ptr_ty],
                         [IntrReadMem, IntrArgMemOnly, IntrHasSideEffects,
-                         // FIXME: LDMXCSR does not actualy write to memory,
+                         // FIXME: LDMXCSR does not actually write to memory,
                          // but Fast and DAG Isel both use writing to memory
                          // as a proxy for having side effects.
                          IntrWriteMem]>;
@@ -4936,5 +4936,15 @@ let TargetPrefix = "x86" in {
 
 let TargetPrefix = "x86" in {
   def int_x86_serialize : GCCBuiltin<"__builtin_ia32_serialize">,
+              Intrinsic<[], [], []>;
+}
+
+//===----------------------------------------------------------------------===//
+// TSXLDTRK - TSX Suspend Load Address Tracking
+
+let TargetPrefix = "x86" in {
+  def int_x86_xsusldtrk : GCCBuiltin<"__builtin_ia32_xsusldtrk">,
+              Intrinsic<[], [], []>;
+  def int_x86_xresldtrk : GCCBuiltin<"__builtin_ia32_xresldtrk">,
               Intrinsic<[], [], []>;
 }

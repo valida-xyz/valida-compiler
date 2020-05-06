@@ -1570,6 +1570,9 @@ void Driver::PrintVersion(const Compilation &C, raw_ostream &OS) const {
   // If configuration file was used, print its path.
   if (!ConfigFile.empty())
     OS << "Configuration file: " << ConfigFile << '\n';
+
+  // Print the registered targets.
+  llvm::TargetRegistry::printRegisteredTargetsForVersion(OS);
 }
 
 /// PrintDiagnosticCategories - Implement the --print-diagnostic-categories
@@ -4858,6 +4861,8 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
       TC = std::make_unique<toolchains::Solaris>(*this, Target, Args);
       break;
     case llvm::Triple::AMDHSA:
+      TC = std::make_unique<toolchains::ROCMToolChain>(*this, Target, Args);
+      break;
     case llvm::Triple::AMDPAL:
     case llvm::Triple::Mesa3D:
       TC = std::make_unique<toolchains::AMDGPUToolChain>(*this, Target, Args);

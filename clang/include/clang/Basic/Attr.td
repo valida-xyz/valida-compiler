@@ -174,12 +174,10 @@ class IdentifierArgument<string name, bit opt = 0> : Argument<name, opt>;
 class IntArgument<string name, bit opt = 0> : Argument<name, opt>;
 class StringArgument<string name, bit opt = 0> : Argument<name, opt>;
 class ExprArgument<string name, bit opt = 0> : Argument<name, opt>;
-class FunctionArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
-                                                                          opt,
-                                                                          fake>;
-class NamedArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
-                                                                       opt,
-                                                                       fake>;
+class DeclArgument<DeclNode kind, string name, bit opt = 0, bit fake = 0>
+    : Argument<name, opt, fake> {
+  DeclNode Kind = kind;
+}
 
 // An argument of a OMPDeclareVariantAttr that represents the `match`
 // clause of the declare variant by keeping the information (incl. nesting) in
@@ -443,6 +441,7 @@ def SubjectMatcherForEnumConstant : AttrSubjectMatcherRule<"enum_constant",
 def SubjectMatcherForVar : AttrSubjectMatcherRule<"variable", [Var], [
   AttrSubjectMatcherSubRule<"is_thread_local", [TLSVar]>,
   AttrSubjectMatcherSubRule<"is_global", [GlobalVar]>,
+  AttrSubjectMatcherSubRule<"is_local", [LocalVar]>,
   AttrSubjectMatcherSubRule<"is_parameter", [ParmVar]>,
   // unless(is_parameter)
   AttrSubjectMatcherSubRule<"is_parameter", [NonParmVar], 1>
@@ -956,7 +955,7 @@ def OSConsumesThis : InheritableAttr {
 
 def Cleanup : InheritableAttr {
   let Spellings = [GCC<"cleanup">];
-  let Args = [FunctionArgument<"FunctionDecl">];
+  let Args = [DeclArgument<Function, "FunctionDecl">];
   let Subjects = SubjectList<[LocalVar]>;
   let Documentation = [Undocumented];
 }
@@ -2382,7 +2381,7 @@ def DiagnoseIf : InheritableAttr {
                            ["error", "warning"],
                            ["DT_Error", "DT_Warning"]>,
               BoolArgument<"ArgDependent", 0, /*fake*/ 1>,
-              NamedArgument<"Parent", 0, /*fake*/ 1>];
+              DeclArgument<Named, "Parent", 0, /*fake*/ 1>];
   let InheritEvenIfAlreadyPresent = 1;
   let LateParsed = 1;
   let AdditionalMembers = [{
@@ -2436,7 +2435,8 @@ def Used : InheritableAttr {
 
 def Uuid : InheritableAttr {
   let Spellings = [Declspec<"uuid">, Microsoft<"uuid">];
-  let Args = [StringArgument<"Guid">];
+  let Args = [StringArgument<"Guid">,
+              DeclArgument<MSGuid, "GuidDecl", 0, /*fake=*/1>];
   let Subjects = SubjectList<[Record, Enum]>;
   // FIXME: Allow expressing logical AND for LangOpts. Our condition should be:
   // CPlusPlus && (MicrosoftExt || Borland)
@@ -3382,6 +3382,7 @@ def NoSpeculativeLoadHardening : InheritableAttr {
 def Uninitialized : InheritableAttr {
   let Spellings = [Clang<"uninitialized", 0>];
   let Subjects = SubjectList<[LocalVar]>;
+  let PragmaAttributeSupport = 1;
   let Documentation = [UninitializedDocs];
 }
 

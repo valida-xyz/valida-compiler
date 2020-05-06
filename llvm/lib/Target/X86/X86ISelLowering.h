@@ -14,8 +14,6 @@
 #ifndef LLVM_LIB_TARGET_X86_X86ISELLOWERING_H
 #define LLVM_LIB_TARGET_X86_X86ISELLOWERING_H
 
-#include "llvm/CodeGen/CallingConvLower.h"
-#include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLowering.h"
 
 namespace llvm {
@@ -348,6 +346,9 @@ namespace llvm {
 
       // Zero High Bits Starting with Specified Bit Position.
       BZHI,
+
+      // Parallel extract and deposit.
+      PDEP, PEXT,
 
       // X86-specific multiply by immediate.
       MUL_IMM,
@@ -821,9 +822,9 @@ namespace llvm {
 
     /// If getNegatibleCost returns Neutral/Cheaper, return the newly negated
     /// expression.
-    SDValue getNegatedExpression(SDValue Op, SelectionDAG &DAG,
-                                 bool LegalOperations, bool ForCodeSize,
-                                 unsigned Depth) const override;
+    SDValue negateExpression(SDValue Op, SelectionDAG &DAG,
+                             bool LegalOperations, bool ForCodeSize,
+                             unsigned Depth) const override;
 
     MachineBasicBlock *
     EmitInstrWithCustomInserter(MachineInstr &MI,
@@ -1179,12 +1180,12 @@ namespace llvm {
 
     /// If a physical register, this returns the register that receives the
     /// exception address on entry to an EH pad.
-    unsigned
+    Register
     getExceptionPointerRegister(const Constant *PersonalityFn) const override;
 
     /// If a physical register, this returns the register that receives the
     /// exception typeid on entry to a landing pad.
-    unsigned
+    Register
     getExceptionSelectorRegister(const Constant *PersonalityFn) const override;
 
     virtual bool needsFixedCatchObjects() const override;
@@ -1456,9 +1457,6 @@ namespace llvm {
     MachineBasicBlock *EmitLoweredSelect(MachineInstr &I,
                                          MachineBasicBlock *BB) const;
 
-    MachineBasicBlock *EmitLoweredAtomicFP(MachineInstr &I,
-                                           MachineBasicBlock *BB) const;
-
     MachineBasicBlock *EmitLoweredCatchRet(MachineInstr &MI,
                                            MachineBasicBlock *BB) const;
 
@@ -1488,9 +1486,6 @@ namespace llvm {
 
     MachineBasicBlock *emitLongJmpShadowStackFix(MachineInstr &MI,
                                                  MachineBasicBlock *MBB) const;
-
-    MachineBasicBlock *emitFMA3Instr(MachineInstr &MI,
-                                     MachineBasicBlock *MBB) const;
 
     MachineBasicBlock *EmitSjLjDispatchBlock(MachineInstr &MI,
                                              MachineBasicBlock *MBB) const;

@@ -1,6 +1,6 @@
-// RUN: mlir-opt %s -split-input-file -affine-data-copy-generate -affine-data-copy-generate-dma=false -affine-data-copy-generate-fast-mem-space=0 -affine-data-copy-generate-skip-non-unit-stride-loops | FileCheck %s
+// RUN: mlir-opt %s -split-input-file -affine-data-copy-generate="generate-dma=false fast-mem-space=0 skip-non-unit-stride-loops" | FileCheck %s
 // Small buffer size to trigger fine copies.
-// RUN: mlir-opt %s -split-input-file -affine-data-copy-generate -affine-data-copy-generate-dma=false -affine-data-copy-generate-fast-mem-space=0 -affine-data-copy-generate-fast-mem-capacity=1 | FileCheck --check-prefix=CHECK-SMALL %s
+// RUN: mlir-opt %s -split-input-file -affine-data-copy-generate="generate-dma=false fast-mem-space=0 fast-mem-capacity=1" | FileCheck --check-prefix=CHECK-SMALL %s
 
 // Test affine data copy with a memref filter. We use a test pass that invokes
 // affine data copy utility on the input loop nest.
@@ -216,7 +216,7 @@ func @min_upper_bound(%A: memref<4096xf32>) -> memref<4096xf32> {
   return %A : memref<4096xf32>
 }
 // CHECK:      affine.for %[[IV1:.*]] = 0 to 4096 step 100
-// CHECK-NEXT:   %[[BUF:.*]] = alloc() : memref<100xf32>
+// CHECK:        %[[BUF:.*]] = alloc() : memref<100xf32>
 // CHECK-NEXT:   affine.for %[[IV2:.*]] = #[[MAP_IDENTITY]](%[[IV1]]) to min #[[MAP_MIN_UB1]](%[[IV1]]) {
 // CHECK-NEXT:     affine.load %{{.*}}[%[[IV2]]] : memref<4096xf32>
 // CHECK-NEXT:     affine.store %{{.*}}, %[[BUF]][-%[[IV1]] + %[[IV2]]] : memref<100xf32>
@@ -226,7 +226,7 @@ func @min_upper_bound(%A: memref<4096xf32>) -> memref<4096xf32> {
 // CHECK-NEXT:     mulf
 // CHECK-NEXT:     affine.store %{{.*}}, %[[BUF]][-%[[IV1]] + %[[IV2]]] : memref<100xf32>
 // CHECK-NEXT:   }
-// CHECK-NEXT:   affine.for %[[IV2:.*]] = #[[MAP_IDENTITY]](%[[IV1]]) to min #[[MAP_MIN_UB1]](%[[IV1]]) {
+// CHECK:        affine.for %[[IV2:.*]] = #[[MAP_IDENTITY]](%[[IV1]]) to min #[[MAP_MIN_UB1]](%[[IV1]]) {
 // CHECK-NEXT:     affine.load %[[BUF]][-%[[IV1]] + %[[IV2]]] : memref<100xf32>
 // CHECK-NEXT:     affine.store %{{.*}}, %{{.*}}[%[[IV2]]] : memref<4096xf32>
 // CHECK-NEXT:   }
@@ -239,8 +239,8 @@ func @min_upper_bound(%A: memref<4096xf32>) -> memref<4096xf32> {
 // with multi-level tiling when the tile sizes used don't divide loop trip
 // counts.
 
-#lb = affine_map<(d0, d1) -> (d0 * 512, d1 * 6)>
-#ub = affine_map<(d0, d1) -> (d0 * 512 + 512, d1 * 6 + 6)>
+#lb = affine_map<()[s0, s1] -> (s0 * 512, s1 * 6)>
+#ub = affine_map<()[s0, s1] -> (s0 * 512 + 512, s1 * 6 + 6)>
 
 // CHECK-DAG: #[[LB:.*]] = affine_map<()[s0, s1] -> (s0 * 512, s1 * 6)>
 // CHECK-DAG: #[[UB:.*]] = affine_map<()[s0, s1] -> (s0 * 512 + 512, s1 * 6 + 6)>
@@ -250,7 +250,7 @@ func @min_upper_bound(%A: memref<4096xf32>) -> memref<4096xf32> {
 // CHECK-SAME: [[j:arg[0-9]+]]
 func @max_lower_bound(%M: memref<2048x516xf64>, %i : index, %j : index) {
   affine.for %ii = 0 to 2048 {
-    affine.for %jj = max #lb(%i, %j) to min #ub(%i, %j) {
+    affine.for %jj = max #lb()[%i, %j] to min #ub()[%i, %j] {
       affine.load %M[%ii, %jj] : memref<2048x516xf64>
     }
   }

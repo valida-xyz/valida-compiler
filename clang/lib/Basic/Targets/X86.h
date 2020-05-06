@@ -125,6 +125,7 @@ class LLVM_LIBRARY_VISIBILITY X86TargetInfo : public TargetInfo {
   bool HasINVPCID = false;
   bool HasENQCMD = false;
   bool HasSERIALIZE = false;
+  bool HasTSXLDTRK = false;
 
 protected:
   /// Enumeration of all of the X86 CPUs supported by Clang.
@@ -434,6 +435,8 @@ public:
   }
 
   ArrayRef<Builtin::Info> getTargetBuiltins() const override;
+
+  bool hasExtIntType() const override { return true; }
 };
 
 class LLVM_LIBRARY_VISIBILITY NetBSDI386TargetInfo
@@ -736,6 +739,8 @@ public:
   }
 
   ArrayRef<Builtin::Info> getTargetBuiltins() const override;
+
+  bool hasExtIntType() const override { return true; }
 };
 
 // x86-64 Windows target

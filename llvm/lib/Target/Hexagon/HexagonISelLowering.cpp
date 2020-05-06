@@ -387,9 +387,7 @@ HexagonTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   MachineFrameInfo &MFI = MF.getFrameInfo();
   auto PtrVT = getPointerTy(MF.getDataLayout());
 
-  unsigned NumParams = CLI.CS.getInstruction()
-                        ? CLI.CS.getFunctionType()->getNumParams()
-                        : 0;
+  unsigned NumParams = CLI.CB ? CLI.CB->getFunctionType()->getNumParams() : 0;
   if (GlobalAddressSDNode *GAN = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(GAN->getGlobal(), dl, MVT::i32);
 
@@ -3506,9 +3504,5 @@ bool HexagonTargetLowering::shouldExpandAtomicStoreInIR(StoreInst *SI) const {
 TargetLowering::AtomicExpansionKind
 HexagonTargetLowering::shouldExpandAtomicCmpXchgInIR(
     AtomicCmpXchgInst *AI) const {
-  const DataLayout &DL = AI->getModule()->getDataLayout();
-  unsigned Size = DL.getTypeStoreSize(AI->getCompareOperand()->getType());
-  if (Size >= 4 && Size <= 8)
-    return AtomicExpansionKind::LLSC;
-  return AtomicExpansionKind::None;
+  return AtomicExpansionKind::LLSC;
 }

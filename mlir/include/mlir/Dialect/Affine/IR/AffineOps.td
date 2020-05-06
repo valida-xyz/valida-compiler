@@ -70,9 +70,9 @@ def AffineApplyOp : Affine_Op<"apply", [NoSideEffect]> {
   // has a constant builder. That way we wouldn't need to explicitly specify the
   // result types here.
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "AffineMap map, ValueRange mapOperands", [{
-      build(builder, result, builder->getIndexType(), map, mapOperands);
+      build(builder, result, builder.getIndexType(), map, mapOperands);
     }]>
   ];
 
@@ -83,11 +83,21 @@ def AffineApplyOp : Affine_Op<"apply", [NoSideEffect]> {
     /// Returns the affine value map computed from this operation.
     AffineValueMap getAffineValueMap();
 
-    /// Returns true if the result of this operation can be used as dimension id.
+    /// Returns true if the result of this operation can be used as dimension id
+    /// in the region of the closest surrounding op with trait PolyhedralScope.
     bool isValidDim();
 
-    /// Returns true if the result of this operation is a symbol.
+    /// Returns true if the result of this operation can be used as dimension id
+    /// within 'region', i.e., for all its uses with `region`.
+    bool isValidDim(Region *region);
+
+    /// Returns true if the result of this operation is a symbol in the region
+    /// of the closest surrounding op that has the trait PolyhedralScope.
     bool isValidSymbol();
+
+    /// Returns true if the result of this operation is a symbol for all its
+    /// uses in `region`.
+    bool isValidSymbol(Region *region);
 
     operand_range getMapOperands() { return getOperands(); }
   }];
@@ -114,7 +124,7 @@ def AffineForOp : Affine_Op<"for",
 
     The `affine.for` operation represents an affine loop nest. It has one region
     containing its body. This region must contain one block that terminates with
-    [`affine.terminator`](#affineterminator-operation). *Note:* when
+    [`affine.terminator`](#affineterminator-affineterminatorop). *Note:* when
     `affine.for` is printed in custom format, the terminator is omitted. The
     block has one argument of [`index`](../LangRef.md#index-type) type that
     represents the induction variable of the loop.
@@ -167,9 +177,9 @@ def AffineForOp : Affine_Op<"for",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "int64_t lowerBound, int64_t upperBound, int64_t step = 1">,
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "ValueRange lbOperands, AffineMap lbMap, "
               "ValueRange ubOperands, AffineMap ubMap, "
               "int64_t step = 1">
@@ -180,11 +190,7 @@ def AffineForOp : Affine_Op<"for",
     static StringRef getLowerBoundAttrName() { return "lower_bound"; }
     static StringRef getUpperBoundAttrName() { return "upper_bound"; }
 
-    Block *getBody() { return &region().front(); }
     Value getInductionVar() { return getBody()->getArgument(0); }
-    OpBuilder getBodyBuilder() {
-      return OpBuilder(getBody(), std::prev(getBody()->end()));
-    }
 
     // TODO: provide iterators for the lower and upper bound operands
     // if the current access via getLowerBound(), getUpperBound() is too slow.
@@ -292,7 +298,7 @@ def AffineIfOp : Affine_Op<"if",
     clauses. The latter may be empty (i.e. contain no blocks), meaning the
     absence of the else clause. When non-empty, both regions must contain
     exactly one block terminating with
-    [`affine.terminator`](#affineterminator-operation). *Note:* when `affine.if`
+    [`affine.terminator`](#affineterminator-affineterminatorop). *Note:* when `affine.if`
     is printed in custom format, the terminator is omitted. These blocks must
     not have any arguments.
 
@@ -322,7 +328,7 @@ def AffineIfOp : Affine_Op<"if",
   let skipDefaultBuilders = 1;
 
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "IntegerSet set, ValueRange args, bool withElseRegion">
   ];
 
@@ -332,10 +338,11 @@ def AffineIfOp : Affine_Op<"if",
     IntegerSet getIntegerSet();
     void setIntegerSet(IntegerSet newSet);
 
-    /// Sets the integer set with its operands. The size of 'operands' must not
-    /// exceed the current number of operands for this instance, as the operands
-    /// list of AffineIf is not resizable.
+    /// Sets the integer set with its operands.
     void setConditional(IntegerSet set, ValueRange operands);
+
+    /// Returns true if an else block exists.
+    bool hasElse() { return !elseRegion().empty(); }
 
     Block *getThenBlock() {
       assert(!thenRegion().empty() && "Unexpected empty 'then' region.");
@@ -343,7 +350,7 @@ def AffineIfOp : Affine_Op<"if",
     }
 
     Block *getElseBlock() {
-      assert(!elseRegion().empty() && "Empty 'else' region.");
+      assert(hasElse() && "Empty 'else' region.");
       return &elseRegion().front();
     }
 
@@ -353,10 +360,84 @@ def AffineIfOp : Affine_Op<"if",
       return OpBuilder(&body, std::prev(body.end()));
     }
     OpBuilder getElseBodyBuilder() {
-      assert(!elseRegion().empty() && "Unexpected empty 'else' region.");
+      assert(hasElse() && "No 'else' block");
       Block &body = elseRegion().front();
       return OpBuilder(&body, std::prev(body.end()));
     }
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasFolder = 1;
+}
+
+def AffineLoadOp : Affine_Op<"load", []> {
+  let summary = "affine load operation";
+  let description = [{
+    The "affine.load" op reads an element from a memref, where the index
+    for each memref dimension is an affine expression of loop induction
+    variables and symbols. The output of 'affine.load' is a new value with the
+    same type as the elements of the memref. An affine expression of loop IVs
+    and symbols must be specified for each dimension of the memref. The keyword
+    'symbol' can be used to indicate SSA identifiers which are symbolic.
+
+    Example 1:
+
+    ```mlir
+    %1 = affine.load %0[%i0 + 3, %i1 + 7] : memref<100x100xf32>
+    ```
+
+    Example 2: Uses 'symbol' keyword for symbols '%n' and '%m'.
+
+    ```mlir
+    %1 = affine.load %0[%i0 + symbol(%n), %i1 + symbol(%m)] : memref<100x100xf32>
+    ```
+  }];
+
+  let arguments = (ins Arg<AnyMemRef, "the reference to load from",
+      [MemRead]>:$memref,
+      Variadic<Index>:$indices);
+  let results = (outs AnyType:$result);
+
+  let builders = [
+    /// Builds an affine load op with the specified map and operands.
+    OpBuilder<"OpBuilder &builder, OperationState &result, AffineMap map, "
+                      "ValueRange operands">,
+    /// Builds an affine load op with an identity map and operands.
+    OpBuilder<"OpBuilder &builder, OperationState &result, Value memref, "
+                      "ValueRange indices = {}">,
+    /// Builds an affine load op with the specified map and its operands.
+    OpBuilder<"OpBuilder &builder, OperationState &result, Value memref, "
+                      "AffineMap map, ValueRange mapOperands">
+  ];
+
+  let extraClassDeclaration = [{
+    /// Returns the operand index of the memref.
+    unsigned getMemRefOperandIndex() { return 0; }
+
+    /// Get memref operand.
+    Value getMemRef() { return getOperand(getMemRefOperandIndex()); }
+    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
+    MemRefType getMemRefType() {
+      return getMemRef().getType().cast<MemRefType>();
+    }
+
+    /// Get affine map operands.
+    operand_range getMapOperands() { return llvm::drop_begin(getOperands(), 1); }
+
+    /// Returns the affine map used to index the memref for this operation.
+    AffineMap getAffineMap() { return getAffineMapAttr().getValue(); }
+    AffineMapAttr getAffineMapAttr() {
+      return getAttr(getMapAttrName()).cast<AffineMapAttr>();
+    }
+
+    /// Returns the AffineMapAttr associated with 'memref'.
+    NamedAttribute getAffineMapAttrForMemRef(Value memref) {
+      assert(memref == getMemRef());
+      return {Identifier::get(getMapAttrName(), getContext()),
+              getAffineMapAttr()};
+    }
+
+    static StringRef getMapAttrName() { return "map"; }
   }];
 
   let hasCanonicalizer = 1;
@@ -369,10 +450,10 @@ class AffineMinMaxOpBase<string mnemonic, list<OpTrait> traits = []> :
   let results = (outs Index);
 
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, AffineMap affineMap, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, AffineMap affineMap, "
               "ValueRange mapOperands",
     [{
-      build(builder, result, builder->getIndexType(), affineMap, mapOperands);
+      build(builder, result, builder.getIndexType(), affineMap, mapOperands);
     }]>
   ];
 
@@ -466,11 +547,11 @@ def AffineParallelOp : Affine_Op<"parallel", [ImplicitAffineTerminator]> {
   let regions = (region SizedRegion<1>:$region);
 
   let builders = [
-    OpBuilder<"Builder* builder, OperationState& result,"
+    OpBuilder<"OpBuilder &builder, OperationState &result,"
               "ArrayRef<int64_t> ranges">,
-    OpBuilder<"Builder* builder, OperationState& result, AffineMap lbMap,"
+    OpBuilder<"OpBuilder &builder, OperationState &result, AffineMap lbMap,"
               "ValueRange lbArgs, AffineMap ubMap, ValueRange ubArgs">,
-    OpBuilder<"Builder* builder, OperationState& result, AffineMap lbMap,"
+    OpBuilder<"OpBuilder &builder, OperationState &result, AffineMap lbMap,"
               "ValueRange lbArgs, AffineMap ubMap, ValueRange ubArgs,"
               "ArrayRef<int64_t> steps">
   ];
@@ -491,6 +572,9 @@ def AffineParallelOp : Affine_Op<"parallel", [ImplicitAffineTerminator]> {
 
     Block *getBody();
     OpBuilder getBodyBuilder();
+    MutableArrayRef<BlockArgument> getIVs() {
+      return getBody()->getArguments();
+    }
     void setSteps(ArrayRef<int64_t> newSteps);
 
     static StringRef getLowerBoundsMapAttrName() { return "lowerBoundsMap"; }
@@ -525,15 +609,15 @@ def AffinePrefetchOp : Affine_Op<"prefetch"> {
                    BoolAttr:$isDataCache);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value memref,"
+    "OpBuilder &builder, OperationState &result, Value memref,"
     "AffineMap map, ArrayRef<Value> mapOperands, bool isWrite,"
     "unsigned localityHint, bool isDataCache",
     [{
       assert(map.getNumInputs() == mapOperands.size()
              && "inconsistent index info");
-      auto localityHintAttr = builder->getI32IntegerAttr(localityHint);
-      auto isWriteAttr = builder->getBoolAttr(isWrite);
-      auto isDataCacheAttr = builder->getBoolAttr(isDataCache);
+      auto localityHintAttr = builder.getI32IntegerAttr(localityHint);
+      auto isWriteAttr = builder.getBoolAttr(isWrite);
+      auto isDataCacheAttr = builder.getBoolAttr(isDataCache);
       result.addOperands(memref);
       result.addAttribute(getMapAttrName(), AffineMapAttr::get(map));
       result.addOperands(mapOperands);
@@ -575,6 +659,81 @@ def AffinePrefetchOp : Affine_Op<"prefetch"> {
   let hasFolder = 1;
 }
 
+def AffineStoreOp : Affine_Op<"store", []> {
+  let summary = "affine store operation";
+  let description = [{
+    The "affine.store" op writes an element to a memref, where the index
+    for each memref dimension is an affine expression of loop induction
+    variables and symbols. The 'affine.store' op stores a new value which is the
+    same type as the elements of the memref. An affine expression of loop IVs
+    and symbols must be specified for each dimension of the memref. The keyword
+    'symbol' can be used to indicate SSA identifiers which are symbolic.
+
+    Example 1:
+
+    ```mlir
+    affine.store %v0, %0[%i0 + 3, %i1 + 7] : memref<100x100xf32>
+    ```
+
+    Example 2: Uses 'symbol' keyword for symbols '%n' and '%m'.
+
+    ```mlir
+    affine.store %v0, %0[%i0 + symbol(%n), %i1 + symbol(%m)] : memref<100x100xf32>
+    ```
+  }];
+  let arguments = (ins AnyType:$value,
+      Arg<AnyMemRef, "the reference to store to",
+      [MemWrite]>:$memref,
+      Variadic<Index>:$indices);
+
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
+                      "Value valueToStore, Value memref, ValueRange indices">,
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
+                      "Value valueToStore, Value memref, AffineMap map, "
+                      "ValueRange mapOperands">
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get value to be stored by store operation.
+    Value getValueToStore() { return getOperand(0); }
+
+    /// Returns the operand index of the memref.
+    unsigned getMemRefOperandIndex() { return 1; }
+
+    /// Get memref operand.
+    Value getMemRef() { return getOperand(getMemRefOperandIndex()); }
+    void setMemRef(Value value) { setOperand(getMemRefOperandIndex(), value); }
+
+    MemRefType getMemRefType() {
+      return getMemRef().getType().cast<MemRefType>();
+    }
+
+    /// Get affine map operands.
+    operand_range getMapOperands() { return llvm::drop_begin(getOperands(), 2); }
+
+    /// Returns the affine map used to index the memref for this operation.
+    AffineMap getAffineMap() { return getAffineMapAttr().getValue(); }
+    AffineMapAttr getAffineMapAttr() {
+      return getAttr(getMapAttrName()).cast<AffineMapAttr>();
+    }
+
+    /// Returns the AffineMapAttr associated with 'memref'.
+    NamedAttribute getAffineMapAttrForMemRef(Value memref) {
+      assert(memref == getMemRef());
+      return {Identifier::get(getMapAttrName(), getContext()),
+              getAffineMapAttr()};
+    }
+
+    static StringRef getMapAttrName() { return "map"; }
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasFolder = 1;
+}
+
 def AffineTerminatorOp :
     Affine_Op<"terminator", [NoSideEffect, Terminator]> {
   let summary = "affine terminator operation";
@@ -586,8 +745,8 @@ def AffineTerminatorOp :
     ```
 
     Affine terminator is a special terminator operation for blocks inside affine
-    loops ([`affine.for`](#affinefor-operation)) and branches
-    ([`affine.if`](#affineif-operation)). It unconditionally transmits the
+    loops ([`affine.for`](#affinefor-affineforop)) and branches
+    ([`affine.if`](#affineif-affineifop)). It unconditionally transmits the
     control flow to the successor of the operation enclosing the region.
 
     *Rationale*: bodies of affine operations are [blocks](../LangRef.md#blocks)

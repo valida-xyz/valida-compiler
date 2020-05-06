@@ -23,6 +23,7 @@
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
 #include "llvm/CodeGen/GlobalISel/GISelChangeObserver.h"
+#include "llvm/CodeGen/GlobalISel/InlineAsmLowering.h"
 #include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -1565,57 +1566,38 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
   return false;
 }
 
-bool IRTranslator::translateInlineAsm(const CallInst &CI,
+bool IRTranslator::translateInlineAsm(const CallBase &CB,
                                       MachineIRBuilder &MIRBuilder) {
-  const InlineAsm &IA = cast<InlineAsm>(*CI.getCalledValue());
-  StringRef ConstraintStr = IA.getConstraintString();
 
-  bool HasOnlyMemoryClobber = false;
-  if (!ConstraintStr.empty()) {
-    // Until we have full inline assembly support, we just try to handle the
-    // very simple case of just "~{memory}" to avoid falling back so often.
-    if (ConstraintStr != "~{memory}")
-      return false;
-    HasOnlyMemoryClobber = true;
+  const InlineAsmLowering *ALI = MF->getSubtarget().getInlineAsmLowering();
+
+  if (!ALI) {
+    LLVM_DEBUG(
+        dbgs() << "Inline asm lowering is not supported for this target yet\n");
+    return false;
   }
 
-  unsigned ExtraInfo = 0;
-  if (IA.hasSideEffects())
-    ExtraInfo |= InlineAsm::Extra_HasSideEffects;
-  if (IA.getDialect() == InlineAsm::AD_Intel)
-    ExtraInfo |= InlineAsm::Extra_AsmDialect;
-
-  // HACK: special casing for ~memory.
-  if (HasOnlyMemoryClobber)
-    ExtraInfo |= (InlineAsm::Extra_MayLoad | InlineAsm::Extra_MayStore);
-
-  auto Inst = MIRBuilder.buildInstr(TargetOpcode::INLINEASM)
-                  .addExternalSymbol(IA.getAsmString().c_str())
-                  .addImm(ExtraInfo);
-  if (const MDNode *SrcLoc = CI.getMetadata("srcloc"))
-    Inst.addMetadata(SrcLoc);
-
-  return true;
+  return ALI->lowerInlineAsm(
+      MIRBuilder, CB, [&](const Value &Val) { return getOrCreateVRegs(Val); });
 }
 
-bool IRTranslator::translateCallSite(const ImmutableCallSite &CS,
+bool IRTranslator::translateCallBase(const CallBase &CB,
                                      MachineIRBuilder &MIRBuilder) {
-  const Instruction &I = *CS.getInstruction();
-  ArrayRef<Register> Res = getOrCreateVRegs(I);
+  ArrayRef<Register> Res = getOrCreateVRegs(CB);
 
   SmallVector<ArrayRef<Register>, 8> Args;
   Register SwiftInVReg = 0;
   Register SwiftErrorVReg = 0;
-  for (auto &Arg : CS.args()) {
+  for (auto &Arg : CB.args()) {
     if (CLI->supportSwiftError() && isSwiftError(Arg)) {
       assert(SwiftInVReg == 0 && "Expected only one swift error argument");
       LLT Ty = getLLTForType(*Arg->getType(), *DL);
       SwiftInVReg = MRI->createGenericVirtualRegister(Ty);
       MIRBuilder.buildCopy(SwiftInVReg, SwiftError.getOrCreateVRegUseAt(
-                                            &I, &MIRBuilder.getMBB(), Arg));
+                                            &CB, &MIRBuilder.getMBB(), Arg));
       Args.emplace_back(makeArrayRef(SwiftInVReg));
       SwiftErrorVReg =
-          SwiftError.getOrCreateVRegDefAt(&I, &MIRBuilder.getMBB(), Arg);
+          SwiftError.getOrCreateVRegDefAt(&CB, &MIRBuilder.getMBB(), Arg);
       continue;
     }
     Args.push_back(getOrCreateVRegs(*Arg));
@@ -1625,8 +1607,8 @@ bool IRTranslator::translateCallSite(const ImmutableCallSite &CS,
   // optimize into tail calls. Instead, we defer that to selection where a final
   // scan is done to check if any instructions are calls.
   bool Success =
-      CLI->lowerCall(MIRBuilder, CS, Res, Args, SwiftErrorVReg,
-                     [&]() { return getOrCreateVReg(*CS.getCalledValue()); });
+      CLI->lowerCall(MIRBuilder, CB, Res, Args, SwiftErrorVReg,
+                     [&]() { return getOrCreateVReg(*CB.getCalledOperand()); });
 
   // Check if we just inserted a tail call.
   if (Success) {
@@ -1664,7 +1646,7 @@ bool IRTranslator::translateCall(const User &U, MachineIRBuilder &MIRBuilder) {
   }
 
   if (!F || !F->isIntrinsic() || ID == Intrinsic::not_intrinsic)
-    return translateCallSite(&CI, MIRBuilder);
+    return translateCallBase(CI, MIRBuilder);
 
   assert(ID != Intrinsic::not_intrinsic && "unknown intrinsic");
 
@@ -1731,9 +1713,8 @@ bool IRTranslator::translateInvoke(const User &U,
   const BasicBlock *ReturnBB = I.getSuccessor(0);
   const BasicBlock *EHPadBB = I.getSuccessor(1);
 
-  const Value *Callee = I.getCalledValue();
-  const Function *Fn = dyn_cast<Function>(Callee);
-  if (isa<InlineAsm>(Callee))
+  const Function *Fn = I.getCalledFunction();
+  if (I.isInlineAsm())
     return false;
 
   // FIXME: support invoking patchpoint and statepoint intrinsics.
@@ -1757,7 +1738,7 @@ bool IRTranslator::translateInvoke(const User &U,
   MCSymbol *BeginSymbol = Context.createTempSymbol();
   MIRBuilder.buildInstr(TargetOpcode::EH_LABEL).addSym(BeginSymbol);
 
-  if (!translateCallSite(&I, MIRBuilder))
+  if (!translateCallBase(I, MIRBuilder))
     return false;
 
   MCSymbol *EndSymbol = Context.createTempSymbol();
@@ -1909,7 +1890,7 @@ bool IRTranslator::translateInsertElement(const User &U,
                                           MachineIRBuilder &MIRBuilder) {
   // If it is a <1 x Ty> vector, use the scalar as it is
   // not a legal vector type in LLT.
-  if (U.getType()->getVectorNumElements() == 1) {
+  if (cast<VectorType>(U.getType())->getNumElements() == 1) {
     Register Elt = getOrCreateVReg(*U.getOperand(1));
     auto &Regs = *VMap.getVRegs(U);
     if (Regs.empty()) {
@@ -1933,7 +1914,7 @@ bool IRTranslator::translateExtractElement(const User &U,
                                            MachineIRBuilder &MIRBuilder) {
   // If it is a <1 x Ty> vector, use the scalar as it is
   // not a legal vector type in LLT.
-  if (U.getOperand(0)->getType()->getVectorNumElements() == 1) {
+  if (cast<VectorType>(U.getOperand(0)->getType())->getNumElements() == 1) {
     Register Elt = getOrCreateVReg(*U.getOperand(0));
     auto &Regs = *VMap.getVRegs(U);
     if (Regs.empty()) {
@@ -2101,6 +2082,21 @@ bool IRTranslator::translateFence(const User &U,
   const FenceInst &Fence = cast<FenceInst>(U);
   MIRBuilder.buildFence(static_cast<unsigned>(Fence.getOrdering()),
                         Fence.getSyncScopeID());
+  return true;
+}
+
+bool IRTranslator::translateFreeze(const User &U,
+                                   MachineIRBuilder &MIRBuilder) {
+  const ArrayRef<Register> DstRegs = getOrCreateVRegs(U);
+  const ArrayRef<Register> SrcRegs = getOrCreateVRegs(*U.getOperand(0));
+
+  assert(DstRegs.size() == SrcRegs.size() &&
+         "Freeze with different source and destination type?");
+
+  for (unsigned I = 0; I < DstRegs.size(); ++I) {
+    MIRBuilder.buildFreeze(DstRegs[I], SrcRegs[I]);
+  }
+
   return true;
 }
 

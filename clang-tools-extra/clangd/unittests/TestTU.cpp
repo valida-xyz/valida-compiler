@@ -73,8 +73,8 @@ ParsedAST TestTU::build() const {
   auto Preamble =
       buildPreamble(testPath(Filename), *CI, Inputs,
                     /*StoreInMemory=*/true, /*PreambleCallback=*/nullptr);
-  auto AST = buildAST(testPath(Filename), std::move(CI), Diags.take(), Inputs,
-                      Preamble);
+  auto AST = ParsedAST::build(testPath(Filename), Inputs, std::move(CI),
+                              Diags.take(), Preamble);
   if (!AST.hasValue()) {
     ADD_FAILURE() << "Failed to build code:\n" << Code;
     llvm_unreachable("Failed to build TestTU!");
@@ -116,9 +116,10 @@ SymbolSlab TestTU::headerSymbols() const {
 std::unique_ptr<SymbolIndex> TestTU::index() const {
   auto AST = build();
   auto Idx = std::make_unique<FileIndex>(/*UseDex=*/true);
-  Idx->updatePreamble(Filename, /*Version=*/"null", AST.getASTContext(),
-                      AST.getPreprocessorPtr(), AST.getCanonicalIncludes());
-  Idx->updateMain(Filename, AST);
+  Idx->updatePreamble(testPath(Filename), /*Version=*/"null",
+                      AST.getASTContext(), AST.getPreprocessorPtr(),
+                      AST.getCanonicalIncludes());
+  Idx->updateMain(testPath(Filename), AST);
   return std::move(Idx);
 }
 

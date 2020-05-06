@@ -11,15 +11,17 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/StandardTypes.h"
-#include "mlir/Support/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
 
-static llvm::cl::opt<int> elideIfLarger(
-    "print-op-graph-elide-if-larger",
-    llvm::cl::desc("Upper limit to emit elements attribute rather than elide"),
-    llvm::cl::init(16));
-
 using namespace mlir;
+
+/// Return the size limits for eliding large attributes.
+static int64_t getLargeAttributeSizeLimit() {
+  // Use the default from the printer flags if possible.
+  if (Optional<int64_t> limit = OpPrintingFlags().getLargeElementsAttrLimit())
+    return *limit;
+  return 16;
+}
 
 namespace llvm {
 
@@ -62,9 +64,11 @@ std::string DOTGraphTraits<Block *>::getNodeLabel(Operation *op, Block *b) {
   }
 
   // Print resultant types
-  interleaveComma(op->getResultTypes(), os);
+  llvm::interleaveComma(op->getResultTypes(), os);
   os << "\n";
 
+  // A value used to elide large container attribute.
+  int64_t largeAttrLimit = getLargeAttributeSizeLimit();
   for (auto attr : op->getAttrs()) {
     os << '\n' << attr.first << ": ";
     // Always emit splat attributes.
@@ -75,7 +79,7 @@ std::string DOTGraphTraits<Block *>::getNodeLabel(Operation *op, Block *b) {
 
     // Elide "big" elements attributes.
     auto elements = attr.second.dyn_cast<ElementsAttr>();
-    if (elements && elements.getNumElements() > elideIfLarger) {
+    if (elements && elements.getNumElements() > largeAttrLimit) {
       os << std::string(elements.getType().getRank(), '[') << "..."
          << std::string(elements.getType().getRank(), ']') << " : "
          << elements.getType();
@@ -83,7 +87,7 @@ std::string DOTGraphTraits<Block *>::getNodeLabel(Operation *op, Block *b) {
     }
 
     auto array = attr.second.dyn_cast<ArrayAttr>();
-    if (array && static_cast<int64_t>(array.size()) > elideIfLarger) {
+    if (array && static_cast<int64_t>(array.size()) > largeAttrLimit) {
       os << "[...]";
       continue;
     }

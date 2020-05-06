@@ -8,7 +8,7 @@
 name: test_merge_s68_s17
 body: |
   bb.0:
-    ; CHECK-NOT: LLVM ERROR: unable to legalize instruction: %82:_(s96) = G_MERGE_VALUES %79:_(s32), %80:_(s32), %81:_(s32) (in function: test_merge_s68_s17)
+    ; CHECK-NOT: LLVM ERROR: unable to legalize instruction: %647:_(s1088) = G_MERGE_VALUES %645:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64), %646:_(s64) (in function: test_merge_s68_s17)
     %0:_(s17) = G_CONSTANT i17 0
     %1:_(s17) = G_CONSTANT i17 1
     %2:_(s17) = G_CONSTANT i17 2

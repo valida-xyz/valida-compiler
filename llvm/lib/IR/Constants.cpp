@@ -160,8 +160,8 @@ bool Constant::isNotOneValue() const {
     return !CFP->getValueAPF().bitcastToAPInt().isOneValue();
 
   // Check that vectors don't contain 1
-  if (this->getType()->isVectorTy()) {
-    unsigned NumElts = this->getType()->getVectorNumElements();
+  if (auto *VTy = dyn_cast<VectorType>(this->getType())) {
+    unsigned NumElts = VTy->getNumElements();
     for (unsigned i = 0; i != NumElts; ++i) {
       Constant *Elt = this->getAggregateElement(i);
       if (!Elt || !Elt->isNotOneValue())
@@ -210,8 +210,8 @@ bool Constant::isNotMinSignedValue() const {
     return !CFP->getValueAPF().bitcastToAPInt().isMinSignedValue();
 
   // Check that vectors don't contain INT_MIN
-  if (this->getType()->isVectorTy()) {
-    unsigned NumElts = this->getType()->getVectorNumElements();
+  if (auto *VTy = dyn_cast<VectorType>(this->getType())) {
+    unsigned NumElts = VTy->getNumElements();
     for (unsigned i = 0; i != NumElts; ++i) {
       Constant *Elt = this->getAggregateElement(i);
       if (!Elt || !Elt->isNotMinSignedValue())
@@ -227,9 +227,10 @@ bool Constant::isNotMinSignedValue() const {
 bool Constant::isFiniteNonZeroFP() const {
   if (auto *CFP = dyn_cast<ConstantFP>(this))
     return CFP->getValueAPF().isFiniteNonZero();
-  if (!getType()->isVectorTy())
+  auto *VTy = dyn_cast<VectorType>(getType());
+  if (!VTy)
     return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i) {
+  for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i) {
     auto *CFP = dyn_cast_or_null<ConstantFP>(this->getAggregateElement(i));
     if (!CFP || !CFP->getValueAPF().isFiniteNonZero())
       return false;
@@ -240,9 +241,10 @@ bool Constant::isFiniteNonZeroFP() const {
 bool Constant::isNormalFP() const {
   if (auto *CFP = dyn_cast<ConstantFP>(this))
     return CFP->getValueAPF().isNormal();
-  if (!getType()->isVectorTy())
+  auto *VTy = dyn_cast<FixedVectorType>(getType());
+  if (!VTy)
     return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i) {
+  for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i) {
     auto *CFP = dyn_cast_or_null<ConstantFP>(this->getAggregateElement(i));
     if (!CFP || !CFP->getValueAPF().isNormal())
       return false;
@@ -253,9 +255,10 @@ bool Constant::isNormalFP() const {
 bool Constant::hasExactInverseFP() const {
   if (auto *CFP = dyn_cast<ConstantFP>(this))
     return CFP->getValueAPF().getExactInverse(nullptr);
-  if (!getType()->isVectorTy())
+  auto *VTy = dyn_cast<FixedVectorType>(getType());
+  if (!VTy)
     return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i) {
+  for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i) {
     auto *CFP = dyn_cast_or_null<ConstantFP>(this->getAggregateElement(i));
     if (!CFP || !CFP->getValueAPF().getExactInverse(nullptr))
       return false;
@@ -266,9 +269,10 @@ bool Constant::hasExactInverseFP() const {
 bool Constant::isNaN() const {
   if (auto *CFP = dyn_cast<ConstantFP>(this))
     return CFP->isNaN();
-  if (!getType()->isVectorTy())
+  auto *VTy = dyn_cast<FixedVectorType>(getType());
+  if (!VTy)
     return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i) {
+  for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i) {
     auto *CFP = dyn_cast_or_null<ConstantFP>(this->getAggregateElement(i));
     if (!CFP || !CFP->isNaN())
       return false;
@@ -282,18 +286,18 @@ bool Constant::isElementWiseEqual(Value *Y) const {
     return true;
 
   // The input value must be a vector constant with the same type.
-  Type *Ty = getType();
-  if (!isa<Constant>(Y) || !Ty->isVectorTy() || Ty != Y->getType())
+  auto *VTy = dyn_cast<VectorType>(getType());
+  if (!isa<Constant>(Y) || !VTy || VTy != Y->getType())
     return false;
 
   // TODO: Compare pointer constants?
-  if (!(Ty->getVectorElementType()->isIntegerTy() ||
-        Ty->getVectorElementType()->isFloatingPointTy()))
+  if (!(VTy->getElementType()->isIntegerTy() ||
+        VTy->getElementType()->isFloatingPointTy()))
     return false;
 
   // They may still be identical element-wise (if they have `undef`s).
   // Bitcast to integer to allow exact bitwise comparison for all types.
-  Type *IntTy = VectorType::getInteger(cast<VectorType>(Ty));
+  Type *IntTy = VectorType::getInteger(VTy);
   Constant *C0 = ConstantExpr::getBitCast(const_cast<Constant *>(this), IntTy);
   Constant *C1 = ConstantExpr::getBitCast(cast<Constant>(Y), IntTy);
   Constant *CmpEq = ConstantExpr::getICmp(ICmpInst::ICMP_EQ, C0, C1);
@@ -301,21 +305,21 @@ bool Constant::isElementWiseEqual(Value *Y) const {
 }
 
 bool Constant::containsUndefElement() const {
-  if (!getType()->isVectorTy())
-    return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i)
-    if (isa<UndefValue>(getAggregateElement(i)))
-      return true;
+  if (auto *VTy = dyn_cast<VectorType>(getType())) {
+    for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i)
+      if (isa<UndefValue>(getAggregateElement(i)))
+        return true;
+  }
 
   return false;
 }
 
 bool Constant::containsConstantExpression() const {
-  if (!getType()->isVectorTy())
-    return false;
-  for (unsigned i = 0, e = getType()->getVectorNumElements(); i != e; ++i)
-    if (isa<ConstantExpr>(getAggregateElement(i)))
-      return true;
+  if (auto *VTy = dyn_cast<VectorType>(getType())) {
+    for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i)
+      if (isa<ConstantExpr>(getAggregateElement(i)))
+        return true;
+  }
 
   return false;
 }
@@ -348,7 +352,8 @@ Constant *Constant::getNullValue(Type *Ty) {
     return ConstantPointerNull::get(cast<PointerType>(Ty));
   case Type::StructTyID:
   case Type::ArrayTyID:
-  case Type::VectorTyID:
+  case Type::FixedVectorTyID:
+  case Type::ScalableVectorTyID:
     return ConstantAggregateZero::get(Ty);
   case Type::TokenTyID:
     return ConstantTokenNone::get(Ty->getContext());
@@ -639,10 +644,11 @@ Constant *Constant::replaceUndefsWith(Constant *C, Constant *Replacement) {
   }
 
   // Don't know how to deal with this constant.
-  if (!Ty->isVectorTy())
+  auto *VTy = dyn_cast<FixedVectorType>(Ty);
+  if (!VTy)
     return C;
 
-  unsigned NumElts = Ty->getVectorNumElements();
+  unsigned NumElts = VTy->getNumElements();
   SmallVector<Constant *, 32> NewC(NumElts);
   for (unsigned i = 0; i != NumElts; ++i) {
     Constant *EltC = C->getAggregateElement(i);
@@ -1490,7 +1496,7 @@ void ConstantVector::destroyConstantImpl() {
 Constant *Constant::getSplatValue(bool AllowUndefs) const {
   assert(this->getType()->isVectorTy() && "Only valid for vectors!");
   if (isa<ConstantAggregateZero>(this))
-    return getNullValue(this->getType()->getVectorElementType());
+    return getNullValue(cast<VectorType>(getType())->getElementType());
   if (const ConstantDataVector *CV = dyn_cast<ConstantDataVector>(this))
     return CV->getSplatValue();
   if (const ConstantVector *CV = dyn_cast<ConstantVector>(this))
@@ -1775,8 +1781,8 @@ Constant *ConstantExpr::getFPCast(Constant *C, Type *Ty) {
 
 Constant *ConstantExpr::getTrunc(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isIntOrIntVectorTy() && "Trunc operand must be integer");
@@ -1789,8 +1795,8 @@ Constant *ConstantExpr::getTrunc(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getSExt(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isIntOrIntVectorTy() && "SExt operand must be integral");
@@ -1803,8 +1809,8 @@ Constant *ConstantExpr::getSExt(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getZExt(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isIntOrIntVectorTy() && "ZEXt operand must be integral");
@@ -1817,8 +1823,8 @@ Constant *ConstantExpr::getZExt(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getFPTrunc(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isFPOrFPVectorTy() && Ty->isFPOrFPVectorTy() &&
@@ -1829,8 +1835,8 @@ Constant *ConstantExpr::getFPTrunc(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getFPExtend(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isFPOrFPVectorTy() && Ty->isFPOrFPVectorTy() &&
@@ -1841,8 +1847,8 @@ Constant *ConstantExpr::getFPExtend(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getUIToFP(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isIntOrIntVectorTy() && Ty->isFPOrFPVectorTy() &&
@@ -1852,8 +1858,8 @@ Constant *ConstantExpr::getUIToFP(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getSIToFP(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isIntOrIntVectorTy() && Ty->isFPOrFPVectorTy() &&
@@ -1863,8 +1869,8 @@ Constant *ConstantExpr::getSIToFP(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getFPToUI(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isFPOrFPVectorTy() && Ty->isIntOrIntVectorTy() &&
@@ -1874,8 +1880,8 @@ Constant *ConstantExpr::getFPToUI(Constant *C, Type *Ty, bool OnlyIfReduced) {
 
 Constant *ConstantExpr::getFPToSI(Constant *C, Type *Ty, bool OnlyIfReduced) {
 #ifndef NDEBUG
-  bool fromVec = C->getType()->getTypeID() == Type::VectorTyID;
-  bool toVec = Ty->getTypeID() == Type::VectorTyID;
+  bool fromVec = isa<VectorType>(C->getType());
+  bool toVec = isa<VectorType>(Ty);
 #endif
   assert((fromVec == toVec) && "Cannot convert from scalar to/from vector");
   assert(C->getType()->isFPOrFPVectorTy() && Ty->isIntOrIntVectorTy() &&
@@ -1891,7 +1897,8 @@ Constant *ConstantExpr::getPtrToInt(Constant *C, Type *DstTy,
          "PtrToInt destination must be integer or integer vector");
   assert(isa<VectorType>(C->getType()) == isa<VectorType>(DstTy));
   if (isa<VectorType>(C->getType()))
-    assert(C->getType()->getVectorNumElements()==DstTy->getVectorNumElements()&&
+    assert(cast<VectorType>(C->getType())->getNumElements() ==
+               cast<VectorType>(DstTy)->getNumElements() &&
            "Invalid cast between a different number of vector elements");
   return getFoldedCast(Instruction::PtrToInt, C, DstTy, OnlyIfReduced);
 }
@@ -1904,7 +1911,8 @@ Constant *ConstantExpr::getIntToPtr(Constant *C, Type *DstTy,
          "IntToPtr destination must be a pointer or pointer vector");
   assert(isa<VectorType>(C->getType()) == isa<VectorType>(DstTy));
   if (isa<VectorType>(C->getType()))
-    assert(C->getType()->getVectorNumElements()==DstTy->getVectorNumElements()&&
+    assert(cast<VectorType>(C->getType())->getNumElements() ==
+               cast<VectorType>(DstTy)->getNumElements() &&
            "Invalid cast between a different number of vector elements");
   return getFoldedCast(Instruction::IntToPtr, C, DstTy, OnlyIfReduced);
 }
@@ -2151,9 +2159,10 @@ Constant *ConstantExpr::getGetElementPtr(Type *Ty, Constant *C,
   ArgVec.reserve(1 + Idxs.size());
   ArgVec.push_back(C);
   for (unsigned i = 0, e = Idxs.size(); i != e; ++i) {
-    assert((!Idxs[i]->getType()->isVectorTy() ||
-            Idxs[i]->getType()->getVectorElementCount() == EltCount) &&
-           "getelementptr index type missmatch");
+    assert(
+        (!isa<VectorType>(Idxs[i]->getType()) ||
+         cast<VectorType>(Idxs[i]->getType())->getElementCount() == EltCount) &&
+        "getelementptr index type missmatch");
 
     Constant *Idx = cast<Constant>(Idxs[i]);
     if (EltCount.Min != 0 && !Idxs[i]->getType()->isVectorTy())
@@ -2231,7 +2240,7 @@ Constant *ConstantExpr::getExtractElement(Constant *Val, Constant *Idx,
   if (Constant *FC = ConstantFoldExtractElementInstruction(Val, Idx))
     return FC;          // Fold a few common cases.
 
-  Type *ReqTy = Val->getType()->getVectorElementType();
+  Type *ReqTy = cast<VectorType>(Val->getType())->getElementType();
   if (OnlyIfReducedTy == ReqTy)
     return nullptr;
 
@@ -2247,7 +2256,7 @@ Constant *ConstantExpr::getInsertElement(Constant *Val, Constant *Elt,
                                          Constant *Idx, Type *OnlyIfReducedTy) {
   assert(Val->getType()->isVectorTy() &&
          "Tried to create insertelement operation on non-vector type!");
-  assert(Elt->getType() == Val->getType()->getVectorElementType() &&
+  assert(Elt->getType() == cast<VectorType>(Val->getType())->getElementType() &&
          "Insertelement types must match!");
   assert(Idx->getType()->isIntegerTy() &&
          "Insertelement index must be i32 type!");
@@ -2276,8 +2285,9 @@ Constant *ConstantExpr::getShuffleVector(Constant *V1, Constant *V2,
     return FC;          // Fold a few common cases.
 
   unsigned NElts = Mask.size();
-  Type *EltTy = V1->getType()->getVectorElementType();
-  bool TypeIsScalable = V1->getType()->getVectorIsScalable();
+  auto V1VTy = cast<VectorType>(V1->getType());
+  Type *EltTy = V1VTy->getElementType();
+  bool TypeIsScalable = isa<ScalableVectorType>(V1VTy);
   Type *ShufTy = VectorType::get(EltTy, NElts, TypeIsScalable);
 
   if (OnlyIfReducedTy == ShufTy)
@@ -2569,7 +2579,7 @@ bool ConstantDataSequential::isElementTypeCompatible(Type *Ty) {
 unsigned ConstantDataSequential::getNumElements() const {
   if (ArrayType *AT = dyn_cast<ArrayType>(getType()))
     return AT->getNumElements();
-  return getType()->getVectorNumElements();
+  return cast<VectorType>(getType())->getNumElements();
 }
 
 

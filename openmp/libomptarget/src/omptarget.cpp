@@ -286,6 +286,7 @@ int target_data_begin(DeviceTy &Device, int32_t arg_num, void **args_base,
       // NULL, so getOrAlloc() returning NULL is not an error.
       DP("Call to getOrAllocTgtPtr returned null pointer (device failure or "
           "illegal mapping).\n");
+      return OFFLOAD_FAIL;
     }
     DP("There are %" PRId64 " bytes allocated at target address " DPxMOD
         " - is%s new\n", data_size, DPxPTR(TgtPtrBegin),
@@ -816,5 +817,8 @@ int target(int64_t device_id, void *host_ptr, int32_t arg_num,
     return OFFLOAD_FAIL;
   }
 
-  return Device.RTL->synchronize(device_id, &AsyncInfo);
+  if (Device.RTL->synchronize)
+    return Device.RTL->synchronize(device_id, &AsyncInfo);
+
+  return OFFLOAD_SUCCESS;
 }

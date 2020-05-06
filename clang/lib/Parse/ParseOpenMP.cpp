@@ -2436,6 +2436,50 @@ bool Parser::ParseOpenMPSimpleVarList(
   return !IsCorrect;
 }
 
+OMPClause *Parser::ParseOpenMPUsesAllocatorClause(OpenMPDirectiveKind DKind) {
+  SourceLocation Loc = Tok.getLocation();
+  ConsumeAnyToken();
+
+  // Parse '('.
+  BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "uses_allocator"))
+    return nullptr;
+  SmallVector<Sema::UsesAllocatorsData, 4> Data;
+  do {
+    ExprResult Allocator = ParseCXXIdExpression();
+    if (Allocator.isInvalid()) {
+      SkipUntil(tok::comma, tok::r_paren, tok::annot_pragma_openmp_end,
+                StopBeforeMatch);
+      break;
+    }
+    Sema::UsesAllocatorsData &D = Data.emplace_back();
+    D.Allocator = Allocator.get();
+    if (Tok.is(tok::l_paren)) {
+      BalancedDelimiterTracker T(*this, tok::l_paren,
+                                 tok::annot_pragma_openmp_end);
+      T.consumeOpen();
+      ExprResult AllocatorTraits = ParseCXXIdExpression();
+      T.consumeClose();
+      if (AllocatorTraits.isInvalid()) {
+        SkipUntil(tok::comma, tok::r_paren, tok::annot_pragma_openmp_end,
+                  StopBeforeMatch);
+        break;
+      }
+      D.AllocatorTraits = AllocatorTraits.get();
+      D.LParenLoc = T.getOpenLocation();
+      D.RParenLoc = T.getCloseLocation();
+    }
+    if (Tok.isNot(tok::comma) && Tok.isNot(tok::r_paren))
+      Diag(Tok, diag::err_omp_expected_punc) << "uses_allocators" << 0;
+    // Parse ','
+    if (Tok.is(tok::comma))
+      ConsumeAnyToken();
+  } while (Tok.isNot(tok::r_paren) && Tok.isNot(tok::annot_pragma_openmp_end));
+  T.consumeClose();
+  return Actions.ActOnOpenMPUsesAllocatorClause(Loc, T.getOpenLocation(),
+                                                T.getCloseLocation(), Data);
+}
+
 /// Parsing of OpenMP clauses.
 ///
 ///    clause:
@@ -2453,7 +2497,7 @@ bool Parser::ParseOpenMPSimpleVarList(
 ///       in_reduction-clause | allocator-clause | allocate-clause |
 ///       acq_rel-clause | acquire-clause | release-clause | relaxed-clause |
 ///       depobj-clause | destroy-clause | detach-clause | inclusive-clause |
-///       exclusive-clause
+///       exclusive-clause | uses_allocators-clause
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -2626,6 +2670,9 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_exclusive:
     Clause = ParseOpenMPVarListClause(DKind, CKind, WrongDirective);
     break;
+  case OMPC_uses_allocators:
+    Clause = ParseOpenMPUsesAllocatorClause(DKind);
+    break;
   case OMPC_device_type:
   case OMPC_unknown:
     skipUntilPragmaOpenMPEnd(DKind);
@@ -2776,7 +2823,6 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPClauseKind Kind, bool ParseOnly) {
   return Actions.ActOnOpenMPClause(Kind, Loc, Tok.getLocation());
 }
 
-
 /// Parsing of OpenMP clauses with single expressions and some additional
 /// argument like 'schedule' or 'dist_schedule'.
 ///
@@ -2788,7 +2834,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPClauseKind Kind, bool ParseOnly) {
 ///      'if' '(' [ directive-name-modifier ':' ] expression ')'
 ///
 ///    defaultmap:
-///      'defaultmap' '(' modifier ':' kind ')'
+///      'defaultmap' '(' modifier [ ':' kind ] ')'
 ///
 ///    device-clause:
 ///      'device' '(' [ device-modifier ':' ] expression ')'
@@ -2877,17 +2923,22 @@ OMPClause *Parser::ParseOpenMPSingleExprWithArgClause(OpenMPDirectiveKind DKind,
         Tok.isNot(tok::annot_pragma_openmp_end))
       ConsumeAnyToken();
     // Parse ':'
-    if (Tok.is(tok::colon))
-      ConsumeAnyToken();
-    else if (Arg.back() != OMPC_DEFAULTMAP_MODIFIER_unknown)
-      Diag(Tok, diag::warn_pragma_expected_colon) << "defaultmap modifier";
-    // Get a defaultmap kind
-    Arg.push_back(getOpenMPSimpleClauseType(
-        Kind, Tok.isAnnotation() ? "" : PP.getSpelling(Tok)));
-    KLoc.push_back(Tok.getLocation());
-    if (Tok.isNot(tok::r_paren) && Tok.isNot(tok::comma) &&
-        Tok.isNot(tok::annot_pragma_openmp_end))
-      ConsumeAnyToken();
+    if (Tok.is(tok::colon) || getLangOpts().OpenMP < 50) {
+      if (Tok.is(tok::colon))
+        ConsumeAnyToken();
+      else if (Arg.back() != OMPC_DEFAULTMAP_MODIFIER_unknown)
+        Diag(Tok, diag::warn_pragma_expected_colon) << "defaultmap modifier";
+      // Get a defaultmap kind
+      Arg.push_back(getOpenMPSimpleClauseType(
+          Kind, Tok.isAnnotation() ? "" : PP.getSpelling(Tok)));
+      KLoc.push_back(Tok.getLocation());
+      if (Tok.isNot(tok::r_paren) && Tok.isNot(tok::comma) &&
+          Tok.isNot(tok::annot_pragma_openmp_end))
+        ConsumeAnyToken();
+    } else {
+      Arg.push_back(OMPC_DEFAULTMAP_unknown);
+      KLoc.push_back(SourceLocation());
+    }
   } else if (Kind == OMPC_device) {
     // Only target executable directives support extended device construct.
     if (isOpenMPTargetExecutionDirective(DKind) && getLangOpts().OpenMP >= 50 &&

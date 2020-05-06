@@ -26,6 +26,7 @@ class Type;
 
 namespace mlir {
 
+class ComplexType;
 class LLVMTypeConverter;
 class UnrankedMemRefType;
 
@@ -139,23 +140,28 @@ protected:
   LLVM::LLVMDialect *llvmDialect;
 
 private:
-  // Convert a function type.  The arguments and results are converted one by
-  // one.  Additionally, if the function returns more than one value, pack the
-  // results into an LLVM IR structure type so that the converted function type
-  // returns at most one result.
+  /// Convert a function type.  The arguments and results are converted one by
+  /// one.  Additionally, if the function returns more than one value, pack the
+  /// results into an LLVM IR structure type so that the converted function type
+  /// returns at most one result.
   Type convertFunctionType(FunctionType type);
 
-  // Convert the index type.  Uses llvmModule data layout to create an integer
-  // of the pointer bitwidth.
+  /// Convert the index type.  Uses llvmModule data layout to create an integer
+  /// of the pointer bitwidth.
   Type convertIndexType(IndexType type);
 
-  // Convert an integer type `i*` to `!llvm<"i*">`.
+  /// Convert an integer type `i*` to `!llvm<"i*">`.
   Type convertIntegerType(IntegerType type);
 
-  // Convert a floating point type: `f16` to `!llvm.half`, `f32` to
-  // `!llvm.float` and `f64` to `!llvm.double`.  `bf16` is not supported
-  // by LLVM.
+  /// Convert a floating point type: `f16` to `!llvm.half`, `f32` to
+  /// `!llvm.float` and `f64` to `!llvm.double`.  `bf16` is not supported
+  /// by LLVM.
   Type convertFloatType(FloatType type);
+
+  /// Convert complex number type: `complex<f16>` to `!llvm<"{ half, half }">`,
+  /// `complex<f32>` to `!llvm<"{ float, float }">`, and `complex<f64>` to
+  /// `!llvm<"{ double, double }">`. `complex<bf16>` is not supported.
+  Type convertComplexType(ComplexType type);
 
   /// Convert a memref type into an LLVM type that captures the relevant data.
   Type convertMemRefType(MemRefType type);
@@ -219,6 +225,25 @@ protected:
   Value extractPtr(OpBuilder &builder, Location loc, unsigned pos);
   /// Builds IR to set a value in the struct at position pos
   void setPtr(OpBuilder &builder, Location loc, unsigned pos, Value ptr);
+};
+
+class ComplexStructBuilder : public StructBuilder {
+public:
+  /// Construct a helper for the given complex number value.
+  using StructBuilder::StructBuilder;
+  /// Build IR creating an `undef` value of the complex number type.
+  static ComplexStructBuilder undef(OpBuilder &builder, Location loc,
+                                    Type type);
+
+  // Build IR extracting the real value from the complex number struct.
+  Value real(OpBuilder &builder, Location loc);
+  // Build IR inserting the real value into the complex number struct.
+  void setReal(OpBuilder &builder, Location loc, Value real);
+
+  // Build IR extracting the imaginary value from the complex number struct.
+  Value imaginary(OpBuilder &builder, Location loc);
+  // Build IR inserting the imaginary value into the complex number struct.
+  void setImaginary(OpBuilder &builder, Location loc, Value imaginary);
 };
 
 /// Helper class to produce LLVM dialect operations extracting or inserting
@@ -398,6 +423,29 @@ public:
   Value createIndexConstant(ConversionPatternRewriter &builder, Location loc,
                             uint64_t value) const;
 
+  // Given subscript indices and array sizes in row-major order,
+  //   i_n, i_{n-1}, ..., i_1
+  //   s_n, s_{n-1}, ..., s_1
+  // obtain a value that corresponds to the linearized subscript
+  //   \sum_k i_k * \prod_{j=1}^{k-1} s_j
+  // by accumulating the running linearized value.
+  // Note that `indices` and `allocSizes` are passed in the same order as they
+  // appear in load/store operations and memref type declarations.
+  Value linearizeSubscripts(ConversionPatternRewriter &builder, Location loc,
+                            ArrayRef<Value> indices,
+                            ArrayRef<Value> allocSizes) const;
+
+  // This is a strided getElementPtr variant that linearizes subscripts as:
+  //   `base_offset + index_0 * stride_0 + ... + index_n * stride_n`.
+  Value getStridedElementPtr(Location loc, Type elementTypePtr,
+                             Value descriptor, ArrayRef<Value> indices,
+                             ArrayRef<int64_t> strides, int64_t offset,
+                             ConversionPatternRewriter &rewriter) const;
+
+  Value getDataPtr(Location loc, MemRefType type, Value memRefDesc,
+                   ArrayRef<Value> indices, ConversionPatternRewriter &rewriter,
+                   llvm::Module &module) const;
+
 protected:
   /// Reference to the type converter, with potential extensions.
   LLVMTypeConverter &typeConverter;
@@ -453,8 +501,8 @@ public:
   }
 };
 
-/// Basic lowering implementation for rewriting from Ops to LLVM Dialect Ops
-/// with one result. This supports higher-dimensional vector types.
+/// Basic lowering implementation to rewrite Ops with just one result to the
+/// LLVM Dialect. This supports higher-dimensional vector types.
 template <typename SourceOp, typename TargetOp>
 class VectorConvertToLLVMPattern : public ConvertOpToLLVMPattern<SourceOp> {
 public:

@@ -1464,11 +1464,8 @@ std::pair<AffineMap, AffineMap> FlatAffineConstraints::getLowerAndUpperBound(
     lbExprs.push_back(expr);
   }
 
-  auto lbMap = lbExprs.empty() ? AffineMap()
-                               : AffineMap::get(dimCount, symCount, lbExprs);
-
-  auto ubMap = ubExprs.empty() ? AffineMap()
-                               : AffineMap::get(dimCount, symCount, ubExprs);
+  auto lbMap = AffineMap::get(dimCount, symCount, lbExprs, context);
+  auto ubMap = AffineMap::get(dimCount, symCount, ubExprs, context);
 
   return {lbMap, ubMap};
 }
@@ -2078,7 +2075,7 @@ Optional<int64_t> FlatAffineConstraints::getConstantBoundOnDimSize(
                                /*num=*/getNumDimIds());
 
   Optional<int64_t> minDiff = None;
-  unsigned minLbPosition, minUbPosition;
+  unsigned minLbPosition = 0, minUbPosition = 0;
   for (auto ubPos : ubIndices) {
     for (auto lbPos : lbIndices) {
       // Look for a lower bound and an upper bound that only differ by a

@@ -1,0 +1,46 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer \
+# RUN:   -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+# After the latest community master merge the following tests started failing
+# legalization. A fix is already WIP and in early review.
+
+---
+name:            extract_s64_s96
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: extract_s64_s96
+    %0:_(s64) = COPY $e4
+    %1:_(s96) = G_SEXT %0(s64)
+    %2:_(s64) = G_EXTRACT %1, 32
+    $e4 = COPY %2
+...
+
+---
+name:            extract_s32_s96
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: extract_s32_s96
+    %0:_(s64) = COPY $e4
+    %1:_(s96) = G_SEXT %0(s64)
+    %2:_(s32) = G_EXTRACT %1, 16
+    $d4 = COPY %2
+...
+
+---
+name:            extract_s16_s96
+body:             |
+  bb.0:
+    liveins: $d4, $d5
+
+    ; CHECK-LABEL: name: extract_s16_s96
+    %0:_(s64) = COPY $e4
+    %1:_(s96) = G_SEXT %0(s64)
+    %2:_(s16) = G_EXTRACT %1, 5
+    %3:_(s32) = G_ANYEXT %2(s16)
+    $d4 = COPY %3
+...

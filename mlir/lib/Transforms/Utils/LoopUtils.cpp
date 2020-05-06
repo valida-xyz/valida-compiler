@@ -23,6 +23,8 @@
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/IntegerSet.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/MathExtras.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "mlir/Transforms/Utils.h"
 #include "llvm/ADT/DenseMap.h"
@@ -102,7 +104,8 @@ static void getCleanupLoopLowerBound(AffineForOp forOp, unsigned unrollFactor,
   operands.clear();
   operands.push_back(lb);
   operands.append(bumpValues.begin(), bumpValues.end());
-  map = AffineMap::get(1 + tripCountMap.getNumResults(), 0, newUbExprs);
+  map = AffineMap::get(1 + tripCountMap.getNumResults(), 0, newUbExprs,
+                       b.getContext());
   // Simplify the map + operands.
   fullyComposeAffineMapAndOperands(&map, &operands);
   map = simplifyAffineMap(map);
@@ -114,6 +117,34 @@ static void getCleanupLoopLowerBound(AffineForOp forOp, unsigned unrollFactor,
 
   if (lb.use_empty())
     lb.erase();
+}
+
+// Build the IR that performs ceil division of a positive value by a constant:
+//    ceildiv(a, B) = divis(a + (B-1), B)
+// where divis is rounding-to-zero division.
+static Value ceilDivPositive(OpBuilder &builder, Location loc, Value dividend,
+                             int64_t divisor) {
+  assert(divisor > 0 && "expected positive divisor");
+  assert(dividend.getType().isIndex() && "expected index-typed value");
+
+  Value divisorMinusOneCst = builder.create<ConstantIndexOp>(loc, divisor - 1);
+  Value divisorCst = builder.create<ConstantIndexOp>(loc, divisor);
+  Value sum = builder.create<AddIOp>(loc, dividend, divisorMinusOneCst);
+  return builder.create<SignedDivIOp>(loc, sum, divisorCst);
+}
+
+// Build the IR that performs ceil division of a positive value by another
+// positive value:
+//    ceildiv(a, b) = divis(a + (b - 1), b)
+// where divis is rounding-to-zero division.
+static Value ceilDivPositive(OpBuilder &builder, Location loc, Value dividend,
+                             Value divisor) {
+  assert(dividend.getType().isIndex() && "expected index-typed value");
+
+  Value cstOne = builder.create<ConstantIndexOp>(loc, 1);
+  Value divisorMinusOne = builder.create<SubIOp>(loc, divisor, cstOne);
+  Value sum = builder.create<AddIOp>(loc, dividend, divisorMinusOne);
+  return builder.create<SignedDivIOp>(loc, sum, divisor);
 }
 
 /// Promotes the loop body of a forOp to its containing block if the forOp
@@ -159,6 +190,35 @@ LogicalResult mlir::promoteIfSingleIteration(AffineForOp forOp) {
   return success();
 }
 
+/// Promotes the loop body of a forOp to its containing block if the forOp
+/// it can be determined that the loop has a single iteration.
+LogicalResult mlir::promoteIfSingleIteration(loop::ForOp forOp) {
+  auto lbCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.lowerBound().getDefiningOp());
+  auto ubCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.upperBound().getDefiningOp());
+  auto stepCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.step().getDefiningOp());
+  if (!lbCstOp || !ubCstOp || !stepCstOp || lbCstOp.getValue() < 0 ||
+      ubCstOp.getValue() < 0 || stepCstOp.getValue() < 0)
+    return failure();
+  int64_t tripCount = mlir::ceilDiv(ubCstOp.getValue() - lbCstOp.getValue(),
+                                    stepCstOp.getValue());
+  if (tripCount != 1)
+    return failure();
+  auto iv = forOp.getInductionVar();
+  iv.replaceAllUsesWith(lbCstOp);
+
+  // Move the loop body operations, except for its terminator, to the loop's
+  // containing block.
+  auto *parentBlock = forOp.getOperation()->getBlock();
+  forOp.getBody()->back().erase();
+  parentBlock->getOperations().splice(Block::iterator(forOp),
+                                      forOp.getBody()->getOperations());
+  forOp.erase();
+  return success();
+}
+
 /// Promotes all single iteration 'for' ops in `f`, i.e., moves
 /// their body into the containing Block.
 void mlir::promoteSingleIterationLoops(FuncOp f) {
@@ -190,7 +250,7 @@ static AffineForOp generateShiftedLoop(
 
   BlockAndValueMapping operandMap;
 
-  OpBuilder bodyBuilder = loopChunk.getBodyBuilder();
+  auto bodyBuilder = OpBuilder::atBlockTerminator(loopChunk.getBody());
   for (auto it = opGroupQueue.begin() + offset, e = opGroupQueue.end(); it != e;
        ++it) {
     uint64_t shift = it->first;
@@ -312,9 +372,19 @@ LogicalResult mlir::affineForOpBodySkew(AffineForOp forOp,
                                   opGroupQueue, /*offset=*/0, forOp, b);
         lbShift = d * step;
       }
-      if (!prologue && res)
-        prologue = res;
-      epilogue = res;
+
+      if (res) {
+        // Simplify/canonicalize the affine.for.
+        OwningRewritePatternList patterns;
+        AffineForOp::getCanonicalizationPatterns(patterns, res.getContext());
+        bool erased;
+        applyOpPatternsAndFold(res, std::move(patterns), &erased);
+
+        if (!erased && !prologue)
+          prologue = res;
+        if (!erased)
+          epilogue = res;
+      }
     } else {
       // Start of first interval.
       lbShift = d * step;
@@ -404,6 +474,37 @@ LogicalResult mlir::loopUnrollUpToFactor(AffineForOp forOp,
   return loopUnrollByFactor(forOp, unrollFactor);
 }
 
+// Generates unrolled copies of AffineForOp or loop::ForOp 'loopBodyBlock', with
+// associated 'forOpIV' by 'unrollFactor', calling 'ivRemapFn' to remap
+// 'forOpIV' for each unrolled body.
+static void generateUnrolledLoop(
+    Block *loopBodyBlock, Value forOpIV, uint64_t unrollFactor,
+    function_ref<Value(unsigned, Value, OpBuilder)> ivRemapFn) {
+  // Builder to insert unrolled bodies just before the terminator of the body of
+  // 'forOp'.
+  auto builder = OpBuilder::atBlockTerminator(loopBodyBlock);
+
+  // Keep a pointer to the last non-terminator operation in the original block
+  // so that we know what to clone (since we are doing this in-place).
+  Block::iterator srcBlockEnd = std::prev(loopBodyBlock->end(), 2);
+
+  // Unroll the contents of 'forOp' (append unrollFactor - 1 additional copies).
+  for (unsigned i = 1; i < unrollFactor; i++) {
+    BlockAndValueMapping operandMap;
+
+    // If the induction variable is used, create a remapping to the value for
+    // this unrolled instance.
+    if (!forOpIV.use_empty()) {
+      Value ivUnroll = ivRemapFn(i, forOpIV, builder);
+      operandMap.map(forOpIV, ivUnroll);
+    }
+
+    // Clone the original body of 'forOp'.
+    for (auto it = loopBodyBlock->begin(); it != std::next(srcBlockEnd); it++)
+      builder.clone(*it, operandMap);
+  }
+}
+
 /// Unrolls this loop by the specified factor. Returns success if the loop
 /// is successfully unrolled.
 LogicalResult mlir::loopUnrollByFactor(AffineForOp forOp,
@@ -414,7 +515,7 @@ LogicalResult mlir::loopUnrollByFactor(AffineForOp forOp,
     return promoteIfSingleIteration(forOp);
 
   // Nothing in the loop body other than the terminator.
-  if (has_single_element(forOp.getBody()->getOperations()))
+  if (llvm::hasSingleElement(forOp.getBody()->getOperations()))
     return success();
 
   // Loops where the lower bound is a max expression isn't supported for
@@ -455,38 +556,114 @@ LogicalResult mlir::loopUnrollByFactor(AffineForOp forOp,
   // Scale the step of loop being unrolled by unroll factor.
   int64_t step = forOp.getStep();
   forOp.setStep(step * unrollFactor);
+  generateUnrolledLoop(forOp.getBody(), forOp.getInductionVar(), unrollFactor,
+                       [&](unsigned i, Value iv, OpBuilder b) {
+                         // iv' = iv + i * step
+                         auto d0 = b.getAffineDimExpr(0);
+                         auto bumpMap = AffineMap::get(1, 0, d0 + i * step);
+                         return b.create<AffineApplyOp>(forOp.getLoc(), bumpMap,
+                                                        iv);
+                       });
 
-  // Builder to insert unrolled bodies just before the terminator of the body of
-  // 'forOp'.
-  OpBuilder builder = forOp.getBodyBuilder();
+  // Promote the loop body up if this has turned into a single iteration loop.
+  promoteIfSingleIteration(forOp);
+  return success();
+}
 
-  // Keep a pointer to the last non-terminator operation in the original block
-  // so that we know what to clone (since we are doing this in-place).
-  Block::iterator srcBlockEnd = std::prev(forOp.getBody()->end(), 2);
+/// Unrolls 'forOp' by 'unrollFactor', returns success if the loop is unrolled.
+LogicalResult mlir::loopUnrollByFactor(loop::ForOp forOp,
+                                       uint64_t unrollFactor) {
+  assert(unrollFactor > 0 && "expected positive unroll factor");
+  if (unrollFactor == 1)
+    return promoteIfSingleIteration(forOp);
 
-  // Unroll the contents of 'forOp' (append unrollFactor - 1 additional copies).
-  auto forOpIV = forOp.getInductionVar();
-  for (unsigned i = 1; i < unrollFactor; i++) {
-    BlockAndValueMapping operandMap;
+  // Return if the loop body is empty.
+  if (llvm::hasSingleElement(forOp.getBody()->getOperations()))
+    return success();
 
-    // If the induction variable is used, create a remapping to the value for
-    // this unrolled instance.
-    if (!forOpIV.use_empty()) {
-      // iv' = iv + 1/2/3...unrollFactor-1;
-      auto d0 = builder.getAffineDimExpr(0);
-      auto bumpMap = AffineMap::get(1, 0, {d0 + i * step});
-      auto ivUnroll =
-          builder.create<AffineApplyOp>(forOp.getLoc(), bumpMap, forOpIV);
-      operandMap.map(forOpIV, ivUnroll);
-    }
+  // Compute tripCount = ceilDiv((upperBound - lowerBound), step) and populate
+  // 'upperBoundUnrolled' and 'stepUnrolled' for static and dynamic cases.
+  OpBuilder boundsBuilder(forOp);
+  auto loc = forOp.getLoc();
+  auto step = forOp.step();
+  Value upperBoundUnrolled;
+  Value stepUnrolled;
+  bool generateEpilogueLoop = true;
 
-    // Clone the original body of 'forOp'.
-    for (auto it = forOp.getBody()->begin(); it != std::next(srcBlockEnd);
-         it++) {
-      builder.clone(*it, operandMap);
-    }
+  auto lbCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.lowerBound().getDefiningOp());
+  auto ubCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.upperBound().getDefiningOp());
+  auto stepCstOp =
+      dyn_cast_or_null<ConstantIndexOp>(forOp.step().getDefiningOp());
+  if (lbCstOp && ubCstOp && stepCstOp) {
+    // Constant loop bounds computation.
+    int64_t lbCst = lbCstOp.getValue();
+    int64_t ubCst = ubCstOp.getValue();
+    int64_t stepCst = stepCstOp.getValue();
+    assert(lbCst >= 0 && ubCst >= 0 && stepCst >= 0 &&
+           "expected positive loop bounds and step");
+    int64_t tripCount = mlir::ceilDiv(ubCst - lbCst, stepCst);
+    int64_t tripCountEvenMultiple = tripCount - (tripCount % unrollFactor);
+    int64_t upperBoundUnrolledCst = lbCst + tripCountEvenMultiple * stepCst;
+    assert(upperBoundUnrolledCst <= ubCst);
+    int64_t stepUnrolledCst = stepCst * unrollFactor;
+
+    // Create constant for 'upperBoundUnrolled' and set epilogue loop flag.
+    generateEpilogueLoop = upperBoundUnrolledCst < ubCst;
+    if (generateEpilogueLoop)
+      upperBoundUnrolled =
+          boundsBuilder.create<ConstantIndexOp>(loc, upperBoundUnrolledCst);
+    else
+      upperBoundUnrolled = ubCstOp;
+
+    // Create constant for 'stepUnrolled'.
+    stepUnrolled =
+        stepCst == stepUnrolledCst
+            ? step
+            : boundsBuilder.create<ConstantIndexOp>(loc, stepUnrolledCst);
+  } else {
+    // Dynamic loop bounds computation.
+    // TODO(andydavis) Add dynamic asserts for negative lb/ub/step, or
+    // consider using ceilDiv from AffineApplyExpander.
+    auto lowerBound = forOp.lowerBound();
+    auto upperBound = forOp.upperBound();
+    Value diff = boundsBuilder.create<SubIOp>(loc, upperBound, lowerBound);
+    Value tripCount = ceilDivPositive(boundsBuilder, loc, diff, step);
+    Value unrollFactorCst =
+        boundsBuilder.create<ConstantIndexOp>(loc, unrollFactor);
+    Value tripCountRem =
+        boundsBuilder.create<SignedRemIOp>(loc, tripCount, unrollFactorCst);
+    // Compute tripCountEvenMultiple = tripCount - (tripCount % unrollFactor)
+    Value tripCountEvenMultiple =
+        boundsBuilder.create<SubIOp>(loc, tripCount, tripCountRem);
+    // Compute upperBoundUnrolled = lowerBound + tripCountEvenMultiple * step
+    upperBoundUnrolled = boundsBuilder.create<AddIOp>(
+        loc, lowerBound,
+        boundsBuilder.create<MulIOp>(loc, tripCountEvenMultiple, step));
+    // Scale 'step' by 'unrollFactor'.
+    stepUnrolled = boundsBuilder.create<MulIOp>(loc, step, unrollFactorCst);
   }
 
+  // Create epilogue clean up loop starting at 'upperBoundUnrolled'.
+  if (generateEpilogueLoop) {
+    OpBuilder epilogueBuilder(forOp.getOperation()->getBlock(),
+                              std::next(Block::iterator(forOp)));
+    auto epilogueForOp = cast<loop::ForOp>(epilogueBuilder.clone(*forOp));
+    epilogueForOp.setLowerBound(upperBoundUnrolled);
+    promoteIfSingleIteration(epilogueForOp);
+  }
+
+  // Create unrolled loop.
+  forOp.setUpperBound(upperBoundUnrolled);
+  forOp.setStep(stepUnrolled);
+  generateUnrolledLoop(forOp.getBody(), forOp.getInductionVar(), unrollFactor,
+                       [&](unsigned i, Value iv, OpBuilder b) {
+                         // iv' = iv + step * i;
+                         auto stride = b.create<MulIOp>(
+                             loc, step, b.create<ConstantIndexOp>(loc, i));
+                         return b.create<AddIOp>(loc, iv, stride);
+                       });
   // Promote the loop body up if this has turned into a single iteration loop.
   promoteIfSingleIteration(forOp);
   return success();
@@ -538,7 +715,7 @@ LogicalResult mlir::loopUnrollJamByFactor(AffineForOp forOp,
     return promoteIfSingleIteration(forOp);
 
   // Nothing in the loop body other than the terminator.
-  if (has_single_element(forOp.getBody()->getOperations()))
+  if (llvm::hasSingleElement(forOp.getBody()->getOperations()))
     return success();
 
   // Loops where both lower and upper bounds are multi-result maps won't be
@@ -605,7 +782,7 @@ LogicalResult mlir::loopUnrollJamByFactor(AffineForOp forOp,
       if (!forOpIV.use_empty()) {
         // iv' = iv + i, i = 1 to unrollJamFactor-1.
         auto d0 = builder.getAffineDimExpr(0);
-        auto bumpMap = AffineMap::get(1, 0, {d0 + i * step});
+        auto bumpMap = AffineMap::get(1, 0, d0 + i * step);
         auto ivUnroll =
             builder.create<AffineApplyOp>(forOp.getLoc(), bumpMap, forOpIV);
         operandMap.map(forOpIV, ivUnroll);
@@ -693,16 +870,25 @@ bool mlir::isValidLoopInterchangePermutation(ArrayRef<AffineForOp> loops,
   return checkLoopInterchangeDependences(depCompsVec, loops, loopPermMap);
 }
 
-/// Return true if `loops` is a perfect nest.
-static bool LLVM_ATTRIBUTE_UNUSED isPerfectlyNested(ArrayRef<AffineForOp> loops) {
-  auto outerLoop = loops.front();
+/// Returns true if `loops` is a perfectly nested loop nest, where loops appear
+/// in it from outermost to innermost.
+bool LLVM_ATTRIBUTE_UNUSED
+mlir::isPerfectlyNested(ArrayRef<AffineForOp> loops) {
+  assert(!loops.empty() && "no loops provided");
+
+  // We already know that the block can't be empty.
+  auto hasTwoElements = [](Block *block) {
+    auto secondOpIt = std::next(block->begin());
+    return secondOpIt != block->end() && &*secondOpIt == &block->back();
+  };
+
+  auto enclosingLoop = loops.front();
   for (auto loop : loops.drop_front()) {
     auto parentForOp = dyn_cast<AffineForOp>(loop.getParentOp());
     // parentForOp's body should be just this loop and the terminator.
-    if (parentForOp != outerLoop ||
-        parentForOp.getBody()->getOperations().size() != 2)
+    if (parentForOp != enclosingLoop || !hasTwoElements(parentForOp.getBody()))
       return false;
-    outerLoop = loop;
+    enclosingLoop = loop;
   }
   return true;
 }
@@ -847,7 +1033,8 @@ static void augmentMapAndBounds(OpBuilder &b, Value iv, AffineMap *map,
   auto bounds = llvm::to_vector<4>(map->getResults());
   bounds.push_back(b.getAffineDimExpr(map->getNumDims()) + offset);
   operands->insert(operands->begin() + map->getNumDims(), iv);
-  *map = AffineMap::get(map->getNumDims() + 1, map->getNumSymbols(), bounds);
+  *map = AffineMap::get(map->getNumDims() + 1, map->getNumSymbols(), bounds,
+                        b.getContext());
   canonicalizeMapAndOperands(map, operands);
 }
 
@@ -884,7 +1071,7 @@ stripmineSink(AffineForOp forOp, uint64_t factor,
   SmallVector<AffineForOp, 8> innerLoops;
   for (auto t : targets) {
     // Insert newForOp before the terminator of `t`.
-    OpBuilder b = t.getBodyBuilder();
+    auto b = OpBuilder::atBlockTerminator(t.getBody());
     auto newForOp = b.create<AffineForOp>(t.getLoc(), lbOperands, lbMap,
                                           ubOperands, ubMap, originalStep);
     auto begin = t.getBody()->begin();
@@ -916,7 +1103,7 @@ static Loops stripmineSink(loop::ForOp forOp, Value factor,
     auto nOps = t.getBody()->getOperations().size();
 
     // Insert newForOp before the terminator of `t`.
-    OpBuilder b(t.getBodyBuilder());
+    auto b = OpBuilder::atBlockTerminator((t.getBody()));
     Value stepped = b.create<AddIOp>(t.getLoc(), iv, forOp.step());
     Value less = b.create<CmpIOp>(t.getLoc(), CmpIPredicate::slt,
                                   forOp.upperBound(), stepped);
@@ -1008,34 +1195,6 @@ Loops mlir::tilePerfectlyNested(loop::ForOp rootForOp, ArrayRef<Value> sizes) {
     sizes = sizes.take_front(forOps.size());
 
   return ::tile(forOps, sizes, forOps.back());
-}
-
-// Build the IR that performs ceil division of a positive value by a constant:
-//    ceildiv(a, B) = divis(a + (B-1), B)
-// where divis is rounding-to-zero division.
-static Value ceilDivPositive(OpBuilder &builder, Location loc, Value dividend,
-                             int64_t divisor) {
-  assert(divisor > 0 && "expected positive divisor");
-  assert(dividend.getType().isIndex() && "expected index-typed value");
-
-  Value divisorMinusOneCst = builder.create<ConstantIndexOp>(loc, divisor - 1);
-  Value divisorCst = builder.create<ConstantIndexOp>(loc, divisor);
-  Value sum = builder.create<AddIOp>(loc, dividend, divisorMinusOneCst);
-  return builder.create<SignedDivIOp>(loc, sum, divisorCst);
-}
-
-// Build the IR that performs ceil division of a positive value by another
-// positive value:
-//    ceildiv(a, b) = divis(a + (b - 1), b)
-// where divis is rounding-to-zero division.
-static Value ceilDivPositive(OpBuilder &builder, Location loc, Value dividend,
-                             Value divisor) {
-  assert(dividend.getType().isIndex() && "expected index-typed value");
-
-  Value cstOne = builder.create<ConstantIndexOp>(loc, 1);
-  Value divisorMinusOne = builder.create<SubIOp>(loc, divisor, cstOne);
-  Value sum = builder.create<AddIOp>(loc, dividend, divisorMinusOne);
-  return builder.create<SignedDivIOp>(loc, sum, divisor);
 }
 
 // Hoist the ops within `outer` that appear before `inner`.
@@ -1144,17 +1303,6 @@ TileLoops mlir::extractFixedOuterLoops(loop::ForOp rootForOp,
   return tileLoops;
 }
 
-// Replaces all uses of `orig` with `replacement` except if the user is listed
-// in `exceptions`.
-static void
-replaceAllUsesExcept(Value orig, Value replacement,
-                     const SmallPtrSetImpl<Operation *> &exceptions) {
-  for (auto &use : llvm::make_early_inc_range(orig.getUses())) {
-    if (exceptions.count(use.getOwner()) == 0)
-      use.set(replacement);
-  }
-}
-
 /// Return the new lower bound, upper bound, and step in that order. Insert any
 /// additional bounds calculations before the given builder and any additional
 /// conversion back to the original loop induction value inside the given Block.
@@ -1201,7 +1349,7 @@ static LoopParams normalizeLoop(OpBuilder &boundsBuilder,
 
   SmallPtrSet<Operation *, 2> preserve{scaled.getDefiningOp(),
                                        shifted.getDefiningOp()};
-  replaceAllUsesExcept(inductionVar, shifted, preserve);
+  inductionVar.replaceAllUsesExcept(shifted, preserve);
   return {/*lowerBound=*/newLowerBound, /*upperBound=*/newUpperBound,
           /*step=*/newStep};
 }
@@ -1492,16 +1640,17 @@ generatePointWiseCopy(Location loc, Value memref, Value fastMemRef,
   SmallVector<AffineExpr, 4> fastBufExprs;
   SmallVector<Value, 4> fastBufMapOperands;
   AffineForOp copyNestRoot;
+  SmallVector<AffineApplyOp, 4> mayBeDeadApplys;
   for (unsigned d = 0; d < rank; ++d) {
     auto forOp = createCanonicalizedAffineForOp(b, loc, lbOperands, lbMaps[d],
                                                 ubOperands, ubMaps[d]);
     if (d == 0)
       copyNestRoot = forOp;
 
-    b = forOp.getBodyBuilder();
+    b = OpBuilder::atBlockTerminator(forOp.getBody());
 
     auto fastBufOffsetMap =
-        AffineMap::get(lbOperands.size(), 0, {fastBufOffsets[d]});
+        AffineMap::get(lbOperands.size(), 0, fastBufOffsets[d]);
     auto offset = b.create<AffineApplyOp>(loc, fastBufOffsetMap, lbOperands);
 
     // Construct the subscript for the fast memref being copied into/from:
@@ -1510,15 +1659,22 @@ generatePointWiseCopy(Location loc, Value memref, Value fastMemRef,
                            b.getAffineDimExpr(2 * d));
     fastBufMapOperands.push_back(offset);
     fastBufMapOperands.push_back(forOp.getInductionVar());
+    mayBeDeadApplys.push_back(offset);
 
     // Subscript for the slow memref being copied.
     memIndices.push_back(forOp.getInductionVar());
   }
 
-  auto fastBufMap = AffineMap::get(2 * rank, /*symbolCount=*/0, fastBufExprs);
+  auto fastBufMap =
+      AffineMap::get(2 * rank, /*symbolCount=*/0, fastBufExprs, b.getContext());
   fullyComposeAffineMapAndOperands(&fastBufMap, &fastBufMapOperands);
   fastBufMap = simplifyAffineMap(fastBufMap);
   canonicalizeMapAndOperands(&fastBufMap, &fastBufMapOperands);
+
+  // Drop any dead affine.applys.
+  for (auto applyOp : mayBeDeadApplys)
+    if (applyOp.use_empty())
+      applyOp.erase();
 
   if (!isCopyOut) {
     // Copy in.
@@ -1818,7 +1974,8 @@ static LogicalResult generateCopy(
     auto dimExpr = b.getAffineDimExpr(regionSymbols.size() + i);
     remapExprs.push_back(dimExpr - fastBufOffsets[i]);
   }
-  auto indexRemap = AffineMap::get(regionSymbols.size() + rank, 0, remapExprs);
+  auto indexRemap = AffineMap::get(regionSymbols.size() + rank, 0, remapExprs,
+                                   b.getContext());
 
   // Record the begin since it may be invalidated by memref replacement.
   Block::iterator prevOfBegin;
@@ -1911,7 +2068,7 @@ uint64_t mlir::affineDataCopyGenerate(Block::iterator begin,
 
   // Copies will be generated for this depth, i.e., symbolic in all loops
   // surrounding the this block range.
-  unsigned copyDepth = getNestingDepth(*begin);
+  unsigned copyDepth = getNestingDepth(&*begin);
 
   LLVM_DEBUG(llvm::dbgs() << "Generating copies at depth " << copyDepth
                           << "\n");
@@ -2191,7 +2348,7 @@ static AffineIfOp createSeparationCondition(MutableArrayRef<AffineForOp> loops,
   // larger (and resp. smaller) than any other lower (or upper bound).
   SmallVector<int64_t, 8> fullTileLb, fullTileUb;
   for (auto loop : loops) {
-    (void) loop;
+    (void)loop;
     // TODO: Non-unit stride is not an issue to generalize to.
     assert(loop.getStep() == 1 && "point loop step expected to be one");
     // Mark everything symbols for the purpose of finding a constant diff pair.
@@ -2289,7 +2446,7 @@ createFullTiles(MutableArrayRef<AffineForOp> inputNest,
     AffineForOp fullTileLoop = createCanonicalizedAffineForOp(
         b, loop.getLoc(), lbVmap.getOperands(), lbVmap.getAffineMap(),
         ubVmap.getOperands(), ubVmap.getAffineMap());
-    b = fullTileLoop.getBodyBuilder();
+    b = OpBuilder::atBlockTerminator(fullTileLoop.getBody());
     fullTileLoops.push_back(fullTileLoop);
   }
 
@@ -2298,7 +2455,7 @@ createFullTiles(MutableArrayRef<AffineForOp> inputNest,
   for (auto loopEn : llvm::enumerate(inputNest))
     operandMap.map(loopEn.value().getInductionVar(),
                    fullTileLoops[loopEn.index()].getInductionVar());
-  b = fullTileLoops.back().getBodyBuilder();
+  b = OpBuilder::atBlockTerminator(fullTileLoops.back().getBody());
   for (auto &op : inputNest.back().getBody()->without_terminator())
     b.clone(op, operandMap);
   return success();

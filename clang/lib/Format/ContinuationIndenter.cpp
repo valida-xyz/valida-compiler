@@ -423,7 +423,7 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
       State.Stack.back().BreakBeforeParameter && Current.CanBreakBefore)
     return true;
 
-  if (State.Column <= NewLineColumn)
+  if (!State.Line->First->is(tok::kw_enum) && State.Column <= NewLineColumn)
     return false;
 
   if (Style.AlwaysBreakBeforeMultilineStrings &&
@@ -642,8 +642,10 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
   if (Style.AlignAfterOpenBracket != FormatStyle::BAS_DontAlign &&
       !State.Stack.back().IsCSharpGenericTypeConstraint &&
       Previous.opensScope() && Previous.isNot(TT_ObjCMethodExpr) &&
-      (Current.isNot(TT_LineComment) || Previous.BlockKind == BK_BracedInit))
+      (Current.isNot(TT_LineComment) || Previous.BlockKind == BK_BracedInit)) {
     State.Stack.back().Indent = State.Column + Spaces;
+    State.Stack.back().IsAligned = true;
+  }
   if (State.Stack.back().AvoidBinPacking && startsNextParameter(Current, Style))
     State.Stack.back().NoLineBreak = true;
   if (startsSegmentOfBuilderTypeCall(Current) &&
@@ -858,6 +860,7 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
     bool ContinuePPDirective =
         State.Line->InPPDirective && State.Line->Type != LT_ImportStatement;
     Whitespaces.replaceWhitespace(Current, Newlines, State.Column, State.Column,
+                                  State.Stack.back().IsAligned,
                                   ContinuePPDirective);
   }
 
@@ -1463,10 +1466,11 @@ void ContinuationIndenter::moveStatePastScopeOpener(LineState &State,
       ParenState(&Current, NewIndent, LastSpace, AvoidBinPacking, NoLineBreak));
   State.Stack.back().NestedBlockIndent = NestedBlockIndent;
   State.Stack.back().BreakBeforeParameter = BreakBeforeParameter;
-  State.Stack.back().HasMultipleNestedBlocks = (Current.BlockParameterCount > 1);
+  State.Stack.back().HasMultipleNestedBlocks =
+      (Current.BlockParameterCount > 1);
 
-  if (Style.BraceWrapping.BeforeLambdaBody &&
-      Current.Next != nullptr && Current.Tok.is(tok::l_paren)) {
+  if (Style.BraceWrapping.BeforeLambdaBody && Current.Next != nullptr &&
+      Current.Tok.is(tok::l_paren)) {
     // Search for any parameter that is a lambda
     FormatToken const *next = Current.Next;
     while (next != nullptr) {

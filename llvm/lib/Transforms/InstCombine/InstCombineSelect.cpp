@@ -301,10 +301,11 @@ Instruction *InstCombiner::foldSelectOpOp(SelectInst &SI, Instruction *TI,
 
     // The select condition may be a vector. We may only change the operand
     // type if the vector width remains the same (and matches the condition).
-    if (CondTy->isVectorTy()) {
+    if (auto *CondVTy = dyn_cast<VectorType>(CondTy)) {
       if (!FIOpndTy->isVectorTy())
         return nullptr;
-      if (CondTy->getVectorNumElements() != FIOpndTy->getVectorNumElements())
+      if (CondVTy->getNumElements() !=
+          cast<VectorType>(FIOpndTy)->getNumElements())
         return nullptr;
 
       // TODO: If the backend knew how to deal with casts better, we could
@@ -670,6 +671,38 @@ static Value *foldSelectICmpAndOr(const ICmpInst *IC, Value *TrueVal,
   return Builder.CreateOr(V, Y);
 }
 
+/// Canonicalize a set or clear of a masked set of constant bits to
+/// select-of-constants form.
+static Instruction *foldSetClearBits(SelectInst &Sel,
+                                     InstCombiner::BuilderTy &Builder) {
+  Value *Cond = Sel.getCondition();
+  Value *T = Sel.getTrueValue();
+  Value *F = Sel.getFalseValue();
+  Type *Ty = Sel.getType();
+  Value *X;
+  const APInt *NotC, *C;
+
+  // Cond ? (X & ~C) : (X | C) --> (X & ~C) | (Cond ? 0 : C)
+  if (match(T, m_And(m_Value(X), m_APInt(NotC))) &&
+      match(F, m_OneUse(m_Or(m_Specific(X), m_APInt(C)))) && *NotC == ~(*C)) {
+    Constant *Zero = ConstantInt::getNullValue(Ty);
+    Constant *OrC = ConstantInt::get(Ty, *C);
+    Value *NewSel = Builder.CreateSelect(Cond, Zero, OrC, "masksel", &Sel);
+    return BinaryOperator::CreateOr(T, NewSel);
+  }
+
+  // Cond ? (X | C) : (X & ~C) --> (X & ~C) | (Cond ? C : 0)
+  if (match(F, m_And(m_Value(X), m_APInt(NotC))) &&
+      match(T, m_OneUse(m_Or(m_Specific(X), m_APInt(C)))) && *NotC == ~(*C)) {
+    Constant *Zero = ConstantInt::getNullValue(Ty);
+    Constant *OrC = ConstantInt::get(Ty, *C);
+    Value *NewSel = Builder.CreateSelect(Cond, OrC, Zero, "masksel", &Sel);
+    return BinaryOperator::CreateOr(F, NewSel);
+  }
+
+  return nullptr;
+}
+
 /// Transform patterns such as (a > b) ? a - b : 0 into usub.sat(a, b).
 /// There are 8 commuted/swapped variants of this pattern.
 /// TODO: Also support a - UMIN(a,b) patterns.
@@ -882,10 +915,11 @@ static Value *foldSelectCttzCtlz(ICmpInst *ICI, Value *TrueVal, Value *FalseVal,
     return SelectArg;
   }
 
-  // If the ValueOnZero is not the bitwidth, we can at least make use of the
-  // fact that the cttz/ctlz result will not be used if the input is zero, so
-  // it's okay to relax it to undef for that case.
-  if (II->hasOneUse() && !match(II->getArgOperand(1), m_One()))
+  // The ValueOnZero is not the bitwidth. But if the cttz/ctlz (and optional
+  // zext/trunc) have one use (ending at the select), the cttz/ctlz result will
+  // not be used if the input is zero. Relax to 'undef_on_zero' for that case.
+  if (II->hasOneUse() && SelectArg->hasOneUse() &&
+      !match(II->getArgOperand(1), m_One()))
     II->setArgOperand(1, ConstantInt::getTrue(II->getContext()));
 
   return nullptr;
@@ -1935,10 +1969,9 @@ static Instruction *canonicalizeSelectToShuffle(SelectInst &SI) {
   if (!CondVal->getType()->isVectorTy() || !match(CondVal, m_Constant(CondC)))
     return nullptr;
 
-  unsigned NumElts = CondVal->getType()->getVectorNumElements();
-  SmallVector<Constant *, 16> Mask;
+  unsigned NumElts = cast<VectorType>(CondVal->getType())->getNumElements();
+  SmallVector<int, 16> Mask;
   Mask.reserve(NumElts);
-  Type *Int32Ty = Type::getInt32Ty(CondVal->getContext());
   for (unsigned i = 0; i != NumElts; ++i) {
     Constant *Elt = CondC->getAggregateElement(i);
     if (!Elt)
@@ -1946,10 +1979,10 @@ static Instruction *canonicalizeSelectToShuffle(SelectInst &SI) {
 
     if (Elt->isOneValue()) {
       // If the select condition element is true, choose from the 1st vector.
-      Mask.push_back(ConstantInt::get(Int32Ty, i));
+      Mask.push_back(i);
     } else if (Elt->isNullValue()) {
       // If the select condition element is false, choose from the 2nd vector.
-      Mask.push_back(ConstantInt::get(Int32Ty, i + NumElts));
+      Mask.push_back(i + NumElts);
     } else if (isa<UndefValue>(Elt)) {
       // Undef in a select condition (choose one of the operands) does not mean
       // the same thing as undef in a shuffle mask (any value is acceptable), so
@@ -1961,8 +1994,7 @@ static Instruction *canonicalizeSelectToShuffle(SelectInst &SI) {
     }
   }
 
-  return new ShuffleVectorInst(SI.getTrueValue(), SI.getFalseValue(),
-                               ConstantVector::get(Mask));
+  return new ShuffleVectorInst(SI.getTrueValue(), SI.getFalseValue(), Mask);
 }
 
 /// If we have a select of vectors with a scalar condition, try to convert that
@@ -1971,8 +2003,8 @@ static Instruction *canonicalizeSelectToShuffle(SelectInst &SI) {
 /// is likely better for vector codegen.
 static Instruction *canonicalizeScalarSelectOfVecs(
     SelectInst &Sel, InstCombiner &IC) {
-  Type *Ty = Sel.getType();
-  if (!Ty->isVectorTy())
+  auto *Ty = dyn_cast<VectorType>(Sel.getType());
+  if (!Ty)
     return nullptr;
 
   // We can replace a single-use extract with constant index.
@@ -1983,7 +2015,7 @@ static Instruction *canonicalizeScalarSelectOfVecs(
   // select (extelt V, Index), T, F --> select (splat V, Index), T, F
   // Splatting the extracted condition reduces code (we could directly create a
   // splat shuffle of the source vector to eliminate the intermediate step).
-  unsigned NumElts = Ty->getVectorNumElements();
+  unsigned NumElts = Ty->getNumElements();
   return IC.replaceOperand(Sel, 0, IC.Builder.CreateVectorSplat(NumElts, Cond));
 }
 
@@ -2553,6 +2585,8 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
     return Add;
   if (Instruction *Add = foldOverflowingAddSubSelect(SI, Builder))
     return Add;
+  if (Instruction *Or = foldSetClearBits(SI, Builder))
+    return Or;
 
   // Turn (select C, (op X, Y), (op X, Z)) -> (op X, (select C, Y, Z))
   auto *TI = dyn_cast<Instruction>(TrueVal);

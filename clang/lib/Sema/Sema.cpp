@@ -150,7 +150,7 @@ const unsigned Sema::MaximumAlignment;
 Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
            TranslationUnitKind TUKind, CodeCompleteConsumer *CodeCompleter)
     : ExternalSource(nullptr), isMultiplexExternalSource(false),
-      FPFeatures(pp.getLangOpts()), LangOpts(pp.getLangOpts()), PP(pp),
+      CurFPFeatures(pp.getLangOpts()), LangOpts(pp.getLangOpts()), PP(pp),
       Context(ctxt), Consumer(consumer), Diags(PP.getDiagnostics()),
       SourceMgr(PP.getSourceManager()), CollectStats(false),
       CodeCompleter(CodeCompleter), CurContext(nullptr),
@@ -159,7 +159,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
           LangOpts.getMSPointerToMemberRepresentationMethod()),
       VtorDispStack(LangOpts.getVtorDispMode()), PackStack(0),
       DataSegStack(nullptr), BSSSegStack(nullptr), ConstSegStack(nullptr),
-      CodeSegStack(nullptr), CurInitSeg(nullptr), VisContext(nullptr),
+      CodeSegStack(nullptr), FpPragmaStack(CurFPFeatures.getAsOpaqueInt()),
+      CurInitSeg(nullptr), VisContext(nullptr),
       PragmaAttributeCurrentTargetDecl(nullptr),
       IsBuildingRecoveryCallExpr(false), Cleanup{}, LateTemplateParser(nullptr),
       LateTemplateParserCleanup(nullptr), OpaqueParser(nullptr), IdResolver(pp),
@@ -2354,16 +2355,8 @@ std::string Sema::getOpenCLExtensionsFromTypeExtMap(FunctionType *FT) {
 
 template <typename T, typename MapT>
 std::string Sema::getOpenCLExtensionsFromExtMap(T *FDT, MapT &Map) {
-  std::string ExtensionNames = "";
   auto Loc = Map.find(FDT);
-
-  for (auto const& I : Loc->second) {
-    ExtensionNames += I;
-    ExtensionNames += " ";
-  }
-  ExtensionNames.pop_back();
-
-  return ExtensionNames;
+  return llvm::join(Loc->second, " ");
 }
 
 bool Sema::isOpenCLDisabledDecl(Decl *FD) {

@@ -55,6 +55,15 @@ public:
   /// Enables creating operations in unregistered dialects.
   void allowUnregisteredDialects(bool allow = true);
 
+  /// Return true if multi-threading is enabled by the context.
+  bool isMultithreadingEnabled();
+
+  /// Set the flag specifying if multi-threading is disabled by the context.
+  void disableMultithreading(bool disable = true);
+  void enableMultithreading(bool enable = true) {
+    disableMultithreading(!enable);
+  }
+
   /// Return true if we should attach the operation to diagnostics emitted via
   /// Operation::emit.
   bool shouldPrintOpOnDiagnostic();
@@ -100,6 +109,16 @@ private:
   MLIRContext(const MLIRContext &) = delete;
   void operator=(const MLIRContext &) = delete;
 };
+
+//===----------------------------------------------------------------------===//
+// MLIRContext CommandLine Options
+//===----------------------------------------------------------------------===//
+
+/// Register a set of useful command-line options that can be used to configure
+/// various flags within the MLIRContext. These flags are used when constructing
+/// an MLIR context for initialization.
+void registerMLIRContextCLOptions();
+
 } // end namespace mlir
 
 #endif // MLIR_IR_MLIRCONTEXT_H

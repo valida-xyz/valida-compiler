@@ -20,53 +20,40 @@ function(add_loader_test target_name)
     ${ARGN}
   )
 
+  get_fq_target_name(${target_name} fq_target_name)
   add_executable(
-    ${target_name}
+    ${fq_target_name}
     EXCLUDE_FROM_ALL
     ${ADD_LOADER_TEST_SRC}
   )
 
-  set_target_properties(${target_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
-  set(dep_objects "")
-  if(ADD_LOADER_TEST_DEPENDS)
-    add_dependencies(${target_name} ${ADD_LOADER_TEST_DEPENDS})
-    foreach(dep IN LISTS ADD_LOADER_TEST_DEPENDS)
-      get_target_property(objfile ${dep} "OBJECT_FILES")
-      if(NOT objfile)
-        message(
-            FATAL_ERROR
-            "Unexpected dependency of an `add_loader_test` target. A dependency "
-            "should be a target of type `add_entrypoint_object, `add_object`, or "
-            "`add_loader_object`.")
-      endif()
-      list(APPEND dep_objects ${objfile})
-    endforeach(dep)
-  endif()
+  set_target_properties(${fq_target_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
   target_include_directories(
-    ${target_name}
+    ${fq_target_name}
     PRIVATE
       ${LIBC_SOURCE_DIR}
       ${LIBC_BUILD_DIR}
       ${LIBC_BUILD_DIR}/include
   )
 
-  target_link_libraries(${target_name} ${dep_objects})
+  get_fq_deps_list(fq_deps_list ${ADD_LOADER_TEST_DEPENDS})
+  get_object_files_for_test(link_object_files ${fq_deps_list})
+  target_link_libraries(${fq_target_name} ${link_object_files})
 
   target_link_options(
-    ${target_name}
+    ${fq_target_name}
     BEFORE PRIVATE
     -nostdlib
   )
 
   add_custom_command(
-    TARGET ${target_name}
+    TARGET ${fq_target_name}
     POST_BUILD
-    COMMAND ${ADD_LOADER_TEST_ENV} $<TARGET_FILE:${target_name}> ${ADD_LOADER_TEST_ARGS}
+    COMMAND ${ADD_LOADER_TEST_ENV} $<TARGET_FILE:${fq_target_name}> ${ADD_LOADER_TEST_ARGS}
   )
 
-  add_dependencies(libc_loader_tests ${target_name})
+  add_dependencies(libc_loader_tests ${fq_target_name})
 endfunction(add_loader_test)
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${LIBC_TARGET_OS})

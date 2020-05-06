@@ -2207,12 +2207,12 @@ static Value *extractVector(IRBuilderTy &IRB, Value *V, unsigned BeginIndex,
     return V;
   }
 
-  SmallVector<Constant *, 8> Mask;
+  SmallVector<int, 8> Mask;
   Mask.reserve(NumElements);
   for (unsigned i = BeginIndex; i != EndIndex; ++i)
-    Mask.push_back(IRB.getInt32(i));
-  V = IRB.CreateShuffleVector(V, UndefValue::get(V->getType()),
-                              ConstantVector::get(Mask), Name + ".extract");
+    Mask.push_back(i);
+  V = IRB.CreateShuffleVector(V, UndefValue::get(V->getType()), Mask,
+                              Name + ".extract");
   LLVM_DEBUG(dbgs() << "     shuffle: " << *V << "\n");
   return V;
 }
@@ -4482,8 +4482,7 @@ bool SROA::runOnAlloca(AllocaInst &AI) {
 
   // Skip alloca forms that this analysis can't handle.
   auto *AT = AI.getAllocatedType();
-  if (AI.isArrayAllocation() || !AT->isSized() ||
-      (isa<VectorType>(AT) && cast<VectorType>(AT)->isScalable()) ||
+  if (AI.isArrayAllocation() || !AT->isSized() || isa<ScalableVectorType>(AT) ||
       DL.getTypeAllocSize(AT).getFixedSize() == 0)
     return false;
 
@@ -4605,8 +4604,7 @@ PreservedAnalyses SROA::runImpl(Function &F, DominatorTree &RunDT,
   for (BasicBlock::iterator I = EntryBB.begin(), E = std::prev(EntryBB.end());
        I != E; ++I) {
     if (AllocaInst *AI = dyn_cast<AllocaInst>(I)) {
-      if (isa<VectorType>(AI->getAllocatedType()) &&
-          cast<VectorType>(AI->getAllocatedType())->isScalable()) {
+      if (isa<ScalableVectorType>(AI->getAllocatedType())) {
         if (isAllocaPromotable(AI))
           PromotableAllocas.push_back(AI);
       } else {

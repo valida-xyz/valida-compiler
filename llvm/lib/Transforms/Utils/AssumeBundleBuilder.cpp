@@ -8,6 +8,7 @@
 
 #include "llvm/Transforms/Utils/AssumeBundleBuilder.h"
 #include "llvm/Analysis/AssumeBundleQueries.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
@@ -26,43 +27,6 @@ cl::opt<bool> EnableKnowledgeRetention(
     "enable-knowledge-retention", cl::init(false), cl::Hidden,
     cl::desc(
         "enable preservation of attributes throughout code transformation"));
-
-namespace {
-
-struct AssumedKnowledge {
-  const char *Name;
-  Value *Argument;
-  enum {
-    None,
-    Empty,
-    Tombstone,
-  };
-  /// Contain the argument and a flag if needed.
-  llvm::PointerIntPair<Value *, 2> WasOn;
-};
-
-} // namespace
-
-namespace llvm {
-
-template <> struct DenseMapInfo<AssumedKnowledge> {
-  static AssumedKnowledge getEmptyKey() {
-    return {nullptr, nullptr, {nullptr, AssumedKnowledge::Empty}};
-  }
-  static AssumedKnowledge getTombstoneKey() {
-    return {nullptr, nullptr, {nullptr, AssumedKnowledge::Tombstone}};
-  }
-  static unsigned getHashValue(const AssumedKnowledge &AK) {
-    return hash_combine(AK.Name, AK.Argument, AK.WasOn.getPointer());
-  }
-  static bool isEqual(const AssumedKnowledge &LHS,
-                      const AssumedKnowledge &RHS) {
-    return LHS.WasOn == RHS.WasOn && LHS.Name == RHS.Name &&
-           LHS.Argument == RHS.Argument;
-  }
-};
-
-} // namespace llvm
 
 namespace {
 
@@ -107,26 +71,37 @@ bool isUsefullToPreserve(Attribute::AttrKind Kind) {
 struct AssumeBuilderState {
   Module *M;
 
-  SmallDenseSet<AssumedKnowledge, 8> AssumedKnowledgeSet;
+  using MapKey = std::pair<Value *, Attribute::AttrKind>;
+  SmallDenseMap<MapKey, unsigned, 8> AssumedKnowledgeMap;
+  Instruction *InsertBeforeInstruction = nullptr;
 
   AssumeBuilderState(Module *M) : M(M) {}
 
+  void addKnowledge(RetainedKnowledge RK) {
+    MapKey Key{RK.WasOn, RK.AttrKind};
+    auto Lookup = AssumedKnowledgeMap.find(Key);
+    if (Lookup == AssumedKnowledgeMap.end()) {
+      AssumedKnowledgeMap[Key] = RK.ArgValue;
+      return;
+    }
+    assert(((Lookup->second == 0 && RK.ArgValue == 0) ||
+            (Lookup->second != 0 && RK.ArgValue != 0)) &&
+           "inconsistent argument value");
+
+    /// This is only desirable because for all attributes taking an argument
+    /// higher is better.
+    Lookup->second = std::max(Lookup->second, RK.ArgValue);
+  }
+
   void addAttribute(Attribute Attr, Value *WasOn) {
-    if (!ShouldPreserveAllAttributes &&
-        (Attr.isTypeAttribute() || Attr.isStringAttribute() ||
+    if (Attr.isTypeAttribute() || Attr.isStringAttribute() ||
+        (!ShouldPreserveAllAttributes &&
          !isUsefullToPreserve(Attr.getKindAsEnum())))
       return;
-    StringRef Name;
-    Value *AttrArg = nullptr;
-    if (Attr.isStringAttribute())
-      Name = Attr.getKindAsString();
-    else
-      Name = Attribute::getNameFromAttrKind(Attr.getKindAsEnum());
+    unsigned AttrArg = 0;
     if (Attr.isIntAttribute())
-      AttrArg = ConstantInt::get(Type::getInt64Ty(M->getContext()),
-                                 Attr.getValueAsInt());
-    AssumedKnowledgeSet.insert(
-        {Name.data(), AttrArg, {WasOn, AssumedKnowledge::None}});
+      AttrArg = Attr.getValueAsInt();
+    addKnowledge({Attr.getKindAsEnum(), AttrArg, WasOn});
   }
 
   void addCall(const CallBase *Call) {
@@ -144,57 +119,45 @@ struct AssumeBuilderState {
   }
 
   IntrinsicInst *build() {
-    if (AssumedKnowledgeSet.empty())
+    if (AssumedKnowledgeMap.empty())
       return nullptr;
     Function *FnAssume = Intrinsic::getDeclaration(M, Intrinsic::assume);
     LLVMContext &C = M->getContext();
     SmallVector<OperandBundleDef, 8> OpBundle;
-    for (const AssumedKnowledge &Elem : AssumedKnowledgeSet) {
+    for (auto &MapElem : AssumedKnowledgeMap) {
       SmallVector<Value *, 2> Args;
-      assert(Attribute::getAttrKindFromName(Elem.Name) ==
-                 Attribute::AttrKind::None ||
-             static_cast<bool>(Elem.Argument) ==
-                 Attribute::doesAttrKindHaveArgument(
-                     Attribute::getAttrKindFromName(Elem.Name)));
-      if (Elem.WasOn.getPointer())
-        Args.push_back(Elem.WasOn.getPointer());
-      if (Elem.Argument)
-        Args.push_back(Elem.Argument);
-      OpBundle.push_back(OperandBundleDefT<Value *>(Elem.Name, Args));
+      if (MapElem.first.first)
+        Args.push_back(MapElem.first.first);
+
+      /// This is only valid because for all attribute that currently exist a
+      /// value of 0 is useless. and should not be preserved.
+      if (MapElem.second)
+        Args.push_back(ConstantInt::get(Type::getInt64Ty(M->getContext()),
+                                        MapElem.second));
+      OpBundle.push_back(OperandBundleDefT<Value *>(
+          std::string(Attribute::getNameFromAttrKind(MapElem.first.second)),
+          Args));
     }
     llvm::sort(OpBundle, isLowerOpBundle);
     return cast<IntrinsicInst>(CallInst::Create(
         FnAssume, ArrayRef<Value *>({ConstantInt::getTrue(C)}), OpBundle));
   }
 
-  void addAttr(Attribute::AttrKind Kind, Value *Val, unsigned Argument = 0) {
-    AssumedKnowledge AK;
-    AK.Name = Attribute::getNameFromAttrKind(Kind).data();
-    AK.WasOn.setPointer(Val);
-    if (Attribute::doesAttrKindHaveArgument(Kind)) {
-      AK.Argument =
-          ConstantInt::get(Type::getInt64Ty(M->getContext()), Argument);
-    } else {
-      AK.Argument = nullptr;
-      assert(Argument == 0 && "there should be no argument");
-    }
-    AssumedKnowledgeSet.insert(AK);
-  };
-
   void addAccessedPtr(Instruction *MemInst, Value *Pointer, Type *AccType,
                       MaybeAlign MA) {
-    uint64_t DerefSize = MemInst->getModule()
+    unsigned DerefSize = MemInst->getModule()
                              ->getDataLayout()
                              .getTypeStoreSize(AccType)
                              .getKnownMinSize();
     if (DerefSize != 0) {
-      addAttr(Attribute::Dereferenceable, Pointer, DerefSize);
+      addKnowledge({Attribute::Dereferenceable, DerefSize, Pointer});
       if (!NullPointerIsDefined(MemInst->getFunction(),
                                 Pointer->getType()->getPointerAddressSpace()))
-        addAttr(Attribute::NonNull, Pointer);
+        addKnowledge({Attribute::NonNull, 0u, Pointer});
     }
     if (MA.valueOrOne() > 1)
-      addAttr(Attribute::Alignment, Pointer, MA.valueOrOne().value());
+      addKnowledge(
+          {Attribute::Alignment, unsigned(MA.valueOrOne().value()), Pointer});
   }
 
   void addInstruction(Instruction *I) {
@@ -222,9 +185,17 @@ IntrinsicInst *llvm::buildAssumeFromInst(Instruction *I) {
   return Builder.build();
 }
 
-void llvm::salvageKnowledge(Instruction *I) {
-  if (Instruction *Intr = buildAssumeFromInst(I))
+void llvm::salvageKnowledge(Instruction *I, AssumptionCache *AC) {
+  if (!EnableKnowledgeRetention)
+    return;
+  AssumeBuilderState Builder(I->getModule());
+  Builder.InsertBeforeInstruction = I;
+  Builder.addInstruction(I);
+  if (IntrinsicInst *Intr = Builder.build()) {
     Intr->insertBefore(I);
+    if (AC)
+      AC->registerAssumption(Intr);
+  }
 }
 
 PreservedAnalyses AssumeBuilderPass::run(Function &F,

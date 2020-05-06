@@ -2163,8 +2163,8 @@ define <2 x i1> @icmp_add_X_-14_ult_2_vec(<2 x i32> %X) {
 
 define i1 @icmp_sub_3_X_ult_2(i32 %X) {
 ; CHECK-LABEL: @icmp_sub_3_X_ult_2(
-; CHECK-NEXT:    [[TMP1:%.*]] = or i32 [[X:%.*]], 1
-; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP1]], 3
+; CHECK-NEXT:    [[TMP1:%.*]] = and i32 [[X:%.*]], -2
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i32 [[TMP1]], 2
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %add = sub i32 3, %X
@@ -2174,8 +2174,8 @@ define i1 @icmp_sub_3_X_ult_2(i32 %X) {
 
 define <2 x i1> @icmp_sub_3_X_ult_2_vec(<2 x i32> %X) {
 ; CHECK-LABEL: @icmp_sub_3_X_ult_2_vec(
-; CHECK-NEXT:    [[TMP1:%.*]] = or <2 x i32> [[X:%.*]], <i32 1, i32 1>
-; CHECK-NEXT:    [[CMP:%.*]] = icmp eq <2 x i32> [[TMP1]], <i32 3, i32 3>
+; CHECK-NEXT:    [[TMP1:%.*]] = and <2 x i32> [[X:%.*]], <i32 -2, i32 -2>
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq <2 x i32> [[TMP1]], <i32 2, i32 2>
 ; CHECK-NEXT:    ret <2 x i1> [[CMP]]
 ;
   %add = sub <2 x i32> <i32 3, i32 3>, %X
@@ -2207,8 +2207,8 @@ define <2 x i1> @icmp_add_X_-14_uge_2_vec(<2 x i32> %X) {
 
 define i1 @icmp_sub_3_X_uge_2(i32 %X) {
 ; CHECK-LABEL: @icmp_sub_3_X_uge_2(
-; CHECK-NEXT:    [[TMP1:%.*]] = or i32 [[X:%.*]], 1
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ne i32 [[TMP1]], 3
+; CHECK-NEXT:    [[TMP1:%.*]] = and i32 [[X:%.*]], -2
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ne i32 [[TMP1]], 2
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %add = sub i32 3, %X
@@ -2218,8 +2218,8 @@ define i1 @icmp_sub_3_X_uge_2(i32 %X) {
 
 define <2 x i1> @icmp_sub_3_X_uge_2_vec(<2 x i32> %X) {
 ; CHECK-LABEL: @icmp_sub_3_X_uge_2_vec(
-; CHECK-NEXT:    [[TMP1:%.*]] = or <2 x i32> [[X:%.*]], <i32 1, i32 1>
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ne <2 x i32> [[TMP1]], <i32 3, i32 3>
+; CHECK-NEXT:    [[TMP1:%.*]] = and <2 x i32> [[X:%.*]], <i32 -2, i32 -2>
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ne <2 x i32> [[TMP1]], <i32 2, i32 2>
 ; CHECK-NEXT:    ret <2 x i1> [[CMP]]
 ;
   %add = sub <2 x i32> <i32 3, i32 3>, %X
@@ -3700,8 +3700,9 @@ define i1 @signbit_bitcast_fpext_extra_use(float %x, i64* %p) {
 
 define i1 @signbit_bitcast_fpext_ppc_fp128(float %x) {
 ; CHECK-LABEL: @signbit_bitcast_fpext_ppc_fp128(
-; CHECK-NEXT:    [[TMP1:%.*]] = bitcast float [[X:%.*]] to i32
-; CHECK-NEXT:    [[S4:%.*]] = icmp slt i32 [[TMP1]], 0
+; CHECK-NEXT:    [[S2:%.*]] = fpext float [[X:%.*]] to ppc_fp128
+; CHECK-NEXT:    [[S3:%.*]] = bitcast ppc_fp128 [[S2]] to i128
+; CHECK-NEXT:    [[S4:%.*]] = icmp slt i128 [[S3]], 0
 ; CHECK-NEXT:    ret i1 [[S4]]
 ;
   %s2 = fpext float %x to ppc_fp128
@@ -3712,8 +3713,9 @@ define i1 @signbit_bitcast_fpext_ppc_fp128(float %x) {
 
 define i1 @signbit_bitcast_fptrunc_ppc_fp128(ppc_fp128 %x) {
 ; CHECK-LABEL: @signbit_bitcast_fptrunc_ppc_fp128(
-; CHECK-NEXT:    [[TMP1:%.*]] = bitcast ppc_fp128 [[X:%.*]] to i128
-; CHECK-NEXT:    [[S4:%.*]] = icmp slt i128 [[TMP1]], 0
+; CHECK-NEXT:    [[S2:%.*]] = fptrunc ppc_fp128 [[X:%.*]] to float
+; CHECK-NEXT:    [[S3:%.*]] = bitcast float [[S2]] to i32
+; CHECK-NEXT:    [[S4:%.*]] = icmp slt i32 [[S3]], 0
 ; CHECK-NEXT:    ret i1 [[S4]]
 ;
   %s2 = fptrunc ppc_fp128 %x to float

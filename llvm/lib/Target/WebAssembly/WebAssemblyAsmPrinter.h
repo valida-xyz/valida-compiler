@@ -16,9 +16,7 @@
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
-class MCSymbol;
 class WebAssemblyTargetStreamer;
-class WebAssemblyMCInstLower;
 
 class LLVM_LIBRARY_VISIBILITY WebAssemblyAsmPrinter final : public AsmPrinter {
   const WebAssemblySubtarget *Subtarget;
@@ -28,10 +26,10 @@ class LLVM_LIBRARY_VISIBILITY WebAssemblyAsmPrinter final : public AsmPrinter {
   std::vector<std::unique_ptr<wasm::WasmSignature>> Signatures;
   std::vector<std::unique_ptr<std::string>> Names;
 
-  std::string *storeName(StringRef Name) {
+  StringRef storeName(StringRef Name) {
     std::unique_ptr<std::string> N = std::make_unique<std::string>(Name);
     Names.push_back(std::move(N));
-    return Names.back().get();
+    return *Names.back();
   }
 
 public:

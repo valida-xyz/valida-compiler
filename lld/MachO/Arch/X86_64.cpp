@@ -31,7 +31,12 @@ X86_64::X86_64() {
 
 uint64_t X86_64::getImplicitAddend(const uint8_t *loc, uint8_t type) const {
   switch (type) {
+  case X86_64_RELOC_BRANCH:
   case X86_64_RELOC_SIGNED:
+  case X86_64_RELOC_SIGNED_1:
+  case X86_64_RELOC_SIGNED_2:
+  case X86_64_RELOC_SIGNED_4:
+  case X86_64_RELOC_GOT_LOAD:
     return read32le(loc);
   default:
     error("TODO: Unhandled relocation type " + std::to_string(type));
@@ -41,9 +46,14 @@ uint64_t X86_64::getImplicitAddend(const uint8_t *loc, uint8_t type) const {
 
 void X86_64::relocateOne(uint8_t *loc, uint8_t type, uint64_t val) const {
   switch (type) {
+  case X86_64_RELOC_BRANCH:
   case X86_64_RELOC_SIGNED:
-    // This type is only used for pc-relative relocations, so offset by 4 since
-    // the RIP has advanced by 4 at this point.
+  case X86_64_RELOC_SIGNED_1:
+  case X86_64_RELOC_SIGNED_2:
+  case X86_64_RELOC_SIGNED_4:
+  case X86_64_RELOC_GOT_LOAD:
+    // These types are only used for pc-relative relocations, so offset by 4
+    // since the RIP has advanced by 4 at this point.
     write32le(loc, val - 4);
     break;
   default:

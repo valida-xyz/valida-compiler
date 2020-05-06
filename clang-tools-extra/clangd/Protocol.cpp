@@ -11,8 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Protocol.h"
-#include "Logger.h"
 #include "URI.h"
+#include "support/Logger.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Index/IndexSymbol.h"
 #include "llvm/ADT/Hashing.h"
@@ -311,6 +311,12 @@ bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
       if (auto *Item = Completion->getObject("completionItem")) {
         if (auto SnippetSupport = Item->getBoolean("snippetSupport"))
           R.CompletionSnippets = *SnippetSupport;
+        if (auto DocumentationFormat = Item->getArray("documentationFormat")) {
+          for (const auto &Format : *DocumentationFormat) {
+            if (fromJSON(Format, R.CompletionDocumentationFormat))
+              break;
+          }
+        }
       }
       if (auto *ItemKind = Completion->getObject("completionItemKind")) {
         if (auto *ValueSet = ItemKind->get("valueSet")) {
@@ -334,11 +340,8 @@ bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
     if (auto *Hover = TextDocument->getObject("hover")) {
       if (auto *ContentFormat = Hover->getArray("contentFormat")) {
         for (const auto &Format : *ContentFormat) {
-          MarkupKind K = MarkupKind::PlainText;
-          if (fromJSON(Format, K)) {
-            R.HoverContentFormat = K;
+          if (fromJSON(Format, R.HoverContentFormat))
             break;
-          }
         }
       }
     }
@@ -448,6 +451,11 @@ bool fromJSON(const llvm::json::Value &Params, DidOpenTextDocumentParams &R) {
 }
 
 bool fromJSON(const llvm::json::Value &Params, DidCloseTextDocumentParams &R) {
+  llvm::json::ObjectMapper O(Params);
+  return O && O.map("textDocument", R.textDocument);
+}
+
+bool fromJSON(const llvm::json::Value &Params, DidSaveTextDocumentParams &R) {
   llvm::json::ObjectMapper O(Params);
   return O && O.map("textDocument", R.textDocument);
 }
@@ -886,7 +894,7 @@ llvm::json::Value toJSON(const CompletionItem &CI) {
     Result["kind"] = static_cast<int>(CI.kind);
   if (!CI.detail.empty())
     Result["detail"] = CI.detail;
-  if (!CI.documentation.empty())
+  if (CI.documentation)
     Result["documentation"] = CI.documentation;
   if (!CI.sortText.empty())
     Result["sortText"] = CI.sortText;
@@ -997,7 +1005,7 @@ static llvm::json::Value encodeTokens(llvm::ArrayRef<SemanticToken> Toks) {
     Result.push_back(Tok.tokenModifiers);
   }
   assert(Result.size() == SemanticTokenEncodingSize * Toks.size());
-  return Result;
+  return std::move(Result);
 }
 
 bool operator==(const SemanticToken &L, const SemanticToken &R) {
@@ -1025,7 +1033,7 @@ llvm::json::Value toJSON(const SemanticTokensOrEdits &TE) {
     Result["edits"] = *TE.edits;
   if (TE.tokens)
     Result["data"] = encodeTokens(*TE.tokens);
-  return Result;
+  return std::move(Result);
 }
 
 bool fromJSON(const llvm::json::Value &Params, SemanticTokensParams &R) {

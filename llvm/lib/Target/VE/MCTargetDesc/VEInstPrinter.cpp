@@ -36,7 +36,9 @@ using namespace VE;
 #include "VEGenAsmWriter.inc"
 
 void VEInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
-  OS << '%' << StringRef(getRegisterName(RegNo)).lower();
+  // Generic registers have identical register name among register classes.
+  unsigned AltIdx = VE::AsmName;
+  OS << '%' << getRegisterName(RegNo, AltIdx);
 }
 
 void VEInstPrinter::printInst(const MCInst *MI, uint64_t Address,
@@ -165,8 +167,24 @@ void VEInstPrinter::printMemASOperand(const MCInst *MI, int OpNum,
   O << ")";
 }
 
+void VEInstPrinter::printMImmOperand(const MCInst *MI, int OpNum,
+                                     const MCSubtargetInfo &STI,
+                                     raw_ostream &O) {
+  int MImm = (int)MI->getOperand(OpNum).getImm() & 0x7f;
+  if (MImm > 63)
+    O << "(" << MImm - 64 << ")0";
+  else
+    O << "(" << MImm << ")1";
+}
+
 void VEInstPrinter::printCCOperand(const MCInst *MI, int OpNum,
                                    const MCSubtargetInfo &STI, raw_ostream &O) {
   int CC = (int)MI->getOperand(OpNum).getImm();
   O << VECondCodeToString((VECC::CondCode)CC);
+}
+
+void VEInstPrinter::printRDOperand(const MCInst *MI, int OpNum,
+                                   const MCSubtargetInfo &STI, raw_ostream &O) {
+  int RD = (int)MI->getOperand(OpNum).getImm();
+  O << VERDToString((VERD::RoundingMode)RD);
 }

@@ -1,0 +1,22 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer \
+# RUN:   -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+# After the latest community master merge the following tests started failing
+# legalization. A fix is already WIP and in early review.
+
+---
+name:            insert_s80_s8
+body:             |
+  bb.0:
+    liveins: $d4, $e4
+
+    ; CHECK-LABEL: name: insert_s80_s8
+    %0:_(s64) = COPY $e4
+    %1:_(s32) = COPY $d4
+    %2:_(s80) = G_ANYEXT %0
+    %3:_(s8) = G_TRUNC %1
+    %4:_(s80) = G_INSERT %2, %3, 64
+    %5:_(s64) = G_TRUNC %4
+    $e4 = COPY %5
+...

@@ -20,10 +20,9 @@ class ExprCommandWithFixits(TestBase):
 
         ret_val = lldb.SBCommandReturnObject()
         result = self.dbg.GetCommandInterpreter().HandleCommand("expression ((1 << 16) - 1))", ret_val)
-        self.assertEqual(result, lldb.eReturnStatusSuccessFinishResult, "The expression was successful.")
-        self.assertTrue("Fix-it applied" in ret_val.GetError(), "Found the applied FixIt.")
+        self.assertEqual(result, lldb.eReturnStatusSuccessFinishResult, ret_val.GetError())
+        self.assertIn("Fix-it applied", ret_val.GetError())
 
-    @expectedFailureAll(archs=["aarch64"], oslist=["linux"])
     def test_with_target(self):
         """Test calling expressions with errors that can be fixed by the FixIts."""
         self.build()
@@ -83,11 +82,21 @@ class ExprCommandWithFixits(TestBase):
             error_string.find("my_pointer->second.a") != -1,
             "Fix was right")
 
+    # The final function call runs into SIGILL on aarch64-linux.
+    @expectedFailureAll(archs=["aarch64"], oslist=["linux"])
+    def test_with_multiple_retries(self):
+        """Test calling expressions with errors that can be fixed by the FixIts."""
+        self.build()
+        (target, process, self.thread, bkpt) = lldbutil.run_to_source_breakpoint(self,
+                                        'Stop here to evaluate expressions',
+                                         lldb.SBFileSpec("main.cpp"))
 
         # Test repeatedly applying Fix-Its to expressions and reparsing them.
         multiple_runs_options = lldb.SBExpressionOptions()
         multiple_runs_options.SetAutoApplyFixIts(True)
         multiple_runs_options.SetTopLevel(True)
+
+        frame = self.thread.GetFrameAtIndex(0)
 
         # An expression that needs two parse attempts with one Fix-It each
         # to be successfully parsed.
@@ -98,11 +107,11 @@ class ExprCommandWithFixits(TestBase):
         struct S1 : public T {
           using T::TypeDef;
           int f() {
-            Data d;
-            d.m = 123;
+            Data data;
+            data.m = 123;
             // The first error as the using above requires a 'typename '.
             // Will trigger a Fix-It that puts 'typename' in the right place.
-            typename S1<T>::TypeDef i = &d;
+            typename S1<T>::TypeDef i = &data;
             // i has the type "Data *", so this should be i.m.
             // The second run will change the . to -> via the Fix-It.
             return i.m;

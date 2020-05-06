@@ -17,6 +17,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffects.td"
+include "mlir/Interfaces/ViewLikeInterface.td"
 
 def StandardOps_Dialect : Dialect {
   let name = "std";
@@ -46,7 +47,7 @@ class CastOp<string mnemonic, list<OpTrait> traits = []> :
   let results = (outs AnyType);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value source, Type destType", [{
+    "OpBuilder &builder, OperationState &result, Value source, Type destType", [{
        impl::buildCastOp(builder, result, source, destType);
   }]>];
 
@@ -129,18 +130,18 @@ class FloatArithmeticOp<string mnemonic, list<OpTrait> traits = []> :
 //   %0 = alloclike(%m)[%s] : memref<8x?xf32, (d0, d1)[s0] -> ((d0 + s0), d1)>
 //
 class AllocLikeOp<string mnemonic, list<OpTrait> traits = []> :
-    Std_Op<mnemonic, traits> {
+    Std_Op<mnemonic, !listconcat(traits, [MemoryEffects<[MemAlloc]>])> {
 
   let arguments = (ins Variadic<Index>:$value,
                    Confined<OptionalAttr<I64Attr>, [IntMinValue<0>]>:$alignment);
-  let results = (outs AnyMemRef);
+  let results = (outs Res<AnyMemRef, "", [MemAlloc]>);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, MemRefType memrefType", [{
+    "OpBuilder &builder, OperationState &result, MemRefType memrefType", [{
        result.types.push_back(memrefType);
      }]>,
     OpBuilder<
-    "Builder *builder, OperationState &result, MemRefType memrefType, " #
+    "OpBuilder &builder, OperationState &result, MemRefType memrefType, " #
     "ValueRange operands, IntegerAttr alignment = IntegerAttr()", [{
        result.addOperands(operands);
        result.types.push_back(memrefType);
@@ -326,8 +327,11 @@ def AllocaOp : AllocLikeOp<"alloca"> {
   let summary = "stack memory allocation operation";
   let description = [{
     The `alloca` operation allocates memory on the stack, to be automatically
-    released when the stack frame is discarded. The amount of memory allocated
-    is specified by its memref and additional operands. For example:
+    released when control transfers back from the region of its closest
+    surrounding operation with an
+    [`AutomaticAllocationScope`](../Traits.md#automaticallocationscope) trait.
+    The amount of memory allocated is specified by its memref and additional
+    operands. For example:
 
     ```mlir
 		%0 = alloca() : memref<8x64xf32>
@@ -481,12 +485,83 @@ def AtomicRMWOp : Std_Op<"atomic_rmw", [
   }];
 }
 
+def GenericAtomicRMWOp : Std_Op<"generic_atomic_rmw", [
+      SingleBlockImplicitTerminator<"AtomicYieldOp">,
+      TypesMatchWith<"result type matches element type of memref",
+                     "memref", "result",
+                     "$_self.cast<MemRefType>().getElementType()">
+    ]> {
+  let summary = "atomic read-modify-write operation with a region";
+  let description = [{
+    The `atomic_rmw` operation provides a way to perform a read-modify-write
+    sequence that is free from data races. The memref operand represents the
+    buffer that the read and write will be performed against, as accessed by
+    the specified indices. The arity of the indices is the rank of the memref.
+    The result represents the latest value that was stored. The region contains
+    the code for the modification itself. The entry block has a single argument
+    that represents the value stored in `memref[indices]` before the write is
+    performed. No side-effecting ops are allowed in the body of
+    `GenericAtomicRMWOp`.
+
+    Example:
+
+    ```mlir
+    %x = generic_atomic_rmw %I[%i] : memref<10xf32> {
+      ^bb0(%current_value : f32):
+        %c1 = constant 1.0 : f32
+        %inc = addf %c1, %current_value : f32
+        atomic_yield %inc : f32
+    }
+    ```
+  }];
+
+  let arguments = (ins
+      MemRefOf<[AnySignlessInteger, AnyFloat]>:$memref,
+      Variadic<Index>:$indices);
+
+  let results = (outs
+      AnyTypeOf<[AnySignlessInteger, AnyFloat]>:$result);
+
+  let regions = (region AnyRegion:$body);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
+              "Value memref, ValueRange ivs">
+  ];
+
+  let extraClassDeclaration = [{
+    // The value stored in memref[ivs].
+    Value getCurrentValue() {
+      return body().front().getArgument(0);
+    }
+    MemRefType getMemRefType() {
+      return memref().getType().cast<MemRefType>();
+    }
+  }];
+}
+
+def AtomicYieldOp : Std_Op<"atomic_yield", [
+      HasParent<"GenericAtomicRMWOp">,
+      NoSideEffect,
+      Terminator
+    ]> {
+  let summary = "yield operation for GenericAtomicRMWOp";
+  let description = [{
+    "atomic_yield" yields an SSA value from a GenericAtomicRMWOp region.
+  }];
+
+  let arguments = (ins AnyType:$result);
+  let assemblyFormat = "$result attr-dict `:` type($result)";
+}
+
 //===----------------------------------------------------------------------===//
 // BranchOp
 //===----------------------------------------------------------------------===//
 
 def BranchOp : Std_Op<"br",
-    [DeclareOpInterfaceMethods<BranchOpInterface>, NoSideEffect, Terminator]> {
+    [DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
+     NoSideEffect, Terminator]> {
   let summary = "branch operation";
   let description = [{
     The `br` operation represents a branch operation in a function.
@@ -507,7 +582,7 @@ def BranchOp : Std_Op<"br",
   let arguments = (ins Variadic<AnyType>:$destOperands);
   let successors = (successor AnySuccessor:$dest);
 
-  let builders = [OpBuilder<"Builder *, OperationState &result, Block *dest, "
+  let builders = [OpBuilder<"OpBuilder &, OperationState &result, Block *dest, "
                             "ValueRange destOperands = {}", [{
     result.addSuccessors(dest);
     result.addOperands(destOperands);
@@ -553,21 +628,21 @@ def CallOp : Std_Op<"call", [CallOpInterface]> {
   let results = (outs Variadic<AnyType>);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, FuncOp callee,"
+    "OpBuilder &builder, OperationState &result, FuncOp callee,"
     "ValueRange operands = {}", [{
       result.addOperands(operands);
-      result.addAttribute("callee", builder->getSymbolRefAttr(callee));
+      result.addAttribute("callee", builder.getSymbolRefAttr(callee));
       result.addTypes(callee.getType().getResults());
   }]>, OpBuilder<
-    "Builder *builder, OperationState &result, SymbolRefAttr callee,"
+    "OpBuilder &builder, OperationState &result, SymbolRefAttr callee,"
     "ArrayRef<Type> results, ValueRange operands = {}", [{
       result.addOperands(operands);
       result.addAttribute("callee", callee);
       result.addTypes(results);
   }]>, OpBuilder<
-    "Builder *builder, OperationState &result, StringRef callee,"
+    "OpBuilder &builder, OperationState &result, StringRef callee,"
     "ArrayRef<Type> results, ValueRange operands = {}", [{
-      build(builder, result, builder->getSymbolRefAttr(callee), results,
+      build(builder, result, builder.getSymbolRefAttr(callee), results,
             operands);
   }]>];
 
@@ -615,7 +690,7 @@ def CallIndirectOp : Std_Op<"call_indirect", [
     types of the call must match the specified function type.
 
     Function values can be created with the
-    [`constant` operation](#constant-operation).
+    [`constant` operation](#stdconstant-constantop).
 
     Example:
 
@@ -629,7 +704,7 @@ def CallIndirectOp : Std_Op<"call_indirect", [
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [OpBuilder<
-    "Builder *, OperationState &result, Value callee,"
+    "OpBuilder &, OperationState &result, Value callee,"
     "ValueRange operands = {}", [{
       result.operands.push_back(callee);
       result.addOperands(operands);
@@ -762,7 +837,7 @@ def CmpFOp : Std_Op<"cmpf",
   let results = (outs BoolLike:$result);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, CmpFPredicate predicate,"
+    "OpBuilder &builder, OperationState &result, CmpFPredicate predicate,"
     "Value lhs, Value rhs", [{
       ::buildCmpFOp(builder, result, predicate, lhs, rhs);
   }]>];
@@ -847,16 +922,16 @@ def CmpIOp : Std_Op<"cmpi",
     attributes: integers require sign specification while floats require various
     floating point-related particularities, e.g., `-ffast-math` behavior,
     IEEE754 compliance, etc
-    ([rationale](../Rationale.md#splitting-floating-point-vs-integer-operations)).
+    ([rationale](../Rationale/Rationale.md#splitting-floating-point-vs-integer-operations)).
     The type of comparison is specified as attribute to avoid introducing ten
     similar operations, taking into account that they are often implemented
     using the same operation downstream
-    ([rationale](../Rationale.md#specifying-comparison-kind-as-attribute)). The
+    ([rationale](../Rationale/Rationale.md#specifying-comparison-kind-as-attribute)). The
     separation between signed and unsigned order comparisons is necessary
     because of integers being signless. The comparison operation must know how
     to interpret values with the foremost bit being set: negatives in two's
     complement or large positives
-    ([rationale](../Rationale.md#specifying-sign-in-integer-comparison-operations)).
+    ([rationale](../Rationale/Rationale.md#specifying-sign-in-integer-comparison-operations)).
 
     Example:
 
@@ -884,7 +959,7 @@ def CmpIOp : Std_Op<"cmpi",
   let results = (outs BoolLike:$result);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, CmpIPredicate predicate,"
+    "OpBuilder &builder, OperationState &result, CmpIPredicate predicate,"
     "Value lhs, Value rhs", [{
       ::buildCmpIOp(builder, result, predicate, lhs, rhs);
   }]>];
@@ -907,11 +982,46 @@ def CmpIOp : Std_Op<"cmpi",
 }
 
 //===----------------------------------------------------------------------===//
+// CreateComplexOp
+//===----------------------------------------------------------------------===//
+
+def CreateComplexOp : Std_Op<"create_complex",
+    [NoSideEffect,
+     AllTypesMatch<["real", "imaginary"]>,
+     TypesMatchWith<"complex element type matches real operand type",
+                    "complex", "real",
+                    "$_self.cast<ComplexType>().getElementType()">,
+     TypesMatchWith<"complex element type matches imaginary operand type",
+                    "complex", "imaginary",
+                    "$_self.cast<ComplexType>().getElementType()">]> {
+  let summary = "creates a complex number";
+  let description = [{
+    The `create_complex` operation creates a complex number from two
+    floating-point operands, the real and the imaginary part.
+
+    Example:
+
+    ```mlir
+    %a = create_complex %b, %c : complex<f32>
+    ```
+  }];
+
+  let arguments = (ins AnyFloat:$real, AnyFloat:$imaginary);
+  let results = (outs Complex<AnyFloat>:$complex);
+
+  let assemblyFormat = "$real `,` $imaginary attr-dict `:` type($complex)";
+
+  // `CreateComplexOp` is fully verified by its traits.
+  let verifier = ?;
+}
+
+//===----------------------------------------------------------------------===//
 // CondBranchOp
 //===----------------------------------------------------------------------===//
 
 def CondBranchOp : Std_Op<"cond_br",
-    [AttrSizedOperandSegments, DeclareOpInterfaceMethods<BranchOpInterface>,
+    [AttrSizedOperandSegments,
+     DeclareOpInterfaceMethods<BranchOpInterface, ["getSuccessorForOperands"]>,
      NoSideEffect, Terminator]> {
   let summary = "conditional branch operation";
   let description = [{
@@ -947,13 +1057,13 @@ def CondBranchOp : Std_Op<"cond_br",
   let successors = (successor AnySuccessor:$trueDest, AnySuccessor:$falseDest);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value condition,"
+    "OpBuilder &builder, OperationState &result, Value condition,"
     "Block *trueDest, ValueRange trueOperands,"
     "Block *falseDest, ValueRange falseOperands", [{
       build(builder, result, condition, trueOperands, falseOperands, trueDest,
             falseDest);
   }]>, OpBuilder<
-    "Builder *builder, OperationState &result, Value condition,"
+    "OpBuilder &builder, OperationState &result, Value condition,"
     "Block *trueDest, Block *falseDest, ValueRange falseOperands = {}", [{
       build(builder, result, condition, trueDest, ValueRange(), falseDest,
             falseOperands);
@@ -996,7 +1106,7 @@ def CondBranchOp : Std_Op<"cond_br",
 
     /// Erase the operand at 'index' from the true operand list.
     void eraseTrueOperand(unsigned index)  {
-      eraseSuccessorOperand(trueIndex, index);
+      trueDestOperandsMutable().erase(index);
     }
 
     // Accessors for operands to the 'false' destination.
@@ -1015,7 +1125,7 @@ def CondBranchOp : Std_Op<"cond_br",
 
     /// Erase the operand at 'index' from the false operand list.
     void eraseFalseOperand(unsigned index) {
-      eraseSuccessorOperand(falseIndex, index);
+      falseDestOperandsMutable().erase(index);
     }
 
   private:
@@ -1074,14 +1184,14 @@ def ConstantOp : Std_Op<"constant",
     MLIR does not allow direct references to functions in SSA operands because
     the compiler is multithreaded, and disallowing SSA values to directly
     reference a function simplifies this
-    ([rationale](../Rationale.md#multithreading-the-compiler)).
+    ([rationale](../Rationale/Rationale.md#multithreading-the-compiler)).
   }];
 
   let arguments = (ins AnyAttr:$value);
   let results = (outs AnyType);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Attribute value",
+    "OpBuilder &builder, OperationState &result, Attribute value",
     [{ build(builder, result, value.getType(), value); }]>];
 
   let extraClassDeclaration = [{
@@ -1162,11 +1272,41 @@ def CosOp : FloatUnaryOp<"cos"> {
   }];
 }
 
+def SinOp : FloatUnaryOp<"sin"> {
+  let summary = "sine of the specified value";
+  let description = [{
+    Syntax:
+
+    ```
+    operation ::= ssa-id `=` `std.sin` ssa-use `:` type
+    ```
+
+    The `sin` operation computes the sine of a given value. It takes one
+    operand and returns one result of the same type. This type may be a float
+    scalar type, a vector whose element type is float, or a tensor of floats.
+    It has no standard attributes.
+
+    Example:
+
+    ```mlir
+    // Scalar sine value.
+    %a = sin %b : f64
+
+    // SIMD vector element-wise sine value.
+    %f = sin %g : vector<4xf32>
+
+    // Tensor element-wise sine value.
+    %x = sin %y : tensor<4x?xf8>
+    ```
+  }];
+}
+
+
 //===----------------------------------------------------------------------===//
 // DeallocOp
 //===----------------------------------------------------------------------===//
 
-def DeallocOp : Std_Op<"dealloc"> {
+def DeallocOp : Std_Op<"dealloc", [MemoryEffects<[MemFree]>]> {
   let summary = "memory deallocation operation";
   let description = [{
     The `dealloc` operation frees the region of memory referenced by a memref
@@ -1182,7 +1322,7 @@ def DeallocOp : Std_Op<"dealloc"> {
     ```
   }];
 
-  let arguments = (ins AnyMemRef:$memref);
+  let arguments = (ins Arg<AnyMemRef, "", [MemFree]>:$memref);
 
   let hasCanonicalizer = 1;
   let hasFolder = 1;
@@ -1230,10 +1370,10 @@ def DimOp : Std_Op<"dim", [NoSideEffect]> {
   let results = (outs Index);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value memrefOrTensor,"
+    "OpBuilder &builder, OperationState &result, Value memrefOrTensor,"
     "unsigned index", [{
-      auto indexType = builder->getIndexType();
-      auto indexAttr = builder->getIntegerAttr(indexType, index);
+      auto indexType = builder.getIndexType();
+      auto indexAttr = builder.getIntegerAttr(indexType, index);
       build(builder, result, indexType, memrefOrTensor, indexAttr);
     }]>];
 
@@ -1326,7 +1466,7 @@ def ExtractElementOp : Std_Op<"extract_element",
   let results = (outs AnyType:$result);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value aggregate,"
+    "OpBuilder &builder, OperationState &result, Value aggregate,"
     "ValueRange indices = {}", [{
       auto resType = aggregate.getType().cast<ShapedType>()
                                          .getElementType();
@@ -1392,6 +1532,36 @@ def FPTruncOp : CastOp<"fptrunc">, Arguments<(ins AnyType:$in)> {
 }
 
 //===----------------------------------------------------------------------===//
+// ImOp
+//===----------------------------------------------------------------------===//
+
+def ImOp : Std_Op<"im",
+    [NoSideEffect,
+     TypesMatchWith<"complex element type matches result type",
+                    "complex", "imaginary",
+                    "$_self.cast<ComplexType>().getElementType()">]> {
+  let summary = "extracts the imaginary part of a complex number";
+  let description = [{
+    The `im` operation takes a single complex number as its operand and extracts
+    the imaginary part as a floating-point value.
+
+    Example:
+
+    ```mlir
+    %a = im %b : complex<f32>
+    ```
+  }];
+
+  let arguments = (ins Complex<AnyFloat>:$complex);
+  let results = (outs AnyFloat:$imaginary);
+
+  let assemblyFormat = "$complex attr-dict `:` type($complex)";
+
+  // `ImOp` is fully verified by its traits.
+  let verifier = ?;
+}
+
+//===----------------------------------------------------------------------===//
 // IndexCastOp
 //===----------------------------------------------------------------------===//
 
@@ -1430,8 +1600,8 @@ def LoadOp : Std_Op<"load",
 
     In an `affine.if` or `affine.for` body, the indices of a load are restricted
     to SSA values bound to surrounding loop induction variables,
-    [symbols](../LangRef.md#dimensions-and-symbols), results of a
-    [`constant` operation](#constant-operation), or the result of an
+    [symbols](../Affine.md#dimensions-and-symbols), results of a
+    [`constant` operation](#stdconstant-constantop), or the result of an
     `affine.apply` operation that can in turn take as arguments all of the
     aforementioned SSA values or the recursively result of such an
     `affine.apply` operation.
@@ -1451,7 +1621,7 @@ def LoadOp : Std_Op<"load",
     **Context:** The `load` and `store` operations are specifically crafted to
     fully resolve a reference to an element of a memref, and (in affine
     `affine.if` and `affine.for` operations) the compiler can follow use-def
-    chains (e.g. through [`affine.apply`](Affine.md#affineapply-operation)
+    chains (e.g. through [`affine.apply`](Affine.md#affineapply-affineapplyop)
     operations) to precisely analyze references at compile-time using polyhedral
     techniques. This is possible because of the
     [restrictions on dimensions and symbols](Affine.md#restrictions-on-dimensions-and-symbols)
@@ -1464,7 +1634,7 @@ def LoadOp : Std_Op<"load",
   let results = (outs AnyType:$result);
 
   let builders = [OpBuilder<
-    "Builder *, OperationState &result, Value memref,"
+    "OpBuilder &, OperationState &result, Value memref,"
     "ValueRange indices = {}", [{
       auto memrefType = memref.getType().cast<MemRefType>();
       result.addOperands(memref);
@@ -1716,12 +1886,12 @@ def PrefetchOp : Std_Op<"prefetch"> {
                    BoolAttr:$isDataCache);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value memref,"
+    "OpBuilder &builder, OperationState &result, Value memref,"
     "ArrayRef<Value> indices, bool isWrite, unsigned hint, bool isData",
     [{
-      auto hintAttr = builder->getI32IntegerAttr(hint);
-      auto isWriteAttr = builder->getBoolAttr(isWrite);
-      auto isDataCacheAttr = builder->getBoolAttr(isData);
+      auto hintAttr = builder.getI32IntegerAttr(hint);
+      auto isWriteAttr = builder.getBoolAttr(isWrite);
+      auto isDataCacheAttr = builder.getBoolAttr(isData);
       result.addOperands(memref);
       result.addOperands(indices);
       result.addAttribute("localityHint", hintAttr);
@@ -1762,13 +1932,43 @@ def RankOp : Std_Op<"rank", [NoSideEffect]> {
   let verifier = ?;
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value tensor", [{
-      auto indexType = builder->getIndexType();
+    "OpBuilder &builder, OperationState &result, Value tensor", [{
+      auto indexType = builder.getIndexType();
       build(builder, result, indexType, tensor);
     }]>];
 
   let hasFolder = 1;
   let assemblyFormat = "operands attr-dict `:` type(operands)";
+}
+
+//===----------------------------------------------------------------------===//
+// ReOp
+//===----------------------------------------------------------------------===//
+
+def ReOp : Std_Op<"re",
+    [NoSideEffect,
+     TypesMatchWith<"complex element type matches result type",
+                    "complex", "real",
+                    "$_self.cast<ComplexType>().getElementType()">]> {
+  let summary = "extracts the real part of a complex number";
+  let description = [{
+    The `re` operation takes a single complex number as its operand and extracts
+    the real part as a floating-point value.
+
+    Example:
+
+    ```mlir
+    %a = re %b : complex<f32>
+    ```
+  }];
+
+  let arguments = (ins Complex<AnyFloat>:$complex);
+  let results = (outs AnyFloat:$real);
+
+  let assemblyFormat = "$complex attr-dict `:` type($complex)";
+
+  // `ReOp` is fully verified by its traits.
+  let verifier = ?;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1783,7 +1983,7 @@ def RemFOp : FloatArithmeticOp<"remf"> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def ReturnOp : Std_Op<"return", [NoSideEffect, HasParent<"FuncOp">,
+def ReturnOp : Std_Op<"return", [NoSideEffect, HasParent<"FuncOp">, ReturnLike,
                                  Terminator]> {
   let summary = "return operation";
   let description = [{
@@ -1805,7 +2005,7 @@ def ReturnOp : Std_Op<"return", [NoSideEffect, HasParent<"FuncOp">,
   let arguments = (ins Variadic<AnyType>:$operands);
 
   let builders = [OpBuilder<
-    "Builder *b, OperationState &result", [{ build(b, result, llvm::None); }]
+    "OpBuilder &b, OperationState &result", [{ build(b, result, llvm::None); }]
   >];
 
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
@@ -1829,11 +2029,8 @@ def RsqrtOp : FloatUnaryOp<"rsqrt"> {
 // SelectOp
 //===----------------------------------------------------------------------===//
 
-def SelectOp : Std_Op<"select", [NoSideEffect, SameOperandsAndResultShape,
-     AllTypesMatch<["true_value", "false_value", "result"]>,
-     TypesMatchWith<"condition type matches i1 equivalent of result type",
-                     "result", "condition",
-                     "getI1SameShape($_self)">]> {
+def SelectOp : Std_Op<"select", [NoSideEffect,
+     AllTypesMatch<["true_value", "false_value", "result"]>]> {
   let summary = "select operation";
   let description = [{
     The `select` operation chooses one value based on a binary condition
@@ -1844,9 +2041,10 @@ def SelectOp : Std_Op<"select", [NoSideEffect, SameOperandsAndResultShape,
     The operation applies to vectors and tensors elementwise given the _shape_
     of all operands is identical. The choice is made for each element
     individually based on the value at the same position as the element in the
-    condition operand.
+    condition operand. If an i1 is provided as the condition, the entire vector
+    or tensor is chosen.
 
-    The `select` operation combined with [`cmpi`](#std-cmpi) can be used
+    The `select` operation combined with [`cmpi`](#stdcmpi-cmpiop) can be used
     to implement `min` and `max` with signed or unsigned comparison semantics.
 
     Example:
@@ -1858,20 +2056,21 @@ def SelectOp : Std_Op<"select", [NoSideEffect, SameOperandsAndResultShape,
     // Generic form of the same operation.
     %x = "std.select"(%cond, %true, %false) : (i1, i32, i32) -> i32
 
-    // Vector selection is element-wise
-    %vx = "std.select"(%vcond, %vtrue, %vfalse)
-        : (vector<42xi1>, vector<42xf32>, vector<42xf32>) -> vector<42xf32>
+    // Element-wise vector selection.
+    %vx = std.select %vcond, %vtrue, %vfalse : vector<42xi1>, vector<42xf32>
+
+    // Full vector selection.
+    %vx = std.select %cond, %vtrue, %vfalse : vector<42xf32>
     ```
   }];
 
   let arguments = (ins BoolLike:$condition,
-                       SignlessIntegerOrFloatLike:$true_value,
-                       SignlessIntegerOrFloatLike:$false_value);
-  let results = (outs SignlessIntegerOrFloatLike:$result);
-  let verifier = ?;
+                       AnyType:$true_value,
+                       AnyType:$false_value);
+  let results = (outs AnyType:$result);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value condition,"
+    "OpBuilder &builder, OperationState &result, Value condition,"
     "Value trueValue, Value falseValue", [{
       result.addOperands({condition, trueValue, falseValue});
       result.addTypes(trueValue.getType());
@@ -1884,10 +2083,6 @@ def SelectOp : Std_Op<"select", [NoSideEffect, SameOperandsAndResultShape,
   }];
 
   let hasFolder = 1;
-
-  let assemblyFormat = [{
-    $condition `,` $true_value `,` $false_value attr-dict `:` type($result)
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -2034,7 +2229,7 @@ def SignExtendIOp : Std_Op<"sexti",
   let results = (outs SignlessIntegerLike);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value value, Type destType", [{
+    "OpBuilder &builder, OperationState &result, Value value, Type destType", [{
       result.addOperands(value);
       result.addTypes(destType);
   }]>];
@@ -2108,7 +2303,7 @@ def SplatOp : Std_Op<"splat", [NoSideEffect,
   let results = (outs AnyTypeOf<[AnyVector, AnyStaticShapeTensor]>:$aggregate);
 
   let builders =
-      [OpBuilder<"Builder *builder, OperationState &result, Value element, "
+      [OpBuilder<"OpBuilder &builder, OperationState &result, Value element, "
                   "Type aggregateType",
                   [{ build(builder, result, aggregateType, element); }]>];
 
@@ -2159,8 +2354,8 @@ def StoreOp : Std_Op<"store",
     In an affine context, the indices of a store are restricted to SSA values
     bound to surrounding loop induction variables,
     [symbols](Affine.md#restrictions-on-dimensions-and-symbols), results of a
-    [`constant` operation](#constant-operation), or the result of an
-    [`affine.apply`](Affine.md#affineapply-operation) operation that can in turn
+    [`constant` operation](#stdconstant-constantop), or the result of an
+    [`affine.apply`](Affine.md#affineapply-affineapplyop) operation that can in turn
     take as arguments all of the aforementioned SSA values or the recursively
     result of such an `affine.apply` operation.
 
@@ -2173,7 +2368,7 @@ def StoreOp : Std_Op<"store",
     **Context:** The `load` and `store` operations are specifically crafted to
     fully resolve a reference to an element of a memref, and (in polyhedral
     `affine.if` and `affine.for` operations) the compiler can follow use-def
-    chains (e.g. through [`affine.apply`](Affine.md#affineapply-operation)
+    chains (e.g. through [`affine.apply`](Affine.md#affineapply-affineapplyop)
     operations) to precisely analyze references at compile-time using polyhedral
     techniques. This is possible because of the
     [restrictions on dimensions and symbols](Affine.md#restrictions-on-dimensions-and-symbols)
@@ -2186,7 +2381,7 @@ def StoreOp : Std_Op<"store",
                        Variadic<Index>:$indices);
 
   let builders = [OpBuilder<
-    "Builder *, OperationState &result, Value valueToStore, Value memref", [{
+    "OpBuilder &, OperationState &result, Value valueToStore, Value memref", [{
       result.addOperands(valueToStore);
       result.addOperands(memref);
   }]>];
@@ -2234,7 +2429,11 @@ def SubIOp : IntArithmeticOp<"subi"> {
 // SubViewOp
 //===----------------------------------------------------------------------===//
 
-def SubViewOp : Std_Op<"subview", [AttrSizedOperandSegments, NoSideEffect]> {
+def SubViewOp : Std_Op<"subview", [
+    AttrSizedOperandSegments, 
+    DeclareOpInterfaceMethods<ViewLikeOpInterface>,
+    NoSideEffect,
+  ]> {
   let summary = "memref subview operation";
   let description = [{
     The "subview" operation converts a memref type to another memref type
@@ -2362,12 +2561,12 @@ def SubViewOp : Std_Op<"subview", [AttrSizedOperandSegments, NoSideEffect]> {
 
   let builders = [
     OpBuilder<
-      "Builder *b, OperationState &result, Value source, "
+      "OpBuilder &b, OperationState &result, Value source, "
       "ValueRange offsets, ValueRange sizes, "
       "ValueRange strides, Type resultType = Type(), "
       "ArrayRef<NamedAttribute> attrs = {}">,
     OpBuilder<
-      "Builder *builder, OperationState &result, "
+      "OpBuilder &builder, OperationState &result, "
       "Type resultType, Value source">
   ];
 
@@ -2520,7 +2719,7 @@ def TensorLoadOp : Std_Op<"tensor_load",
   let verifier = ?;
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value memref", [{
+    "OpBuilder &builder, OperationState &result, Value memref", [{
       auto memrefType = memref.getType().cast<MemRefType>();
       auto resultType = RankedTensorType::get(memrefType.getShape(),
                                               memrefType.getElementType());
@@ -2596,7 +2795,7 @@ def TruncateIOp : Std_Op<"trunci", [NoSideEffect, SameOperandsAndResultShape]> {
   let results = (outs SignlessIntegerLike);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value value, Type destType", [{
+    "OpBuilder &builder, OperationState &result, Value value, Type destType", [{
       result.addOperands(value);
       result.addTypes(destType);
   }]>];
@@ -2704,7 +2903,8 @@ def UnsignedShiftRightOp : IntArithmeticOp<"shift_right_unsigned"> {
 // ViewOp
 //===----------------------------------------------------------------------===//
 
-def ViewOp : Std_Op<"view", [NoSideEffect]> {
+def ViewOp : Std_Op<"view", [
+    DeclareOpInterfaceMethods<ViewLikeOpInterface>, NoSideEffect]> {
   let summary = "memref view operation";
   let description = [{
     The "view" operation converts a 1-D memref with i8 element type,
@@ -2826,7 +3026,7 @@ def ZeroExtendIOp : Std_Op<"zexti", [NoSideEffect, SameOperandsAndResultShape]> 
   let results = (outs SignlessIntegerLike);
 
   let builders = [OpBuilder<
-    "Builder *builder, OperationState &result, Value value, Type destType", [{
+    "OpBuilder &builder, OperationState &result, Value value, Type destType", [{
       result.addOperands(value);
       result.addTypes(destType);
   }]>];

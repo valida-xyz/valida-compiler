@@ -142,6 +142,8 @@ const MCPhysReg*
 PPCRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   const PPCSubtarget &Subtarget = MF->getSubtarget<PPCSubtarget>();
   if (MF->getFunction().getCallingConv() == CallingConv::AnyReg) {
+    if (!TM.isPPC64() && Subtarget.isAIXABI())
+      report_fatal_error("AnyReg unimplemented on 32-bit AIX.");
     if (Subtarget.hasVSX())
       return CSR_64_AllRegs_VSX_SaveList;
     if (Subtarget.hasAltivec())
@@ -149,14 +151,26 @@ PPCRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
     return CSR_64_AllRegs_SaveList;
   }
 
-  if (TM.isPPC64() && MF->getInfo<PPCFunctionInfo>()->isSplitCSR())
+  if (TM.isPPC64() && MF->getInfo<PPCFunctionInfo>()->isSplitCSR()) {
+    if (Subtarget.isAIXABI())
+      report_fatal_error("SplitCSR unimplemented on AIX.");
     return CSR_SRV464_TLS_PE_SaveList;
+  }
 
   // On PPC64, we might need to save r2 (but only if it is not reserved).
-  bool SaveR2 = MF->getRegInfo().isAllocatable(PPC::X2);
+  // We do not need to treat R2 as callee-saved when using PC-Relative calls
+  // because any direct uses of R2 will cause it to be reserved. If the function
+  // is a leaf or the only uses of R2 are implicit uses for calls, the calls
+  // will use the @notoc relocation which will cause this function to set the
+  // st_other bit to 1, thereby communicating to its caller that it arbitrarily
+  // clobbers the TOC.
+  bool SaveR2 = MF->getRegInfo().isAllocatable(PPC::X2) &&
+                !Subtarget.isUsingPCRelativeCalls();
 
   // Cold calling convention CSRs.
   if (MF->getFunction().getCallingConv() == CallingConv::Cold) {
+    if (Subtarget.isAIXABI())
+      report_fatal_error("Cold calling unimplemented on AIX.");
     if (TM.isPPC64()) {
       if (Subtarget.hasAltivec())
         return SaveR2 ? CSR_SVR64_ColdCC_R2_Altivec_SaveList
@@ -179,6 +193,8 @@ PPCRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
     return SaveR2 ? CSR_PPC64_R2_SaveList : CSR_PPC64_SaveList;
   }
   // 32-bit targets.
+  if (Subtarget.isAIXABI())
+    return CSR_AIX32_SaveList;
   if (Subtarget.hasAltivec())
     return CSR_SVR432_Altivec_SaveList;
   else if (Subtarget.hasSPE())

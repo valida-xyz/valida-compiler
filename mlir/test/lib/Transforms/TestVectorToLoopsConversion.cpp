@@ -22,8 +22,8 @@ struct TestVectorToLoopsPass
   void runOnFunction() override {
     OwningRewritePatternList patterns;
     auto *context = &getContext();
-    populateVectorToAffineLoopsConversionPatterns(context, patterns);
-    applyPatternsGreedily(getFunction(), patterns);
+    populateVectorToLoopsConversionPatterns(patterns, context);
+    applyPatternsAndFoldGreedily(getFunction(), patterns);
   }
 };
 

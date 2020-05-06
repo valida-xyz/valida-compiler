@@ -13,6 +13,7 @@
 #ifndef LOOP_OPS
 #define LOOP_OPS
 
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffects.td"
 
@@ -37,6 +38,7 @@ class Loop_Op<string mnemonic, list<OpTrait> traits = []> :
 
 def ForOp : Loop_Op<"for",
       [DeclareOpInterfaceMethods<LoopLikeOpInterface>,
+       DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        SingleBlockImplicitTerminator<"YieldOp">,
        RecursiveSideEffects]> {
   let summary = "for operation";
@@ -133,17 +135,13 @@ def ForOp : Loop_Op<"for",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "Value lowerBound, Value upperBound, Value step, "
               "ValueRange iterArgs = llvm::None">
   ];
 
   let extraClassDeclaration = [{
-    Block *getBody() { return &region().front(); }
     Value getInductionVar() { return getBody()->getArgument(0); }
-    OpBuilder getBodyBuilder() {
-      return OpBuilder(getBody(), std::prev(getBody()->end()));
-    }
     Block::BlockArgListType getRegionIterArgs() {
       return getBody()->getArguments().drop_front();
     }
@@ -169,11 +167,18 @@ def ForOp : Loop_Op<"for",
     unsigned getNumIterOperands() {
       return getOperation()->getNumOperands() - getNumControlOperands();
     }
+
+    /// Return operands used when entering the region at 'index'. These operands
+    /// correspond to the loop iterator operands, i.e., those exclusing the
+    /// induction variable. LoopOp only has one region, so 0 is the only valid
+    /// value for `index`.
+    OperandRange getSuccessorEntryOperands(unsigned index);
   }];
 }
 
 def IfOp : Loop_Op<"if",
-      [SingleBlockImplicitTerminator<"YieldOp">, RecursiveSideEffects]> {
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+       SingleBlockImplicitTerminator<"YieldOp">, RecursiveSideEffects]> {
   let summary = "if-then-else operation";
   let description = [{
     The `loop.if` operation represents an if-then-else construct for
@@ -225,24 +230,22 @@ def IfOp : Loop_Op<"if",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "Value cond, bool withElseRegion">,
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "TypeRange resultTypes, Value cond, bool withElseRegion">
   ];
 
   let extraClassDeclaration = [{
     OpBuilder getThenBodyBuilder() {
-      assert(!thenRegion().empty() && "Unexpected empty 'then' region.");
-      Block &body = thenRegion().front();
-      return OpBuilder(&body,
-                       results().empty() ? std::prev(body.end()) : body.end());
+      Block* body = getBody(0);
+      return results().empty() ? OpBuilder::atBlockTerminator(body)
+                               : OpBuilder::atBlockEnd(body);
     }
     OpBuilder getElseBodyBuilder() {
-      assert(!elseRegion().empty() && "Unexpected empty 'else' region.");
-      Block &body = elseRegion().front();
-      return OpBuilder(&body,
-                       results().empty() ? std::prev(body.end()) : body.end());
+      Block* body = getBody(1);
+      return results().empty() ? OpBuilder::atBlockTerminator(body)
+                               : OpBuilder::atBlockEnd(body);
     }
   }];
 }
@@ -250,6 +253,7 @@ def IfOp : Loop_Op<"if",
 def ParallelOp : Loop_Op<"parallel",
     [AttrSizedOperandSegments,
      DeclareOpInterfaceMethods<LoopLikeOpInterface>,
+     RecursiveSideEffects,
      SingleBlockImplicitTerminator<"YieldOp">]> {
   let summary = "parallel for operation";
   let description = [{
@@ -285,9 +289,10 @@ def ParallelOp : Loop_Op<"parallel",
     Example:
 
     ```mlir
-    loop.parallel (%iv) = (%lb) to (%ub) step (%step) -> f32 {
-      %zero = constant 0.0 : f32
-      loop.reduce(%zero) : f32 {
+    %init = constant 0.0 : f32
+    loop.parallel (%iv) = (%lb) to (%ub) step (%step) init (%init) -> f32 {
+      %elem_to_reduce = load %buffer[%iv] : memref<100xf32>
+      loop.reduce(%elem_to_reduce) : f32 {
         ^bb0(%lhs : f32, %rhs: f32):
           %res = addf %lhs, %rhs : f32
           loop.reduce.return %res : f32
@@ -305,13 +310,12 @@ def ParallelOp : Loop_Op<"parallel",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "ValueRange lowerBounds, ValueRange upperBounds, "
               "ValueRange steps, ValueRange initVals = {}">,
   ];
 
   let extraClassDeclaration = [{
-    Block *getBody() { return &region().front(); }
     ValueRange getInductionVars() {
       return getBody()->getArguments();
     }
@@ -359,7 +363,7 @@ def ReduceOp : Loop_Op<"reduce", [HasParent<"ParallelOp">]> {
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result, "
+    OpBuilder<"OpBuilder &builder, OperationState &result, "
               "Value operand">
   ];
 
@@ -385,7 +389,7 @@ def ReduceReturnOp :
   let assemblyFormat = "$result attr-dict `:` type($result)";
 }
 
-def YieldOp : Loop_Op<"yield", [NoSideEffect, Terminator]> {
+def YieldOp : Loop_Op<"yield", [NoSideEffect, ReturnLike, Terminator]> {
   let summary = "loop yield and termination operation";
   let description = [{
     "loop.yield" yields an SSA value from a loop dialect op region and
@@ -401,7 +405,7 @@ def YieldOp : Loop_Op<"yield", [NoSideEffect, Terminator]> {
 
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [
-    OpBuilder<"Builder *builder, OperationState &result",
+    OpBuilder<"OpBuilder &builder, OperationState &result",
               [{ /* nothing to do */ }]>
   ];
 }

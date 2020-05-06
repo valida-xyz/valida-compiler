@@ -10,10 +10,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllPasses.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/InitAllDialects.h"
+#include "mlir/InitAllPasses.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
@@ -39,6 +40,8 @@ void registerSimpleParametricTilingPass();
 void registerSymbolTestPasses();
 void registerTestAffineDataCopyPass();
 void registerTestAllReduceLoweringPass();
+void registerTestAffineLoopUnswitchingPass();
+void registerTestBufferPlacementPreparationPass();
 void registerTestLoopPermutationPass();
 void registerTestCallGraphPass();
 void registerTestConstantFold();
@@ -50,6 +53,7 @@ void registerTestLinalgTransforms();
 void registerTestLivenessPass();
 void registerTestLoopFusion();
 void registerTestLoopMappingPass();
+void registerTestLoopUnrollingPass();
 void registerTestMatchers();
 void registerTestMemRefDependenceCheck();
 void registerTestMemRefStrideCalculation();
@@ -101,12 +105,14 @@ void registerTestPasses() {
   registerSymbolTestPasses();
   registerTestAffineDataCopyPass();
   registerTestAllReduceLoweringPass();
+  registerTestAffineLoopUnswitchingPass();
   registerTestLoopPermutationPass();
   registerTestCallGraphPass();
   registerTestConstantFold();
 #if MLIR_CUDA_CONVERSIONS_ENABLED
   registerTestConvertGPUKernelToCubinPass();
 #endif
+  registerTestBufferPlacementPreparationPass();
   registerTestDominancePass();
   registerTestFunc();
   registerTestGpuMemoryPromotionPass();
@@ -114,6 +120,7 @@ void registerTestPasses() {
   registerTestLivenessPass();
   registerTestLoopFusion();
   registerTestLoopMappingPass();
+  registerTestLoopUnrollingPass();
   registerTestMatchers();
   registerTestMemRefDependenceCheck();
   registerTestMemRefStrideCalculation();
@@ -136,16 +143,18 @@ int main(int argc, char **argv) {
   registerTestPasses();
   InitLLVM y(argc, argv);
 
-  // Register any pass manager command line options.
+  // Register any command line options.
+  registerAsmPrinterCLOptions();
+  registerMLIRContextCLOptions();
   registerPassManagerCLOptions();
   PassPipelineCLParser passPipeline("", "Compiler passes to run");
 
   // Parse pass names in main to ensure static initialization completed.
   cl::ParseCommandLineOptions(argc, argv, "MLIR modular optimizer driver\n");
 
-  MLIRContext context;
   if(showDialects) {
     llvm::outs() << "Registered Dialects:\n";
+    MLIRContext context;
     for(Dialect *dialect : context.getRegisteredDialects()) {
       llvm::outs() << dialect->getNamespace() << "\n";
     }

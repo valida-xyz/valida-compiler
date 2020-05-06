@@ -330,11 +330,10 @@ LogicalResult MemRefRegion::compute(Operation *op, unsigned loopDepth,
   if (addMemRefDimBounds) {
     auto memRefType = memref.getType().cast<MemRefType>();
     for (unsigned r = 0; r < rank; r++) {
-      cst.addConstantLowerBound(r, 0);
-      int64_t dimSize = memRefType.getDimSize(r);
-      if (ShapedType::isDynamic(dimSize))
+      cst.addConstantLowerBound(/*pos=*/r, /*lb=*/0);
+      if (memRefType.isDynamicDim(r))
         continue;
-      cst.addConstantUpperBound(r, dimSize - 1);
+      cst.addConstantUpperBound(/*pos=*/r, memRefType.getDimSize(r) - 1);
     }
   }
   cst.removeTrivialRedundancy();
@@ -570,9 +569,9 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
       if (srcAccess.memref != dstAccess.memref)
         continue;
       // Check if 'loopDepth' exceeds nesting depth of src/dst ops.
-      if ((!isBackwardSlice && loopDepth > getNestingDepth(*opsA[i])) ||
-          (isBackwardSlice && loopDepth > getNestingDepth(*opsB[j]))) {
-        LLVM_DEBUG(llvm::dbgs() << "Invalid loop depth\n.");
+      if ((!isBackwardSlice && loopDepth > getNestingDepth(opsA[i])) ||
+          (isBackwardSlice && loopDepth > getNestingDepth(opsB[j]))) {
+        LLVM_DEBUG(llvm::dbgs() << "Invalid loop depth\n");
         return failure();
       }
 
@@ -585,7 +584,7 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
           &dependenceConstraints, /*dependenceComponents=*/nullptr,
           /*allowRAR=*/readReadAccesses);
       if (result.value == DependenceResult::Failure) {
-        LLVM_DEBUG(llvm::dbgs() << "Dependence check failed\n.");
+        LLVM_DEBUG(llvm::dbgs() << "Dependence check failed\n");
         return failure();
       }
       if (result.value == DependenceResult::NoDependence)
@@ -602,7 +601,7 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
         // Initialize 'sliceUnionCst' with the bounds computed in previous step.
         if (failed(tmpSliceState.getAsConstraints(&sliceUnionCst))) {
           LLVM_DEBUG(llvm::dbgs()
-                     << "Unable to compute slice bound constraints\n.");
+                     << "Unable to compute slice bound constraints\n");
           return failure();
         }
         assert(sliceUnionCst.getNumDimAndSymbolIds() > 0);
@@ -613,7 +612,7 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
       FlatAffineConstraints tmpSliceCst;
       if (failed(tmpSliceState.getAsConstraints(&tmpSliceCst))) {
         LLVM_DEBUG(llvm::dbgs()
-                   << "Unable to compute slice bound constraints\n.");
+                   << "Unable to compute slice bound constraints\n");
         return failure();
       }
 
@@ -646,8 +645,7 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
           tmpSliceCst.getNumLocalIds() > 0 ||
           failed(sliceUnionCst.unionBoundingBox(tmpSliceCst))) {
         LLVM_DEBUG(llvm::dbgs()
-                   << "Unable to compute union bounding box of slice bounds."
-                      "\n.");
+                   << "Unable to compute union bounding box of slice bounds\n");
         return failure();
       }
     }
@@ -666,7 +664,7 @@ LogicalResult mlir::computeSliceUnion(ArrayRef<Operation *> opsA,
   unsigned innermostCommonLoopDepth =
       getInnermostCommonLoopDepth(ops, surroundingLoops);
   if (loopDepth > innermostCommonLoopDepth) {
-    LLVM_DEBUG(llvm::dbgs() << "Exceeds max loop depth\n.");
+    LLVM_DEBUG(llvm::dbgs() << "Exceeds max loop depth\n");
     return failure();
   }
 
@@ -896,8 +894,8 @@ bool MemRefAccess::isStore() const { return isa<AffineStoreOp>(opInst); }
 
 /// Returns the nesting depth of this statement, i.e., the number of loops
 /// surrounding this statement.
-unsigned mlir::getNestingDepth(Operation &op) {
-  Operation *currOp = &op;
+unsigned mlir::getNestingDepth(Operation *op) {
+  Operation *currOp = op;
   unsigned depth = 0;
   while ((currOp = currOp->getParentOp())) {
     if (isa<AffineForOp>(currOp))
@@ -958,7 +956,7 @@ static Optional<int64_t> getMemoryFootprintBytes(Block &block,
     auto region = std::make_unique<MemRefRegion>(opInst->getLoc());
     if (failed(
             region->compute(opInst,
-                            /*loopDepth=*/getNestingDepth(*block.begin())))) {
+                            /*loopDepth=*/getNestingDepth(&*block.begin())))) {
       return opInst->emitError("error obtaining memory region\n");
     }
 
@@ -1024,7 +1022,7 @@ bool mlir::isLoopParallel(AffineForOp forOp) {
     return false;
 
   // Dep check depth would be number of enclosing loops + 1.
-  unsigned depth = getNestingDepth(*forOp.getOperation()) + 1;
+  unsigned depth = getNestingDepth(forOp) + 1;
 
   // Check dependences between all pairs of ops in 'loadAndStoreOpInsts'.
   for (auto *srcOpInst : loadAndStoreOpInsts) {

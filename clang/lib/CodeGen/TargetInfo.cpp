@@ -385,7 +385,7 @@ static Address emitMergePHI(CodeGenFunction &CGF,
   return Address(PHI, Align);
 }
 
-TargetCodeGenInfo::~TargetCodeGenInfo() { delete Info; }
+TargetCodeGenInfo::~TargetCodeGenInfo() = default;
 
 // If someone can figure out a general rule for this, that would be great.
 // It's probably just doomed to be platform-dependent, though.
@@ -682,7 +682,7 @@ public:
 class DefaultTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   DefaultTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<DefaultABIInfo>(CGT)) {}
 };
 
 ABIArgInfo DefaultABIInfo::classifyArgumentType(QualType Ty) const {
@@ -772,7 +772,7 @@ class WebAssemblyTargetCodeGenInfo final : public TargetCodeGenInfo {
 public:
   explicit WebAssemblyTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT,
                                         WebAssemblyABIInfo::ABIKind K)
-      : TargetCodeGenInfo(new WebAssemblyABIInfo(CGT, K)) {}
+      : TargetCodeGenInfo(std::make_unique<WebAssemblyABIInfo>(CGT, K)) {}
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override {
@@ -898,8 +898,8 @@ class PNaClABIInfo : public ABIInfo {
 
 class PNaClTargetCodeGenInfo : public TargetCodeGenInfo {
  public:
-  PNaClTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new PNaClABIInfo(CGT)) {}
+   PNaClTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
+       : TargetCodeGenInfo(std::make_unique<PNaClABIInfo>(CGT)) {}
 };
 
 void PNaClABIInfo::computeInfo(CGFunctionInfo &FI) const {
@@ -970,7 +970,8 @@ static llvm::Type* X86AdjustInlineAsmType(CodeGen::CodeGenFunction &CGF,
                      .Cases("y", "&y", "^Ym", true)
                      .Default(false);
   if (IsMMXCons && Ty->isVectorTy()) {
-    if (cast<llvm::VectorType>(Ty)->getBitWidth() != 64) {
+    if (cast<llvm::VectorType>(Ty)->getPrimitiveSizeInBits().getFixedSize() !=
+        64) {
       // Invalid MMX constraint
       return nullptr;
     }
@@ -1139,7 +1140,7 @@ public:
   X86_32TargetCodeGenInfo(CodeGen::CodeGenTypes &CGT, bool DarwinVectorABI,
                           bool RetSmallStructInRegABI, bool Win32StructABI,
                           unsigned NumRegisterParameters, bool SoftFloatABI)
-      : TargetCodeGenInfo(new X86_32ABIInfo(
+      : TargetCodeGenInfo(std::make_unique<X86_32ABIInfo>(
             CGT, DarwinVectorABI, RetSmallStructInRegABI, Win32StructABI,
             NumRegisterParameters, SoftFloatABI)) {}
 
@@ -1821,6 +1822,15 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
     return ABIArgInfo::getExtend(Ty);
   }
 
+  if (const auto * EIT = Ty->getAs<ExtIntType>()) {
+    if (EIT->getNumBits() <= 64) {
+      if (InReg)
+        return ABIArgInfo::getDirectInReg();
+      return ABIArgInfo::getDirect();
+    }
+    return getIndirectResult(Ty, /*ByVal=*/false, State);
+  }
+
   if (InReg)
     return ABIArgInfo::getDirectInReg();
   return ABIArgInfo::getDirect();
@@ -2260,7 +2270,7 @@ public:
     if (info.isDirect()) {
       llvm::Type *ty = info.getCoerceToType();
       if (llvm::VectorType *vectorTy = dyn_cast_or_null<llvm::VectorType>(ty))
-        return (vectorTy->getBitWidth() > 128);
+        return vectorTy->getPrimitiveSizeInBits().getFixedSize() > 128;
     }
     return false;
   }
@@ -2333,7 +2343,7 @@ private:
 class X86_64TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   X86_64TargetCodeGenInfo(CodeGen::CodeGenTypes &CGT, X86AVXABILevel AVXLevel)
-      : TargetCodeGenInfo(new X86_64ABIInfo(CGT, AVXLevel)) {}
+      : TargetCodeGenInfo(std::make_unique<X86_64ABIInfo>(CGT, AVXLevel)) {}
 
   const X86_64ABIInfo &getABIInfo() const {
     return static_cast<const X86_64ABIInfo&>(TargetCodeGenInfo::getABIInfo());
@@ -2477,7 +2487,7 @@ class WinX86_64TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   WinX86_64TargetCodeGenInfo(CodeGen::CodeGenTypes &CGT,
                              X86AVXABILevel AVXLevel)
-      : TargetCodeGenInfo(new WinX86_64ABIInfo(CGT, AVXLevel)) {}
+      : TargetCodeGenInfo(std::make_unique<WinX86_64ABIInfo>(CGT, AVXLevel)) {}
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override;
@@ -2784,6 +2794,15 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
     return;
   }
 
+  if (const auto *EITy = Ty->getAs<ExtIntType>()) {
+    if (EITy->getNumBits() <= 64)
+      Current = Integer;
+    else if (EITy->getNumBits() <= 128)
+      Lo = Hi = Integer;
+    // Larger values need to get passed in memory.
+    return;
+  }
+
   if (const ConstantArrayType *AT = getContext().getAsConstantArrayType(Ty)) {
     // Arrays are treated like structures.
 
@@ -2958,8 +2977,9 @@ ABIArgInfo X86_64ABIInfo::getIndirectReturnResult(QualType Ty) const {
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
 
-    return (Ty->isPromotableIntegerType() ? ABIArgInfo::getExtend(Ty)
-                                          : ABIArgInfo::getDirect());
+    if (!Ty->isExtIntType())
+      return (Ty->isPromotableIntegerType() ? ABIArgInfo::getExtend(Ty)
+                                            : ABIArgInfo::getDirect());
   }
 
   return getNaturalAlignIndirect(Ty);
@@ -2991,7 +3011,8 @@ ABIArgInfo X86_64ABIInfo::getIndirectResult(QualType Ty,
   // the argument in the free register. This does not seem to happen currently,
   // but this code would be much safer if we could mark the argument with
   // 'onstack'. See PR12193.
-  if (!isAggregateTypeForABI(Ty) && !IsIllegalVectorType(Ty)) {
+  if (!isAggregateTypeForABI(Ty) && !IsIllegalVectorType(Ty) &&
+      !Ty->isExtIntType()) {
     // Treat an enum type as its underlying type.
     if (const EnumType *EnumTy = Ty->getAs<EnumType>())
       Ty = EnumTy->getDecl()->getIntegerType();
@@ -3054,7 +3075,7 @@ llvm::Type *X86_64ABIInfo::GetByteVectorType(QualType Ty) const {
     // Don't pass vXi128 vectors in their native type, the backend can't
     // legalize them.
     if (passInt128VectorsInMem() &&
-        IRType->getVectorElementType()->isIntegerTy(128)) {
+        cast<llvm::VectorType>(IRType)->getElementType()->isIntegerTy(128)) {
       // Use a vXi64 vector.
       uint64_t Size = getContext().getTypeSize(Ty);
       return llvm::VectorType::get(llvm::Type::getInt64Ty(getVMContext()),
@@ -4082,6 +4103,17 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
     }
   }
 
+  if (Ty->isExtIntType()) {
+    // MS x64 ABI requirement: "Any argument that doesn't fit in 8 bytes, or is
+    // not 1, 2, 4, or 8 bytes, must be passed by reference."
+    // However, non-power-of-two _ExtInts will be passed as 1,2,4 or 8 bytes
+    // anyway as long is it fits in them, so we don't have to check the power of
+    // 2.
+    if (Width <= 64)
+      return ABIArgInfo::getDirect();
+    return ABIArgInfo::getIndirect(Align, /*ByVal=*/false);
+  }
+
   return ABIArgInfo::getDirect();
 }
 
@@ -4176,12 +4208,24 @@ namespace {
 /// PPC32_SVR4_ABIInfo - The 32-bit PowerPC ELF (SVR4) ABI information.
 class PPC32_SVR4_ABIInfo : public DefaultABIInfo {
   bool IsSoftFloatABI;
+  bool IsRetSmallStructInRegABI;
 
   CharUnits getParamTypeAlignment(QualType Ty) const;
 
 public:
-  PPC32_SVR4_ABIInfo(CodeGen::CodeGenTypes &CGT, bool SoftFloatABI)
-      : DefaultABIInfo(CGT), IsSoftFloatABI(SoftFloatABI) {}
+  PPC32_SVR4_ABIInfo(CodeGen::CodeGenTypes &CGT, bool SoftFloatABI,
+                     bool RetSmallStructInRegABI)
+      : DefaultABIInfo(CGT), IsSoftFloatABI(SoftFloatABI),
+        IsRetSmallStructInRegABI(RetSmallStructInRegABI) {}
+
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+
+  void computeInfo(CGFunctionInfo &FI) const override {
+    if (!getCXXABI().classifyReturnType(FI))
+      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    for (auto &I : FI.arguments())
+      I.info = classifyArgumentType(I.type);
+  }
 
   Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                     QualType Ty) const override;
@@ -4189,8 +4233,13 @@ public:
 
 class PPC32TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
-  PPC32TargetCodeGenInfo(CodeGenTypes &CGT, bool SoftFloatABI)
-      : TargetCodeGenInfo(new PPC32_SVR4_ABIInfo(CGT, SoftFloatABI)) {}
+  PPC32TargetCodeGenInfo(CodeGenTypes &CGT, bool SoftFloatABI,
+                         bool RetSmallStructInRegABI)
+      : TargetCodeGenInfo(std::make_unique<PPC32_SVR4_ABIInfo>(
+            CGT, SoftFloatABI, RetSmallStructInRegABI)) {}
+
+  static bool isStructReturnInRegABI(const llvm::Triple &Triple,
+                                     const CodeGenOptions &Opts);
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const override {
     // This is recovered from gcc output.
@@ -4203,7 +4252,7 @@ public:
 }
 
 CharUnits PPC32_SVR4_ABIInfo::getParamTypeAlignment(QualType Ty) const {
-  // Complex types are passed just like their elements
+  // Complex types are passed just like their elements.
   if (const ComplexType *CTy = Ty->getAs<ComplexType>())
     Ty = CTy->getElementType();
 
@@ -4224,6 +4273,34 @@ CharUnits PPC32_SVR4_ABIInfo::getParamTypeAlignment(QualType Ty) const {
   if (AlignTy)
     return CharUnits::fromQuantity(AlignTy->isVectorType() ? 16 : 4);
   return CharUnits::fromQuantity(4);
+}
+
+ABIArgInfo PPC32_SVR4_ABIInfo::classifyReturnType(QualType RetTy) const {
+  uint64_t Size;
+
+  // -msvr4-struct-return puts small aggregates in GPR3 and GPR4.
+  if (isAggregateTypeForABI(RetTy) && IsRetSmallStructInRegABI &&
+      (Size = getContext().getTypeSize(RetTy)) <= 64) {
+    // System V ABI (1995), page 3-22, specified:
+    // > A structure or union whose size is less than or equal to 8 bytes
+    // > shall be returned in r3 and r4, as if it were first stored in the
+    // > 8-byte aligned memory area and then the low addressed word were
+    // > loaded into r3 and the high-addressed word into r4.  Bits beyond
+    // > the last member of the structure or union are not defined.
+    //
+    // GCC for big-endian PPC32 inserts the pad before the first member,
+    // not "beyond the last member" of the struct.  To stay compatible
+    // with GCC, we coerce the struct to an integer of the same size.
+    // LLVM will extend it and return i32 in r3, or i64 in r3:r4.
+    if (Size == 0)
+      return ABIArgInfo::getIgnore();
+    else {
+      llvm::Type *CoerceTy = llvm::Type::getIntNTy(getVMContext(), Size);
+      return ABIArgInfo::getDirect(CoerceTy);
+    }
+  }
+
+  return DefaultABIInfo::classifyReturnType(RetTy);
 }
 
 // TODO: this implementation is now likely redundant with
@@ -4381,6 +4458,25 @@ Address PPC32_SVR4_ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAList,
   return Result;
 }
 
+bool PPC32TargetCodeGenInfo::isStructReturnInRegABI(
+    const llvm::Triple &Triple, const CodeGenOptions &Opts) {
+  assert(Triple.getArch() == llvm::Triple::ppc);
+
+  switch (Opts.getStructReturnConvention()) {
+  case CodeGenOptions::SRCK_Default:
+    break;
+  case CodeGenOptions::SRCK_OnStack: // -maix-struct-return
+    return false;
+  case CodeGenOptions::SRCK_InRegs: // -msvr4-struct-return
+    return true;
+  }
+
+  if (Triple.isOSBinFormatELF() && !Triple.isOSLinux())
+    return true;
+
+  return false;
+}
+
 bool
 PPC32TargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                                 llvm::Value *Address) const {
@@ -4530,8 +4626,8 @@ public:
   PPC64_SVR4_TargetCodeGenInfo(CodeGenTypes &CGT,
                                PPC64_SVR4_ABIInfo::ABIKind Kind, bool HasQPX,
                                bool SoftFloatABI)
-      : TargetCodeGenInfo(new PPC64_SVR4_ABIInfo(CGT, Kind, HasQPX,
-                                                 SoftFloatABI)) {}
+      : TargetCodeGenInfo(std::make_unique<PPC64_SVR4_ABIInfo>(
+            CGT, Kind, HasQPX, SoftFloatABI)) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const override {
     // This is recovered from gcc output.
@@ -5089,7 +5185,7 @@ private:
 class AArch64TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   AArch64TargetCodeGenInfo(CodeGenTypes &CGT, AArch64ABIInfo::ABIKind Kind)
-      : TargetCodeGenInfo(new AArch64ABIInfo(CGT, Kind)) {}
+      : TargetCodeGenInfo(std::make_unique<AArch64ABIInfo>(CGT, Kind)) {}
 
   StringRef getARCRetainAutoreleasedReturnValueMarker() const override {
     return "mov\tfp, fp\t\t// marker for objc_retainAutoreleaseReturnValue";
@@ -5756,7 +5852,7 @@ private:
 class ARMTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   ARMTargetCodeGenInfo(CodeGenTypes &CGT, ARMABIInfo::ABIKind K)
-    :TargetCodeGenInfo(new ARMABIInfo(CGT, K)) {}
+      : TargetCodeGenInfo(std::make_unique<ARMABIInfo>(CGT, K)) {}
 
   const ARMABIInfo &getABIInfo() const {
     return static_cast<const ARMABIInfo&>(TargetCodeGenInfo::getABIInfo());
@@ -6437,7 +6533,7 @@ public:
 class NVPTXTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   NVPTXTargetCodeGenInfo(CodeGenTypes &CGT)
-      : TargetCodeGenInfo(new NVPTXABIInfo(CGT, *this)) {}
+      : TargetCodeGenInfo(std::make_unique<NVPTXABIInfo>(CGT, *this)) {}
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
@@ -6729,7 +6825,8 @@ public:
 class SystemZTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   SystemZTargetCodeGenInfo(CodeGenTypes &CGT, bool HasVector, bool SoftFloatABI)
-    : TargetCodeGenInfo(new SystemZABIInfo(CGT, HasVector, SoftFloatABI)) {}
+      : TargetCodeGenInfo(
+            std::make_unique<SystemZABIInfo>(CGT, HasVector, SoftFloatABI)) {}
 };
 
 }
@@ -7052,7 +7149,7 @@ namespace {
 class MSP430TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   MSP430TargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<DefaultABIInfo>(CGT)) {}
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
 };
@@ -7111,8 +7208,8 @@ class MIPSTargetCodeGenInfo : public TargetCodeGenInfo {
   unsigned SizeOfUnwindException;
 public:
   MIPSTargetCodeGenInfo(CodeGenTypes &CGT, bool IsO32)
-    : TargetCodeGenInfo(new MipsABIInfo(CGT, IsO32)),
-      SizeOfUnwindException(IsO32 ? 24 : 32) {}
+      : TargetCodeGenInfo(std::make_unique<MipsABIInfo>(CGT, IsO32)),
+        SizeOfUnwindException(IsO32 ? 24 : 32) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &CGM) const override {
     return 29;
@@ -7497,7 +7594,7 @@ namespace {
 class AVRTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   AVRTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) { }
+      : TargetCodeGenInfo(std::make_unique<DefaultABIInfo>(CGT)) {}
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override {
@@ -7610,7 +7707,7 @@ private:
 class HexagonTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   HexagonTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new HexagonABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<HexagonABIInfo>(CGT)) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const override {
     return 29;
@@ -8103,7 +8200,7 @@ namespace {
 class LanaiTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   LanaiTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
-      : TargetCodeGenInfo(new LanaiABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<LanaiABIInfo>(CGT)) {}
 };
 }
 
@@ -8371,7 +8468,7 @@ ABIArgInfo AMDGPUABIInfo::classifyArgumentType(QualType Ty,
 class AMDGPUTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   AMDGPUTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new AMDGPUABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<AMDGPUABIInfo>(CGT)) {}
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
   unsigned getOpenCLKernelCallingConv() const override;
@@ -8630,7 +8727,7 @@ namespace {
 class SparcV8TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   SparcV8TargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new SparcV8ABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<SparcV8ABIInfo>(CGT)) {}
 };
 } // end anonymous namespace
 
@@ -8892,7 +8989,7 @@ namespace {
 class SparcV9TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   SparcV9TargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new SparcV9ABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<SparcV9ABIInfo>(CGT)) {}
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const override {
     return 14;
@@ -8985,7 +9082,7 @@ private:
 class ARCTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   ARCTargetCodeGenInfo(CodeGenTypes &CGT)
-      : TargetCodeGenInfo(new ARCABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<ARCABIInfo>(CGT)) {}
 };
 
 
@@ -9178,7 +9275,7 @@ class XCoreTargetCodeGenInfo : public TargetCodeGenInfo {
   mutable TypeStringCache TSC;
 public:
   XCoreTargetCodeGenInfo(CodeGenTypes &CGT)
-    :TargetCodeGenInfo(new XCoreABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<XCoreABIInfo>(CGT)) {}
   void emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
                     CodeGen::CodeGenModule &M) const override;
 };
@@ -9365,7 +9462,7 @@ namespace {
 class SPIRTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   SPIRTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
+      : TargetCodeGenInfo(std::make_unique<DefaultABIInfo>(CGT)) {}
   unsigned getOpenCLKernelCallingConv() const override;
 };
 
@@ -10154,7 +10251,7 @@ class RISCVTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   RISCVTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT, unsigned XLen,
                          unsigned FLen)
-      : TargetCodeGenInfo(new RISCVABIInfo(CGT, XLen, FLen)) {}
+      : TargetCodeGenInfo(std::make_unique<RISCVABIInfo>(CGT, XLen, FLen)) {}
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override {
@@ -10187,7 +10284,7 @@ namespace {
 class TriCoreABIInfo : public DefaultABIInfo {
 
 public:
-  TriCoreABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
+  explicit TriCoreABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
 
 private:
   void computeInfo(CGFunctionInfo &FI) const override;
@@ -10277,8 +10374,8 @@ Address TriCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
 namespace {
 class TriCoreTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
-  TriCoreTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
-      : TargetCodeGenInfo(new TriCoreABIInfo(CGT)) {}
+  explicit TriCoreTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
+      : TargetCodeGenInfo(std::make_unique<TriCoreABIInfo>(CGT)) {}
 };
 } // namespace
 
@@ -10366,10 +10463,14 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     return SetCGInfo(new ARMTargetCodeGenInfo(Types, Kind));
   }
 
-  case llvm::Triple::ppc:
+  case llvm::Triple::ppc: {
+    bool IsSoftFloat =
+        CodeGenOpts.FloatABI == "soft" || getTarget().hasFeature("spe");
+    bool RetSmallStructInRegABI =
+        PPC32TargetCodeGenInfo::isStructReturnInRegABI(Triple, CodeGenOpts);
     return SetCGInfo(
-        new PPC32TargetCodeGenInfo(Types, CodeGenOpts.FloatABI == "soft" ||
-                                   getTarget().hasFeature("spe")));
+        new PPC32TargetCodeGenInfo(Types, IsSoftFloat, RetSmallStructInRegABI));
+  }
   case llvm::Triple::ppc64:
     if (Triple.isOSBinFormatELF()) {
       PPC64_SVR4_ABIInfo::ABIKind Kind = PPC64_SVR4_ABIInfo::ELFv1;

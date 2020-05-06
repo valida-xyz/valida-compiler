@@ -217,8 +217,8 @@ def int_amdgcn_s_waitcnt : GCCBuiltin<"__builtin_amdgcn_s_waitcnt">,
 def int_amdgcn_div_scale : Intrinsic<
   // 1st parameter: Numerator
   // 2nd parameter: Denominator
-  // 3rd parameter: Constant to select between first and
-  //                second. (0 = first, 1 = second).
+  // 3rd parameter: Select quotient. Must equal Numerator or Denominator.
+  //                (0 = Denominator, 1 = Numerator).
   [llvm_anyfloat_ty, llvm_i1_ty],
   [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i1_ty],
   [IntrNoMem, IntrSpeculatable, ImmArg<2>]
@@ -275,6 +275,7 @@ def int_amdgcn_rsq_legacy :  GCCBuiltin<"__builtin_amdgcn_rsq_legacy">,
   [llvm_float_ty], [llvm_float_ty], [IntrNoMem, IntrSpeculatable]
 >;
 
+// out = 1.0 / sqrt(a) result clamped to +/- max_float.
 def int_amdgcn_rsq_clamp : Intrinsic<
   [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem, IntrSpeculatable]>;
 

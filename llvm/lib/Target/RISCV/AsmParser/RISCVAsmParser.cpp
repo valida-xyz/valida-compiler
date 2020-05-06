@@ -51,8 +51,15 @@ STATISTIC(RISCVNumInstrsCompressed,
 namespace {
 struct RISCVOperand;
 
+struct ParserOptionsSet {
+  bool IsPicEnabled;
+};
+
 class RISCVAsmParser : public MCTargetAsmParser {
   SmallVector<FeatureBitset, 4> FeatureBitStack;
+
+  SmallVector<ParserOptionsSet, 4> ParserOptionsStack;
+  ParserOptionsSet ParserOptions;
 
   SMLoc getLoc() const { return getParser().getTok().getLoc(); }
   bool isRV64() const { return getSTI().hasFeature(RISCV::Feature64Bit); }
@@ -170,10 +177,15 @@ class RISCVAsmParser : public MCTargetAsmParser {
   }
 
   void pushFeatureBits() {
+    assert(FeatureBitStack.size() == ParserOptionsStack.size() &&
+           "These two stacks must be kept synchronized");
     FeatureBitStack.push_back(getSTI().getFeatureBits());
+    ParserOptionsStack.push_back(ParserOptions);
   }
 
   bool popFeatureBits() {
+    assert(FeatureBitStack.size() == ParserOptionsStack.size() &&
+           "These two stacks must be kept synchronized");
     if (FeatureBitStack.empty())
       return true;
 
@@ -181,8 +193,11 @@ class RISCVAsmParser : public MCTargetAsmParser {
     copySTI().setFeatureBits(FeatureBits);
     setAvailableFeatures(ComputeAvailableFeatures(FeatureBits));
 
+    ParserOptions = ParserOptionsStack.pop_back_val();
+
     return false;
   }
+
 public:
   enum RISCVMatchResultTy {
     Match_Dummy = FIRST_TARGET_MATCH_RESULT_TY,
@@ -216,6 +231,9 @@ public:
                 "doesn't support the D instruction set extension (ignoring "
                 "target-abi)\n";
     }
+
+    const MCObjectFileInfo *MOFI = Parser.getContext().getObjectFileInfo();
+    ParserOptions.IsPicEnabled = MOFI->isPositionIndependent();
   }
 };
 
@@ -445,6 +463,17 @@ public:
     return (isRV64() && isUInt<6>(Imm)) || isUInt<5>(Imm);
   }
 
+  bool isUImmLog2XLenHalf() const {
+    int64_t Imm;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
+    if (!isImm())
+      return false;
+    if (!evaluateConstantImm(getImm(), Imm, VK) ||
+        VK != RISCVMCExpr::VK_RISCV_None)
+      return false;
+    return (isRV64() && isUInt<5>(Imm)) || isUInt<4>(Imm);
+  }
+
   bool isUImm5() const {
     int64_t Imm;
     RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
@@ -471,7 +500,7 @@ public:
     int64_t Imm;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isInt<6>(Imm) &&
-           VK == RISCVMCExpr::VK_RISCV_None;
+	    VK == RISCVMCExpr::VK_RISCV_None;
   }
 
   bool isSImm6NonZero() const {
@@ -905,6 +934,10 @@ bool RISCVAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     if (isRV64())
       return generateImmOutOfRangeError(Operands, ErrorInfo, 1, (1 << 6) - 1);
     return generateImmOutOfRangeError(Operands, ErrorInfo, 1, (1 << 5) - 1);
+  case Match_InvalidUImmLog2XLenHalf:
+    if (isRV64())
+      return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 5) - 1);
+    return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 4) - 1);
   case Match_InvalidUImm5:
     return generateImmOutOfRangeError(Operands, ErrorInfo, 0, (1 << 5) - 1);
   case Match_InvalidSImm6:
@@ -1144,6 +1177,8 @@ RISCVAsmParser::parseCSRSystemRegister(OperandVector &Operands) {
       return MatchOperand_ParseFail;
 
     auto SysReg = RISCVSysReg::lookupSysRegByName(Identifier);
+    if (!SysReg)
+      SysReg = RISCVSysReg::lookupSysRegByAltName(Identifier);
     // Accept a named Sys Reg if the required features are present.
     if (SysReg) {
       if (!SysReg->haveRequiredFeatures(getSTI().getFeatureBits())) {
@@ -1653,6 +1688,30 @@ bool RISCVAsmParser::parseDirectiveOption() {
     return false;
   }
 
+  if (Option == "pic") {
+    getTargetStreamer().emitDirectiveOptionPIC();
+
+    Parser.Lex();
+    if (Parser.getTok().isNot(AsmToken::EndOfStatement))
+      return Error(Parser.getTok().getLoc(),
+                   "unexpected token, expected end of statement");
+
+    ParserOptions.IsPicEnabled = true;
+    return false;
+  }
+
+  if (Option == "nopic") {
+    getTargetStreamer().emitDirectiveOptionNoPIC();
+
+    Parser.Lex();
+    if (Parser.getTok().isNot(AsmToken::EndOfStatement))
+      return Error(Parser.getTok().getLoc(),
+                   "unexpected token, expected end of statement");
+
+    ParserOptions.IsPicEnabled = false;
+    return false;
+  }
+
   if (Option == "relax") {
     getTargetStreamer().emitDirectiveOptionRelax();
 
@@ -1916,8 +1975,7 @@ void RISCVAsmParser::emitLoadAddress(MCInst &Inst, SMLoc IDLoc,
   const MCExpr *Symbol = Inst.getOperand(1).getExpr();
   unsigned SecondOpcode;
   RISCVMCExpr::VariantKind VKHi;
-  // FIXME: Should check .option (no)pic when implemented
-  if (getContext().getObjectFileInfo()->isPositionIndependent()) {
+  if (ParserOptions.IsPicEnabled) {
     SecondOpcode = isRV64() ? RISCV::LD : RISCV::LW;
     VKHi = RISCVMCExpr::VK_RISCV_GOT_HI;
   } else {
