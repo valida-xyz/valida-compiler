@@ -300,7 +300,7 @@
 ; CHECK-NEXT:       Lazy Block Frequency Analysis
 ; CHECK-NEXT:       Optimization Remark Emitter
 ; CHECK-NEXT:       Remove redundant instructions
-; CHECK-NOT:       Hoist/decompose integer division and remainder
+; CHECK-NEXT:       Hoist/decompose integer division and remainder
 ; CHECK-NEXT:       Simplify the CFG
 ; CHECK-NEXT:       Module Verifier
 ; CHECK-NEXT:     Bitcode Writer
