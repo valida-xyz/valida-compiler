@@ -92,6 +92,7 @@ private:
   bool selectFPExt(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectFPTrunc(MachineInstr &I, const MachineRegisterInfo &MRI) const;
   bool selectFrameIndex(MachineInstr &I, const MachineRegisterInfo &MRI) const;
+  bool selectFreeze(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectGlobalValue(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectFCmp(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectICmp(MachineInstr &I, const MachineRegisterInfo &MRI) const;
@@ -521,6 +522,8 @@ bool TriCoreInstructionSelector::select(MachineInstr &I) {
     return selectFPTrunc(I, MRI);
   case TargetOpcode::G_FRAME_INDEX:
     return selectFrameIndex(I, MRI);
+  case TargetOpcode::G_FREEZE:
+    return selectFreeze(I, MRI);
   case TargetOpcode::G_GLOBAL_VALUE:
     return selectGlobalValue(I, MRI);
   case TargetOpcode::G_ICMP:
@@ -1543,6 +1546,28 @@ bool TriCoreInstructionSelector::selectFrameIndex(
   I.setDesc(TII.get(TriCore::LEA_aac));
   I.addOperand(MachineOperand::CreateImm(0));
   constrainSelectedInstRegOperands(I, TII, TRI, RBI);
+  return true;
+}
+
+bool TriCoreInstructionSelector::selectFreeze(MachineInstr &I,
+                                              MachineRegisterInfo &MRI) const {
+
+  assert(I.getOpcode() == TargetOpcode::G_FREEZE);
+
+  const Register DstReg = I.getOperand(0).getReg();
+  const LLT DstTy = MRI.getType(DstReg);
+  const RegisterBank &DstRB = *RBI.getRegBank(DstReg, MRI, TRI);
+  const TargetRegisterClass *DstRC = getRegClassForTypeOnBank(DstTy, DstRB);
+
+  if (!DstRC) {
+    LLVM_DEBUG(
+        dbgs() << "Unable to determine TargetRegisterClass for G_FREEZE\n");
+    return false;
+  }
+
+  TriCoreRegisterBankInfo::constrainGenericRegister(DstReg, *DstRC, MRI);
+  I.setDesc(TII.get(TargetOpcode::COPY));
+
   return true;
 }
 
