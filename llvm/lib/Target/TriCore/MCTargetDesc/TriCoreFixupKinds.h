@@ -46,13 +46,6 @@ enum Fixups {
   // 15 bit pc-relative immediate used in BR format (internally multiplied by 2)
   fixup_15rel,
 
-  // 4 bit pc-relative immediate used in SBR format (internally multiplied by 2)
-  fixup_4rel,
-
-  // 4 bit pc-relative immediate used in SBR format (internally add 16
-  // and multiplied by 2)
-  fixup_4rel2,
-
   fixup_invalid,
   // the number of fixups for this target
   NumTargetFixupKinds = fixup_invalid - FirstTargetFixupKind

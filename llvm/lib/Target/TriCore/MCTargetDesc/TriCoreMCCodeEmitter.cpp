@@ -245,18 +245,6 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
     case TriCoreII::BRRFrm:
       FixupKind = TriCore::fixup_15rel;
       break;
-
-    case TriCoreII::SBRFrm:
-      switch (OpCode) {
-      default:
-        FixupKind = TriCore::fixup_4rel;
-        break;
-      case TriCore::JEQ_16_d15dlc:
-      case TriCore::JNE_16_d15dlc:
-        FixupKind = TriCore::fixup_4rel2;
-        break;
-      }
-      break;
     }
   }
   assert(FixupKind != TriCore::fixup_invalid && "Unhandled expression!");
