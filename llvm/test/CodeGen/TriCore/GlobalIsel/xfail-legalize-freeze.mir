@@ -1,0 +1,15 @@
+# RUN: llc -O0 -mtriple=tricore -global-isel -run-pass=legalizer -verify-machineinstrs %s -o - | FileCheck %s
+# XFAIL: *
+
+---
+name:            test_freeze_s65
+body:             |
+  bb.0.entry:
+    liveins: $e4
+    ; CHECK-LABEL: name: test_freeze_s65
+    %0:_(s64) = COPY $e4
+    %1:_(s65) = G_ANYEXT %0
+    %2:_(s65) = G_FREEZE %1
+    %3:_(s64) = G_TRUNC %2
+    $e2 = COPY %3
+...

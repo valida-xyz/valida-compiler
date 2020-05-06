@@ -93,8 +93,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   const LLT s32 = LLT::scalar(32);
   const LLT s64 = LLT::scalar(64);
 
-  // G_IMPLICIT_DEF must be legal for p0/s32/s64 tpes
-  getActionDefinitionsBuilder(G_IMPLICIT_DEF)
+  // G_IMPLICIT_DEF and G_FREEZE must be legal for p0/s32/s64 types
+  getActionDefinitionsBuilder({G_IMPLICIT_DEF, G_FREEZE})
       .legalFor({p0, s32, s64})
       .clampScalar(0, s32, s64)
       .widenScalarToNextPow2(0);
