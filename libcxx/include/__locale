@@ -38,6 +38,8 @@
 #elif defined(__wasi__)
 // WASI libc uses musl's locales support.
 # include <support/musl/xlocale.h>
+#elif defined(_HAS_DINKUM_CLIB)
+# include <support/dinkum/xlocale.h>
 #elif defined(_LIBCPP_HAS_MUSL_LIBC)
 # include <support/musl/xlocale.h>
 #endif

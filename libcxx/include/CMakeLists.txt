@@ -165,6 +165,7 @@ if(LIBCXX_INSTALL_SUPPORT_HEADERS)
   set(files
     ${files}
     support/android/locale_bionic.h
+    support/dinkum/xlocale.h
     support/fuchsia/xlocale.h
     support/ibm/limits.h
     support/ibm/locale_mgmt_aix.h

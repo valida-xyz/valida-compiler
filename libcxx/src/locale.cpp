@@ -30,6 +30,8 @@
 #include "__sso_allocator"
 #if defined(_LIBCPP_MSVCRT) || defined(__MINGW32__)
 #include "support/win32/locale_win32.h"
+#elif defined(_HAS_DINKUM_CLIB)
+// Do not include langinfo due to missing locale support
 #elif !defined(__BIONIC__)
 #include <langinfo.h>
 #endif
