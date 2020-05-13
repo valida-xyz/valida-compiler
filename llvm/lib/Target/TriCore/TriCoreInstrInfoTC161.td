@@ -1994,11 +1994,11 @@ let isMoveImm = 1 in
 def MOVA_16_ac      : SRC<0xA0, (outs AddrRegs:$s1_d), (ins uimm4:$const4),
                                             "mov.a", "\t$s1_d, $const4">;
 
-def MOVA_16_da      : M2ADDR_SRR<0x60,      "mov.a", AddrRegs, DataRegs>;
+def MOVA_16_ad      : M2ADDR_SRR<0x60,      "mov.a", AddrRegs, DataRegs>;
 
 // MOV.AA
 def MOVAA_aa        : M2ADDR_RR<0x01, 0x00, "mov.aa">;
-def MOVAA_16_da     : M2ADDR_SRR<0x40,      "mov.aa">;
+def MOVAA_16_aa     : M2ADDR_SRR<0x40,      "mov.aa">;
 
 // MOV.D
 def MOVD_da         : M2ADDR_RR<0x01, 0x4C, "mov.d", DataRegs, AddrRegs>;

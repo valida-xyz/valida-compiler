@@ -27,18 +27,22 @@ absdifs.h %d0, %d0, %d0
 
 # CHECK-INST: absdifs %d0, %d0, 0
 # CHECK: encoding: [0x8b,0x00,0xe0,0x01]
+.code32
 absdifs %d0, %d0, 0
 
 # CHECK-INST: absdifs %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xf0,0x00]
+.code32
 absdifs %d0, %d0, %d0
 
 # CHECK-INST: absdif %d0, %d0, 0
 # CHECK: encoding: [0x8b,0x00,0xc0,0x01]
+.code32
 absdif %d0, %d0, 0
 
 # CHECK-INST: absdif %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xe0,0x00]
+.code32
 absdif %d0, %d0, %d0
 
 # CHECK-INST: abs.h %d0, %d0
@@ -53,10 +57,12 @@ abss.h %d0, %d0
 
 # CHECK-INST: abss %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xd0,0x01]
+.code32
 abss %d0, %d0
 
 # CHECK-INST: abs %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xc0,0x01]
+.code32
 abs %d0, %d0
 
 # CHECK-INST: add.a %a0, %a0
@@ -91,6 +97,7 @@ addc %d0, %d0, %d0
 
 # CHECK-INST: add.f %d0, %d0, %d0
 # CHECK: encoding: [0x6b,0x00,0x21,0x00]
+.code32
 add.f %d0, %d0, %d0
 
 # CHECK-INST: add.h %d0, %d0, %d0
@@ -215,46 +222,57 @@ add %d0, %d0, %d0
 
 # CHECK-INST: and.andn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x47,0x00,0x60,0x00]
+.code32
 and.andn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: and.and.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x47,0x00,0x00,0x00]
+.code32
 and.and.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: and.eq %d14, %d0, 0
 # CHECK: encoding: [0x8b,0x00,0x00,0xe4]
+.code32
 and.eq %d14, %d0, 0
 
 # CHECK-INST: and.eq %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x02]
+.code32
 and.eq %d0, %d0, %d0
 
 # CHECK-INST: and.ge.u %d0, %d0, 511
 # CHECK: encoding: [0x8b,0xf0,0xbf,0x04]
+.code32
 and.ge.u %d0, %d0, 511
 
 # CHECK-INST: and.ge.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x50,0x02]
+.code32
 and.ge.u %d0, %d0, %d0
 
 # CHECK-INST: and.lt.u %d0, %d0, 511
 # CHECK: encoding: [0x8b,0xf0,0x7f,0x04]
+.code32
 and.lt.u %d0, %d0, 511 
 
 # CHECK-INST: and.lt.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x30,0x02]
+.code32
 and.lt.u %d0, %d0, %d0
 
 # CHECK-INST: and.ne %d0, %d0, 0
 # CHECK: encoding: [0x8b,0x00,0x20,0x04]
+.code32
 and.ne %d0, %d0, 0
 
 # CHECK-INST: and.ne %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x10,0x02]
+.code32
 and.ne %d0, %d0, %d0
 
 # CHECK-INST: and.nor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x47,0x00,0x40,0x00]
+.code32
 and.nor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: andn %d0, %d0, %d0
@@ -269,10 +287,12 @@ andn %d0, %d0, 271
 
 # CHECK-INST: andn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x87,0x00,0x60,0x00]
+.code32
 andn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: and.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x87,0x00,0x00,0x00]
+.code32
 and.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: and %d0, %d0
@@ -302,14 +322,17 @@ bisr 0
 
 # CHECK-INST: bisr 0
 # CHECK: encoding: [0xe0,0x00]
+.code16
 bisr 0
 
 # CHECK-INST: bmerge %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x10,0x00]
+.code32
 bmerge %d0, %d0, %d0
 
 # CHECK-INST: bsplit %e0, %d0
 # CHECK: encoding: [0x4b,0x00,0x90,0x00]
+.code32
 bsplit %e0, %d0 
 
 # CHECK-INST: cachea.i %a0, -512
@@ -434,26 +457,32 @@ cachei.w [+%a0], -512
 
 # CHECK-INST: caddn %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x10,0x00]
+.code32
 caddn %d0, %d0, %d0, %d0
 
 # CHECK-INST: caddn %d0, %d0, %d0, -256
 # CHECK: encoding: [0xab,0x00,0x30,0x00]
+.code32
 caddn %d0, %d0, %d0, -256
 
 # CHECK-INST: caddn %d0, %d15, -8
 # CHECK: encoding: [0xca,0x80]
+.code16
 caddn %d0, %d15, -8 
 
 # CHECK-INST: cadd %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x00,0x00]
+.code32
 cadd %d0, %d0, %d0, %d0
 
 # CHECK-INST: cadd %d0, %d0, %d0, -256
 # CHECK: encoding: [0xab,0x00,0x10,0x00]
+.code32
 cadd %d0, %d0, %d0, -256
 
 # CHECK-INST: cadd %d0, %d15, -8
 # CHECK: encoding: [0x8a,0x80]
+.code16
 cadd %d0, %d15, -8 
 
 # CHECK-INST: call -16777216
@@ -483,6 +512,7 @@ clo.h %d0, %d0
 
 # CHECK-INST: clo %d0, %d0
 # CHECK: encoding: [0x0f,0x00,0xc0,0x01]
+.code32
 clo %d0, %d0
 
 # CHECK-INST: cls.h %d0, %d0
@@ -492,6 +522,7 @@ cls.h %d0, %d0
 
 # CHECK-INST: cls %d0, %d0
 # CHECK: encoding: [0x0f,0x00,0xd0,0x01]
+.code32
 cls %d0, %d0
 
 # CHECK-INST: clz.h %d0, %d0
@@ -501,26 +532,32 @@ clz.h %d0, %d0
 
 # CHECK-INST: clz %d0, %d0
 # CHECK: encoding: [0x0f,0x00,0xb0,0x01]
+.code32
 clz %d0, %d0
 
 # CHECK-INST: cmovn %d0, %d15, %d0
 # CHECK: encoding: [0x6a,0x00]
+.code16
 cmovn %d0, %d15, %d0
 
 # CHECK-INST: cmovn %d0, %d15, -8
 # CHECK: encoding: [0xea,0x80]
+.code16
 cmovn %d0, %d15, -8
 
 # CHECK-INST: cmov %d0, %d15, %d0
 # CHECK: encoding: [0x2a,0x00]
+.code16
 cmov %d0, %d15, %d0
 
 # CHECK-INST: cmov %d0, %d15, -8
 # CHECK: encoding: [0xaa,0x80]
+.code16
 cmov %d0, %d15, -8
 
 # CHECK-INST: cmp.f %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x01,0x00]
+.code32
 cmp.f %d0, %d0, %d0
 
 # CHECK-INST: cmpswap.w [%a0+], -512, %e0
@@ -550,10 +587,12 @@ cmpswap.w [+%a0], -512, %e0
 
 # CHECK-INST: csubn %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x30,0x00]
+.code32
 csubn %d0, %d0, %d0, %d0
 
 # CHECK-INST: csub %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x20,0x00]
+.code32
 csub %d0, %d0, %d0, %d0
 
 # CHECK-INST: debug
@@ -568,10 +607,12 @@ debug
 
 # CHECK-INST: dextr %d0, %d0, %d0, 0
 # CHECK: encoding: [0x77,0x00,0x00,0x00]
+.code32
 dextr %d0, %d0, %d0, 0 
 
 # CHECK-INST: dextr %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x17,0x00,0x80,0x00]
+.code32
 dextr %d0, %d0, %d0, %d0
 
 # CHECK-INST: disable
@@ -586,14 +627,17 @@ disable %d0
 
 # CHECK-INST: div.f %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x51,0x00]
+.code32
 div.f %d0, %d0, %d0  
 
 # CHECK-INST: div.u %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x11,0x02]
+.code32
 div.u %e0, %d0, %d0 
 
 # CHECK-INST: div %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x01,0x02]
+.code32
 div %e0, %d0, %d0 
 
 # CHECK-INST: dsync
@@ -603,38 +647,47 @@ dsync
 
 # CHECK-INST: dvadj %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0xd0,0x00]
+.code32
 dvadj %e0, %e0, %d0
 
 # CHECK-INST: dvinit.bu %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x04]
+.code32
 dvinit.bu %e0, %d0, %d0
 
 # CHECK-INST: dvinit.b %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x05]
+.code32
 dvinit.b %e0, %d0, %d0
 
 # CHECK-INST: dvinit.hu %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x02]
+.code32
 dvinit.hu %e0, %d0, %d0
 
 # CHECK-INST: dvinit.h %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x03]
+.code32
 dvinit.h %e0, %d0, %d0
 
 # CHECK-INST: dvinit.u %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x00]
+.code32
 dvinit.u %e0, %d0, %d0 
 
 # CHECK-INST: dvinit %e0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0xa0,0x01]
+.code32
 dvinit %e0, %d0, %d0 
 
 # CHECK-INST: dvstep.u %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0xe0,0x00]
+.code32
 dvstep.u %e0, %e0, %d0
 
 # CHECK-INST: dvstep %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0xf0,0x00]
+.code32
 dvstep %e0, %e0, %d0
 
 # CHECK-INST: enable
@@ -664,26 +717,32 @@ eqany.h %d0, %d0, -256
 
 # CHECK-INST: eq.a %d0, %a0, %a0
 # CHECK: encoding: [0x01,0x00,0x00,0x04]
+.code32
 eq.a %d0, %a0, %a0
 
 # CHECK-INST: eq.b %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x05]
+.code32
 eq.b %d0, %d0, %d0
 
 # CHECK-INST: eq.h %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x07]
+.code32
 eq.h %d0, %d0, %d0
 
 # CHECK-INST: eq.w %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x09]
+.code32
 eq.w %d0, %d0, %d0 
 
 # CHECK-INST: eq.b %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x05]
+.code32
 eq.b %d0, %d0, %d0
 
 # CHECK-INST: eqz.a %d0, %a0
 # CHECK: encoding: [0x01,0x00,0x80,0x04]
+.code32
 eqz.a %d0, %a0 
 
 # CHECK-INST: eq %d15, %d0, %d0
@@ -708,25 +767,31 @@ eq %d15, %d0, %d0
 
 # CHECK-INST: extr.u %d0, %d0, 0, 0
 # CHECK: encoding: [0x37,0x00,0x60,0x00]
+.code32
 extr.u %d0, %d0, 0, 0 
 
 # CHECK: encoding: [0x57,0x00,0x60,0x00]
+.code32
 extr.u %d0, %d0, %d0, 0
 
 # CHECK-INST: extr.u %d0, %d0, %e0
 # CHECK: encoding: [0x17,0x00,0x60,0x00]
+.code32
 extr.u %d0, %d0, %e0
 
 # CHECK-INST: extr %d0, %d0, %d0, 0
 # CHECK: encoding: [0x57,0x00,0x40,0x00]
+.code32
 extr %d0, %d0, %d0, 0
 
 # CHECK-INST: extr %d0, %d0, %e0
 # CHECK: encoding: [0x17,0x00,0x40,0x00]
+.code32
 extr %d0, %d0, %e0
 
 # CHECK-INST: extr %d0, %d0, 0, 0
 # CHECK: encoding: [0x37,0x00,0x40,0x00]
+.code32
 extr %d0, %d0, 0, 0
 
 # CHECK-INST: fcalla 2
@@ -736,6 +801,7 @@ fcalla 2
 
 # CHECK-INST: fcalli %a0
 # CHECK: encoding: [0x2d,0x00,0x10,0x00]
+.code32
 fcalli %a0
 
 # CHECK-INST: fcall -16777216
@@ -755,30 +821,37 @@ fret
 
 # CHECK-INST: ftoiz %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x31,0x01]
+.code32
 ftoiz %d0, %d0
 
 # CHECK-INST: ftoi %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x01,0x01]
+.code32
 ftoi %d0, %d0
 
 # CHECK-INST: ftoq31z %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x81,0x01]
+.code32
 ftoq31z %d0, %d0, %d0
 
 # CHECK-INST: ftoq31 %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x11,0x01]
+.code32
 ftoq31 %d0, %d0, %d0
 
 # CHECK-INST: ftouz %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x71,0x01]
+.code32
 ftouz %d0, %d0 
 
 # CHECK-INST: ftou %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x21,0x01]
+.code32
 ftou %d0, %d0
 
 # CHECK-INST: ge.a %d0, %a0, %a0
 # CHECK: encoding: [0x01,0x00,0x30,0x04]
+.code32
 ge.a %d0, %a0, %a0
 
 # CHECK-INST: ge.u %d0, %d0, %d0
@@ -803,50 +876,62 @@ ge %d0, %d0, -256
 
 # CHECK-INST: imask %e0, %d0, %d0, 0
 # CHECK: encoding: [0x57,0x00,0x20,0x00]
+.code32
 imask %e0, %d0, %d0, 0
 
 # CHECK-INST: imask %e0, 0, %d0, 0
 # CHECK: encoding: [0xd7,0x00,0x20,0x00]
+.code32
 imask %e0, 0, %d0, 0
 
 # CHECK-INST: imask %e0, 0, 0, 0
 # CHECK: encoding: [0xb7,0x00,0x20,0x00]
+.code32
 imask %e0, 0, 0, 0
 
 # CHECK-INST: imask %e0, %d0, 0, 0
 # CHECK: encoding: [0x37,0x00,0x20,0x00]
+.code32
 imask %e0, %d0, 0, 0
 
 # CHECK-INST: insert %d0, %d0, 0, 0, 0
 # CHECK: encoding: [0xb7,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, 0, 0, 0
 
 # CHECK-INST: insert %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xd7,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: insert %d0, %d0, 0, %e0
 # CHECK: encoding: [0x97,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, 0, %e0
 
 # CHECK-INST: insert %d0, %d0, %d0, 0, 0
 # CHECK: encoding: [0x37,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, %d0, 0, 0
 
 # CHECK-INST: insert %d0, %d0, %d0, %d0, 0
 # CHECK: encoding: [0x57,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, %d0, %d0, 0
 
 # CHECK-INST: insert %d0, %d0, %d0, %e0
 # CHECK: encoding: [0x17,0x00,0x00,0x00]
+.code32
 insert %d0, %d0, %d0, %e0
 
 # CHECK-INST: insn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x67,0x00,0x20,0x00]
+.code32
 insn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: ins.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x67,0x00,0x00,0x00]
+.code32
 ins.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: isync
@@ -856,22 +941,27 @@ isync
 
 # CHECK-INST: itof %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x41,0x01]
+.code32
 itof %d0, %d0
 
 # CHECK-INST: ixmax.u %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0xb0,0x00]
+.code32
 ixmax.u %e0, %e0, %d0 
 
 # CHECK-INST: ixmax %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0xa0,0x00]
+.code32
 ixmax %e0, %e0, %d0
 
 # CHECK-INST: ixmin.u %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0x90,0x00]
+.code32
 ixmin.u %e0, %e0, %d0
 
 # CHECK-INST: ixmin %e0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0x80,0x00]
+.code32
 ixmin %e0, %e0, %d0
 
 # CHECK-INST: j -16777216
@@ -1056,6 +1146,7 @@ jne %d0, %d0, 256
 
 # CHECK-INST: jnz.a %a0, 0
 # CHECK: encoding: [0x7c,0x00]
+.code16
 jnz.a %a0, 0 
 
 # CHECK-INST: jnz.a %a0, 256
@@ -1105,10 +1196,12 @@ jz.t %d15, 0, 0
 
 # CHECK-INST: jz %d15, 0
 # CHECK: encoding: [0x6e,0x00]
+.code16
 jz %d15, 0
 
 # CHECK-INST: jz %d0, 0
 # CHECK: encoding: [0x76,0x00]
+.code16
 jz %d0, 0
 
 # CHECK-INST: ld.a %a15, [%a10], 0
@@ -1569,22 +1662,27 @@ loop %a0, -32768
 
 # CHECK-INST: lt.a %d0, %a0, %a0
 # CHECK: encoding: [0x01,0x00,0x20,0x04]
+.code32
 lt.a %d0, %a0, %a0 
 
 # CHECK-INST: lt.bu %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x30,0x05]
+.code32
 lt.bu %d0, %d0, %d0
 
 # CHECK-INST: lt.b %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x20,0x05]
+.code32
 lt.b %d0, %d0, %d0 
 
 # CHECK-INST: lt.h %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x20,0x07]
+.code32
 lt.h %d0, %d0, %d0
 
 # CHECK-INST: lt.hu %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x30,0x07]
+.code32
 lt.hu %d0, %d0, %d0
 
 # CHECK-INST: lt.u %d0, %d0, %d0
@@ -1599,10 +1697,12 @@ lt.u %d0, %d0, 271
 
 # CHECK-INST: lt.wu %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x30,0x09]
+.code32
 lt.wu %d0, %d0, %d0
 
 # CHECK-INST: lt.w %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x20,0x09]
+.code32
 lt.w %d0, %d0, %d0 
 
 # CHECK-INST: lt %d0, %d0, %d0
@@ -1627,258 +1727,322 @@ lt %d15, %d0, -8
 
 # CHECK-INST: madd.f %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x6b,0x00,0x61,0x00]
+.code32
 madd.f %d0, %d0, %d0, %d0 
 
 # CHECK-INST: madd.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0x83,0x00,0x68,0x00]
+.code32
 madd.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: madd.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0x83,0x00,0x64,0x00]
+.code32
 madd.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: madd.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x83,0x00,0x60,0x00]
+.code32
 madd.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: madd.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0x83,0x00,0x6c,0x00]
+.code32
 madd.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddm.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0x83,0x00,0x78,0x00]
+.code32
 maddm.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddm.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0x83,0x00,0x74,0x00]
+.code32
 maddm.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddm.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x83,0x00,0x70,0x00]
+.code32
 maddm.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddm.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0x83,0x00,0x7c,0x00]
+.code32
 maddm.h %e0, %e0, %d0, %d0uu, 0
 
 # CHECK-INST: maddms.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0x83,0x00,0xf8,0x00]
+.code32
 maddms.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddms.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0x83,0x00,0xf4,0x00]
+.code32
 maddms.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddms.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x83,0x00,0xf0,0x00]
+.code32
 maddms.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddms.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0x83,0x00,0xfc,0x00]
+.code32
 maddms.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddr.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0x83,0x00,0x38,0x00]
+.code32
 maddr.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: maddr.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0x83,0x00,0x34,0x00]
+.code32
 maddr.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: maddr.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0x83,0x00,0x30,0x00]
+.code32
 maddr.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: maddr.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0x83,0x00,0x3c,0x00]
+.code32
 maddr.h %d0, %d0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddr.h %d0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x43,0x00,0x78,0x00]
+.code32
 maddr.h %d0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: madds.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0x83,0x00,0xe8,0x00]
+.code32
 madds.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: madds.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0x83,0x00,0xe4,0x00]
+.code32
 madds.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: madds.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x83,0x00,0xe0,0x00]
+.code32
 madds.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: madds.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0x83,0x00,0xec,0x00]
+.code32
 madds.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddsu.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0x68,0x00]
+.code32
 maddsu.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsu.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0x64,0x00]
+.code32
 maddsu.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsu.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0x60,0x00]
+.code32
 maddsu.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsu.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0x6c,0x00]
+.code32
 maddsu.h %e0, %e0, %d0, %d0uu, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0x78,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0x74,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0x70,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0x7c,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0x78,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0x74,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0x70,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsum.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0x7c,0x00]
+.code32
 maddsum.h %e0, %e0, %d0, %d0uu, 0
 
 # CHECK-INST: maddsums.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0xf8,0x00]
+.code32
 maddsums.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsums.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0xf4,0x00]
+.code32
 maddsums.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsums.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0xf0,0x00]
+.code32
 maddsums.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsums.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0xfc,0x00]
+.code32
 maddsums.h %e0, %e0, %d0, %d0uu, 0
 
 # CHECK-INST: maddsur.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0x38,0x00]
+.code32
 maddsur.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsur.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0x34,0x00]
+.code32
 maddsur.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsur.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0x30,0x00]
+.code32
 maddsur.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsur.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0x3c,0x00]
+.code32
 maddsur.h %d0, %d0, %d0, %d0uu, 0
 
 # CHECK-INST: maddsurs.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0xb8,0x00]
+.code32
 maddsurs.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsurs.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0xb4,0x00]
+.code32
 maddsurs.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsurs.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0xb0,0x00]
+.code32
 maddsurs.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsurs.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0xbc,0x00]
+.code32
 maddsurs.h %d0, %d0, %d0, %d0uu, 0 
 
 # CHECK-INST: maddsus.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xc3,0x00,0xe8,0x00]
+.code32
 maddsus.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: maddsus.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xc3,0x00,0xe4,0x00]
+.code32
 maddsus.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: maddsus.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xc3,0x00,0xe0,0x00]
+.code32
 maddsus.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: maddsus.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xc3,0x00,0xec,0x00]
+.code32
 maddsus.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: madds.u %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0x88,0x00]
+.code32
 madds.u %d0, %d0, %d0, %d0
 
 # CHECK-INST: madds.u %d0, %d0, %d0, 271
 # CHECK: encoding: [0x13,0xf0,0x90,0x00]
+.code32
 madds.u %d0, %d0, %d0, 271
 
 # CHECK-INST: madds.u %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0xe8,0x00]
+.code32
 madds.u %e0, %e0, %d0, %d0
 
 # CHECK-INST: madds.u %e0, %e0, %d0, 271
 # CHECK: encoding: [0x13,0xf0,0xd0,0x00]
+.code32
 madds.u %e0, %e0, %d0, 271
 
 # CHECK-INST: madds %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0x8a,0x00]
+.code32
 madds %d0, %d0, %d0, %d0
 
 # CHECK-INST: madds %d0, %d0, %d0, -256
 # CHECK: encoding: [0x13,0x00,0xb0,0x00]
+.code32
 madds %d0, %d0, %d0, -256 
 
 # CHECK-INST: madds %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0xea,0x00]
+.code32
 madds %e0, %e0, %d0, %d0
 
 # CHECK-INST: madds %e0, %e0, %d0, 0
 # CHECK: encoding: [0x13,0x00,0xe0,0x00]
+.code32
 madds %e0, %e0, %d0, 0 
 
 # CHECK-INST: madd.u %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0x68,0x00]
+.code32
 madd.u %e0, %e0, %d0, %d0
 
 # CHECK-INST: madd.u %e0, %e0, %d0, 271
 # CHECK: encoding: [0x13,0xf0,0x50,0x00]
+.code32
 madd.u %e0, %e0, %d0, 271
 
 # CHECK-INST: madd %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0x0a,0x00]
+.code32
 madd %d0, %d0, %d0, %d0
 
 # CHECK-INST: madd %d0, %d0, %d0, 0
 # CHECK: encoding: [0x13,0x00,0x20,0x00]
+.code32
 madd %d0, %d0, %d0, 0 
 
 # CHECK-INST: madd %e0, %e0, %d0, 0
 # CHECK: encoding: [0x13,0x00,0x60,0x00]
+.code32
 madd %e0, %e0, %d0, 0
 
 # CHECK-INST: madd %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x03,0x00,0x6a,0x00]
+.code32
 madd %e0, %e0, %d0, %d0
 
 # CHECK-INST: max.bu %d0, %d0, %d0
@@ -1903,18 +2067,22 @@ max.h %d0, %d0, %d0
 
 # CHECK-INST: max.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xb0,0x01]
+.code32
 max.u %d0, %d0, %d0
 
 # CHECK-INST: max.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x70,0x03]
+.code32
 max.u %d0, %d0, 271 
 
 # CHECK-INST: max %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xa0,0x01]
+.code32
 max %d0, %d0, %d0
 
 # CHECK-INST: max %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x50,0x03]
+.code32
 max %d0, %d0, -256
 
 # CHECK-INST: mfcr %d0, 0
@@ -1944,18 +2112,22 @@ min.h %d0, %d0, %d0
 
 # CHECK-INST: min.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x90,0x01]
+.code32
 min.u %d0, %d0, %d0
 
 # CHECK-INST: min.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x30,0x03]
+.code32
 min.u %d0, %d0, 271
 
 # CHECK-INST: min %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x80,0x01]
+.code32
 min %d0, %d0, %d0
 
 # CHECK-INST: min %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x10,0x03]
+.code32
 min %d0, %d0, -256
 
 # CHECK-INST: mov.aa %a0, %a0
@@ -2057,262 +2229,327 @@ mov %e0, %d0, %d0
 
 # CHECK-INST: msubad.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0x68,0x00]
+.code32
 msubad.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubad.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0x64,0x00]
+.code32
 msubad.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubad.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0x60,0x00]
+.code32
 msubad.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubad.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0x6c,0x00]
+.code32
 msubad.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubadm.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0x78,0x00]
+.code32
 msubadm.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubadm.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0x74,0x00]
+.code32
 msubadm.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubadm.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0x70,0x00]
+.code32
 msubadm.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubadm.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0x7c,0x00]
+.code32
 msubadm.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubadms.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0xf8,0x00]
+.code32
 msubadms.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubadms.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0xf4,0x00]
+.code32
 msubadms.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubadms.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0xf0,0x00]
+.code32
 msubadms.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubadms.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0xfc,0x00]
+.code32
 msubadms.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubadr.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0x38,0x00]
+.code32
 msubadr.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: msubadr.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0x34,0x00]
+.code32
 msubadr.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: msubadr.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0x30,0x00]
+.code32
 msubadr.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: msubadr.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0x3c,0x00]
+.code32
 msubadr.h %d0, %d0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubadrs.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0xb8,0x00]
+.code32
 msubadrs.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: msubadrs.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0xb4,0x00]
+.code32
 msubadrs.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: msubadrs.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0xb0,0x00]
+.code32
 msubadrs.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: msubadrs.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0xbc,0x00]
+.code32
 msubadrs.h %d0, %d0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubads.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xe3,0x00,0xe8,0x00]
+.code32
 msubads.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubads.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xe3,0x00,0xe4,0x00]
+.code32
 msubads.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubads.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xe3,0x00,0xe0,0x00]
+.code32
 msubads.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubads.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xe3,0x00,0xec,0x00]
+.code32
 msubads.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msub.f %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x6b,0x00,0x71,0x00]
+.code32
 msub.f %d0, %d0, %d0, %d0 
 
 # CHECK-INST: msub.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0x68,0x00]
+.code32
 msub.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msub.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0x64,0x00]
+.code32
 msub.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msub.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0x60,0x00]
+.code32
 msub.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msub.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0x6c,0x00]
+.code32
 msub.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubm.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0x78,0x00]
+.code32
 msubm.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubm.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0x74,0x00]
+.code32
 msubm.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubm.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0x70,0x00]
+.code32
 msubm.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubm.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0x7c,0x00]
+.code32
 msubm.h %e0, %e0, %d0, %d0uu, 0
  
 # CHECK-INST: msubms.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0xf8,0x00]
+.code32
 msubms.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubms.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0xf4,0x00]
+.code32
 msubms.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubms.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0xf0,0x00]
+.code32
 msubms.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubms.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0xfc,0x00]
+.code32
 msubms.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubr.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0x38,0x00]
+.code32
 msubr.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: msubr.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0x34,0x00]
+.code32
 msubr.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: msubr.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0x30,0x00]
+.code32
 msubr.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: msubr.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0x3c,0x00]
+.code32
 msubr.h %d0, %d0, %d0, %d0uu, 0
 
 # CHECK-INST: msubr.h %d0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x63,0x00,0x78,0x00]
+.code32
 msubr.h %d0, %e0, %d0, %d0ul, 0 
 
 # CHECK-INST: msubrs.h %d0, %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0xb8,0x00]
+.code32
 msubrs.h %d0, %d0, %d0, %d0ll, 0
 
 # CHECK-INST: msubrs.h %d0, %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0xb4,0x00]
+.code32
 msubrs.h %d0, %d0, %d0, %d0lu, 0
 
 # CHECK-INST: msubrs.h %d0, %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0xb0,0x00]
+.code32
 msubrs.h %d0, %d0, %d0, %d0ul, 0
 
 # CHECK-INST: msubrs.h %d0, %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0xbc,0x00]
+.code32
 msubrs.h %d0, %d0, %d0, %d0uu, 0
 
 # CHECK-INST: msubrs.h %d0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0x63,0x00,0xf8,0x00]
+.code32
 msubrs.h %d0, %e0, %d0, %d0ul, 0 
 
 # CHECK-INST: msubs.h %e0, %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xa3,0x00,0xe8,0x00]
+.code32
 msubs.h %e0, %e0, %d0, %d0ll, 0
 
 # CHECK-INST: msubs.h %e0, %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xa3,0x00,0xe4,0x00]
+.code32
 msubs.h %e0, %e0, %d0, %d0lu, 0
 
 # CHECK-INST: msubs.h %e0, %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xa3,0x00,0xe0,0x00]
+.code32
 msubs.h %e0, %e0, %d0, %d0ul, 0
 
 # CHECK-INST: msubs.h %e0, %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xa3,0x00,0xec,0x00]
+.code32
 msubs.h %e0, %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: msubs.u %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0x88,0x00]
+.code32
 msubs.u %d0, %d0, %d0, %d0
 
 # CHECK-INST: msubs.u %d0, %d0, %d0, 271
 # CHECK: encoding: [0x33,0xf0,0x90,0x00]
+.code32
 msubs.u %d0, %d0, %d0, 271
 
 # CHECK-INST: msubs.u %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0xe8,0x00]
+.code32
 msubs.u %e0, %e0, %d0, %d0
 
 # CHECK-INST: msubs.u %e0, %e0, %d0, 271
 # CHECK: encoding: [0x33,0xf0,0xd0,0x00]
+.code32
 msubs.u %e0, %e0, %d0, 271 
 
 # CHECK-INST: msubs %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0x8a,0x00]
+.code32
 msubs %d0, %d0, %d0, %d0
 
 # CHECK-INST: msubs %d0, %d0, %d0, -256
 # CHECK: encoding: [0x33,0x00,0xb0,0x00]
+.code32
 msubs %d0, %d0, %d0, -256
 
 # CHECK-INST: msubs %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0xea,0x00]
+.code32
 msubs %e0, %e0, %d0, %d0
 
 # CHECK-INST: msubs %e0, %e0, %d0, -256
 # CHECK: encoding: [0x33,0x00,0xf0,0x00]
+.code32
 msubs %e0, %e0, %d0, -256 
 
 # CHECK-INST: msub.u %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0x68,0x00]
+.code32
 msub.u %e0, %e0, %d0, %d0
 
 # CHECK-INST: msub.u %e0, %e0, %d0, 271
 # CHECK: encoding: [0x33,0xf0,0x50,0x00]
+.code32
 msub.u %e0, %e0, %d0, 271
  
 # CHECK-INST: msub %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0x0a,0x00]
+.code32
 msub %d0, %d0, %d0, %d0
 
 # CHECK-INST: msub %d0, %d0, %d0, -256
 # CHECK: encoding: [0x33,0x00,0x30,0x00]
+.code32
 msub %d0, %d0, %d0, -256
 
 # CHECK-INST: msub %e0, %e0, %d0, %d0
 # CHECK: encoding: [0x23,0x00,0x6a,0x00]
+.code32
 msub %e0, %e0, %d0, %d0
 
 # CHECK-INST: msub %e0, %e0, %d0, -256
 # CHECK: encoding: [0x33,0x00,0x70,0x00]
+.code32
 msub %e0, %e0, %d0, -256 
 
 # CHECK-INST: mtcr 0, %d0
@@ -2322,102 +2559,127 @@ mtcr 0, %d0
 
 # CHECK-INST: mul.f %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x41,0x00]
+.code32
 mul.f %d0, %d0, %d0
 
 # CHECK-INST: mul.h %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xb3,0x00,0x68,0x00]
+.code32
 mul.h %e0, %d0, %d0ll, 0
 
 # CHECK-INST: mul.h %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xb3,0x00,0x64,0x00]
+.code32
 mul.h %e0, %d0, %d0lu, 0
 
 # CHECK-INST: mul.h %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xb3,0x00,0x60,0x00]
+.code32
 mul.h %e0, %d0, %d0ul, 0
 
 # CHECK-INST: mul.h %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xb3,0x00,0x6c,0x00]
+.code32
 mul.h %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: mulm.h %e0, %d0, %d0ll, 0
 # CHECK: encoding: [0xb3,0x00,0x78,0x00]
+.code32
 mulm.h %e0, %d0, %d0ll, 0
 
 # CHECK-INST: mulm.h %e0, %d0, %d0lu, 0
 # CHECK: encoding: [0xb3,0x00,0x74,0x00]
+.code32
 mulm.h %e0, %d0, %d0lu, 0
 
 # CHECK-INST: mulm.h %e0, %d0, %d0ul, 0
 # CHECK: encoding: [0xb3,0x00,0x70,0x00]
+.code32
 mulm.h %e0, %d0, %d0ul, 0
 
 # CHECK-INST: mulm.h %e0, %d0, %d0uu, 0
 # CHECK: encoding: [0xb3,0x00,0x7c,0x00]
+.code32
 mulm.h %e0, %d0, %d0uu, 0 
 
 # CHECK-INST: mulr.h %d0, %d0, %d0ll, 0
 # CHECK: encoding: [0xb3,0x00,0x38,0x00]
+.code32
 mulr.h %d0, %d0, %d0ll, 0
 
 # CHECK-INST: mulr.h %d0, %d0, %d0lu, 0
 # CHECK: encoding: [0xb3,0x00,0x34,0x00]
+.code32
 mulr.h %d0, %d0, %d0lu, 0
 
 # CHECK-INST: mulr.h %d0, %d0, %d0ul, 0
 # CHECK: encoding: [0xb3,0x00,0x30,0x00]
+.code32
 mulr.h %d0, %d0, %d0ul, 0
 
 # CHECK-INST: mulr.h %d0, %d0, %d0uu, 0
 # CHECK: encoding: [0xb3,0x00,0x3c,0x00]
+.code32
 mulr.h %d0, %d0, %d0uu, 0 
 
 # CHECK-INST: muls.u %d0, %d0, %d0
 # CHECK: encoding: [0x73,0x00,0x88,0x00]
+.code32
 muls.u %d0, %d0, %d0
 
 # CHECK-INST: muls.u %d0, %d0, 271
 # CHECK: encoding: [0x53,0xf0,0x90,0x00]
+.code32
 muls.u %d0, %d0, 271 
 
 # CHECK-INST: muls %d0, %d0, %d0
 # CHECK: encoding: [0x73,0x00,0x8a,0x00]
+.code32
 muls %d0, %d0, %d0
 
 # CHECK-INST: muls %d0, %d0, -256
 # CHECK: encoding: [0x53,0x00,0xb0,0x00]
+.code32
 muls %d0, %d0, -256
 
 # CHECK-INST: mul.u %e0, %d0, %d0
 # CHECK: encoding: [0x73,0x00,0x68,0x00]
+.code32
 mul.u %e0, %d0, %d0
 
 # CHECK-INST: mul.u %e0, %d0, 271
 # CHECK: encoding: [0x53,0xf0,0x50,0x00]
+.code32
 mul.u %e0, %d0, 271
 
 # CHECK-INST: mul %d0, %d0
 # CHECK: encoding: [0xe2,0x00]
+.code16
 mul %d0, %d0
 
 # CHECK-INST: mul %d0, %d0, %d0
 # CHECK: encoding: [0x73,0x00,0x0a,0x00]
+.code32
 mul %d0, %d0, %d0
 
 # CHECK-INST: mul %d0, %d0, -256
 # CHECK: encoding: [0x53,0x00,0x30,0x00]
+.code32
 mul %d0, %d0, -256
 
 # CHECK-INST: mul %e0, %d0, %d0
 # CHECK: encoding: [0x73,0x00,0x6a,0x00]
+.code32
 mul %e0, %d0, %d0
 
 # CHECK-INST: mul %e0, %d0, -256
 # CHECK: encoding: [0x53,0x00,0x70,0x00]
+.code32
 mul %e0, %d0, -256 
 
 # CHECK-INST: nand.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x07,0x00,0x00,0x00]
+.code32
 nand.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: nand %d0, %d0, %d0
@@ -2432,10 +2694,12 @@ nand %d0, %d0, 271
 
 # CHECK-INST: ne.a %d0, %a0, %a0
 # CHECK: encoding: [0x01,0x00,0x10,0x04]
+.code32
 ne.a %d0, %a0, %a0
 
 # CHECK-INST: nez.a %d0, %a0
 # CHECK: encoding: [0x01,0x00,0x90,0x04]
+.code32
 nez.a %d0, %a0
 
 # CHECK-INST: ne %d0, %d0, %d0
@@ -2460,6 +2724,7 @@ nop
 
 # CHECK-INST: nor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x87,0x00,0x40,0x00]
+.code32
 nor.t %d0, %d0, 0, %d0, 0 
 
 # CHECK-INST: nor %d0, %d0, %d0
@@ -2479,66 +2744,82 @@ not %d0
 
 # CHECK-INST: or.and.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xc7,0x00,0x00,0x00]
+.code32
 or.and.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: or.andn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xc7,0x00,0x60,0x00]
+.code32
 or.andn.t %d0, %d0, 0, %d0, 0 
 
 # CHECK-INST: or.eq %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x70,0x02]
+.code32
 or.eq %d0, %d0, %d0
 
 # CHECK-INST: or.eq %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0xf0,0x04]
+.code32
 or.eq %d0, %d0, -256 
 
 # CHECK-INST: or.ge.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xc0,0x02]
+.code32
 or.ge.u %d0, %d0, %d0
 
 # CHECK-INST: or.ge.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x90,0x05]
+.code32
 or.ge.u %d0, %d0, 271
 
 # CHECK-INST: or.ge %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xb0,0x02]
+.code32
 or.ge %d0, %d0, %d0
 
 # CHECK-INST: or.ge %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x70,0x05]
+.code32
 or.ge %d0, %d0, -256 
 
 # CHECK-INST: or.lt.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xa0,0x02]
+.code32
 or.lt.u %d0, %d0, %d0
 
 # CHECK-INST: or.lt.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x50,0x05]
+.code32
 or.lt.u %d0, %d0, 271
 
 # CHECK-INST: or.lt %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x90,0x02]
+.code32
 or.lt %d0, %d0, %d0
 
 # CHECK-INST: or.lt %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x30,0x05]
+.code32
 or.lt %d0, %d0, -256
 
 # CHECK-INST: or.ne %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x80,0x02]
+.code32
 or.ne %d0, %d0, %d0
 
 # CHECK-INST: or.ne %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x10,0x05]
+.code32
 or.ne %d0, %d0, -256
 
 # CHECK-INST: or.nor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xc7,0x00,0x40,0x00]
+.code32
 or.nor.t %d0, %d0, 0, %d0, 0 
 
 # CHECK-INST: orn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x07,0x00,0x20,0x00]
+.code32
 orn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: orn %d0, %d0, %d0
@@ -2553,10 +2834,12 @@ orn %d0, %d0, 271
 
 # CHECK-INST: or.or.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xc7,0x00,0x20,0x00]
+.code32
 or.or.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: or.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x87,0x00,0x20,0x00]
+.code32
 or.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: or %d0, %d0
@@ -2581,18 +2864,22 @@ or %d15, 0
 
 # CHECK-INST: pack %d0, %e0, %d0
 # CHECK: encoding: [0x6b,0x00,0x00,0x00]
+.code32
 pack %d0, %e0, %d0
 
 # CHECK-INST: parity %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x20,0x00]
+.code32
 parity %d0, %d0
 
 # CHECK-INST: q31tof %d0, %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x51,0x01]
+.code32
 q31tof %d0, %d0, %d0
 
 # CHECK-INST: qseed.f %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x91,0x01]
+.code32
 qseed.f %d0, %d0
 
 # CHECK-INST: restore %d0
@@ -2652,54 +2939,67 @@ rsub %d0, %d0, -256
 
 # CHECK-INST: sat.bu %d0
 # CHECK: encoding: [0x32,0x10]
+.code16
 sat.bu %d0
 
 # CHECK-INST: sat.bu %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xf0,0x05]
+.code32
 sat.bu %d0, %d0
 
 # CHECK-INST: sat.b %d0
 # CHECK: encoding: [0x32,0x00]
+.code16
 sat.b %d0
 
 # CHECK-INST: sat.b %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xe0,0x05]
+.code32
 sat.b %d0, %d0 
 
 # CHECK-INST: sat.hu %d0
 # CHECK: encoding: [0x32,0x30]
+.code16
 sat.hu %d0
 
 # CHECK-INST: sat.hu %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xf0,0x07]
+.code32
 sat.hu %d0, %d0
 
 # CHECK-INST: sat.h %d0
 # CHECK: encoding: [0x32,0x20]
+.code16
 sat.h %d0
 
 # CHECK-INST: sat.h %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xe0,0x07]
+.code32
 sat.h %d0, %d0
 
 # CHECK-INST: seln %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x50,0x00]
+.code32
 seln %d0, %d0, %d0, %d0
 
 # CHECK-INST: seln %d0, %d0, %d0, -256
 # CHECK: encoding: [0xab,0x00,0xb0,0x00]
+.code32
 seln %d0, %d0, %d0, -256
 
 # CHECK-INST: sel %d0, %d0, %d0, %d0
 # CHECK: encoding: [0x2b,0x00,0x40,0x00]
+.code32
 sel %d0, %d0, %d0, %d0
 
 # CHECK-INST: sel %d0, %d0, %d0, -256
 # CHECK: encoding: [0xab,0x00,0x90,0x00]
+.code32
 sel %d0, %d0, %d0, -256
 
 # CHECK-INST: sha.h %d0, %d0, %d0
 # CHECK: encoding: [0x0f,0x00,0x10,0x04]
+.code32
 sha.h %d0, %d0, %d0 
 
 # CHECK-INST: sha.h %d0, %d0, -16
@@ -2709,10 +3009,12 @@ sha.h %d0, %d0, -16
 
 # CHECK-INST: sh.andn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x27,0x00,0x60,0x00]
+.code32
 sh.andn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.and.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x27,0x00,0x00,0x00]
+.code32
 sh.and.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: shas %d0, %d0, %d0
@@ -2742,30 +3044,37 @@ sha %d0, -8
 
 # CHECK-INST: sh.eq %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x70,0x03]
+.code32
 sh.eq %d0, %d0, %d0
 
 # CHECK-INST: sh.eq %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0xf0,0x06]
+.code32
 sh.eq %d0, %d0, -256
 
 # CHECK-INST: sh.ge.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xc0,0x03]
+.code32
 sh.ge.u %d0, %d0, %d0
 
 # CHECK-INST: sh.ge.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x90,0x07]
+.code32
 sh.ge.u %d0, %d0, 271
 
 # CHECK-INST: sh.ge %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xb0,0x03]
+.code32
 sh.ge %d0, %d0, %d0
 
 # CHECK-INST: sh.ge %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x70,0x07]
+.code32
 sh.ge %d0, %d0, -256 
 
 # CHECK-INST: sh.h %d0, %d0, %d0
 # CHECK: encoding: [0x0f,0x00,0x00,0x04]
+.code32
 sh.h %d0, %d0, %d0
 
 # CHECK-INST: sh.h %d0, %d0, -16
@@ -2775,50 +3084,62 @@ sh.h %d0, %d0, -16
 
 # CHECK-INST: sh.lt.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xa0,0x03]
+.code32
 sh.lt.u %d0, %d0, %d0
 
 # CHECK-INST: sh.lt.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x50,0x07]
+.code32
 sh.lt.u %d0, %d0, 271
 
 # CHECK-INST: sh.lt %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x90,0x03]
+.code32
 sh.lt %d0, %d0, %d0
 
 # CHECK-INST: sh.lt %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x30,0x07]
+.code32
 sh.lt %d0, %d0, -256
 
 # CHECK-INST: sh.nand.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xa7,0x00,0x00,0x00]
+.code32
 sh.nand.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.ne %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x80,0x03]
+.code32
 sh.ne %d0, %d0, %d0
 
 # CHECK-INST: sh.ne %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x10,0x07]
+.code32
 sh.ne %d0, %d0, -256 
 
 # CHECK-INST: sh.nor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x27,0x00,0x40,0x00]
+.code32
 sh.nor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.or.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x27,0x00,0x20,0x00]
+.code32
 sh.or.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.orn.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xa7,0x00,0x20,0x00]
+.code32
 sh.orn.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.xnor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xa7,0x00,0x40,0x00]
+.code32
 sh.xnor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh.xor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0xa7,0x00,0x60,0x00]
+.code32
 sh.xor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: sh %d0, %d0, %d0
@@ -3185,6 +3506,7 @@ subc %d0, %d0, %d0
 
 # CHECK-INST: sub.f %d0, %d0, %d0
 # CHECK: encoding: [0x6b,0x00,0x31,0x00]
+.code32
 sub.f %d0, %d0, %d0  
 
 # CHECK-INST: sub.h %d0, %d0, %d0
@@ -3304,6 +3626,7 @@ trapv
 
 # CHECK-INST: unpack %e0, %d0
 # CHECK: encoding: [0x4b,0x00,0x80,0x00]
+.code32
 unpack %e0, %d0
 
 # CHECK-INST: updfl %d0
@@ -3313,6 +3636,7 @@ updfl %d0
 
 # CHECK-INST: utof %d0, %d0
 # CHECK: encoding: [0x4b,0x00,0x61,0x01]
+.code32
 utof %d0, %d0
 
 # CHECK-INST: wait
@@ -3322,6 +3646,7 @@ wait
 
 # CHECK-INST: xnor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x07,0x00,0x40,0x00]
+.code32
 xnor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: xnor %d0, %d0, %d0
@@ -3336,46 +3661,57 @@ xnor %d0, %d0, 271
 
 # CHECK-INST: xor.eq %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0xf0,0x02]
+.code32
 xor.eq %d0, %d0, %d0
 
 # CHECK-INST: xor.eq %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0xf0,0x05]
+.code32
 xor.eq %d0, %d0, -256
 
 # CHECK-INST: xor.ge %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x30,0x03]
+.code32
 xor.ge %d0, %d0, %d0
 
 # CHECK-INST: xor.ge %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x70,0x06]
+.code32
 xor.ge %d0, %d0, -256
 
 # CHECK-INST: xor.lt.u %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x20,0x03]
+.code32
 xor.lt.u %d0, %d0, %d0
 
 # CHECK-INST: xor.lt.u %d0, %d0, 271
 # CHECK: encoding: [0x8b,0xf0,0x50,0x06]
+.code32
 xor.lt.u %d0, %d0, 271
 
 # CHECK-INST: xor.lt %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x10,0x03]
+.code32
 xor.lt %d0, %d0, %d0
 
 # CHECK-INST: xor.lt %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x30,0x06]
+.code32
 xor.lt %d0, %d0, -256 
 
 # CHECK-INST: xor.ne %d0, %d0, %d0
 # CHECK: encoding: [0x0b,0x00,0x00,0x03]
+.code32
 xor.ne %d0, %d0, %d0
 
 # CHECK-INST: xor.ne %d0, %d0, -256
 # CHECK: encoding: [0x8b,0x00,0x10,0x06]
+.code32
 xor.ne %d0, %d0, -256
 
 # CHECK-INST: xor.t %d0, %d0, 0, %d0, 0
 # CHECK: encoding: [0x07,0x00,0x60,0x00]
+.code32
 xor.t %d0, %d0, 0, %d0, 0
 
 # CHECK-INST: xor %d0, %d0
