@@ -11,8 +11,9 @@
 // RUN: %clang -target tricore -mcpu=tc39xx -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162 -DARCH=0x162 -DCPU=0x3900
 // RUN: %clang -target tricore -mcpu=tc4xx  -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162,TC18 -DARCH=0x18 -DCPU=0x4000
 
-// Check target, architecture and CPU specific defines
+// Check vendor, target, architecture and CPU specific defines
 
+// COMMON-DAG: #define __HIGHTEC__ 1
 // COMMON-DAG: #define __tricore 1
 // COMMON-DAG: #define __tricore__ 1
 // COMMON-DAG: #define __TRICORE__ 1

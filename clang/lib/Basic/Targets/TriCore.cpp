@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TriCore.h"
+#include "Targets.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/MacroBuilder.h"
 #include "llvm/ADT/StringRef.h"
@@ -153,6 +154,9 @@ void TriCoreTargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   }
   Builder.defineMacro("__TRICORE_NAME__", TriCoreName);
+
+  // Vendor macros
+  addHighTecDefines(Opts, Builder);
 }
 
 bool TriCoreTargetInfo::isValidCPUName(StringRef Name) const {

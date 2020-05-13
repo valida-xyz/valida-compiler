@@ -99,6 +99,11 @@ void addCygMingDefines(const LangOptions &Opts, MacroBuilder &Builder) {
   }
 }
 
+void addHighTecDefines(const LangOptions &Opts, MacroBuilder &Builder) {
+  // All HighTec compilers define __HIGHTEC__ as vendor identification
+  Builder.defineMacro("__HIGHTEC__");
+}
+
 //===----------------------------------------------------------------------===//
 // Driver code
 //===----------------------------------------------------------------------===//
