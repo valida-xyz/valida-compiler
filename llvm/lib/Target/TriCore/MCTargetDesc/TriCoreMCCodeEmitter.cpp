@@ -241,14 +241,14 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
       }
       break;
 
+    case TriCoreII::BOLFrm:
+      FixupKind = TriCore::fixup_16off;
+      break;
+
     case TriCoreII::BRCFrm:
     case TriCoreII::BRNFrm:
     case TriCoreII::BRRFrm:
       FixupKind = TriCore::fixup_15rel;
-      break;
-
-    case TriCoreII::BOLFrm:
-      FixupKind = TriCore::fixup_16off;
       break;
 
     // 16 bit formats
