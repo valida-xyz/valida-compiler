@@ -81,3 +81,19 @@ TriCoreTargetLowering::getRegForInlineAsmConstraint(
   // constraint into a member of a register class.
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
+
+Register TriCoreTargetLowering::getExceptionPointerRegister(
+    const Constant *PersonalityFn) const {
+  // The exception pointer register is used to pass the exception pointer to the
+  // landing pad. Use $a4, which the calling convention defines as the register
+  // to use when passing pointers
+  return TriCore::A4;
+}
+
+Register TriCoreTargetLowering::getExceptionSelectorRegister(
+    const Constant *PersonalityFn) const {
+  // The exception selector register is used to pass the exception selector to
+  // the landing pad. Use $d4, which the calling convention defines as the
+  // register to use when passing data
+  return TriCore::D4;
+}
