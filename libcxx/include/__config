@@ -319,6 +319,12 @@
 #  define _LIBCPP_USING_NACL_RANDOM
 #elif defined(_LIBCPP_WIN32API)
 #  define _LIBCPP_USING_WIN32_RANDOM
+#elif defined(__TRICORE__)
+   // TriCore does not have a filesystem, nor a non-deterministic hardware
+   // device. We can reuse most of existing _LIBCPP_USING_GETENTROPY
+   // implementation but instead of using the sys/random.h header, which we
+   // don't have on TriCore, we use an extern declaration
+#  define _LIBCPP_USING_EXTERN_GETENTROPY
 #else
 #  define _LIBCPP_USING_DEV_RANDOM
 #endif

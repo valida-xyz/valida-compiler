@@ -26,6 +26,8 @@
 
 #if defined(_LIBCPP_USING_GETENTROPY)
 #include <sys/random.h>
+#elif defined(_LIBCPP_USING_EXTERN_GETENTROPY)
+extern "C" int getentropy(void *__buffer, size_t __length);
 #elif defined(_LIBCPP_USING_DEV_RANDOM)
 #include <fcntl.h>
 #include <unistd.h>
@@ -36,12 +38,17 @@
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-#if defined(_LIBCPP_USING_GETENTROPY)
+#if defined(_LIBCPP_USING_GETENTROPY) || defined(_LIBCPP_USING_EXTERN_GETENTROPY)
 
 random_device::random_device(const string& __token)
 {
+#if defined(_LIBCPP_USING_GETENTROPY)
     if (__token != "/dev/urandom")
         __throw_system_error(ENOENT, ("random device not supported " + __token).c_str());
+#else
+    // Avoid unused parameter warning
+    (void)__token;
+#endif
 }
 
 random_device::~random_device()
