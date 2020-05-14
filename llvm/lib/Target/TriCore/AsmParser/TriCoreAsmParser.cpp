@@ -304,7 +304,7 @@ public:
     bool IsConstantImm = evaluateConstantImm(Imm, VK);
 
     if (!IsConstantImm)
-      IsValid = false; // symbols for this operand type is not allowed yet
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
     else
       IsValid = isUInt<32>(Imm) && (Imm & ~0xffffc000) == 0;
 

@@ -64,6 +64,7 @@ public:
         {"fixup_lo2", 16, 16, 0},
         {"fixup_18abs", 12, 20, 0},
         {"fixup_15rel", 16, 15, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_lha", 12, 20, 0},
     };
 
     static_assert((array_lengthof(Infos)) == TriCore::NumTargetFixupKinds,
@@ -131,6 +132,14 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
     if (Value & 1)
       Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
     return (Value >> 1) & 0x7fff;
+  case TriCore::fixup_lha:
+    if (!isUInt<32>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 0x3fffu)
+      Ctx.reportError(Fixup.getLoc(), "invalid fixup range");
+    Value >>= 14u;
+    return (((Value & 0x3fu) << 4u) | ((Value & 0x3c0u) << 10u) |
+        (Value & 0x3c00u) | ((Value & 0x3c000u) >> 14u));
   }
 }
 

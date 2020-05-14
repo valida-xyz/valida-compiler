@@ -1,0 +1,51 @@
+# RUN: not llvm-mc -arch=tricore -filetype=obj < %s -o /dev/null 2>&1 \
+# RUN: | FileCheck -check-prefix=CHECK %s
+
+.code32
+lha %a0, bit1
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit2
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit3
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit4
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit5
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit6
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit7
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit8
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit9
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit10
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit11
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit12
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit13
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit14
+# CHECK: :[[@LINE-1]]:1: error: invalid fixup range
+lha %a0, bit33
+# CHECK: :[[@LINE-1]]:1: error: fixup value out of range
+
+
+.set bit1, 1
+.set bit2, 1 << 1
+.set bit3, 1 << 2
+.set bit4, 1 << 3
+.set bit5, 1 << 4
+.set bit6, 1 << 5
+.set bit7, 1 << 6
+.set bit8, 1 << 7
+.set bit9, 1 << 8
+.set bit10, 1 << 9
+.set bit11, 1 << 10
+.set bit12, 1 << 11
+.set bit13, 1 << 12
+.set bit14, 1 << 13
+.set bit33, 1 << 32

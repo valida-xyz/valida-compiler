@@ -46,6 +46,10 @@ enum Fixups {
   // 15 bit pc-relative immediate used in BR format (internally multiplied by 2)
   fixup_15rel,
 
+  // 18 bit representing a 32 bit absolute address for ABS format with
+  // EA = {off18[17:0], 14b'0}
+  fixup_lha,
+
   fixup_invalid,
   // the number of fixups for this target
   NumTargetFixupKinds = fixup_invalid - FirstTargetFixupKind

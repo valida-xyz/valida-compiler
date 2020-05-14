@@ -218,6 +218,7 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
         FixupKind = TriCore::fixup_18abs;
         break;
       case TriCore::LHA_ac:
+        FixupKind = TriCore::fixup_lha;
         break;
       }
       break;
