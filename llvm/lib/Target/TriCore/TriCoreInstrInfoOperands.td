@@ -80,8 +80,15 @@ def uimm1 : GenericUnsignedImmediate<1> {
 }
 
 // A 2-bit unsigned immediate.
-def uimm2 : GenericUnsignedImmediate<2, i32> {
+def uimm2 : GenericUnsignedImmediate<2, i32>,
+            ImmLeaf<i32, [{ return isUInt<2>(Imm); }]> {
   let OperandType = "OPERAND_UIMM2";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<2>(Imm);
+    return false;
+  }];
 }
 
 // A 2 bit unsigned immediate encoded in 1 bit
@@ -113,8 +120,15 @@ def double_sysreg : Operand<OtherVT> {
 }
 
 // A 4-bit signed immediate.
-def simm4 : GenericSignedImmediate<4, i32> {
+def simm4 : GenericSignedImmediate<4, i32>,
+            ImmLeaf<i32, [{ return isInt<4>(Imm); }]> {
   let OperandType = "OPERAND_SIMM4";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<4>(Imm);
+    return false;
+  }];
 }
 
 // A 4 bit value which comply: {27b’111111111111111111111111111, disp4, 0}.
@@ -126,46 +140,100 @@ def simm4_1 : Operand<OtherVT> {
 }
 
 // A 4-bit unsigned immediate.
-def uimm4 : GenericUnsignedImmediate<4, i32> {
+def uimm4 : GenericUnsignedImmediate<4, i32>,
+            ImmLeaf<i32, [{ return isUInt<4>(Imm); }]> {
   let OperandType = "OPERAND_UIMM4";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<4>(Imm);
+    return false;
+  }];
 }
 
 // A 4-bit unsigned immediate, shifted left by 1
-def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1> {
+def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>,
+                 ImmLeaf<i8, [{ return isShiftedUInt<4, 1>(Imm); }]> {
   let OperandType = "OPERAND_UIMM4_LSB0";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedUInt<4, 1>(Imm);
+    return false;
+  }];
 }
 
 // A 4-bit unsigned immediate, shifted left by 2
-def uimm4_lsb00 : GenericUImmLsbNIsZero<4, 2> {
+def uimm4_lsb00 : GenericUImmLsbNIsZero<4, 2>,
+                  ImmLeaf<i32, [{ return isShiftedUInt<4, 2>(Imm); }]> {
   let OperandType = "OPERAND_UIMM4_LSB00";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedInt<4, 2>(Imm);
+    return false;
+  }];
 }
 
 // A 5-bit unsigned immediate.
-def uimm5 : GenericUnsignedImmediate<5, i32> {
+def uimm5 : GenericUnsignedImmediate<5, i32>,
+            ImmLeaf<i32, [{ return isUInt<5>(Imm); }]> {
   let OperandType = "OPERAND_UIMM5";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<5>(Imm);
+    return false;
+  }];
 }
 
 // A 8-bit unsigned immediate.
-def uimm8 : GenericUnsignedImmediate<8, i8> {
+def uimm8 : GenericUnsignedImmediate<8, i8>,
+            ImmLeaf<i8, [{ return isUInt<8>(Imm); }]> {
   let OperandType = "OPERAND_UIMM8";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<8>(Imm);
+    return false;
+  }];
 }
 
 // A 8-bit signed immediate, shifted left by 1
-def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1> {
+def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>,
+            ImmLeaf<i8, [{ return isShiftedInt<8, 1>(Imm); }]> {
   let OperandType = "OPERAND_SIMM8_LSB0";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedInt<8, 1>(Imm);
+    return false;
+  }];
 }
 
 // A 8-bit unsigned immediate, shifted left by 2
-def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2> {
+def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2>,
+                  ImmLeaf<i32, [{ return isShiftedUInt<8, 2>(Imm); }]> {
   let OperandType = "OPERAND_UIMM8_LSB00";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedUInt<8, 2>(Imm);
+    return false;
+  }];
 }
 
 // A 6 bit signed immediate encoded in 9 bit
-def simm9_shift : Operand<i32>,
-                  ImmLeaf<i32, [{ return Imm >= -32 && Imm < 32; }]>{
+def simm9_shift : Operand<i32>, ImmLeaf<i32, [{ return isInt<6>(Imm); }]> {
   let ParserMatchClass = GenericImmOperand<"SImm9Shift">;
   let DecoderMethod = "decodeSImm9Shift";
   let OperandType = "OPERAND_SIMM9_SHIFT";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<6>(Imm);
+    return false;
+  }];
 }
 
 // A 5 bit signed immediate encoded in 9 bit
@@ -177,14 +245,26 @@ def simm9_shift5 : Operand<OtherVT> {
 
 // A 9-bit signed immediate.
 def simm9 : GenericSignedImmediate<9, i32>,
-            ImmLeaf<i32, [{ return Imm >= -256 && Imm < 256; }]> {
+            ImmLeaf<i32, [{ return isInt<9>(Imm); }]> {
   let OperandType = "OPERAND_SIMM9";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<9>(Imm);
+    return false;
+  }];
 }
 
 // A 9-bit unsigned immediate.
 def uimm9 : GenericUnsignedImmediate<9, i32>,
-            ImmLeaf<i32, [{ return Imm >= 0 && Imm < 512; }]> {
+            ImmLeaf<i32, [{ return isUInt<9>(Imm); }]> {
   let OperandType = "OPERAND_UIMM9";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<9>(Imm);
+    return false;
+  }];
 }
 
 // For instuctions with signed 10 bit variants which also has superior BOL 
@@ -204,20 +284,37 @@ def simm16_BOL : Operand<i16> {
   let DecoderMethod = "decodeSignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";
   let OperandType = "OPERAND_SIMM16_BOL";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<16>(Imm);
+    return false;
+  }];
 }
 
 // A 10-bit signed immediate.
 def simm10 : GenericSignedImmediate<10, i32> {
   let OperandType = "OPERAND_SIMM10";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<10>(Imm);
+    return false;
+  }];
 }
 
 // A 16-bit signed immediate of RLC format
-def simm16_RLC : Operand<i32>,
-                 ImmLeaf<i32, [{ return Imm >= -32768 && Imm < 32768; }]> {
+def simm16_RLC : Operand<i32>, ImmLeaf<i32, [{ return isInt<16>(Imm); }]> {
   let ParserMatchClass = GenericImmOperand<"SImm16_RLC">;
   let DecoderMethod = "decodeSignedImmediate<16>";
   let EncoderMethod = "getImmOpValue";
   let OperandType = "OPERAND_SIMM16_RLC";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isInt<16>(Imm);
+    return false;
+  }];
 }
 
 // A 16-bit unsigned immediate of RLC format
@@ -229,20 +326,39 @@ def uimm16_RLC : Operand<i16> {
 }
 
 // A an unsigned 4 bit N value which comply: (N + 16) * 2
-def disp4_16 : Operand<OtherVT> {
+def disp4_16 : Operand<OtherVT>,
+               ImmLeaf<i32, [{ return isShiftedUInt<4, 1>(Imm - 32); }]> {
   let ParserMatchClass = GenericImmOperand<"Disp4_16">;
   let EncoderMethod = "getDisp4_16";
   let OperandType = "OPERAND_DISP4_16";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedUInt<4, 1>(Imm - 32);
+    return false;
+  }];
 }
 
 // A 15-bit signed immediate, shifted left by 1
 def simm15_lsb0 : GenericSImmLsbNIsZero<15, 1> {
   let OperandType = "OPERAND_SIMM15_LSB0";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedInt<15, 1>(Imm);
+    return false;
+  }];
 }
 
 // A 24-bit signed immediate, shifted left by 1
 def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1> {
   let OperandType = "OPERAND_SIMM24_LSB0";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isShiftedInt<24, 1>(Imm);
+    return false;
+  }];
 }
 
 // A 18-bit immediate as 32 bit absolute address
@@ -251,6 +367,12 @@ def off18_abs : Operand<OtherVT> {
   let EncoderMethod = "getOff18Abs";
   let DecoderMethod = "decodeOff18Abs";
   let OperandType = "OPERAND_OFF18_ABS";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<32>(Imm) && !(Imm & ~0xf0003fff);
+    return false;
+  }];
 }
 
 // A 18-bit immediate as 32 bit absolute address

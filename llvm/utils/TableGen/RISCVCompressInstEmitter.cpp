@@ -421,7 +421,7 @@ void RISCVCompressInstEmitter::evaluateCompressPat(Record *Rec) {
 
   // Checking we are transforming from compressed to uncompressed instructions.
   Record *Operator = SourceDag->getOperatorAsDef(Rec->getLoc());
-  if (!Operator->isSubClassOf("RVInst"))
+  if (!Operator->isSubClassOf("RVInst") && !Operator->isSubClassOf("T32"))
     PrintFatalError(Rec->getLoc(), "Input instruction '" + Operator->getName() +
                                        "' is not a 32 bit wide instruction!");
   CodeGenInstruction SourceInst(Operator);
@@ -433,7 +433,8 @@ void RISCVCompressInstEmitter::evaluateCompressPat(Record *Rec) {
   LLVM_DEBUG(dbgs() << "Output: " << *DestDag << "\n");
 
   Record *DestOperator = DestDag->getOperatorAsDef(Rec->getLoc());
-  if (!DestOperator->isSubClassOf("RVInst16"))
+  if (!DestOperator->isSubClassOf("RVInst16") &&
+      !DestOperator->isSubClassOf("T16"))
     PrintFatalError(Rec->getLoc(), "Output instruction  '" +
                                        DestOperator->getName() +
                                        "' is not a 16 bit wide instruction!");

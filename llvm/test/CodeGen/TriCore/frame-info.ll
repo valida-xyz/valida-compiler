@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=tricore -o - %s | FileCheck %s
+; RUN: llc -mtriple=tricore -mattr=+insn32-only -o - %s | FileCheck %s
 
 ; Test that CFI directives are emitted correctly
 define void @foo() {

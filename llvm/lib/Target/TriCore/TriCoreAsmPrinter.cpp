@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstPrinter/TriCoreInstPrinter.h"
+#include "MCTargetDesc/TriCoreInstrCompression.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
 #include "TriCoreMCInstLower.h"
@@ -44,6 +45,7 @@ public:
   StringRef getPassName() const override { return "TriCore Assembly Printer"; }
 
   void emitInstruction(const MachineInstr *MI) override;
+  void EmitToStreamer(MCStreamer &S, const MCInst &Inst);
 
 private:
   void EmitJumpTableAddr(const MachineInstr *MI, MCSymbol *PICOffSymbol);
@@ -426,6 +428,18 @@ void TriCoreAsmPrinter::emitInstruction(const MachineInstr *MI) {
   MCInst TmpInst;
   MCInstLowering.Lower(MI, TmpInst);
   EmitToStreamer(*OutStreamer, TmpInst);
+}
+
+void TriCoreAsmPrinter::EmitToStreamer(MCStreamer &S, const MCInst &Inst) {
+  MCInst CInst;
+  bool Compressed = false;
+  auto STI = *TM.getMCSubtargetInfo();
+
+  if (!STI.getFeatureBits()[TriCore::Only32BitInstructions])
+    Compressed =
+        compressInstruction(CInst, Inst, STI, OutStreamer->getContext());
+
+  AsmPrinter::EmitToStreamer(*OutStreamer, Compressed ? CInst : Inst);
 }
 
 // Force static initialization.

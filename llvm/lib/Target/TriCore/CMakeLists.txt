@@ -18,6 +18,9 @@ tablegen(LLVM TriCoreGenPreLegalizerGICombiner.inc -gen-global-isel-combiner
 tablegen(LLVM TriCoreGenPostLegalizerGICombiner.inc -gen-global-isel-combiner
   -combiners="TriCorePostLegalizerCombinerHelper")
 
+set(LLVM_TARGET_DEFINITIONS TriCoreInstrCompressPattern.td)
+tablegen(LLVM TriCoreGenCompressInstEmitter.inc -gen-compress-inst-emitter)
+
 add_public_tablegen_target(TriCoreCommonTableGen)
 
 add_llvm_target(TriCoreCodeGen

@@ -1,4 +1,6 @@
-# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
+# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select \
+# RUN: -verify-machineinstrs -show-mc-encoding -mattr=+insn32-only %s -o - \
+# RUN:     | FileCheck %s
 
 # CHECK-LABEL:               	.text
 # CHECK:                    	.file	"lower-global-value.mir"

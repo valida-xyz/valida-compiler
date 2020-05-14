@@ -1,5 +1,9 @@
-# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s --check-prefix=STATIC
-# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables --relocation-model=pic -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s --check-prefix=PIC
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables \
+# RUN:     -verify-machineinstrs -show-mc-encoding -mattr=+insn32-only %s -o - \
+# RUN:     | FileCheck %s --check-prefix=STATIC
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=tricore-jump-tables \
+# RUN:   --relocation-model=pic -verify-machineinstrs -show-mc-encoding \
+# RUN:   -mattr=+insn32-only %s -o - | FileCheck %s --check-prefix=PIC
 
 # STATIC-LABEL:     .text
 # STATIC:           .file    "lower-jump-table.mir"

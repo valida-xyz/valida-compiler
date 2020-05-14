@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstPrinter/TriCoreInstPrinter.h"
+#include "MCTargetDesc/TriCoreInstrCompression.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
@@ -604,9 +605,13 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   MCInst Inst;
   FeatureBitset MissingFeatures;
   SMLoc ErrorLoc;
+  bool Compressed = false;
+
   auto MatchResult = MatchInstructionImpl(Operands, Inst, ErrorInfo,
                                           MissingFeatures, MatchingInlineAsm);
 
+  bool Compress = getSTI().getFeatureBits()[TriCore::Allow16BitInstructions];
+ 
   if (!(getSTI().getFeatureBits()[TriCore::Only32BitInstructions])) {
     setFeatureBits(TriCore::Allow16BitInstructions, "allow-16bit");
     setFeatureBits(TriCore::Allow32BitInstructions, "allow-32bit");
@@ -625,8 +630,12 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     if (validateInstruction(Inst, IDLoc, OperandLocs))
       return true;
 
+    MCInst CInst;
+    if (Compress)
+      Compressed = compressInstruction(CInst, Inst, getSTI(), Out.getContext());
+
     Inst.setLoc(IDLoc);
-    Out.emitInstruction(Inst, getSTI());
+    Out.emitInstruction((Compressed ? CInst : Inst), getSTI());
 
     return false;
   }

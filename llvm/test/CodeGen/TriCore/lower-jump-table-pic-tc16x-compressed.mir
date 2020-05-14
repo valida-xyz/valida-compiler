@@ -1,16 +1,16 @@
-# RUN: llc -O0 -mtriple=tricore -mattr=-tc18,+insn32-only \
+# RUN: llc -O0 -mtriple=tricore -mattr=-tc18 \
 # RUN: -global-isel -start-after=tricore-jump-tables --relocation-model=pic \
 # RUN: -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
 
 # CHECK-LABEL:   .text
-# CHECK:         .file  "lower-jump-table-pic-tc16x.mir"
+# CHECK:         .file  "lower-jump-table-pic-tc16x-compressed.mir"
 # CHECK:         .globl  jt_test                # -- Begin function jt_test
 # CHECK:         .type  jt_test,@function
 # CHECK-LABEL: jt_test:                         # @jt_test
 # CHECK:         .cfi_startproc
 # CHECK:       # %bb.0:                         # %entry
-# CHECK:         mov.aa  %a14, %a10             # encoding: [0x01,0xa0,0x00,0xe0]
-# CHECK:         mov.aa  %a2, %a11              # encoding: [0x01,0xb0,0x00,0x20]
+# CHECK:         mov.aa  %a14, %a10             # encoding: [0x40,0xae]
+# CHECK:         mov.aa  %a2, %a11              # encoding: [0x40,0xb2]
 # CHECK:         jl  .LPICOFF                   # encoding: [0x5d,A,A,A]
 # CHECK:                                        #   fixup A - offset: 0, value: .LPICOFF, kind: fixup_24rel
 # CHECK:       .LPICOFF:
@@ -23,10 +23,10 @@
 # CHECK:                                        #   fixup A - offset: 0, value: hi:.LJTI0_0, kind: fixup_hi
 # CHECK:         lea  %a15, [%a15], lo:.LJTI0_0 # encoding: [0xd9,0xff,A,A]
 # CHECK:                                        #   fixup A - offset: 0, value: lo:.LJTI0_0, kind: fixup_lo2
-# CHECK:         add.a  %a15, %a15, %a11        # encoding: [0x01,0xbf,0x10,0xf0]
-# CHECK:         mov.aa  %a11, %a2              # encoding: [0x01,0x20,0x00,0xb0]
+# CHECK:         add.a  %a15, %a11              # encoding: [0x30,0xbf]
+# CHECK:         mov.aa  %a11, %a2              # encoding: [0x40,0x2b]
 # CHECK:         addsc.a  %a15, %a15, %d4, 2    # encoding: [0x01,0xf4,0x02,0xf6]
-# CHECK:         ji  %a15                       # encoding: [0x2d,0x0f,0x30,0x00]
+# CHECK:         ji  %a15                       # encoding: [0xdc,0x0f]
 # CHECK:       # %bb.1:
 # CHECK:         .p2align  2
 # CHECK:       .LJTI0_0:
@@ -62,7 +62,7 @@
 # CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
 # CHECK:       .LBB0_4:                         # %sw.bb1
 # CHECK:       .LBB0_5:                         # %return
-# CHECK:         ret                            # encoding: [0x0d,0x00,0x80,0x01]
+# CHECK:         ret                            # encoding: [0x00,0x90]
 # CHECK-LABEL: .Lfunc_end0:
 # CHECK:         .size  jt_test, .Lfunc_end0-jt_test
 # CHECK:         .cfi_endproc

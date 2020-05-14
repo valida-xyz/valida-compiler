@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=tricore -o - %s | FileCheck %s
+; RUN: llc -mtriple=tricore -mattr=+insn32-only -o - %s | FileCheck %s
 
 ; This is a test case from the GCC bug HDP-1144.
 ;
