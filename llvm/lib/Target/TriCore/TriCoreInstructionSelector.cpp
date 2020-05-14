@@ -1928,13 +1928,38 @@ bool TriCoreInstructionSelector::selectLoadStore(
 
   auto &MemOp = **I.memoperands_begin();
 
+  const bool IsStore = I.getOpcode() == TargetOpcode::G_STORE;
+
+  bool InsertBarrierBefore = false;
+  bool InsertBarrierAfter = false;
+
   if (MemOp.isAtomic()) {
-    LLVM_DEBUG(dbgs() << "Atomic load/store not supported yet\n");
-    return false;
+    // TODO: support other atomic memory operations if needed
+    switch (MemOp.getOrdering()) {
+    default:
+      LLVM_DEBUG(dbgs() << "Atomic load/store not fully supported yet\n");
+      return false;
+    case AtomicOrdering::Acquire:
+      // For acquire it is enough to have a memory synchronization barrier after
+      // the actual load instruction. See the LLVM LangRef manual about
+      // acquire semantics
+      LLVM_DEBUG(
+          dbgs()
+          << "Load-acquire found. Inserting DSYNC after memory operation\n");
+      InsertBarrierAfter = true;
+      break;
+    case AtomicOrdering::Release:
+      // Release is mostly similar to acquire, but requires the synchronization
+      // to happen before the memory access
+      LLVM_DEBUG(
+          dbgs()
+          << "Store-release found. Inserting DSYNC before memory operation\n");
+      InsertBarrierBefore = true;
+      break;
+    }
   }
 
   const unsigned MemSizeInBits = MemOp.getSize() * 8;
-  const bool IsStore = I.getOpcode() == TargetOpcode::G_STORE;
 
 #ifndef NDEBUG
   // Sanity check that we have a pointer as address
@@ -1957,8 +1982,13 @@ bool TriCoreInstructionSelector::selectLoadStore(
     return false;
   }
 
-  // Build load/store
   MachineIRBuilder MIRBuilder(I);
+
+  // Insert a DSYNC barrier before the memory operation if needed
+  if (InsertBarrierBefore)
+    MIRBuilder.buildInstr(TriCore::DSYNC);
+
+  // Build load/store
   auto MemMI = MIRBuilder.buildInstr(NewOpc);
 
   if (!IsStore)
@@ -1981,6 +2011,10 @@ bool TriCoreInstructionSelector::selectLoadStore(
 
   MemMI = MemMI.addMemOperand(&MemOp);
   constrainSelectedInstRegOperands(*MemMI, TII, TRI, RBI);
+
+  // Insert a DSYNC barrier after the memory operation if needed
+  if (InsertBarrierAfter)
+    MIRBuilder.buildInstr(TriCore::DSYNC);
 
   I.removeFromParent();
   return true;
