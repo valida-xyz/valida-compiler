@@ -170,7 +170,7 @@ def uimm4_lsb00 : GenericUImmLsbNIsZero<4, 2>,
   let MCOperandPredicate = [{
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
-      return isShiftedInt<4, 2>(Imm);
+      return isShiftedUInt<4, 2>(Imm);
     return false;
   }];
 }

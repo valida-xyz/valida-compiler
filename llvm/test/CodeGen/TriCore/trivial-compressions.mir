@@ -1,0 +1,523 @@
+# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select \
+# RUN: -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
+# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select \
+# RUN: -verify-machineinstrs -show-mc-encoding -mattr=-tc18 %s -o - \
+# RUN:    | FileCheck %s --check-prefix=CHECK-NOTC18
+
+# TODO: BISR, special registers undefined and MTCR can't be used yet.
+# BISR_c 100, implicit-def $fcx, implicit-def $fcx, implicit-def $icr, 
+# implicit-def $pcxi, implicit $a2, implicit $a3, implicit $a4, implicit $a5, 
+# implicit $a6, implicit $a7, implicit $a11, implicit $d0, implicit $d1, 
+# implicit $d2, implicit $d3, implicit $d4, implicit $d5, implicit $d6, 
+# implicit $d7, implicit $fcx, implicit $icr, implicit $lcx, implicit $pcxi
+
+
+# CHECK: 	add	%d15, %d0, -9           # encoding: [0x8b,0x70,0x1f,0xf0]
+# CHECK: 	add	%d15, %d0, -8           # encoding: [0x9a,0x80]
+# CHECK: 	add	%d15, %d0, 7            # encoding: [0x9a,0x70]
+# CHECK: 	add	%d14, %d0, 7            # encoding: [0x8b,0x70,0x00,0xe0]
+# CHECK: 	add	%d15, %d0, 8            # encoding: [0x8b,0x80,0x00,0xf0]
+# CHECK: 	add	%d15, %d0, %d1          # encoding: [0x1a,0x10]
+# CHECK: 	add	%d14, %d0, %d1          # encoding: [0x0b,0x10,0x00,0xe0]
+# CHECK: 	add	%d0, %d15, -9           # encoding: [0x8b,0x7f,0x1f,0x00]
+# CHECK: 	add	%d0, %d15, -8           # encoding: [0x92,0x80]
+# CHECK: 	add	%d0, %d15, 7            # encoding: [0x92,0x70]
+# CHECK: 	add	%d0, %d14, 7            # encoding: [0x8b,0x7e,0x00,0x00]
+# CHECK: 	add	%d0, %d15, 8            # encoding: [0x8b,0x8f,0x00,0x00]
+# CHECK: 	add	%d0, %d15, %d1          # encoding: [0x12,0x10]
+# CHECK: 	add	%d0, %d14, %d1          # encoding: [0x0b,0x1e,0x00,0x00]
+# CHECK: 	call	-258                    # encoding: [0x6d,0xff,0x7f,0xff]
+# CHECK: 	call	-256                    # encoding: [0x5c,0x80]
+# CHECK: 	call	254                     # encoding: [0x5c,0x7f]
+# CHECK: 	call	256                     # encoding: [0x6d,0x00,0x80,0x00]
+# CHECK-NOTC18: calli	%a0               # encoding: [0x2d,0x00,0x00,0x00]
+# CHECK: 	calli	%a0                     # encoding: [0xdc,0x10]
+# CHECK: 	debug                           # encoding: [0x00,0xa0]
+# CHECK: 	eq	%d15, %d0, -9           # encoding: [0x8b,0x70,0x1f,0xf2]
+# CHECK: 	eq	%d15, %d0, -8           # encoding: [0xba,0x80]
+# CHECK: 	eq	%d15, %d0, 7            # encoding: [0xba,0x70]
+# CHECK: 	eq	%d14, %d0, 7            # encoding: [0x8b,0x70,0x00,0xe2]
+# CHECK: 	eq	%d15, %d0, 8            # encoding: [0x8b,0x80,0x00,0xf2]
+# CHECK: 	eq	%d15, %d0, %d1          # encoding: [0x3a,0x10]
+# CHECK: 	eq	%d14, %d0, %d1          # encoding: [0x0b,0x10,0x00,0xe1]
+# CHECK: 	ld.a	%a15, [%a10], -4        # encoding: [0x99,0xaf,0xfc,0xff]
+# CHECK: 	ld.a	%a15, [%a10], 8         # encoding: [0xd8,0x02]
+# CHECK: 	ld.a	%a15, [%a10], 1020      # encoding: [0xd8,0xff]
+# CHECK: 	ld.a	%a14, [%a10], 1020      # encoding: [0x99,0xae,0x3c,0xf0]
+# CHECK: 	ld.a	%a15, [%a11], 1020      # encoding: [0x99,0xbf,0x3c,0xf0]
+# CHECK: 	ld.a	%a15, [%a10], 1024      # encoding: [0x99,0xaf,0x40,0x00]
+# CHECK: 	ld.a	%a15, [%a0], -4         # encoding: [0x99,0x0f,0xfc,0xff]
+# CHECK: 	ld.a	%a15, [%a0], 8          # encoding: [0xcc,0x02]
+# CHECK: 	ld.a	%a15, [%a0], 60         # encoding: [0xcc,0x0f]
+# CHECK: 	ld.a	%a14, [%a0], 60         # encoding: [0x99,0x0e,0x3c,0x00]
+# CHECK: 	ld.a	%a15, [%a0], 64         # encoding: [0x99,0x0f,0x00,0x10]
+# CHECK: 	ld.a	%a0, [%a15], -4         # encoding: [0x99,0xf0,0xfc,0xff]
+# CHECK: 	ld.a	%a0, [%a15], 8          # encoding: [0xc8,0x20]
+# CHECK: 	ld.a	%a0, [%a15], 60         # encoding: [0xc8,0xf0]
+# CHECK: 	ld.a	%a0, [%a14], 60         # encoding: [0x99,0xe0,0x3c,0x00]
+# CHECK: 	ld.a	%a0, [%a15], 64         # encoding: [0x99,0xf0,0x00,0x10]
+# CHECK: 	ld.bu	%d15, [%a0], -1         # encoding: [0x39,0x0f,0xff,0xff]
+# CHECK: 	ld.bu	%d15, [%a0], 2          # encoding: [0x0c,0x02]
+# CHECK: 	ld.bu	%d15, [%a0], 15         # encoding: [0x0c,0x0f]
+# CHECK: 	ld.bu	%d14, [%a0], 15         # encoding: [0x39,0x0e,0x0f,0x00]
+# CHECK: 	ld.bu	%d15, [%a0], 16         # encoding: [0x39,0x0f,0x10,0x00]
+# CHECK: 	ld.bu	%d0, [%a15], -1         # encoding: [0x39,0xf0,0xff,0xff]
+# CHECK: 	ld.bu	%d0, [%a15], 2          # encoding: [0x08,0x20]
+# CHECK: 	ld.bu	%d0, [%a15], 15         # encoding: [0x08,0xf0]
+# CHECK: 	ld.bu	%d0, [%a14], 15         # encoding: [0x39,0xe0,0x0f,0x00]
+# CHECK: 	ld.bu	%d0, [%a15], 16         # encoding: [0x39,0xf0,0x10,0x00]
+# CHECK: 	ld.h	%d15, [%a0], -2         # encoding: [0xc9,0x0f,0xfe,0xff]
+# CHECK: 	ld.h	%d15, [%a0], 4          # encoding: [0x8c,0x02]
+# CHECK: 	ld.h	%d15, [%a0], 30         # encoding: [0x8c,0x0f]
+# CHECK: 	ld.h	%d14, [%a0], 30         # encoding: [0xc9,0x0e,0x1e,0x00]
+# CHECK: 	ld.h	%d15, [%a0], 32         # encoding: [0xc9,0x0f,0x20,0x00]
+# CHECK: 	ld.h	%d0, [%a15], -2         # encoding: [0xc9,0xf0,0xfe,0xff]
+# CHECK: 	ld.h	%d0, [%a15], 4          # encoding: [0x88,0x20]
+# CHECK: 	ld.h	%d0, [%a15], 30         # encoding: [0x88,0xf0]
+# CHECK: 	ld.h	%d0, [%a14], 30         # encoding: [0xc9,0xe0,0x1e,0x00]
+# CHECK: 	ld.h	%d0, [%a15], 32         # encoding: [0xc9,0xf0,0x20,0x00]
+# CHECK: 	ld.w	%d15, [%a10], -4        # encoding: [0x19,0xaf,0xfc,0xff]
+# CHECK: 	ld.w	%d15, [%a10], 8         # encoding: [0x58,0x02]
+# CHECK: 	ld.w	%d15, [%a10], 1020      # encoding: [0x58,0xff]
+# CHECK: 	ld.w	%d14, [%a10], 1020      # encoding: [0x19,0xae,0x3c,0xf0]
+# CHECK: 	ld.w	%d15, [%a11], 1020      # encoding: [0x19,0xbf,0x3c,0xf0]
+# CHECK: 	ld.w	%d15, [%a10], 1024      # encoding: [0x19,0xaf,0x40,0x00]
+# CHECK: 	ld.w	%d15, [%a0], -4         # encoding: [0x19,0x0f,0xfc,0xff]
+# CHECK: 	ld.w	%d15, [%a0], 8          # encoding: [0x4c,0x02]
+# CHECK: 	ld.w	%d15, [%a0], 60         # encoding: [0x4c,0x0f]
+# CHECK: 	ld.w	%d14, [%a0], 60         # encoding: [0x19,0x0e,0x3c,0x00]
+# CHECK: 	ld.w	%d15, [%a0], 64         # encoding: [0x19,0x0f,0x00,0x10]
+# CHECK: 	ld.w	%d0, [%a15], -4         # encoding: [0x19,0xf0,0xfc,0xff]
+# CHECK: 	ld.w	%d0, [%a15], 8          # encoding: [0x48,0x20]
+# CHECK: 	ld.w	%d0, [%a15], 60         # encoding: [0x48,0xf0]
+# CHECK: 	ld.w	%d0, [%a14], 60         # encoding: [0x19,0xe0,0x3c,0x00]
+# CHECK: 	ld.w	%d0, [%a15], 64         # encoding: [0x19,0xf0,0x00,0x10]
+# CHECK: 	lt	%d15, %d0, -9           # encoding: [0x8b,0x70,0x5f,0xf2]
+# CHECK: 	lt	%d15, %d0, -8           # encoding: [0xfa,0x80]
+# CHECK: 	lt	%d15, %d0, 7            # encoding: [0xfa,0x70]
+# CHECK: 	lt	%d14, %d0, 7            # encoding: [0x8b,0x70,0x40,0xe2]
+# CHECK: 	lt	%d15, %d0, 8            # encoding: [0x8b,0x80,0x40,0xf2]
+# CHECK: 	lt	%d15, %d0, %d1          # encoding: [0x7a,0x10]
+# CHECK: 	lt	%d14, %d0, %d1          # encoding: [0x0b,0x10,0x20,0xe1]
+# CHECK: 	mov.aa	%a0, %a0                # encoding: [0x40,0x00]
+# CHECK: 	mov.a	%a0, %d0                # encoding: [0x60,0x00]
+# CHECK: 	mov.d	%d0, %a0                # encoding: [0x80,0x00]
+# CHECK: 	mov	%d0, -9                 # encoding: [0x3b,0x70,0xff,0x0f]
+# CHECK: 	mov	%d0, -8                 # encoding: [0x82,0x80]
+# CHECK: 	mov	%d0, 7                  # encoding: [0x82,0x70]
+# CHECK: 	mov	%d0, 8                  # encoding: [0x3b,0x80,0x00,0x00]
+# CHECK: 	mov	%d15, -9                # encoding: [0x3b,0x70,0xff,0xff]
+# CHECK: 	mov	%d15, -1                # encoding: [0x82,0xff]
+# CHECK: 	mov	%d15, 0                 # encoding: [0xda,0x00]
+# CHECK: 	mov	%d15, 255               # encoding: [0xda,0xff]
+# CHECK: 	mov	%d14, 255               # encoding: [0x3b,0xf0,0x0f,0xe0]
+# CHECK: 	mov	%d15, 256               # encoding: [0x3b,0x00,0x10,0xf0]
+# CHECK: 	mov	%d0, %d0                # encoding: [0x02,0x00]
+# CHECK: 	mov	%e0, -9                 # encoding: [0xfb,0x70,0xff,0x0f]
+# CHECK: 	mov	%e0, -8                 # encoding: [0xd2,0x80]
+# CHECK: 	mov	%e0, 7                  # encoding: [0xd2,0x70]
+# CHECK: 	mov	%e0, 8                  # encoding: [0xfb,0x80,0x00,0x00]
+# CHECK: 	nop                             # encoding: [0x00,0x00]
+# CHECK: 	st.a	[%a10], -4, %a15        # encoding: [0xb5,0xaf,0xfc,0xff]
+# CHECK: 	st.a	[%a10], 8, %a15         # encoding: [0xf8,0x02]
+# CHECK: 	st.a	[%a10], 1020, %a15      # encoding: [0xf8,0xff]
+# CHECK: 	st.a	[%a10], 1020, %a14      # encoding: [0xb5,0xae,0x3c,0xf0]
+# CHECK: 	st.a	[%a11], 1020, %a15      # encoding: [0xb5,0xbf,0x3c,0xf0]
+# CHECK: 	st.a	[%a10], 1024, %a15      # encoding: [0xb5,0xaf,0x40,0x00]
+# CHECK: 	st.a	[%a0], -4, %a15         # encoding: [0xb5,0x0f,0xfc,0xff]
+# CHECK: 	st.a	[%a0], 8, %a15          # encoding: [0xec,0x02]
+# CHECK: 	st.a	[%a0], 60, %a15         # encoding: [0xec,0x0f]
+# CHECK: 	st.a	[%a0], 60, %a14         # encoding: [0xb5,0x0e,0x3c,0x00]
+# CHECK: 	st.a	[%a0], 64, %a15         # encoding: [0xb5,0x0f,0x00,0x10]
+# CHECK: 	st.a	[%a15], -4, %a0         # encoding: [0xb5,0xf0,0xfc,0xff]
+# CHECK: 	st.a	[%a15], 8, %a0          # encoding: [0xe8,0x20]
+# CHECK: 	st.a	[%a15], 60, %a0         # encoding: [0xe8,0xf0]
+# CHECK: 	st.a	[%a14], 60, %a0         # encoding: [0xb5,0xe0,0x3c,0x00]
+# CHECK: 	st.a	[%a15], 64, %a0         # encoding: [0xb5,0xf0,0x00,0x10]
+# CHECK: 	st.b	[%a15], -1, %d0         # encoding: [0xe9,0xf0,0xff,0xff]
+# CHECK: 	st.b	[%a15], 2, %d0          # encoding: [0x28,0x20]
+# CHECK: 	st.b	[%a15], 15, %d0         # encoding: [0x28,0xf0]
+# CHECK: 	st.b	[%a14], 15, %d0         # encoding: [0xe9,0xe0,0x0f,0x00]
+# CHECK: 	st.b	[%a15], 16, %d0         # encoding: [0xe9,0xf0,0x10,0x00]
+# CHECK: 	st.b	[%a0], -1, %d15         # encoding: [0xe9,0x0f,0xff,0xff]
+# CHECK: 	st.b	[%a0], 2, %d15          # encoding: [0x2c,0x02]
+# CHECK: 	st.b	[%a0], 15, %d15         # encoding: [0x2c,0x0f]
+# CHECK: 	st.b	[%a0], 15, %d14         # encoding: [0xe9,0x0e,0x0f,0x00]
+# CHECK: 	st.b	[%a0], 16, %d15         # encoding: [0xe9,0x0f,0x10,0x00]
+# CHECK: 	st.h	[%a15], -2, %d0         # encoding: [0xf9,0xf0,0xfe,0xff]
+# CHECK: 	st.h	[%a15], 4, %d0          # encoding: [0xa8,0x20]
+# CHECK: 	st.h	[%a15], 30, %d0         # encoding: [0xa8,0xf0]
+# CHECK: 	st.h	[%a14], 30, %d0         # encoding: [0xf9,0xe0,0x1e,0x00]
+# CHECK: 	st.h	[%a15], 32, %d0         # encoding: [0xf9,0xf0,0x20,0x00]
+# CHECK: 	st.h	[%a0], -2, %d15         # encoding: [0xf9,0x0f,0xfe,0xff]
+# CHECK: 	st.h	[%a0], 4, %d15          # encoding: [0xac,0x02]
+# CHECK: 	st.h	[%a0], 30, %d15         # encoding: [0xac,0x0f]
+# CHECK: 	st.h	[%a0], 30, %d14         # encoding: [0xf9,0x0e,0x1e,0x00]
+# CHECK: 	st.h	[%a0], 32, %d15         # encoding: [0xf9,0x0f,0x20,0x00]
+# CHECK: 	st.w	[%a10], -4, %d15        # encoding: [0x59,0xaf,0xfc,0xff]
+# CHECK: 	st.w	[%a10], 8, %d15         # encoding: [0x78,0x02]
+# CHECK: 	st.w	[%a10], 1020, %d15      # encoding: [0x78,0xff]
+# CHECK: 	st.w	[%a10], 1020, %d14      # encoding: [0x59,0xae,0x3c,0xf0]
+# CHECK: 	st.w	[%a11], 1020, %d15      # encoding: [0x59,0xbf,0x3c,0xf0]
+# CHECK: 	st.w	[%a10], 1024, %d15      # encoding: [0x59,0xaf,0x40,0x00]
+# CHECK: 	st.w	[%a0], -4, %d15         # encoding: [0x59,0x0f,0xfc,0xff]
+# CHECK: 	st.w	[%a0], 8, %d15          # encoding: [0x6c,0x02]
+# CHECK: 	st.w	[%a0], 60, %d15         # encoding: [0x6c,0x0f]
+# CHECK: 	st.w	[%a0], 60, %d14         # encoding: [0x59,0x0e,0x3c,0x00]
+# CHECK: 	st.w	[%a0], 64, %d15         # encoding: [0x59,0x0f,0x00,0x10]
+# CHECK: 	st.w	[%a15], -4, %d0         # encoding: [0x59,0xf0,0xfc,0xff]
+# CHECK: 	st.w	[%a15], 8, %d0          # encoding: [0x68,0x20]
+# CHECK: 	st.w	[%a15], 60, %d0         # encoding: [0x68,0xf0]
+# CHECK: 	st.w	[%a14], 60, %d0         # encoding: [0x59,0xe0,0x3c,0x00]
+# CHECK: 	st.w	[%a15], 64, %d0         # encoding: [0x59,0xf0,0x00,0x10]
+# CHECK: 	sub	%d15, %d0, %d1          # encoding: [0x5a,0x10]
+# CHECK: 	sub	%d14, %d0, %d1          # encoding: [0x0b,0x10,0x80,0xe0]
+# CHECK: 	sub	%d0, %d15, %d1          # encoding: [0x52,0x10]
+# CHECK: 	sub	%d0, %d14, %d1          # encoding: [0x0b,0x1e,0x80,0x00]
+# CHECK:	loop	%a0, -34                # encoding: [0xfd,0x00,0xef,0x7f]
+# CHECK:	loop	%a0, -32                # encoding: [0xfc,0x00]
+# CHECK:	loop	%a0, -2                 # encoding: [0xfc,0x0f]
+# CHECK:	loop	%a0, 0                  # encoding: [0xfd,0x00,0x00,0x00]
+# CHECK: 	j	-258                    # encoding: [0x1d,0xff,0x7f,0xff]
+# CHECK: 	j	-256                    # encoding: [0x3c,0x80]
+# CHECK: 	j	254                     # encoding: [0x3c,0x7f]
+# CHECK: 	j	256                     # encoding: [0x1d,0x00,0x80,0x00]
+# CHECK: 	ji	%a0                     # encoding: [0xdc,0x00]
+# CHECK: 	jeq	%d15, 1, -2             # encoding: [0xdf,0x1f,0xff,0x7f]
+# CHECK: 	jeq	%d14, 1, 0              # encoding: [0xdf,0x1e,0x00,0x00]
+# CHECK: 	jeq	%d15, 1, 0              # encoding: [0x1e,0x10]
+# CHECK: 	jeq	%d15, 1, 30             # encoding: [0x1e,0x1f]
+# CHECK: 	jeq	%d15, 1, 32             # encoding: [0x9e,0x10]
+# CHECK: 	jeq	%d15, 1, 62             # encoding: [0x9e,0x1f]
+# CHECK: 	jeq	%d15, 1, 64             # encoding: [0xdf,0x1f,0x20,0x00]
+# CHECK: 	jeq	%d15, %d0, -2           # encoding: [0x5f,0x0f,0xff,0x7f]
+# CHECK: 	jeq	%d14, %d0, 0            # encoding: [0x5f,0x0e,0x00,0x00]
+# CHECK: 	jeq	%d15, %d0, 0            # encoding: [0x3e,0x00]
+# CHECK: 	jeq	%d15, %d0, 30           # encoding: [0x3e,0x0f]
+# CHECK: 	jeq	%d15, %d0, 32           # encoding: [0xbe,0x00]
+# CHECK: 	jeq	%d15, %d0, 62           # encoding: [0xbe,0x0f]
+# CHECK: 	jeq	%d15, %d0, 64           # encoding: [0x5f,0x0f,0x20,0x00]
+# CHECK: 	jne	%d15, 1, -2             # encoding: [0xdf,0x1f,0xff,0xff]
+# CHECK: 	jne	%d14, 1, 0              # encoding: [0xdf,0x1e,0x00,0x80]
+# CHECK: 	jne	%d15, 1, 0              # encoding: [0x5e,0x10]
+# CHECK: 	jne	%d15, 1, 30             # encoding: [0x5e,0x1f]
+# CHECK: 	jne	%d15, 1, 32             # encoding: [0xde,0x10]
+# CHECK: 	jne	%d15, 1, 62             # encoding: [0xde,0x1f]
+# CHECK: 	jne	%d15, 1, 64             # encoding: [0xdf,0x1f,0x20,0x80]
+# CHECK: 	jne	%d15, %d0, -2           # encoding: [0x5f,0x0f,0xff,0xff]
+# CHECK: 	jne	%d14, %d0, 0            # encoding: [0x5f,0x0e,0x00,0x80]
+# CHECK: 	jne	%d15, %d0, 0            # encoding: [0x7e,0x00]
+# CHECK: 	jne	%d15, %d0, 30           # encoding: [0x7e,0x0f]
+# CHECK: 	jne	%d15, %d0, 32           # encoding: [0xfe,0x00]
+# CHECK: 	jne	%d15, %d0, 62           # encoding: [0xfe,0x0f]
+# CHECK: 	jne	%d15, %d0, 64           # encoding: [0x5f,0x0f,0x20,0x80]
+# CHECK: 	jnz.a	%a0, -2                 # encoding: [0xbd,0x00,0xff,0xff]
+# CHECK: 	jnz.a	%a0, 0                  # encoding: [0x7c,0x00]
+# CHECK: 	jnz.a	%a0, 30                 # encoding: [0x7c,0x0f]
+# CHECK: 	jnz.a	%a0, 32                 # encoding: [0xbd,0x00,0x10,0x80]
+# CHECK: 	jnz.t	%d15, 1, -2             # encoding: [0x6f,0x1f,0xff,0xff]
+# CHECK: 	jnz.t	%d14, 1, 0              # encoding: [0x6f,0x1e,0x00,0x80]
+# CHECK: 	jnz.t	%d15, 1, 0              # encoding: [0xae,0x10]
+# CHECK: 	jnz.t	%d15, 1, 30             # encoding: [0xae,0x1f]
+# CHECK: 	jnz.t	%d15, 1, 32             # encoding: [0x6f,0x1f,0x10,0x80]
+# CHECK: 	jz.a	%a0, -2                 # encoding: [0xbd,0x00,0xff,0x7f]
+# CHECK: 	jz.a	%a0, 0                  # encoding: [0xbc,0x00]
+# CHECK: 	jz.a	%a0, 30                 # encoding: [0xbc,0x0f]
+# CHECK: 	jz.a	%a0, 32                 # encoding: [0xbd,0x00,0x10,0x00]
+# CHECK: 	jz.t	%d15, 1, -2             # encoding: [0x6f,0x1f,0xff,0x7f]
+# CHECK: 	jz.t	%d14, 1, 0              # encoding: [0x6f,0x1e,0x00,0x00]
+# CHECK: 	jz.t	%d15, 1, 0              # encoding: [0x2e,0x10]
+# CHECK: 	jz.t	%d15, 1, 30             # encoding: [0x2e,0x1f]
+# CHECK: 	jz.t	%d15, 1, 32             # encoding: [0x6f,0x1f,0x10,0x00]
+# CHECK: 	fret                            # encoding: [0x00,0x70]
+# CHECK: 	rfe                             # encoding: [0x00,0x80]
+# CHECK: 	ret                             # encoding: [0x00,0x90]
+
+
+---
+name:            test_compression
+alignment:       1
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+liveins:         []
+body:             |
+  bb.0:
+    $d0 = LDW_dalc $a14, -4
+    $d1 = LDW_dalc $a14, -4
+
+    $d15 = ADD_ddc $d0, -9, implicit-def $psw
+    $d15 = ADD_ddc $d0, -8, implicit-def $psw
+    $d15 = ADD_ddc $d0, 7, implicit-def $psw
+    $d14 = ADD_ddc $d0, 7, implicit-def $psw
+    $d15 = ADD_ddc $d0, 8, implicit-def $psw
+
+    $d15 = ADD_ddd $d0, $d1, implicit-def $psw
+    $d14 = ADD_ddd $d0, $d1, implicit-def $psw
+
+    $d0 = ADD_ddc $d15, -9, implicit-def $psw
+    $d0 = ADD_ddc $d15, -8, implicit-def $psw
+    $d0 = ADD_ddc $d15, 7, implicit-def $psw
+    $d0 = ADD_ddc $d14, 7, implicit-def $psw
+    $d0 = ADD_ddc $d15, 8, implicit-def $psw
+
+    $d0 = ADD_ddd $d15, $d1, implicit-def $psw
+    $d0 = ADD_ddd $d14, $d1, implicit-def $psw
+
+    CALL -258
+    CALL -256
+    CALL 254
+    CALL 256
+
+    CALLI $a0
+
+    DEBUG
+
+    $d15 = EQ_ddc $d0, -9, implicit-def $psw
+    $d15 = EQ_ddc $d0, -8, implicit-def $psw
+    $d15 = EQ_ddc $d0, 7, implicit-def $psw
+    $d14 = EQ_ddc $d0, 7, implicit-def $psw
+    $d15 = EQ_ddc $d0, 8, implicit-def $psw
+
+    $d15 = EQ_ddd $d0, $d1, implicit-def $psw
+    $d14 = EQ_ddd $d0, $d1, implicit-def $psw
+
+    $a15 = LDA_aalc $a10, -4
+    $a15 = LDA_aalc $a10, 8
+    $a15 = LDA_aalc $a10, 1020
+    $a14 = LDA_aalc $a10, 1020
+    $a15 = LDA_aalc $a11, 1020
+    $a15 = LDA_aalc $a10, 1024
+
+    $a15 = LDA_aalc $a0, -4
+    $a15 = LDA_aalc $a0, 8
+    $a15 = LDA_aalc $a0, 60
+    $a14 = LDA_aalc $a0, 60
+    $a15 = LDA_aalc $a0, 64
+
+    $a0 = LDA_aalc $a15, -4
+    $a0 = LDA_aalc $a15, 8
+    $a0 = LDA_aalc $a15, 60
+    $a0 = LDA_aalc $a14, 60
+    $a0 = LDA_aalc $a15, 64
+
+    $d15 = LDBU_dalc $a0, -1
+    $d15 = LDBU_dalc $a0, 2
+    $d15 = LDBU_dalc $a0, 15
+    $d14 = LDBU_dalc $a0, 15
+    $d15 = LDBU_dalc $a0, 16
+
+    $d0 = LDBU_dalc $a15, -1
+    $d0 = LDBU_dalc $a15, 2
+    $d0 = LDBU_dalc $a15, 15
+    $d0 = LDBU_dalc $a14, 15
+    $d0 = LDBU_dalc $a15, 16
+
+    $d15 = LDH_dalc $a0, -2
+    $d15 = LDH_dalc $a0, 4
+    $d15 = LDH_dalc $a0, 30
+    $d14 = LDH_dalc $a0, 30
+    $d15 = LDH_dalc $a0, 32
+
+    $d0 = LDH_dalc $a15, -2
+    $d0 = LDH_dalc $a15, 4
+    $d0 = LDH_dalc $a15, 30
+    $d0 = LDH_dalc $a14, 30
+    $d0 = LDH_dalc $a15, 32
+
+    $d15 = LDW_dalc $a10, -4
+    $d15 = LDW_dalc $a10, 8
+    $d15 = LDW_dalc $a10, 1020
+    $d14 = LDW_dalc $a10, 1020
+    $d15 = LDW_dalc $a11, 1020
+    $d15 = LDW_dalc $a10, 1024
+
+    $d15 = LDW_dalc $a0, -4
+    $d15 = LDW_dalc $a0, 8
+    $d15 = LDW_dalc $a0, 60
+    $d14 = LDW_dalc $a0, 60
+    $d15 = LDW_dalc $a0, 64
+
+    $d0 = LDW_dalc $a15, -4
+    $d0 = LDW_dalc $a15, 8
+    $d0 = LDW_dalc $a15, 60
+    $d0 = LDW_dalc $a14, 60
+    $d0 = LDW_dalc $a15, 64
+
+    $d15 = LT_ddc $d0, -9, implicit-def $psw
+    $d15 = LT_ddc $d0, -8, implicit-def $psw
+    $d15 = LT_ddc $d0, 7, implicit-def $psw
+    $d14 = LT_ddc $d0, 7, implicit-def $psw
+    $d15 = LT_ddc $d0, 8, implicit-def $psw
+
+    $d15 = LT_ddd $d0, $d1, implicit-def $psw
+    $d14 = LT_ddd $d0, $d1, implicit-def $psw
+
+    $a0 = MOVAA_aa $a0
+
+    $a0 = MOVA_ad $d0
+
+    $d0 = MOVD_da $a0
+
+    $d0 = MOV_dc -9
+    $d0 = MOV_dc -8
+    $d0 = MOV_dc 7
+    $d0 = MOV_dc 8
+
+    $d15 = MOV_dc -9
+    $d15 = MOV_dc -1
+    $d15 = MOV_dc 0
+    $d15 = MOV_dc 255
+    $d14 = MOV_dc 255
+    $d15 = MOV_dc 256
+
+    $d0 = MOV_dd $d0
+
+    $e0 = MOV_ec -9
+    $e0 = MOV_ec -8
+    $e0 = MOV_ec 7
+    $e0 = MOV_ec 8
+
+    NOP
+
+    STA_alca $a10, -4, $a15
+    STA_alca $a10, 8, $a15
+    STA_alca $a10, 1020, $a15
+    STA_alca $a10, 1020, $a14
+    STA_alca $a11, 1020, $a15
+    STA_alca $a10, 1024, $a15
+
+    STA_alca $a0, -4, $a15
+    STA_alca $a0, 8, $a15
+    STA_alca $a0, 60, $a15
+    STA_alca $a0, 60, $a14
+    STA_alca $a0, 64, $a15
+
+    STA_alca $a15, -4, $a0
+    STA_alca $a15, 8, $a0
+    STA_alca $a15, 60, $a0
+    STA_alca $a14, 60, $a0
+    STA_alca $a15, 64, $a0
+
+    STB_alcd $a15, -1, $d0
+    STB_alcd $a15, 2, $d0
+    STB_alcd $a15, 15, $d0
+    STB_alcd $a14, 15, $d0
+    STB_alcd $a15, 16, $d0
+
+    STB_alcd $a0, -1, $d15
+    STB_alcd $a0, 2, $d15
+    STB_alcd $a0, 15, $d15
+    STB_alcd $a0, 15, $d14
+    STB_alcd $a0, 16, $d15
+
+    STH_alcd $a15, -2, $d0
+    STH_alcd $a15, 4, $d0
+    STH_alcd $a15, 30, $d0
+    STH_alcd $a14, 30, $d0
+    STH_alcd $a15, 32, $d0
+
+    STH_alcd $a0, -2, $d15
+    STH_alcd $a0, 4, $d15
+    STH_alcd $a0, 30, $d15
+    STH_alcd $a0, 30, $d14
+    STH_alcd $a0, 32, $d15
+
+    STW_alcd $a10, -4, $d15
+    STW_alcd $a10, 8, $d15
+    STW_alcd $a10, 1020, $d15
+    STW_alcd $a10, 1020, $d14
+    STW_alcd $a11, 1020, $d15
+    STW_alcd $a10, 1024, $d15
+
+    STW_alcd $a0, -4, $d15
+    STW_alcd $a0, 8, $d15
+    STW_alcd $a0, 60, $d15
+    STW_alcd $a0, 60, $d14
+    STW_alcd $a0, 64, $d15
+
+    STW_alcd $a15, -4, $d0
+    STW_alcd $a15, 8, $d0
+    STW_alcd $a15, 60, $d0
+    STW_alcd $a14, 60, $d0
+    STW_alcd $a15, 64, $d0
+
+    $d15 = SUB_ddd $d0, $d1, implicit-def $psw
+    $d14 = SUB_ddd $d0, $d1, implicit-def $psw
+
+    $d0 = SUB_ddd $d15, $d1, implicit-def $psw
+    $d0 = SUB_ddd $d14, $d1, implicit-def $psw
+
+    $a0 = LOOP_ac $a0, -34
+    $a0 = LOOP_ac $a0, -32
+    $a0 = LOOP_ac $a0, -2
+    $a0 = LOOP_ac $a0, 0
+
+    J -258
+    J -256
+    J 254
+    J 256
+
+    JI $a0
+
+    JEQ_dcc $d15, 1, -2
+    JEQ_dcc $d14, 1, 0
+    JEQ_dcc $d15, 1, 0
+    JEQ_dcc $d15, 1, 30
+    JEQ_dcc $d15, 1, 32
+    JEQ_dcc $d15, 1, 62
+    JEQ_dcc $d15, 1, 64
+
+    JEQ_ddc $d15, $d0, -2
+    JEQ_ddc $d14, $d0, 0
+    JEQ_ddc $d15, $d0, 0
+    JEQ_ddc $d15, $d0, 30
+    JEQ_ddc $d15, $d0, 32
+    JEQ_ddc $d15, $d0, 62
+    JEQ_ddc $d15, $d0, 64
+
+    JNE_dcc $d15, 1, -2
+    JNE_dcc $d14, 1, 0
+    JNE_dcc $d15, 1, 0
+    JNE_dcc $d15, 1, 30
+    JNE_dcc $d15, 1, 32
+    JNE_dcc $d15, 1, 62
+    JNE_dcc $d15, 1, 64
+
+    JNE_ddc $d15, $d0, -2
+    JNE_ddc $d14, $d0, 0
+    JNE_ddc $d15, $d0, 0
+    JNE_ddc $d15, $d0, 30
+    JNE_ddc $d15, $d0, 32
+    JNE_ddc $d15, $d0, 62
+    JNE_ddc $d15, $d0, 64
+
+    JNZA_ac $a0, -2
+    JNZA_ac $a0, 0
+    JNZA_ac $a0, 30
+    JNZA_ac $a0, 32
+
+    JNZT_dcc $d15, 1, -2
+    JNZT_dcc $d14, 1, 0
+    JNZT_dcc $d15, 1, 0
+    JNZT_dcc $d15, 1, 30
+    JNZT_dcc $d15, 1, 32
+
+    JZA_ac $a0, -2
+    JZA_ac $a0, 0
+    JZA_ac $a0, 30
+    JZA_ac $a0, 32
+
+    JZT_dcc $d15, 1, -2
+    JZT_dcc $d14, 1, 0
+    JZT_dcc $d15, 1, 0
+    JZT_dcc $d15, 1, 30
+    JZT_dcc $d15, 1, 32
+
+    FRET implicit-def $a10, implicit-def $a11, implicit $a10, implicit $a11
+
+    RFE implicit $a11
+
+    RET implicit $a11
+...
