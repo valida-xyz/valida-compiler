@@ -1128,6 +1128,9 @@ ctype<char>::classic_table()  _NOEXCEPT
     return _ctype_ + 1;
 #elif defined(_AIX)
     return (const unsigned int *)__lc_ctype_ptr->obj->mask;
+#elif defined(_HAS_DINKUM_CLIB)
+    // Dinkum libc has a 257-entry table in xctype.c, where (char)0 starts a [1]
+    return _ctyp_tab + 1;
 #else
     // Platform not supported: abort so the person doing the port knows what to
     // fix
@@ -1289,8 +1292,10 @@ ctype_byname<wchar_t>::do_is(const char_type* low, const char_type* high, mask* 
         {
             *vec = 0;
             wint_t ch = static_cast<wint_t>(*low);
+#ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_SPACE
             if (iswspace_l(ch, __l))
                 *vec |= space;
+#endif
 #ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_PRINT
             if (iswprint_l(ch, __l))
                 *vec |= print;

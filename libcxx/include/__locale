@@ -486,6 +486,23 @@ public:
 # define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_PRINT
 # define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_ALPHA
 # define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_XDIGIT
+#elif defined (_HAS_DINKUM_CLIB)
+    // Same type as Dinkum's ctyp_tab array in dinkum/include/c/ctype.h
+    typedef short mask;
+    static const mask space = _CN | _SP | _XS;
+    static const mask print = _DI | _LO | _PU | _SP | _UP | _XA;
+    static const mask cntrl = _BB;
+    static const mask upper = _UP;
+    static const mask lower = _LO;
+    static const mask alpha = _LO | _UP | _XA;
+    static const mask digit = _DI;
+    static const mask punct = _PU;
+    static const mask xdigit = _XD;
+    static const mask blank = _SP | _XB;
+    static const mask __regex_word = 1 << _NCAT;
+# define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_SPACE
+# define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_PRINT
+# define _LIBCPP_CTYPE_MASK_IS_COMPOSITE_ALPHA
 #else
     typedef unsigned long mask;
     static const mask space  = 1<<0;
