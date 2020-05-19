@@ -403,9 +403,22 @@ bool llvm::wouldInstructionBeTriviallyDead(Instruction *I,
         II->getIntrinsicID() == Intrinsic::launder_invariant_group)
       return true;
 
-    // Lifetime intrinsics are dead when their right-hand is undef.
-    if (II->isLifetimeStartOrEnd())
-      return isa<UndefValue>(II->getArgOperand(1));
+    if (II->isLifetimeStartOrEnd()) {
+      auto *Arg = II->getArgOperand(1);
+      // Lifetime intrinsics are dead when their right-hand is undef.
+      if (isa<UndefValue>(Arg))
+        return true;
+      // If the right-hand is an alloc, global, or argument and the only uses
+      // are lifetime intrinsics then the intrinsics are dead.
+      if (isa<AllocaInst>(Arg) || isa<GlobalValue>(Arg) || isa<Argument>(Arg))
+        return llvm::all_of(Arg->uses(), [](Use &Use) {
+          if (IntrinsicInst *IntrinsicUse =
+                  dyn_cast<IntrinsicInst>(Use.getUser()))
+            return IntrinsicUse->isLifetimeStartOrEnd();
+          return false;
+        });
+      return false;
+    }
 
     // Assumptions are dead if their condition is trivially true.  Guards on
     // true are operationally no-ops.  In the future we can consider more
@@ -1168,7 +1181,7 @@ static Align enforceKnownAlignment(Value *V, Align Alignment, Align PrefAlign,
     // stripPointerCasts recurses through infinite layers of bitcasts,
     // while computeKnownBits is not allowed to traverse more than 6
     // levels.
-    Alignment = max(AI->getAlign(), Alignment);
+    Alignment = std::max(AI->getAlign(), Alignment);
     if (PrefAlign <= Alignment)
       return Alignment;
 
@@ -1685,13 +1698,14 @@ DIExpression *llvm::salvageDebugInfoImpl(Instruction &I,
   };
 
   if (auto *CI = dyn_cast<CastInst>(&I)) {
-    // No-op casts and zexts are irrelevant for debug info.
-    if (CI->isNoopCast(DL) || isa<ZExtInst>(&I))
+    // No-op casts are irrelevant for debug info.
+    if (CI->isNoopCast(DL))
       return SrcDIExpr;
 
     Type *Type = CI->getType();
-    // Casts other than Trunc or SExt to scalar types cannot be salvaged.
-    if (Type->isVectorTy() || (!isa<TruncInst>(&I) && !isa<SExtInst>(&I)))
+    // Casts other than Trunc, SExt, or ZExt to scalar types cannot be salvaged.
+    if (Type->isVectorTy() ||
+        !(isa<TruncInst>(&I) || isa<SExtInst>(&I) || isa<ZExtInst>(&I)))
       return nullptr;
 
     Value *FromValue = CI->getOperand(0);

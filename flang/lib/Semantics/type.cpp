@@ -123,9 +123,12 @@ void DerivedTypeSpec::EvaluateParameters(
             continue;
           }
         }
-        evaluate::SayWithDeclaration(messages, symbol,
-            "Value of type parameter '%s' (%s) is not convertible to its type"_err_en_US,
-            name, expr->AsFortran());
+        if (!symbol.test(Symbol::Flag::Error)) {
+          evaluate::SayWithDeclaration(messages, symbol,
+              "Value of type parameter '%s' (%s) is not convertible to its"
+              " type"_err_en_US,
+              name, expr->AsFortran());
+        }
       }
     }
   }
@@ -147,7 +150,7 @@ void DerivedTypeSpec::EvaluateParameters(
         auto expr{
             evaluate::Fold(foldingContext, common::Clone(details.init()))};
         AddParamValue(name, ParamValue{std::move(*expr), details.attr()});
-      } else {
+      } else if (!symbol.test(Symbol::Flag::Error)) {
         messages.Say(name_,
             "Type parameter '%s' lacks a value and has no default"_err_en_US,
             name);
@@ -506,6 +509,13 @@ bool ArraySpec::IsAssumedSize() const {
 }
 bool ArraySpec::IsAssumedRank() const {
   return Rank() == 1 && front().lbound().isAssumed();
+}
+bool ArraySpec::IsConstantShape() const {
+  return CheckAll([](const ShapeSpec &x) {
+    const auto &lb{x.lbound().GetExplicit()};
+    const auto &ub{x.ubound().GetExplicit()};
+    return lb && ub && IsConstantExpr(*lb) && IsConstantExpr(*ub);
+  });
 }
 
 llvm::raw_ostream &operator<<(

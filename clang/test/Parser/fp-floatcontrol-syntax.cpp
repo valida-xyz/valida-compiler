@@ -10,10 +10,10 @@ float function_scope(float a) {
 #pragma float_control(pop)
 #pragma float_control(precise, on, push)
 void check_stack() {
-#pragma float_control(push)                   // expected-error {{can only appear at file scope}}
-#pragma float_control(pop)                    // expected-error {{can only appear at file scope}}
-#pragma float_control(precise, on, push)      // expected-error {{can only appear at file scope}}
-#pragma float_control(except, on, push)       // expected-error {{can only appear at file scope}}
+#pragma float_control(push)                   // expected-error {{can only appear at file scope or namespace scope}}
+#pragma float_control(pop)                    // expected-error {{can only appear at file scope or namespace scope}}
+#pragma float_control(precise, on, push)      // expected-error {{can only appear at file scope or namespace scope}}
+#pragma float_control(except, on, push)       // expected-error {{can only appear at file scope or namespace scope}}
 #pragma float_control(except, on, push, junk) // expected-error {{float_control is malformed}}
   return;
 }
@@ -30,14 +30,15 @@ double b = 1.0;
 //      document the warning
 #ifdef FAST
 // expected-warning@+1{{pragma STDC FENV_ACCESS ON is not supported, ignoring pragma}}
-#pragma STDC FENV_ACCESS ON // expected-error{{'#pragma STDC FENV_ACCESS ON' is illegal when precise is disabled}}
+#pragma STDC FENV_ACCESS ON
 #else
 #pragma STDC FENV_ACCESS ON // expected-warning{{pragma STDC FENV_ACCESS ON is not supported, ignoring pragma}}
 #endif
 #ifdef STRICT
 #pragma float_control(precise, off) // expected-error {{'#pragma float_control(precise, off)' is illegal when except is enabled}}
 #else
-#pragma float_control(precise, off) // expected-error {{'#pragma float_control(precise, off)' is illegal when fenv_access is enabled}}
+// Currently FENV_ACCESS cannot be enabled by pragma, skip error check
+#pragma float_control(precise, off) // not-expected-error {{'#pragma float_control(precise, off)' is illegal when fenv_access is enabled}}
 #endif
 
 #pragma float_control(precise, on)

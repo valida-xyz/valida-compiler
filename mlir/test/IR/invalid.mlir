@@ -1512,3 +1512,37 @@ func @duplicate_dictionary_attr_key() {
   // expected-error @+1 {{duplicate key in dictionary attribute}}
   "foo.op"() {a, a} : () -> ()
 }
+
+// -----
+
+func @forward_reference_type_check() -> (i8) {
+  br ^bb2
+
+^bb1:
+  // expected-note @+1 {{previously used here with type 'i8'}}
+  return %1 : i8
+
+^bb2:
+  // expected-error @+1 {{definition of SSA value '%1#0' has type 'f32'}}
+  %1 = "bar"() : () -> (f32)
+  br ^bb1
+}
+
+// -----
+
+func @dominance_error_in_unreachable_op() -> i1 {
+  %c = constant 0 : i1
+  return %c : i1
+^bb0:
+  "dummy" () ({  // unreachable
+    ^bb1:
+// expected-error @+1 {{operand #0 does not dominate this use}}
+      %2:3 = "bar"(%1) : (i64) -> (i1,i1,i1)
+      br ^bb4
+    ^bb2:
+      br ^bb2
+    ^bb4:
+      %1 = "foo"() : ()->i64   // expected-note {{operand defined here}}
+  }) : () -> ()
+  return %c : i1
+}

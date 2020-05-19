@@ -719,7 +719,6 @@ def SignlessIntegerOrFloatLike : TypeConstraint<Or<[
     SignlessIntegerLike.predicate, FloatLike.predicate]>,
     "signless-integer-like or floating-point-like">;
 
-
 //===----------------------------------------------------------------------===//
 // Attribute definitions
 //===----------------------------------------------------------------------===//
@@ -1347,6 +1346,10 @@ class TypedArrayAttrBase<Attr element, string description>: ArrayAttrBase<
   Attr elementAttr = element;
 }
 
+def BoolArrayAttr : TypedArrayAttrBase<BoolAttr,
+                                      "1-bit boolean array attribute"> {
+  let constBuilderCall = "$_builder.getBoolArrayAttr($0)";
+}
 def I32ArrayAttr : TypedArrayAttrBase<I32Attr,
                                       "32-bit integer array attribute"> {
   let constBuilderCall = "$_builder.getI32ArrayAttr($0)";
@@ -1633,6 +1636,8 @@ class PredOpTrait<string descr, Pred pred> : OpTrait {
   Pred predicate = pred;
 }
 
+// Op defines an affine scope.
+def AffineScope : NativeOpTrait<"AffineScope">;
 // Op defines an automatic allocation scope.
 def AutomaticAllocationScope : NativeOpTrait<"AutomaticAllocationScope">;
 // Op supports operand broadcast behavior.
@@ -1648,8 +1653,6 @@ def ConstantLike : NativeOpTrait<"ConstantLike">;
 def FunctionLike : NativeOpTrait<"FunctionLike">;
 // Op is isolated from above.
 def IsolatedFromAbove : NativeOpTrait<"IsIsolatedFromAbove">;
-// Op defines a polyhedral scope.
-def PolyhedralScope : NativeOpTrait<"PolyhedralScope">;
 // Op results are float or vectors/tensors thereof.
 def ResultsAreFloatLike : NativeOpTrait<"ResultsAreFloatLike">;
 // Op has the same operand type.

@@ -975,7 +975,7 @@ public:
 
   /// \return An upper bound for the vectorization factor, or None if
   /// vectorization and interleaving should be avoided up front.
-  Optional<unsigned> computeMaxVF();
+  Optional<unsigned> computeMaxVF(unsigned UserVF, unsigned UserIC);
 
   /// \return True if runtime checks are required for vectorization, and false
   /// otherwise.
@@ -1201,27 +1201,27 @@ public:
 
   /// Returns true if the target machine supports masked store operation
   /// for the given \p DataType and kind of access to \p Ptr.
-  bool isLegalMaskedStore(Type *DataType, Value *Ptr, MaybeAlign Alignment) {
+  bool isLegalMaskedStore(Type *DataType, Value *Ptr, Align Alignment) {
     return Legal->isConsecutivePtr(Ptr) &&
            TTI.isLegalMaskedStore(DataType, Alignment);
   }
 
   /// Returns true if the target machine supports masked load operation
   /// for the given \p DataType and kind of access to \p Ptr.
-  bool isLegalMaskedLoad(Type *DataType, Value *Ptr, MaybeAlign Alignment) {
+  bool isLegalMaskedLoad(Type *DataType, Value *Ptr, Align Alignment) {
     return Legal->isConsecutivePtr(Ptr) &&
            TTI.isLegalMaskedLoad(DataType, Alignment);
   }
 
   /// Returns true if the target machine supports masked scatter operation
   /// for the given \p DataType.
-  bool isLegalMaskedScatter(Type *DataType, MaybeAlign Alignment) {
+  bool isLegalMaskedScatter(Type *DataType, Align Alignment) {
     return TTI.isLegalMaskedScatter(DataType, Alignment);
   }
 
   /// Returns true if the target machine supports masked gather operation
   /// for the given \p DataType.
-  bool isLegalMaskedGather(Type *DataType, MaybeAlign Alignment) {
+  bool isLegalMaskedGather(Type *DataType, Align Alignment) {
     return TTI.isLegalMaskedGather(DataType, Alignment);
   }
 
@@ -1233,7 +1233,7 @@ public:
     if (!LI && !SI)
       return false;
     auto *Ty = getMemInstValueType(V);
-    MaybeAlign Align = getLoadStoreAlignment(V);
+    Align Align = getLoadStoreAlignment(V);
     return (LI && isLegalMaskedGather(Ty, Align)) ||
            (SI && isLegalMaskedScatter(Ty, Align));
   }
@@ -1909,11 +1909,12 @@ void InnerLoopVectorizer::widenIntOrFpInduction(PHINode *IV, TruncInst *Trunc) {
     return;
   }
 
-  // If we haven't yet vectorized the induction variable, splat the scalar
-  // induction variable, and build the necessary step vectors.
-  // TODO: Don't do it unless the vectorized IV is really required.
+  // All IV users are scalar instructions, so only emit a scalar IV, not a
+  // vectorised IV. Except when we tail-fold, then the splat IV feeds the
+  // predicate used by the masked loads/stores.
   Value *ScalarIV = CreateScalarIV(Step);
-  CreateSplatIV(ScalarIV, Step);
+  if (!Cost->isScalarEpilogueAllowed())
+    CreateSplatIV(ScalarIV, Step);
   buildScalarSteps(ScalarIV, Step, EntryVal, ID);
 }
 
@@ -2382,11 +2383,7 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr,
 
   Type *ScalarDataTy = getMemInstValueType(Instr);
   Type *DataTy = VectorType::get(ScalarDataTy, VF);
-  // An alignment of 0 means target abi alignment. We need to use the scalar's
-  // target abi alignment in such a case.
-  const DataLayout &DL = Instr->getModule()->getDataLayout();
-  const Align Alignment =
-      DL.getValueOrABITypeAlignment(getLoadStoreAlignment(Instr), ScalarDataTy);
+  const Align Alignment = getLoadStoreAlignment(Instr);
 
   // Determine if the pointer operand of the access is either consecutive or
   // reverse consecutive.
@@ -2785,10 +2782,15 @@ void InnerLoopVectorizer::emitMemRuntimeChecks(Loop *L, BasicBlock *Bypass) {
   // Generate the code that checks in runtime if arrays overlap. We put the
   // checks into a separate block to make the more common case of few elements
   // faster.
+  auto *LAI = Legal->getLAI();
+  const auto &RtPtrChecking = *LAI->getRuntimePointerChecking();
+  if (!RtPtrChecking.Need)
+    return;
   Instruction *FirstCheckInst;
   Instruction *MemRuntimeCheck;
   std::tie(FirstCheckInst, MemRuntimeCheck) =
-      Legal->getLAI()->addRuntimeChecks(MemCheckBlock->getTerminator());
+      addRuntimeChecks(MemCheckBlock->getTerminator(), OrigLoop,
+                       RtPtrChecking.getChecks(), RtPtrChecking.getSE());
   if (!MemRuntimeCheck)
     return;
 
@@ -4589,6 +4591,11 @@ void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
     if (Induction.second.getKind() == InductionDescriptor::IK_PtrInduction)
       continue;
 
+    // If tail-folding is applied, the primary induction variable will be used
+    // to feed a vector compare.
+    if (Ind == Legal->getPrimaryInduction() && foldTailByMasking())
+      continue;
+
     // Determine if all users of the induction variable are scalar after
     // vectorization.
     auto ScalarInd = llvm::all_of(Ind->users(), [&](User *U) -> bool {
@@ -4639,7 +4646,7 @@ bool LoopVectorizationCostModel::isScalarWithPredication(Instruction *I, unsigne
              "Widening decision should be ready at this moment");
       return WideningDecision == CM_Scalarize;
     }
-    const MaybeAlign Alignment = getLoadStoreAlignment(I);
+    const Align Alignment = getLoadStoreAlignment(I);
     return isa<LoadInst>(I) ? !(isLegalMaskedLoad(Ty, Ptr, Alignment) ||
                                 isLegalMaskedGather(Ty, Alignment))
                             : !(isLegalMaskedStore(Ty, Ptr, Alignment) ||
@@ -4686,7 +4693,7 @@ bool LoopVectorizationCostModel::interleavedAccessCanBeWidened(Instruction *I,
          "Masked interleave-groups for predicated accesses are not enabled.");
 
   auto *Ty = getMemInstValueType(I);
-  const MaybeAlign Alignment = getLoadStoreAlignment(I);
+  const Align Alignment = getLoadStoreAlignment(I);
   return isa<LoadInst>(I) ? TTI.isLegalMaskedLoad(Ty, Alignment)
                           : TTI.isLegalMaskedStore(Ty, Alignment);
 }
@@ -4935,7 +4942,8 @@ bool LoopVectorizationCostModel::runtimeChecksRequired() {
   return false;
 }
 
-Optional<unsigned> LoopVectorizationCostModel::computeMaxVF() {
+Optional<unsigned> LoopVectorizationCostModel::computeMaxVF(unsigned UserVF,
+                                                            unsigned UserIC) {
   if (Legal->getRuntimePointerChecking()->Need && TTI.hasBranchDivergence()) {
     // TODO: It may by useful to do since it's still likely to be dynamically
     // uniform if the target can skip.
@@ -4957,7 +4965,7 @@ Optional<unsigned> LoopVectorizationCostModel::computeMaxVF() {
 
   switch (ScalarEpilogueStatus) {
   case CM_ScalarEpilogueAllowed:
-    return computeFeasibleMaxVF(TC);
+    return UserVF ? UserVF : computeFeasibleMaxVF(TC);
   case CM_ScalarEpilogueNotNeededUsePredicate:
     LLVM_DEBUG(
         dbgs() << "LV: vector predicate hint/switch found.\n"
@@ -4993,8 +5001,9 @@ Optional<unsigned> LoopVectorizationCostModel::computeMaxVF() {
     InterleaveInfo.invalidateGroupsRequiringScalarEpilogue();
   }
 
-  unsigned MaxVF = computeFeasibleMaxVF(TC);
-  if (TC > 0 && TC % MaxVF == 0) {
+  unsigned MaxVF = UserVF ? UserVF : computeFeasibleMaxVF(TC);
+  unsigned MaxVFtimesIC = UserIC ? MaxVF * UserIC : MaxVF;
+  if (TC > 0 && TC % MaxVFtimesIC == 0) {
     // Accept MaxVF if we do not have a tail.
     LLVM_DEBUG(dbgs() << "LV: No tail will remain for any chosen VF.\n");
     return MaxVF;
@@ -5834,7 +5843,7 @@ unsigned LoopVectorizationCostModel::getMemInstScalarizationCost(Instruction *I,
 
   // Don't pass *I here, since it is scalar but will actually be part of a
   // vectorized loop where the user of it is a vectorized instruction.
-  const MaybeAlign Alignment = getLoadStoreAlignment(I);
+  const Align Alignment = getLoadStoreAlignment(I);
   Cost += VF * TTI.getMemoryOpCost(I->getOpcode(), ValTy->getScalarType(),
                                    Alignment, AS, 
                                    TTI::TCK_RecipThroughput);
@@ -5869,12 +5878,11 @@ unsigned LoopVectorizationCostModel::getConsecutiveMemOpCost(Instruction *I,
 
   assert((ConsecutiveStride == 1 || ConsecutiveStride == -1) &&
          "Stride should be 1 or -1 for consecutive memory access");
-  const MaybeAlign Alignment = getLoadStoreAlignment(I);
+  const Align Alignment = getLoadStoreAlignment(I);
   unsigned Cost = 0;
   if (Legal->isMaskRequired(I))
     Cost += TTI.getMaskedMemoryOpCost(I->getOpcode(), VectorTy,
-                                      Alignment ? Alignment->value() : 0, AS,
-                                      CostKind);
+                                      Alignment.value(), AS, CostKind);
   else
     Cost += TTI.getMemoryOpCost(I->getOpcode(), VectorTy, Alignment, AS,
                                 CostKind, I);
@@ -5889,7 +5897,7 @@ unsigned LoopVectorizationCostModel::getUniformMemOpCost(Instruction *I,
                                                          unsigned VF) {
   Type *ValTy = getMemInstValueType(I);
   auto *VectorTy = cast<VectorType>(ToVectorTy(ValTy, VF));
-  const MaybeAlign Alignment = getLoadStoreAlignment(I);
+  const Align Alignment = getLoadStoreAlignment(I);
   unsigned AS = getLoadStoreAddressSpace(I);
   enum TTI::TargetCostKind CostKind = TTI::TCK_RecipThroughput;
   if (isa<LoadInst>(I)) {
@@ -5914,13 +5922,12 @@ unsigned LoopVectorizationCostModel::getGatherScatterCost(Instruction *I,
                                                           unsigned VF) {
   Type *ValTy = getMemInstValueType(I);
   auto *VectorTy = cast<VectorType>(ToVectorTy(ValTy, VF));
-  const MaybeAlign Alignment = getLoadStoreAlignment(I);
+  const Align Alignment = getLoadStoreAlignment(I);
   Value *Ptr = getLoadStorePointerOperand(I);
 
   return TTI.getAddressComputationCost(VectorTy) +
          TTI.getGatherScatterOpCost(I->getOpcode(), VectorTy, Ptr,
-                                    Legal->isMaskRequired(I),
-                                    Alignment ? Alignment->value() : 0,
+                                    Legal->isMaskRequired(I), Alignment.value(),
                                     TargetTransformInfo::TCK_RecipThroughput,
                                     I);
 }
@@ -5970,7 +5977,7 @@ unsigned LoopVectorizationCostModel::getMemoryInstructionCost(Instruction *I,
   // moment.
   if (VF == 1) {
     Type *ValTy = getMemInstValueType(I);
-    const MaybeAlign Alignment = getLoadStoreAlignment(I);
+    const Align Alignment = getLoadStoreAlignment(I);
     unsigned AS = getLoadStoreAddressSpace(I);
 
     return TTI.getAddressComputationCost(ValTy) +
@@ -6541,9 +6548,10 @@ LoopVectorizationPlanner::planInVPlanNativePath(unsigned UserVF) {
   return VectorizationFactor::Disabled();
 }
 
-Optional<VectorizationFactor> LoopVectorizationPlanner::plan(unsigned UserVF) {
+Optional<VectorizationFactor> LoopVectorizationPlanner::plan(unsigned UserVF,
+                                                             unsigned UserIC) {
   assert(OrigLoop->empty() && "Inner loop expected.");
-  Optional<unsigned> MaybeMaxVF = CM.computeMaxVF();
+  Optional<unsigned> MaybeMaxVF = CM.computeMaxVF(UserVF, UserIC);
   if (!MaybeMaxVF) // Cases that should not to be vectorized nor interleaved.
     return None;
 
@@ -7404,8 +7412,7 @@ Value *LoopVectorizationPlanner::VPCallbackILV::getOrCreateScalarValue(
 
 void VPInterleaveRecipe::print(raw_ostream &O, const Twine &Indent,
                                VPSlotTracker &SlotTracker) const {
-  O << " +\n"
-    << Indent << "\"INTERLEAVE-GROUP with factor " << IG->getFactor() << " at ";
+  O << "\"INTERLEAVE-GROUP with factor " << IG->getFactor() << " at ";
   IG->getInsertPos()->printAsOperand(O, false);
   O << ", ";
   getAddr()->printAsOperand(O, SlotTracker);
@@ -7414,11 +7421,9 @@ void VPInterleaveRecipe::print(raw_ostream &O, const Twine &Indent,
     O << ", ";
     Mask->printAsOperand(O, SlotTracker);
   }
-  O << "\\l\"";
   for (unsigned i = 0; i < IG->getFactor(); ++i)
     if (Instruction *I = IG->getMember(i))
-      O << " +\n"
-        << Indent << "\"  " << VPlanIngredient(I) << " " << i << "\\l\"";
+      O << "\\l\" +\n" << Indent << "\"  " << VPlanIngredient(I) << " " << i;
 }
 
 void VPWidenCallRecipe::execute(VPTransformState &State) {
@@ -7667,7 +7672,7 @@ static bool processLoopInVPlanNativePath(
   // Mark the loop as already vectorized to avoid vectorizing again.
   Hints.setAlreadyVectorized();
 
-  LLVM_DEBUG(verifyFunction(*L->getHeader()->getParent()));
+  assert(!verifyFunction(*L->getHeader()->getParent(), &dbgs()));
   return true;
 }
 
@@ -7808,15 +7813,15 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   // Use the planner for vectorization.
   LoopVectorizationPlanner LVP(L, LI, TLI, TTI, &LVL, CM, IAI, PSE);
 
-  // Get user vectorization factor.
+  // Get user vectorization factor and interleave count.
   unsigned UserVF = Hints.getWidth();
+  unsigned UserIC = Hints.getInterleave();
 
   // Plan how to best vectorize, return the best VF and its cost.
-  Optional<VectorizationFactor> MaybeVF = LVP.plan(UserVF);
+  Optional<VectorizationFactor> MaybeVF = LVP.plan(UserVF, UserIC);
 
   VectorizationFactor VF = VectorizationFactor::Disabled();
   unsigned IC = 1;
-  unsigned UserIC = Hints.getInterleave();
 
   if (MaybeVF) {
     VF = *MaybeVF;
@@ -7969,7 +7974,7 @@ bool LoopVectorizePass::processLoop(Loop *L) {
     Hints.setAlreadyVectorized();
   }
 
-  LLVM_DEBUG(verifyFunction(*L->getHeader()->getParent()));
+  assert(!verifyFunction(*L->getHeader()->getParent()));
   return true;
 }
 
@@ -8061,10 +8066,9 @@ PreservedAnalyses LoopVectorizePass::run(Function &F,
       LoopStandardAnalysisResults AR = {AA, AC, DT, LI, SE, TLI, TTI, MSSA};
       return LAM.getResult<LoopAccessAnalysis>(L, AR);
     };
-    const ModuleAnalysisManager &MAM =
-        AM.getResult<ModuleAnalysisManagerFunctionProxy>(F).getManager();
+    auto &MAMProxy = AM.getResult<ModuleAnalysisManagerFunctionProxy>(F);
     ProfileSummaryInfo *PSI =
-        MAM.getCachedResult<ProfileSummaryAnalysis>(*F.getParent());
+        MAMProxy.getCachedResult<ProfileSummaryAnalysis>(*F.getParent());
     LoopVectorizeResult Result =
         runImpl(F, SE, LI, TTI, DT, BFI, &TLI, DB, AA, AC, GetLAA, ORE, PSI);
     if (!Result.MadeAnyChange)

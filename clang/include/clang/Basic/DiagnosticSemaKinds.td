@@ -171,8 +171,9 @@ def err_field_designator_unknown : Error<
 def err_field_designator_nonfield : Error<
   "field designator %0 does not refer to a non-static data member">;
 def note_field_designator_found : Note<"field designator refers here">;
-def err_designator_for_scalar_init : Error<
-  "designator in initializer for scalar type %0">;
+def err_designator_for_scalar_or_sizeless_init : Error<
+  "designator in initializer for %select{scalar|indivisible sizeless}0 "
+  "type %1">;
 def warn_initializer_overrides : Warning<
   "initializer %select{partially |}0overrides prior initialization of "
   "this subobject">, InGroup<InitializerOverrides>;
@@ -859,7 +860,7 @@ def warn_pragma_pack_pop_identifier_and_alignment : Warning<
 def warn_pragma_pop_failed : Warning<"#pragma %0(pop, ...) failed: %1">,
   InGroup<IgnoredPragmas>;
 def err_pragma_fc_pp_scope : Error<
-  "'#pragma float_control push/pop' can only appear at file scope">;
+  "'#pragma float_control push/pop' can only appear at file scope or namespace scope">;
 def err_pragma_fc_noprecise_requires_nofenv : Error<
   "'#pragma float_control(precise, off)' is illegal when fenv_access is enabled">;
 def err_pragma_fc_except_requires_precise : Error<
@@ -2386,9 +2387,6 @@ def err_enum_redeclare_fixed_mismatch : Error<
   "enumeration previously declared with %select{non|}0fixed underlying type">;
 def err_enum_redeclare_scoped_mismatch : Error<
   "enumeration previously declared as %select{un|}0scoped">;
-def err_enum_class_reference : Error<
-  "reference to %select{|scoped }0enumeration must use 'enum' "
-  "not 'enum class'">;
 def err_only_enums_have_underlying_types : Error<
   "only enumeration types have underlying types">;
 def err_underlying_type_of_incomplete_enum : Error<
@@ -2776,6 +2774,7 @@ def err_attribute_too_many_arguments : Error<
 def err_attribute_too_few_arguments : Error<
   "%0 attribute takes at least %1 argument%s1">;
 def err_attribute_invalid_vector_type : Error<"invalid vector element type %0">;
+def err_attribute_invalid_matrix_type : Error<"invalid matrix element type %0">;
 def err_attribute_bad_neon_vector_size : Error<
   "Neon vector size must be 64 or 128 bits">;
 def err_attribute_requires_positive_integer : Error<
@@ -2879,8 +2878,8 @@ def err_init_method_bad_return_type : Error<
   "init methods must return an object pointer type, not %0">;
 def err_attribute_invalid_size : Error<
   "vector size not an integral multiple of component size">;
-def err_attribute_zero_size : Error<"zero vector size">;
-def err_attribute_size_too_large : Error<"vector size too large">;
+def err_attribute_zero_size : Error<"zero %0 size">;
+def err_attribute_size_too_large : Error<"%0 size too large">;
 def err_typecheck_vector_not_convertable_implict_truncation : Error<
    "cannot convert between %select{scalar|vector}0 type %1 and vector type"
    " %2 as implicit conversion would cause truncation">;
@@ -4222,13 +4221,13 @@ def err_ovl_no_conversion_in_cast : Error<
   "cannot convert %1 to %2 without a conversion operator">;
 def err_ovl_no_viable_conversion_in_cast : Error<
   "no matching conversion for %select{|static_cast|reinterpret_cast|"
-  "dynamic_cast|C-style cast|functional-style cast}0 from %1 to %2">;
+  "dynamic_cast|C-style cast|functional-style cast|}0 from %1 to %2">;
 def err_ovl_ambiguous_conversion_in_cast : Error<
   "ambiguous conversion for %select{|static_cast|reinterpret_cast|"
-  "dynamic_cast|C-style cast|functional-style cast}0 from %1 to %2">;
+  "dynamic_cast|C-style cast|functional-style cast|}0 from %1 to %2">;
 def err_ovl_deleted_conversion_in_cast : Error<
   "%select{|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2 uses deleted function">;
+  "functional-style cast|}0 from %1 to %2 uses deleted function">;
 def err_ovl_ambiguous_init : Error<"call to constructor of %0 is ambiguous">;
 def err_ref_init_ambiguous : Error<
   "reference initialization of type %0 with initializer of type %1 is ambiguous">;
@@ -5396,29 +5395,43 @@ def err_variable_object_no_init : Error<
 def err_excess_initializers : Error<
   "excess elements in %select{array|vector|scalar|union|struct}0 initializer">;
 def ext_excess_initializers : ExtWarn<
-  "excess elements in %select{array|vector|scalar|union|struct}0 initializer">;
+  "excess elements in %select{array|vector|scalar|union|struct}0 initializer">,
+  InGroup<ExcessInitializers>;
+def err_excess_initializers_for_sizeless_type : Error<
+  "excess elements in initializer for indivisible sizeless type %0">;
+def ext_excess_initializers_for_sizeless_type : ExtWarn<
+  "excess elements in initializer for indivisible sizeless type %0">,
+  InGroup<ExcessInitializers>;
 def err_excess_initializers_in_char_array_initializer : Error<
   "excess elements in char array initializer">;
 def ext_excess_initializers_in_char_array_initializer : ExtWarn<
-  "excess elements in char array initializer">;
+  "excess elements in char array initializer">,
+  InGroup<ExcessInitializers>;
 def err_initializer_string_for_char_array_too_long : Error<
   "initializer-string for char array is too long">;
 def ext_initializer_string_for_char_array_too_long : ExtWarn<
-  "initializer-string for char array is too long">;
+  "initializer-string for char array is too long">,
+  InGroup<ExcessInitializers>;
 def warn_missing_field_initializers : Warning<
   "missing field %0 initializer">,
   InGroup<MissingFieldInitializers>, DefaultIgnore;
-def warn_braces_around_scalar_init : Warning<
-  "braces around scalar initializer">, InGroup<DiagGroup<"braced-scalar-init">>;
-def ext_many_braces_around_scalar_init : ExtWarn<
-  "too many braces around scalar initializer">,
+def warn_braces_around_init : Warning<
+  "braces around %select{scalar |}0initializer">,
+  InGroup<DiagGroup<"braced-scalar-init">>;
+def ext_many_braces_around_init : ExtWarn<
+  "too many braces around %select{scalar |}0initializer">,
   InGroup<DiagGroup<"many-braces-around-scalar-init">>, SFINAEFailure;
 def ext_complex_component_init : Extension<
   "complex initialization specifying real and imaginary components "
   "is an extension">, InGroup<DiagGroup<"complex-component-init">>;
 def err_empty_scalar_initializer : Error<"scalar initializer cannot be empty">;
+def err_empty_sizeless_initializer : Error<
+  "initializer for sizeless type %0 cannot be empty">;
 def warn_cxx98_compat_empty_scalar_initializer : Warning<
   "scalar initialized from empty initializer list is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_empty_sizeless_initializer : Warning<
+  "initializing %0 from an empty initializer list is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
 def warn_cxx98_compat_reference_list_init : Warning<
   "reference initialized from initializer list is incompatible with C++98">,
@@ -5469,6 +5482,8 @@ def err_bitfield_width_exceeds_type_width : Error<
 def err_anon_bitfield_width_exceeds_type_width : Error<
   "width of anonymous bit-field (%0 bits) exceeds %select{width|size}1 "
   "of its type (%2 bit%s2)">;
+def err_anon_bitfield_init : Error<
+  "anonymous bit-field cannot have a default member initializer">;
 def err_incorrect_number_of_vector_initializers : Error<
   "number of elements must be either one or match the size of the vector">;
 
@@ -6828,34 +6843,34 @@ def err_bad_cstyle_cast_overload : Error<
 
 
 def err_bad_cxx_cast_generic : Error<
-  "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2 is not allowed">;
+  "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|"
+  "C-style cast|functional-style cast|addrspace_cast}0 from %1 to %2 is not allowed">;
 def err_bad_cxx_cast_unrelated_class : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2, which are not related by "
+  "functional-style cast|}0 from %1 to %2, which are not related by "
   "inheritance, is not allowed">;
 def note_type_incomplete : Note<"%0 is incomplete">;
 def err_bad_cxx_cast_rvalue : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from rvalue to reference type %2">;
+  "functional-style cast|addrspace_cast}0 from rvalue to reference type %2">;
 def err_bad_cxx_cast_bitfield : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from bit-field lvalue to reference type %2">;
+  "functional-style cast|}0 from bit-field lvalue to reference type %2">;
 def err_bad_cxx_cast_qualifiers_away : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2 casts away qualifiers">;
+  "functional-style cast|}0 from %1 to %2 casts away qualifiers">;
 def err_bad_cxx_cast_addr_space_mismatch : Error<
-  "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2 converts between mismatching address"
+  "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|"
+  "C-style cast|functional-style cast|addrspace_cast}0 from %1 to %2 converts between mismatching address"
   " spaces">;
 def ext_bad_cxx_cast_qualifiers_away_incoherent : ExtWarn<
   "ISO C++ does not allow "
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
-  "functional-style cast}0 from %1 to %2 because it casts away qualifiers, "
+  "functional-style cast|}0 from %1 to %2 because it casts away qualifiers, "
   "even though the source and destination types are unrelated">,
   SFINAEFailure, InGroup<DiagGroup<"cast-qual-unrelated">>;
 def err_bad_const_cast_dest : Error<
-  "%select{const_cast||||C-style cast|functional-style cast}0 to %2, "
+  "%select{const_cast||||C-style cast|functional-style cast|}0 to %2, "
   "which is not a reference, pointer-to-object, or pointer-to-data-member">;
 def ext_cast_fn_obj : Extension<
   "cast between pointer-to-function and pointer-to-object is an extension">;
@@ -6868,13 +6883,13 @@ def warn_cxx98_compat_cast_fn_obj : Warning<
 def err_bad_reinterpret_cast_small_int : Error<
   "cast from pointer to smaller type %2 loses information">;
 def err_bad_cxx_cast_vector_to_scalar_different_size : Error<
-  "%select{||reinterpret_cast||C-style cast|}0 from vector %1 "
+  "%select{||reinterpret_cast||C-style cast||}0 from vector %1 "
   "to scalar %2 of different size">;
 def err_bad_cxx_cast_scalar_to_vector_different_size : Error<
-  "%select{||reinterpret_cast||C-style cast|}0 from scalar %1 "
+  "%select{||reinterpret_cast||C-style cast||}0 from scalar %1 "
   "to vector %2 of different size">;
 def err_bad_cxx_cast_vector_to_vector_different_size : Error<
-  "%select{||reinterpret_cast||C-style cast|}0 from vector %1 "
+  "%select{||reinterpret_cast||C-style cast||}0 from vector %1 "
   "to vector %2 of different size">;
 def warn_bad_cxx_cast_nested_pointer_addr_space : Warning<
   "%select{reinterpret_cast|C-style cast}0 from %1 to %2 "
@@ -6891,7 +6906,7 @@ def err_bad_static_cast_pointer_nonpointer : Error<
 def err_bad_static_cast_member_pointer_nonmp : Error<
   "cannot cast from type %1 to member pointer type %2">;
 def err_bad_cxx_cast_member_pointer_size : Error<
-  "cannot %select{||reinterpret_cast||C-style cast|}0 from member pointer "
+  "cannot %select{||reinterpret_cast||C-style cast||}0 from member pointer "
   "type %1 to member pointer type %2 of different size">;
 def err_bad_reinterpret_cast_reference : Error<
   "reinterpret_cast of a %0 to %1 needs its address, which is not allowed">;
@@ -10727,10 +10742,15 @@ def err_builtin_launder_invalid_arg : Error<
   "%select{non-pointer|function pointer|void pointer}0 argument to "
   "'__builtin_launder' is not allowed">;
 
+def err_builtin_matrix_disabled: Error<
+  "matrix types extension is disabled. Pass -fenable-matrix to enable it">;
+
 def err_preserve_field_info_not_field : Error<
   "__builtin_preserve_field_info argument %0 not a field access">;
 def err_preserve_field_info_not_const: Error<
   "__builtin_preserve_field_info argument %0 not a constant">;
+def err_btf_type_id_not_const: Error<
+  "__builtin_btf_type_id argument %0 not a constant">;
 
 def err_bit_cast_non_trivially_copyable : Error<
   "__builtin_bit_cast %select{source|destination}0 type must be trivially copyable">;

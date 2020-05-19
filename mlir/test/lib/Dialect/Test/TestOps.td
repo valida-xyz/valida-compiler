@@ -13,11 +13,11 @@ include "mlir/Dialect/Affine/IR/AffineOpsBase.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
-include "mlir/Interfaces/SideEffects.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
-include "mlir/Interfaces/SideEffects.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 def Test_Dialect : Dialect {
   let name = "test";
@@ -734,6 +734,17 @@ def TestCommutativeOp : TEST_Op<"op_commutative", [Commutative]> {
   let results = (outs I32);
 }
 
+def TestOpInPlaceFoldAnchor : TEST_Op<"op_in_place_fold_anchor"> {
+  let arguments = (ins I32);
+  let results = (outs I32);
+}
+
+def TestOpInPlaceFold : TEST_Op<"op_in_place_fold"> {
+  let arguments = (ins I32:$op, I32Attr:$attr);
+  let results = (outs I32);
+  let hasFolder = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Test Patterns (Symbol Binding)
 
@@ -1139,10 +1150,10 @@ def IsolatedRegionOp : TEST_Op<"isolated_region", [IsolatedFromAbove]> {
   let printer = [{ return ::print(p, *this); }];
 }
 
-def PolyhedralScopeOp : TEST_Op<"polyhedral_scope", [PolyhedralScope]> {
-  let summary =  "polyhedral scope operation";
+def AffineScopeOp : TEST_Op<"affine_scope", [AffineScope]> {
+  let summary =  "affine scope operation";
   let description = [{
-    Test op that defines a new polyhedral scope.
+    Test op that defines a new affine scope.
   }];
 
   let regions = (region SizedRegion<1>:$region);
@@ -1203,9 +1214,15 @@ def FormatAttrOp : TEST_Op<"format_attr_op"> {
   let assemblyFormat = "$attr attr-dict";
 }
 
+// Test that we elide optional attributes that are within the syntax.
+def FormatOptAttrOp : TEST_Op<"format_opt_attr_op"> {
+  let arguments = (ins OptionalAttr<I64Attr>:$opt_attr);
+  let assemblyFormat = "(`(`$opt_attr^`)`)? attr-dict";
+}
+
 // Test that we elide attributes that are within the syntax.
 def FormatAttrDictWithKeywordOp : TEST_Op<"format_attr_dict_w_keyword"> {
-  let arguments = (ins I64Attr:$attr);
+  let arguments = (ins I64Attr:$attr, OptionalAttr<I64Attr>:$opt_attr);
   let assemblyFormat = "attr-dict-with-keyword";
 }
 

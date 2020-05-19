@@ -372,7 +372,7 @@ const char *const attrParserCode = R"(
 const char *const enumAttrParserCode = R"(
   {
     StringAttr attrVal;
-    SmallVector<NamedAttribute, 1> attrStorage;
+    NamedAttrList attrStorage;
     auto loc = parser.getCurrentLocation();
     if (parser.parseAttribute(attrVal, parser.getBuilder().getNoneType(),
                               "{0}", attrStorage))
@@ -886,9 +886,17 @@ static void genAttrDictPrinter(OperationFormat &fmt, Operator &op,
                                OpMethodBody &body, bool withKeyword) {
   // Collect all of the attributes used in the format, these will be elided.
   SmallVector<const NamedAttribute *, 1> usedAttributes;
-  for (auto &it : fmt.elements)
+  for (auto &it : fmt.elements) {
     if (auto *attr = dyn_cast<AttributeVariable>(it.get()))
       usedAttributes.push_back(attr->getVar());
+    // Collect the optional attributes.
+    if (auto *opt = dyn_cast<OptionalElement>(it.get())) {
+      for (auto &elem : opt->getElements()) {
+        if (auto *attr = dyn_cast<AttributeVariable>(&elem))
+          usedAttributes.push_back(attr->getVar());
+      }
+    }
+  }
 
   body << "  p.printOptionalAttrDict" << (withKeyword ? "WithKeyword" : "")
        << "(getAttrs(), /*elidedAttrs=*/{";

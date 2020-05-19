@@ -1229,12 +1229,15 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
     };
 
     auto &Builder = getActionDefinitionsBuilder(Op)
+      .lowerFor({{S16, V2S16}})
+      .lowerIf([=](const LegalityQuery &Query) {
+          const LLT BigTy = Query.Types[BigTyIdx];
+          return BigTy.getSizeInBits() == 32;
+        })
       // Try to widen to s16 first for small types.
       // TODO: Only do this on targets with legal s16 shifts
       .minScalarOrEltIf(narrowerThan(LitTyIdx, 16), LitTyIdx, S16)
-
       .widenScalarToNextPow2(LitTyIdx, /*Min*/ 16)
-      .lowerFor({{S16, V2S16}})
       .moreElementsIf(isSmallOddVector(BigTyIdx), oneMoreElement(BigTyIdx))
       .fewerElementsIf(all(typeIs(0, S16), vectorWiderThan(1, 32),
                            elementTypeIs(1, S16)),
@@ -2991,7 +2994,7 @@ bool AMDGPULegalizerInfo::legalizeFDIV64(MachineInstr &MI,
     .setMIFlags(Flags);
 
   auto Fma3 = B.buildFMA(S64, Fma1, Fma2, Fma1, Flags);
-  auto Mul = B.buildMul(S64, DivScale1.getReg(0), Fma3, Flags);
+  auto Mul = B.buildFMul(S64, DivScale1.getReg(0), Fma3, Flags);
   auto Fma4 = B.buildFMA(S64, NegDivScale0, Mul, DivScale1.getReg(0), Flags);
 
   Register Scale;

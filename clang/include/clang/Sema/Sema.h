@@ -1627,6 +1627,9 @@ public:
   QualType BuildVectorType(QualType T, Expr *VecSize, SourceLocation AttrLoc);
   QualType BuildExtVectorType(QualType T, Expr *ArraySize,
                               SourceLocation AttrLoc);
+  QualType BuildMatrixType(QualType T, Expr *NumRows, Expr *NumColumns,
+                           SourceLocation AttrLoc);
+
   QualType BuildAddressSpaceAttr(QualType &T, LangAS ASIdx, Expr *AddrSpace,
                                  SourceLocation AttrLoc);
 
@@ -3890,7 +3893,8 @@ public:
 
   /// Attempts to produce a RecoveryExpr after some AST node cannot be created.
   ExprResult CreateRecoveryExpr(SourceLocation Begin, SourceLocation End,
-                                ArrayRef<Expr *> SubExprs);
+                                ArrayRef<Expr *> SubExprs,
+                                QualType T = QualType());
 
   ObjCInterfaceDecl *getObjCInterfaceDecl(IdentifierInfo *&Id,
                                           SourceLocation IdLoc,
@@ -5706,7 +5710,8 @@ public:
   void CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
                                       bool IsDereference, SourceRange Range);
 
-  /// ActOnCXXNamedCast - Parse {dynamic,static,reinterpret,const}_cast's.
+  /// ActOnCXXNamedCast - Parse
+  /// {dynamic,static,reinterpret,const,addrspace}_cast's.
   ExprResult ActOnCXXNamedCast(SourceLocation OpLoc,
                                tok::TokenKind Kind,
                                SourceLocation LAngleBracketLoc,
@@ -6390,14 +6395,9 @@ public:
   /// A diagnostic is emitted if it is not, false is returned, and
   /// PossibleNonPrimary will be set to true if the failure might be due to a
   /// non-primary expression being used as an atomic constraint.
-  bool CheckConstraintExpression(Expr *CE, Token NextToken = Token(),
+  bool CheckConstraintExpression(const Expr *CE, Token NextToken = Token(),
                                  bool *PossibleNonPrimary = nullptr,
                                  bool IsTrailingRequiresClause = false);
-
-  /// Check whether the given type-dependent expression will be the name of a
-  /// function or another callable function-like entity (e.g. a function
-  // template or overload set) for any substitution.
-  bool IsDependentFunctionNameExpr(Expr *E);
 
 private:
   /// Caches pairs of template-like decls whose associated constraints were
@@ -9617,12 +9617,15 @@ public:
   /// ActOnPragmaFPContract - Called on well formed
   /// \#pragma {STDC,OPENCL} FP_CONTRACT and
   /// \#pragma clang fp contract
-  void ActOnPragmaFPContract(LangOptions::FPContractModeKind FPC);
+  void ActOnPragmaFPContract(LangOptions::FPModeKind FPC);
+
+  /// Called on well formed
+  /// \#pragma clang fp reassociate
+  void ActOnPragmaFPReassociate(bool IsEnabled);
 
   /// ActOnPragmaFenvAccess - Called on well formed
   /// \#pragma STDC FENV_ACCESS
-  void ActOnPragmaFEnvAccess(SourceLocation Loc,
-                             LangOptions::FEnvAccessModeKind FPC);
+  void ActOnPragmaFEnvAccess(SourceLocation Loc, bool IsEnabled);
 
   /// Called to set rounding mode for floating point operations.
   void setRoundingMode(llvm::RoundingMode);
@@ -10853,9 +10856,8 @@ public:
                                                   bool Diagnose = true);
 
   // DefaultLvalueConversion - performs lvalue-to-rvalue conversion on
-  // the operand.  This is DefaultFunctionArrayLvalueConversion,
-  // except that it assumes the operand isn't of function or array
-  // type.
+  // the operand. This function is a no-op if the operand has a function type
+  // or an array type.
   ExprResult DefaultLvalueConversion(Expr *E);
 
   // DefaultArgumentPromotion (C99 6.5.2.2p6). Used for function calls that
@@ -12000,6 +12002,10 @@ private:
 
   ExprResult CheckBuiltinFunctionCall(FunctionDecl *FDecl,
                                       unsigned BuiltinID, CallExpr *TheCall);
+
+  bool CheckTSBuiltinFunctionCall(llvm::Triple::ArchType Arch,
+                                  unsigned BuiltinID, CallExpr *TheCall);
+
   void checkFortifiedBuiltinMemoryFunction(FunctionDecl *FD, CallExpr *TheCall);
 
   bool CheckARMBuiltinExclusiveCall(unsigned BuiltinID, CallExpr *TheCall,
