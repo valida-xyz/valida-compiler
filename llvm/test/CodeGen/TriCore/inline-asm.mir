@@ -1,0 +1,85 @@
+# RUN: llc -start-after=irtranslator -mtriple=tricore -verify-machineinstrs %s -o - | FileCheck %s
+
+--- |
+
+  define void @test_inlineasm_imm() {
+    call void asm sideeffect "mov %d2, $0", "i,~{d2}"(i32 42)
+    ret void
+  }
+
+  define void @test_inlineasm_reg() {
+    %1 = tail call i32 asm "mov $0, 7", "=d"()
+    ret void
+  }
+
+  define void @test_inlineasm_imm_globaladdress() {
+    call void asm sideeffect "j $0", "i"(void ()* @test_symbol)
+    ret void
+  }
+
+  declare void @test_symbol()
+
+  define void @test_inlineasm_blockaddress() {
+    br label %bar
+  bar:
+    call void asm sideeffect "j $0", "i"(i8* blockaddress(@test_inlineasm_blockaddress, %bar))
+    ret void
+  }
+...
+
+---
+name:            test_inlineasm_imm
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+body:            |
+  bb.0 (%ir-block.0):
+    ; CHECK-LABEL: test_inlineasm_imm:
+    ; CHECK: mov %d2, 42
+    INLINEASM &"mov %d2, $0", 9 /* sideeffect mayload attdialect */, 13 /* imm */, 42, 12 /* clobber */, implicit-def dead early-clobber $d2
+    RET implicit $a11
+...
+
+---
+name:            test_inlineasm_reg
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+body:            |
+  bb.0 (%ir-block.0):
+    ; CHECK-LABEL: test_inlineasm_reg:
+    ; CHECK: mov %d[[REGNUM:[0-9]+]], 7
+    INLINEASM &"mov $0, 7", 9 /* sideeffect mayload attdialect */, 196618 /* regdef:DataRegs */, def %0:dataregs
+    RET implicit $a11
+...
+
+---
+name:            test_inlineasm_imm_globaladdress
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+body:            |
+  bb.0 (%ir-block.0):
+    ; CHECK-LABEL: test_inlineasm_imm_globaladdress:
+    ; CHECK: j {{_?}}test_symbol
+    INLINEASM &"j $0", 9 /* sideeffect mayload attdialect */, 13 /* imm */, @test_symbol
+    RET implicit $a11
+...
+
+---
+name:            test_inlineasm_blockaddress
+legalized:       true
+regBankSelected: true
+selected:        true
+tracksRegLiveness: true
+body:            |
+  bb.0 (%ir-block.0):
+    ; CHECK-LABEL: test_inlineasm_blockaddress:
+    ; CHECK: j .L
+  bb.1.bar (address-taken):
+    INLINEASM &"j $0", 9 /* sideeffect mayload attdialect */, 13 /* imm */, blockaddress(@test_inlineasm_blockaddress, %ir-block.bar)
+    RET implicit $a11
+...

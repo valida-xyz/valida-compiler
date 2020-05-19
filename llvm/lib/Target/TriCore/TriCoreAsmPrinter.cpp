@@ -54,6 +54,9 @@ private:
 
   void LowerJIJumpTable(const MachineInstr *MI);
   void LowerJIJumpTableTC16XPIC(const MachineInstr *MI);
+
+  bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
+                       const char *ExtraCode, raw_ostream &O) override;
 };
 } // namespace
 
@@ -402,6 +405,51 @@ void TriCoreAsmPrinter::LowerJIJumpTableTC16XPIC(const MachineInstr *MI) {
                                    .addImm(2));
 
   EmitToStreamer(*OutStreamer, MCInstBuilder(TriCore::JI).addOperand(DstMCOp));
+}
+
+bool TriCoreAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
+                                        const char *ExtraCode,
+                                        raw_ostream &OS) {
+  // First try the generic code, which knows about modifiers like 'c' and 'n'.
+  if (!AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, OS))
+    return false;
+
+  const MachineOperand &MO = MI->getOperand(OpNo);
+  if (ExtraCode && ExtraCode[0]) {
+    if (ExtraCode[1] != 0)
+      return true; // Unknown modifier.
+
+    switch (ExtraCode[0]) {
+    // FIXME: These modifiers are not supported yet.
+    case 'A':
+    case 'L':
+    case 'H':
+      return true;
+    default:
+      return true; // Unknown modifier.
+    }
+  }
+
+  switch (MO.getType()) {
+  case MachineOperand::MO_Immediate:
+    OS << MO.getImm();
+    return false;
+  case MachineOperand::MO_Register:
+    OS << "%" << TriCoreInstPrinter::getRegisterName(MO.getReg());
+    return false;
+  case MachineOperand::MO_GlobalAddress:
+    PrintSymbolOperand(MO, OS);
+    return false;
+  case MachineOperand::MO_BlockAddress: {
+    MCSymbol *Sym = GetBlockAddressSymbol(MO.getBlockAddress());
+    Sym->print(OS, MAI);
+    return false;
+  }
+  default:
+    break;
+  }
+
+  return true;
 }
 
 void TriCoreAsmPrinter::emitInstruction(const MachineInstr *MI) {
