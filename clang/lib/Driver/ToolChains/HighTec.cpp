@@ -37,7 +37,24 @@ HighTec::HighTec(const Driver &D, const llvm::Triple &Triple,
 Tool *HighTec::buildLinker() const { return new tools::hightec::Linker(*this); }
 
 void HighTec::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
-                                        ArgStringList &CC1Args) const {}
+                                        ArgStringList &CC1Args) const {
+  const Driver &D = getDriver();
+
+  if(DriverArgs.hasArg(options::OPT_nostdinc))
+    return;
+
+  if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
+    SmallString<128> P(D.ResourceDir);
+    llvm::sys::path::append(P, "include");
+    addSystemInclude(DriverArgs, CC1Args, P);
+  }
+
+  if(!DriverArgs.hasArg(options::OPT_nostdlibinc)) {
+    SmallString<128> P(llvm::sys::path::parent_path(D.Dir));
+    llvm::sys::path::append(P, "tricore", "include");
+    addExternCSystemInclude(DriverArgs, CC1Args, P.str());
+  }
+}
 
 void HighTec::addClangTargetOptions(const ArgList &DriverArgs,
                                     ArgStringList &CC1Args,
