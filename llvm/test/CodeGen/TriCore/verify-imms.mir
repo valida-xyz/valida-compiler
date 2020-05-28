@@ -75,10 +75,10 @@ body: |
     ; CHECK-NOT: Invalid immediate
     ; CHECK-NOT: Invalid immediate
     ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit ***
-    $d0 = INSERT_ddccc $d0, -1, 0, 0
-    $d0 = INSERT_ddccc $d0, 0, 0, 0
-    $d0 = INSERT_ddccc $d0, 15, 0, 0
-    $d0 = INSERT_ddccc $d0, 16, 0, 0
+    $d0 = LDBU_16_da15c $a15, -1
+    $d0 = LDBU_16_da15c $a15, 0
+    $d0 = LDBU_16_da15c $a15, 15
+    $d0 = LDBU_16_da15c $a15, 16
 
     ; CHECK: *** Bad machine code: Invalid immediate: must be unsigned 4-bit, left-shifted by 1 ***
     ; CHECK-NOT: Invalid immediate

@@ -185,6 +185,19 @@ insert %d0, %d0, 16, 0, 0
 insert %d0, %d0, foo, 0, 0
 
 
+### Testing uimm4_sym
+
+# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
+# CHECK-SAME: 32-bit instruction generation
+.code16
+ld.bu %d0, [%a15] -1
+
+# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
+# CHECK-SAME: 32-bit instruction generation
+.code16
+ld.bu %d0, [%a15] 16
+
+
 ### Testing uimm4_lsb0
 
 # CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  

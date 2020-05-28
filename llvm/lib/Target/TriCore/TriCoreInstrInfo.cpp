@@ -432,6 +432,12 @@ bool TriCoreInstrInfo::verifyInstruction(const MachineInstr &MI,
         return false;
       }
       break;
+    case TriCoreOp::OPERAND_UIMM4_SYM:
+      if (!isUInt<4>(Imm)) {
+        ErrInfo = "Invalid immediate: must be unsigned 4-bit";
+        return false;
+      }
+      break;
     case TriCoreOp::OPERAND_UIMM4_LSB0:
       if (!isShiftedUInt<4, 1>(Imm)) {
         ErrInfo =

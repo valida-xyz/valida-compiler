@@ -263,11 +263,11 @@ def : CompressPat<(LDA_aalc ImplAddrReg:$a15, AddrRegs:$a, uimm4_lsb00:$c),
 def : CompressPat<(LDA_aalc AddrRegs:$a, ImplAddrReg:$a15, uimm4_lsb00:$c),
                   (LDA_16_aa15c AddrRegs:$a, ImplAddrReg:$a15, uimm4_lsb00:$c)>;
 
-def : CompressPat<(LDBU_dalc ImplDataReg:$d15, AddrRegs:$a, uimm4:$c),
-                  (LDBU_16_d15ac ImplDataReg:$d15, AddrRegs:$a, uimm4:$c)>;
+def : CompressPat<(LDBU_dalc ImplDataReg:$d15, AddrRegs:$a, uimm4_sym:$c),
+                  (LDBU_16_d15ac ImplDataReg:$d15, AddrRegs:$a, uimm4_sym:$c)>;
 
-def : CompressPat<(LDBU_dalc DataRegs:$d, ImplAddrReg:$a15, uimm4:$c),
-                  (LDBU_16_da15c DataRegs:$d, ImplAddrReg:$a15, uimm4:$c)>;
+def : CompressPat<(LDBU_dalc DataRegs:$d, ImplAddrReg:$a15, uimm4_sym:$c),
+                  (LDBU_16_da15c DataRegs:$d, ImplAddrReg:$a15, uimm4_sym:$c)>;
 
 def : CompressPat<(LDH_dalc ImplDataReg:$d15, AddrRegs:$a, uimm4_lsb0:$c),
                   (LDH_16_d15ac ImplDataReg:$d15, AddrRegs:$a, uimm4_lsb0:$c)>;
@@ -330,11 +330,11 @@ def : CompressPat<(STA_alca ImplAddrReg:$a15, uimm4_lsb00:$c, AddrRegs:$a),
 def : CompressPat<(STA_alca AddrRegs:$a, uimm4_lsb00:$c, ImplAddrReg:$a15),
                   (STA_16_aca15 AddrRegs:$a, uimm4_lsb00:$c, ImplAddrReg:$a15)>;
 
-def : CompressPat<(STB_alcd ImplAddrReg:$a15, uimm4:$c, DataRegs:$d),
-                  (STB_16_a15cd ImplAddrReg:$a15, uimm4:$c, DataRegs:$d)>;
+def : CompressPat<(STB_alcd ImplAddrReg:$a15, uimm4_sym:$c, DataRegs:$d),
+                  (STB_16_a15cd ImplAddrReg:$a15, uimm4_sym:$c, DataRegs:$d)>;
 
-def : CompressPat<(STB_alcd AddrRegs:$a, uimm4:$c, ImplDataReg:$d15),
-                  (STB_16_acd15 AddrRegs:$a, uimm4:$c, ImplDataReg:$d15)>;
+def : CompressPat<(STB_alcd AddrRegs:$a, uimm4_sym:$c, ImplDataReg:$d15),
+                  (STB_16_acd15 AddrRegs:$a, uimm4_sym:$c, ImplDataReg:$d15)>;
 
 def : CompressPat<(STH_alcd ImplAddrReg:$a15, uimm4_lsb0:$c, DataRegs:$d),
                   (STH_16_a15cd ImplAddrReg:$a15, uimm4_lsb0:$c, DataRegs:$d)>;

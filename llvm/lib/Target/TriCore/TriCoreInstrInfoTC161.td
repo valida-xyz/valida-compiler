@@ -1665,10 +1665,10 @@ def LDBU_16_da      : LOAD_SLR<           0x14, "ld.bu">;
 def LDBU_16_da_poi  : LOAD_SLR_POST<      0x04, "ld.bu">;
 
 let DecoderMethod = "decode_16_da15c</*shift*/ 0>" in
-def LDBU_16_da15c   : LOAD_SLRO<0x08,           "ld.bu", DataRegs,    uimm4>;
+def LDBU_16_da15c   : LOAD_SLRO<0x08,           "ld.bu", DataRegs,   uimm4_sym>;
 
 let DecoderMethod = "decode_16_x15ac</*shift*/ 0, /*isD15*/ true>" in
-def LDBU_16_d15ac   : LOAD_SRO<0x0C,            "ld.bu", ImplDataReg, uimm4>;
+def LDBU_16_d15ac   : LOAD_SRO<0x0C,           "ld.bu", ImplDataReg, uimm4_sym>;
 
 // LD.D
 def LDD_ec          : LOAD_ABS<     0x85, 0x01, "ld.d", ExtDataRegs>;
@@ -1784,13 +1784,13 @@ def STB_acd_pri     : STORE_BO_PRE< 0x89, 0x10, "st.b">;
 def STB_alcd        : STORE_BOL<          0xE9, "st.b">;
 
 let DecoderMethod = "decode_16_acx15</*shift*/ 0, /*isD15*/ true>" in
-def STB_16_acd15    : STORE_SRO<0x2C,  "st.b", ImplDataReg, uimm4>;
+def STB_16_acd15    : STORE_SRO<0x2C,  "st.b", ImplDataReg, uimm4_sym>;
 
 def STB_16_ad       : STORE_SSR<          0x34, "st.b">;
 def STB_16_ad_poi   : STORE_SSR_POST<     0x24, "st.b">;
 
 let DecoderMethod = "decode_16_a15cx</*shift*/ 0, /*isDreg*/ true>" in
-def STB_16_a15cd    : STORE_SSRO<0x28, "st.b", DataRegs,    uimm4>;
+def STB_16_a15cd    : STORE_SSRO<0x28, "st.b", DataRegs,    uimm4_sym>;
 
 // ST.D
 def STD_ce          : STORE_ABS<    0xA5, 0x01, "st.d", ExtDataRegs>;

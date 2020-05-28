@@ -151,6 +151,20 @@ def uimm4 : GenericUnsignedImmediate<4, i32>,
   }];
 }
 
+// A 4-bit unsigned immediate which accept symbols also
+def uimm4_sym : Operand<OtherVT>, ImmLeaf<i32, [{ return isUInt<4>(Imm); }]> {
+  let ParserMatchClass = GenericImmOperand<"UImm4_sym">;
+  let EncoderMethod = "getImmOpValue";
+  let DecoderMethod = "decodeUnsignedImmediate<4>";
+  let OperandType = "OPERAND_UIMM4_SYM";
+  let MCOperandPredicate = [{
+    int64_t Imm;
+    if (MCOp.evaluateAsConstantImm(Imm))
+      return isUInt<4>(Imm);
+    return false;
+  }];
+}
+
 // A 4-bit unsigned immediate, shifted left by 1
 def uimm4_lsb0 : GenericUImmLsbNIsZero<4, 1>,
                  ImmLeaf<i8, [{ return isShiftedUInt<4, 1>(Imm); }]> {

@@ -273,6 +273,25 @@ public:
     return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
   }
 
+  // checking uimm4 which accepts symbols also
+  bool isUImm4_sym() const {
+    int64_t Imm;
+    TriCoreMCExpr::VariantKind VK = TriCoreMCExpr::VK_TRICORE_None;
+    bool IsValid;
+
+    if (!isImm())
+      return false;
+
+    bool IsConstantImm = evaluateConstantImm(Imm, VK);
+
+    if (!IsConstantImm)
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
+    else
+      IsValid = isUInt<4>(Imm);
+
+    return IsValid && VK == TriCoreMCExpr::VK_TRICORE_None;
+  }
+
   // checking against {off18[17:14], 14'b0, off18[13:0]} form
   bool isOff18Abs() const {
     int64_t Imm;
@@ -710,6 +729,11 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
         Operands, ErrorInfo, 0, (1 << 4) - 1,
         "Operand prefixes and symbol expressions are not allowed for this "
         "operand and it must be in the integer range");
+  case Match_InvalidUImm4_sym:
+    return generateImmOutOfRangeError(
+        Operands, ErrorInfo, 0, (1 << 4) - 1,
+        "Operand must be a valid symbol expression "
+        "OR it must be in the integer range");
   case Match_InvalidUImm5:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 5) - 1,
