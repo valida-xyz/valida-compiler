@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstPrinter/TriCoreInstPrinter.h"
-#include "MCTargetDesc/TriCoreInstrCompression.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
@@ -597,6 +596,9 @@ bool TriCoreAsmParser::validateInstruction(MCInst &Inst, SMLoc &IDLoc,
   }
   }
 }
+
+#define GEN_COMPRESS_INSTR
+#include "MCTargetDesc/TriCoreInstrCompression.h"
 
 bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                                OperandVector &Operands,

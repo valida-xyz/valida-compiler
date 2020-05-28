@@ -15,12 +15,15 @@
 #ifndef LLVM_LIB_TARGET_TRICORE_TRICOREINSTRCOMPRESSION_H
 #define LLVM_LIB_TARGET_TRICORE_TRICOREINSTRCOMPRESSION_H
 
+#include "MCTargetDesc/TriCoreMCTargetDesc.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 
 namespace llvm {
+
+#ifdef GEN_COMPRESS_INSTR
 
 static bool compress_LDA_aac_poi(const MCRegisterInfo &MRI, MCInst &OutInst,
                                  const MCInst &MI, const MCSubtargetInfo &STI) {
@@ -391,6 +394,27 @@ static bool compressCustomInst(MCInst &OutInst, const MCInst &MI,
   }
 }
 
+#include "TriCoreGenCompressInstEmitter.inc"
+
+static bool compressInstruction(MCInst &OutInst, const MCInst &MI,
+                                const MCSubtargetInfo &STI,
+                                MCContext &Context) {
+  bool Compressed = false;
+
+  if (!STI.getFeatureBits()[TriCore::Allow16BitInstructions])
+    return false;
+
+  Compressed = compressInst(OutInst, MI, STI, Context);
+  if (!Compressed)
+    Compressed = compressCustomInst(OutInst, MI, STI, Context);
+
+  return Compressed;
+}
+
+#undef GEN_COMPRESS_INSTR
+
+#elif defined(GEN_UNCOMPRESS_INSTR)
+
 static bool uncompress_LDA_16_aa_poi(MCInst &OutInst, const MCInst &MI,
                                      const MCRegisterInfo &MRI,
                                      const MCSubtargetInfo &STI) {
@@ -752,24 +776,29 @@ static bool uncompressCustomInst(MCInst &OutInst, const MCInst &MI,
   }
 }
 
-// Include the auto-generated portion of the compress emitter.
-#define GEN_COMPRESS_INSTR
 #include "TriCoreGenCompressInstEmitter.inc"
 
-static bool compressInstruction(MCInst &OutInst, const MCInst &MI,
-                                const MCSubtargetInfo &STI,
-                                MCContext &Context) {
-  bool Compressed = false;
+static bool uncompressInstruction(MCInst& OutInst,
+                           const MCInst &MI,
+                           const MCRegisterInfo &MRI,
+                           const MCSubtargetInfo &STI) {
+  bool Uncompressed = false;
 
   if (!STI.getFeatureBits()[TriCore::Allow16BitInstructions])
     return false;
 
-  Compressed = compressInst(OutInst, MI, STI, Context);
-  if (!Compressed)
-    Compressed = compressCustomInst(OutInst, MI, STI, Context);
+  Uncompressed = uncompressInst(OutInst, MI, MRI, STI);
+  if (!Uncompressed)
+    Uncompressed = uncompressCustomInst(OutInst, MI, MRI, STI);
 
-  return Compressed;
+  return Uncompressed;
 }
+
+#undef GEN_UNCOMPRESS_INSTR
+
+#else
+#error Need to define GEN_COMPRESS_INSTR OR GEN_UNCOMPRESS_INSTR
+#endif
 
 } // namespace llvm
 

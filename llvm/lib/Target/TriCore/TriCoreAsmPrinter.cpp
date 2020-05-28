@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstPrinter/TriCoreInstPrinter.h"
-#include "MCTargetDesc/TriCoreInstrCompression.h"
 #include "MCTargetDesc/TriCoreMCExpr.h"
 #include "TargetInfo/TriCoreTargetInfo.h"
 #include "TriCoreMCInstLower.h"
@@ -477,6 +476,9 @@ void TriCoreAsmPrinter::emitInstruction(const MachineInstr *MI) {
   MCInstLowering.Lower(MI, TmpInst);
   EmitToStreamer(*OutStreamer, TmpInst);
 }
+
+#define GEN_COMPRESS_INSTR
+#include "MCTargetDesc/TriCoreInstrCompression.h"
 
 void TriCoreAsmPrinter::EmitToStreamer(MCStreamer &S, const MCInst &Inst) {
   MCInst CInst;
