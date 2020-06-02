@@ -225,7 +225,10 @@ public:
     if (isRLC)
       isVKCorrect = isVKCorrect || (VK == TriCoreMCExpr::VK_TRICORE_HI);
     else
-      isVKCorrect = isVKCorrect || (VK == TriCoreMCExpr::VK_TRICORE_SM);
+      isVKCorrect = isVKCorrect || (VK == TriCoreMCExpr::VK_TRICORE_SM ||
+                                    VK == TriCoreMCExpr::VK_TRICORE_LI ||
+                                    VK == TriCoreMCExpr::VK_TRICORE_A8 ||
+                                    VK == TriCoreMCExpr::VK_TRICORE_A9);
 
     return IsValid && isVKCorrect;
   }
@@ -1081,12 +1084,52 @@ TriCoreAsmParser::parseOperandWithModifier(OperandVector &Operands) {
   getParser().Lex(); // Eat the identifier
   getParser().Lex(); // Eat ':'
 
-  // sm modifier can not be applied to constant expressions
-  if (VK == TriCoreMCExpr::VK_TRICORE_SM &&
-      (getLexer().getKind() != AsmToken::Identifier &&
-       getLexer().getKind() != AsmToken::String)) {
-    Error(getLexer().getLoc(), "Illegal prefix for constant expression");
-    return MatchOperand_ParseFail;
+  // sm modifier can not be applied to constant expressions or if not using sing
+  // global address registers {A0,A1,A8,A9}
+  if (VK == TriCoreMCExpr::VK_TRICORE_SM) {
+    if (getLexer().getKind() != AsmToken::Identifier &&
+        getLexer().getKind() != AsmToken::String) {
+        Error(getLexer().getLoc(), "Illegal prefix for constant expression");
+        return MatchOperand_ParseFail;
+      }
+
+    size_t NumOperands = Operands.size();
+    if (NumOperands < 3) {
+      Error(getLexer().getLoc(), "Illegal addressing mode for 'SM' prefix");
+      return MatchOperand_ParseFail;
+    }
+
+    TriCoreOperand &LBrac =
+        static_cast<TriCoreOperand &>(*Operands[NumOperands - 3]);
+    TriCoreOperand &BaseReg =
+        static_cast<TriCoreOperand &>(*Operands[NumOperands - 2]);
+    TriCoreOperand &RBrac =
+        static_cast<TriCoreOperand &>(*Operands[NumOperands - 1]);
+
+    if (!LBrac.isToken() || LBrac.getToken() != "[" || !RBrac.isToken() ||
+        RBrac.getToken() != "]" || !BaseReg.isReg()) {
+      Error(getLexer().getLoc(), "Illegal addressing mode for 'SM' prefix");
+      return MatchOperand_ParseFail;
+    }
+
+    // Reg must be a System Global Address register.
+    switch (BaseReg.getReg()) {
+    case TriCore::A0:
+      break;
+    case TriCore::A1:
+      VK = TriCoreMCExpr::VK_TRICORE_LI;
+      break;
+    case TriCore::A8:
+      VK = TriCoreMCExpr::VK_TRICORE_A8;
+      break;
+    case TriCore::A9:
+      VK = TriCoreMCExpr::VK_TRICORE_A9;
+      break;
+    default:
+      Error(getLexer().getLoc(), "Operand prefix 'SM' must be used with System "
+                                 "Global Address register");
+      return MatchOperand_ParseFail;
+    }
   }
 
   // parse the expression ex.: lo:foo -> foo

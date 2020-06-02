@@ -22,12 +22,15 @@ class TriCoreMCExpr : public MCTargetExpr {
 public:
   // Representing the possible expression modifiers of TriCore.
   // E.g.: lo (extract lower half world), hi (extract upper half world),
-  // sm (put in small data section).
+  // sm/li/A8/A9 (put in small data section).
   enum VariantKind {
     VK_TRICORE_None,
     VK_TRICORE_HI,
     VK_TRICORE_LO,
     VK_TRICORE_SM,
+    VK_TRICORE_LI,
+    VK_TRICORE_A8,
+    VK_TRICORE_A9,
     VK_TRICORE_Invalid
   };
 

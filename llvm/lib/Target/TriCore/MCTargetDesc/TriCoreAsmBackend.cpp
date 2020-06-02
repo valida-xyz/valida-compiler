@@ -63,6 +63,9 @@ public:
         {"fixup_18abs", 12, 20, 0},
         {"fixup_15rel", 16, 15, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_lha", 12, 20, 0},
+        {"fixup_16li", 16, 16, 0},
+        {"fixup_16a8", 16, 16, 0},
+        {"fixup_16a9", 16, 16, 0},
         {"fixup_16off", 16, 16, 0},
         {"fixup_4rel", 8, 4, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_4rel2", 8, 4, MCFixupKindInfo::FKF_IsPCRel},
@@ -314,17 +317,22 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
   case TriCore::fixup_24abs:
   case TriCore::fixup_18abs:
   case TriCore::fixup_16sm:
+  case TriCore::fixup_16li:
+  case TriCore::fixup_16a8:
+  case TriCore::fixup_16a9:
     assert(Value == 0 && "fixup value must be 0");
     return Value;
 
   case TriCore::fixup_hi:
     return ((Value + 0x8000u) >> 16u) & 0xffffu;
 
-  // TODO: these has to be encoded differently since _lo2 (the BOL version) has
-  // it's off16 operand encoded in chunks like B or ABS format
   case TriCore::fixup_lo:
-  case TriCore::fixup_lo2:
     return Value & 0xffffu;
+
+  case TriCore::fixup_lo2:
+    Value = Value & 0xffffu;
+    return ((Value & 0xfc00u) >> 4u) | ((Value & 0x3c0u) << 6u) |
+           (Value & 0x3fu);
 
   case TriCore::fixup_24rel:
     if (!isInt<25>(Value))

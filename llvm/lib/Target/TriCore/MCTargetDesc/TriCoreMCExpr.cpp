@@ -52,6 +52,9 @@ TriCoreMCExpr::getVariantKindForName(StringRef name) {
       .Case("hi", VK_TRICORE_HI)
       .Case("lo", VK_TRICORE_LO)
       .Case("sm", VK_TRICORE_SM)
+      .Case("li", VK_TRICORE_LI)
+      .Case("a8", VK_TRICORE_A8)
+      .Case("a9", VK_TRICORE_A9)
       .Default(VK_TRICORE_Invalid);
 }
 
@@ -64,6 +67,9 @@ StringRef TriCoreMCExpr::getVariantKindName(VariantKind Kind) {
   case VK_TRICORE_LO:
     return "lo";
   case VK_TRICORE_SM:
+  case VK_TRICORE_LI:
+  case VK_TRICORE_A8:
+  case VK_TRICORE_A9:
     return "sm";
   }
 }

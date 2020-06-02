@@ -189,6 +189,21 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
       if (MIFrm == TriCoreII::BOLFrm)
         FixupKind = TriCore::fixup_16sm;
       break;
+
+    case TriCoreMCExpr::VK_TRICORE_LI:
+      if (MIFrm == TriCoreII::BOLFrm)
+        FixupKind = TriCore::fixup_16li;
+      break;
+
+    case TriCoreMCExpr::VK_TRICORE_A8:
+      if (MIFrm == TriCoreII::BOLFrm)
+        FixupKind = TriCore::fixup_16a8;
+      break;
+
+    case TriCoreMCExpr::VK_TRICORE_A9:
+      if (MIFrm == TriCoreII::BOLFrm)
+        FixupKind = TriCore::fixup_16a9;
+      break;
     }
   }
   // If it is a plain symbolref like "foo" OR  if its a binary expression

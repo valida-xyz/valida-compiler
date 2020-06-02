@@ -76,6 +76,12 @@ unsigned TriCoreELFObjectWriter::getRelocType(MCContext &Ctx,
     return ELF::R_TRICORE_18ABS;
   case TriCore::fixup_15rel:
     return ELF::R_TRICORE_15REL;
+  case TriCore::fixup_16li:
+    return ELF::R_TRICORE_16LI;
+  case TriCore::fixup_16a8:
+    return ELF::R_TRICORE_16A8;
+  case TriCore::fixup_16a9:
+    return ELF::R_TRICORE_16A9;
   case TriCore::fixup_lha:
     return ELF::R_TRICORE_LHA;
   }

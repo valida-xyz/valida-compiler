@@ -50,6 +50,15 @@ enum Fixups {
   // EA = {off18[17:0], 14b'0}
   fixup_lha,
 
+  // 16 bit immediate with sm modifier which is {S + A - A[1]} type, using BOL format
+  fixup_16li,
+
+  // 16 bit immediate with sm modifier which is {S + A - A[8]} type, using BOL format
+  fixup_16a8,
+
+  // 16 bit immediate with sm modifier which is {S + A - A[9]} type, using BOL format
+  fixup_16a9,
+
   // 16 bit signed immediate used in BOL format
   fixup_16off,
 
