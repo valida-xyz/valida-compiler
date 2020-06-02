@@ -1,15 +1,16 @@
 # RUN: llvm-mc -arch=tricore < %s -show-encoding -show-inst\
-# RUN:     | FileCheck -check-prefix=FIXUP %s
+# RUN:     | FileCheck -check-prefixes=CHECK,FIXUP %s
 # RUN: llvm-mc -filetype=obj -arch=tricore < %s \
 # RUN:     | llvm-objdump -d - \
-# RUN:     | FileCheck -check-prefix=INSTR %s
+# RUN:     | FileCheck -check-prefixes=OBJDUMP,INSTR %s
 # RUN: llvm-mc -filetype=obj -arch=tricore < %s \
 # RUN:     | llvm-readobj -r | FileCheck -check-prefix=RELOC %s
 
 # Check prefixes:
-# RELOC - Check the relocation in the object.
-# FIXUP - Check the fixup on the instruction.
-# INSTR - Check the instruction is handled properly by the ASMPrinter
+# RELOC   - Check the relocation in the object.
+# OBJDUMP - Check the objdump from the object.
+# FIXUP   - Check the fixup on the instruction.
+# INSTR   - Check the instruction is handled properly by the ASMPrinter
 
 
 ##### For sm, lo, hi case insensitivity also tested in the same time
@@ -413,3 +414,298 @@ sym1:
     .fill 1 << 20 - 1
 sym2:
 
+
+
+###### LD.A ######
+
+
+.code32
+ld.a %a0, [%a0], lo_st_zero
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 00
+# INSTR: ld.a %a0, [%a0], 0
+# FIXUP: fixup A - offset: 0, value: lo_st_zero, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_zero+32767
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo_st_zero+32767, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_zero-32768
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 08
+# INSTR: ld.a %a0, [%a0], -32768
+# FIXUP: fixup A - offset: 0, value: lo_st_zero-32768, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_small
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 08
+# INSTR: ld.a %a0, [%a0], -32768
+# FIXUP: fixup A - offset: 0, value: lo_st_small, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_small+32768
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 00
+# INSTR: ld.a %a0, [%a0], 0
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32768, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_small+32767
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff ff
+# INSTR: ld.a %a0, [%a0], -1
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32767, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_small+32769
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 01 00
+# INSTR: ld.a %a0, [%a0], 1
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32769, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_small+65535
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo_st_small+65535, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_big
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo_st_big, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo_st_big-1
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 fe f7
+# INSTR: ld.a %a0, [%a0], 32766
+# FIXUP: fixup A - offset: 0, value: lo_st_big-1, kind: fixup_16off
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_zero
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 00
+# INSTR: ld.a %a0, [%a0], 0
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_zero, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_zero+32767
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_zero+32767, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_zero-32768
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 08
+# INSTR: ld.a %a0, [%a0], -32768
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_zero-32768, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_small
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 08
+# INSTR: ld.a %a0, [%a0], -32768
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_small, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_small+32768
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 00 00
+# INSTR: ld.a %a0, [%a0], 0
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_small+32768, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_small+32767
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff ff
+# INSTR: ld.a %a0, [%a0], -1
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_small+32767, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_small+32769
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 01 00
+# INSTR: ld.a %a0, [%a0], 1
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_small+32769, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_small+65535
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_small+65535, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_big
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 ff f7
+# INSTR: ld.a %a0, [%a0], 32767
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_big, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], lo:lo_st_big-1
+# CHECK: encoding: [0x99,0x00,A,A]
+# OBJDUMP: 99 00 fe f7
+# INSTR: ld.a %a0, [%a0], 32766
+# FIXUP: fixup A - offset: 0, value: lo:lo_st_big-1, kind: fixup_lo2
+
+.code32
+ld.a %a0, [%a0], sm:lo_st
+# RELOC: 0x10015B R_TRICORE_16SM lo_st 0x0
+# CHECK: encoding: [0x99,0x00,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16sm
+
+.code32
+ld.a %a0, [%a1], sm:lo_st
+# RELOC: 0x10015F R_TRICORE_16LI lo_st 0x0
+# CHECK: encoding: [0x99,0x10,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16li
+
+.code32
+ld.a %a0, [%a8], sm:lo_st
+# RELOC: 0x100163 R_TRICORE_16A8 lo_st 0x0
+# CHECK: encoding: [0x99,0x80,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a8
+
+.code32
+ld.a %a0, [%a9], sm:lo_st
+# RELOC: 0x100167 R_TRICORE_16A9 lo_st 0x0
+# CHECK: encoding: [0x99,0x90,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a9
+
+
+###### ST.A ######
+
+
+.code32
+st.a [%a0], lo_st_zero, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 00 00
+# INSTR: st.a [%a0], 0, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_zero, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_zero+32767, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 ff f7
+# INSTR: st.a [%a0], 32767, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_zero+32767, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_zero-32768, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 00 08
+# INSTR: st.a [%a0], -32768, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_zero-32768, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_small, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 00 08
+# INSTR: st.a [%a0], -32768, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_small, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_small+32768, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 00 00
+# INSTR: st.a [%a0], 0, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32768, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_small+32767, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 ff ff
+# INSTR: st.a [%a0], -1, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32767, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_small+32769, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 01 00
+# INSTR: st.a [%a0], 1, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_small+32769, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_small+65535, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 ff f7
+# INSTR: st.a [%a0], 32767, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_small+65535, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_big, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 ff f7
+# INSTR: st.a [%a0], 32767, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_big, kind: fixup_16off
+
+.code32
+st.a [%a0], lo_st_big-1, %a0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# OBJDUMP: b5 00 fe f7
+# INSTR: st.a [%a0], 32766, %a0
+# FIXUP: fixup A - offset: 0, value: lo_st_big-1, kind: fixup_16off
+
+.code32
+st.a [%a0], sm:lo_st, %a0
+# RELOC: 0x100193 R_TRICORE_16SM lo_st 0x0
+# CHECK: encoding: [0xb5,0x00,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16sm
+
+.code32
+st.a [%a1], sm:lo_st, %a0
+# RELOC:  0x100197 R_TRICORE_16LI lo_st 0x0
+# CHECK: encoding: [0xb5,0x10,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16li
+
+.code32
+st.a [%a8], sm:lo_st, %a0
+# RELOC: 0x10019B R_TRICORE_16A8 lo_st 0x0
+# CHECK: encoding: [0xb5,0x80,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a8
+
+.code32
+st.a [%a9], sm:lo_st, %a0
+# RELOC: 0x10019F R_TRICORE_16A9 lo_st 0x0
+# CHECK: encoding: [0xb5,0x90,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a9
+
+.code32
+st.a [%a0], sm:lo_st, %a15
+# RELOC: 0x1001A3 R_TRICORE_16SM lo_st 0x0
+# CHECK: encoding: [0xb5,0x0f,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16sm
+
+.code32
+st.a [%a1], sm:lo_st, %a15
+# RELOC: 0x1001A7 R_TRICORE_16LI lo_st 0x0
+# CHECK: encoding: [0xb5,0x1f,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16li
+
+.code32
+st.a [%a8], sm:lo_st, %a15
+# RELOC: 0x1001AB R_TRICORE_16A8 lo_st 0x0
+# CHECK: encoding: [0xb5,0x8f,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a8
+
+.code32
+st.a [%a9], sm:lo_st, %a15
+# RELOC: 0x1001AF R_TRICORE_16A9 lo_st 0x0
+# CHECK: encoding: [0xb5,0x9f,A,A]
+# FIXUP: fixup A - offset: 0, value: sm:lo_st, kind: fixup_16a9
+
+
+.set lo_st_zero, 0
+.set lo_st_small, -32768
+.set lo_st_big, 32767
