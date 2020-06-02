@@ -97,7 +97,7 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   getActionDefinitionsBuilder({G_IMPLICIT_DEF, G_FREEZE})
       .legalFor({p0, s32, s64})
       .clampScalar(0, s32, s64)
-      .widenScalarToNextPow2(0);
+      .widenScalarToNextPow2(0, 32);
 
   // G_PHI should be legal for all consumed types to avoid unnecessary
   // truncations and extensions
@@ -194,13 +194,10 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .widenScalarToNextPow2(0)
       .lowerFor({s64});
 
-  // G_PTR_ADD must take a p0 and s32 operand
-  getActionDefinitionsBuilder(G_PTR_ADD)
+  // G_PTR_ADD and G_PTRMASK must take a p0 and s32 operand
+  getActionDefinitionsBuilder({G_PTR_ADD, G_PTRMASK})
       .legalFor({{p0, s32}})
       .clampScalar(1, s32, s32);
-
-  // G_PTR_MASK must take a p0 pointer operand
-  getActionDefinitionsBuilder(G_PTR_MASK).legalFor({p0});
 
   // Floating point Ops
 
@@ -816,7 +813,7 @@ bool TriCoreLegalizerInfo::legalizeVaArg(MachineInstr &MI,
 
     auto ListTmp = MIRBuilder.buildPtrAdd(PtrTy, List, AlignMinus1.getReg(0));
 
-    DstPtr = MIRBuilder.buildPtrMask(PtrTy, ListTmp, Log2_64(Alignment));
+    DstPtr = MIRBuilder.buildMaskLowPtrBits(PtrTy, ListTmp, Log2_64(Alignment));
   } else
     DstPtr = List;
 

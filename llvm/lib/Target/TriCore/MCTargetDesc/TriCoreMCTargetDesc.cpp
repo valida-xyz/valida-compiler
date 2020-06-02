@@ -56,7 +56,7 @@ static MCAsmInfo *createTriCoreMCAsmInfo(const MCRegisterInfo &MRI,
 
   // Set CFA default to SP for DWARF CFI
   const unsigned SP = MRI.getDwarfRegNum(TriCore::A10, true);
-  const MCCFIInstruction CFI = MCCFIInstruction::createDefCfa(nullptr, SP, 0);
+  const MCCFIInstruction CFI = MCCFIInstruction::cfiDefCfa(nullptr, SP, 0);
   MAI->addInitialFrameState(CFI);
 
   return MAI;

@@ -283,13 +283,13 @@ void TriCoreFrameLowering::emitPrologue(MachineFunction &MF,
       CFIIndex =
           // Offset 0 since we have no callee saved registers, so FP is always
           // the current frame address
-          MF.addFrameInst(MCCFIInstruction::createDefCfa(nullptr, Reg, 0));
+          MF.addFrameInst(MCCFIInstruction::cfiDefCfa(nullptr, Reg, 0));
     } else {
       // Emit .cfi_def_cfa_offset StackSize
       CFIIndex = MF.addFrameInst(
-          // createDefCfaOffset creates a subtraction by default, therefore we
-          // need to pass -StackSize
-          MCCFIInstruction::createDefCfaOffset(nullptr, -StackSize));
+          // cfiDefCfaOffset does not negate the given offset anymore, so no
+          // need to negate it here
+          MCCFIInstruction::cfiDefCfaOffset(nullptr, StackSize));
     }
 
     BuildMI(MBB, MBBI, DL, TII->get(TargetOpcode::CFI_INSTRUCTION))

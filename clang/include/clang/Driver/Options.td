@@ -2470,6 +2470,8 @@ def faltivec : Flag<["-"], "faltivec">, Group<f_Group>, Flags<[DriverOption]>;
 def fno_altivec : Flag<["-"], "fno-altivec">, Group<f_Group>, Flags<[DriverOption]>;
 def maltivec : Flag<["-"], "maltivec">, Group<m_ppc_Features_Group>;
 def mno_altivec : Flag<["-"], "mno-altivec">, Group<m_ppc_Features_Group>;
+def mpcrel: Flag<["-"], "mpcrel">, Group<m_ppc_Features_Group>;
+def mno_pcrel: Flag<["-"], "mno-pcrel">, Group<m_ppc_Features_Group>;
 def mspe : Flag<["-"], "mspe">, Group<m_ppc_Features_Group>;
 def mno_spe : Flag<["-"], "mno-spe">, Group<m_ppc_Features_Group>;
 def mvsx : Flag<["-"], "mvsx">, Group<m_ppc_Features_Group>;
@@ -3316,11 +3318,9 @@ def Z_reserved_lib_cckext : Flag<["-"], "Z-reserved-lib-cckext">,
     Flags<[LinkerInput, NoArgumentUnused, Unsupported]>, Group<reserved_lib_Group>;
 
 // Ignored options
-// FIXME: multiclasess produce suffixes, not prefixes. This is fine for now
-// since it is only used in ignored options.
 multiclass BooleanFFlag<string name> {
-  def _f : Flag<["-"], "f"#name>;
-  def _fno : Flag<["-"], "fno-"#name>;
+  def f#NAME : Flag<["-"], "f"#name>;
+  def fno_#NAME : Flag<["-"], "fno-"#name>;
 }
 
 defm : BooleanFFlag<"keep-inline-functions">, Group<clang_ignored_gcc_optimization_f_Group>;
@@ -3371,7 +3371,7 @@ defm ipa_cp : BooleanFFlag<"ipa-cp">,
     Group<clang_ignored_gcc_optimization_f_Group>;
 defm ivopts : BooleanFFlag<"ivopts">, Group<clang_ignored_gcc_optimization_f_Group>;
 def fsemantic_interposition : Flag<["-"], "fsemantic-interposition">, Group<f_Group>, Flags<[CC1Option]>;
-def fno_semantic_interposition: Flag<["-"], "fno-semantic-interposition">, Group<f_Group>;
+def fno_semantic_interposition: Flag<["-"], "fno-semantic-interposition">, Group<f_Group>, Flags<[CC1Option]>;
 defm non_call_exceptions : BooleanFFlag<"non-call-exceptions">, Group<clang_ignored_f_Group>;
 defm peel_loops : BooleanFFlag<"peel-loops">, Group<clang_ignored_gcc_optimization_f_Group>;
 defm permissive : BooleanFFlag<"permissive">, Group<clang_ignored_f_Group>;

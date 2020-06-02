@@ -54,6 +54,10 @@ IndexType Builder::getIndexType() { return IndexType::get(context); }
 
 IntegerType Builder::getI1Type() { return IntegerType::get(1, context); }
 
+IntegerType Builder::getI32Type() { return IntegerType::get(32, context); }
+
+IntegerType Builder::getI64Type() { return IntegerType::get(64, context); }
+
 IntegerType Builder::getIntegerType(unsigned width) {
   return IntegerType::get(width, context);
 }
@@ -123,6 +127,13 @@ DenseIntElementsAttr Builder::getI64TensorAttr(ArrayRef<int64_t> values) {
   return DenseIntElementsAttr::get(
       RankedTensorType::get(static_cast<int64_t>(values.size()),
                             getIntegerType(64)),
+      values);
+}
+
+DenseIntElementsAttr Builder::getIndexTensorAttr(ArrayRef<int64_t> values) {
+  return DenseIntElementsAttr::get(
+      RankedTensorType::get(static_cast<int64_t>(values.size()),
+                            getIndexType()),
       values);
 }
 

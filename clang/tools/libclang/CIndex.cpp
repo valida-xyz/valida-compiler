@@ -2489,6 +2489,10 @@ void OMPClauseEnqueue::VisitOMPUseDevicePtrClause(
     const OMPUseDevicePtrClause *C) {
   VisitOMPClauseList(C);
 }
+void OMPClauseEnqueue::VisitOMPUseDeviceAddrClause(
+    const OMPUseDeviceAddrClause *C) {
+  VisitOMPClauseList(C);
+}
 void OMPClauseEnqueue::VisitOMPIsDevicePtrClause(
     const OMPIsDevicePtrClause *C) {
   VisitOMPClauseList(C);
@@ -2507,6 +2511,11 @@ void OMPClauseEnqueue::VisitOMPUsesAllocatorsClause(
     Visitor->AddStmt(D.Allocator);
     Visitor->AddStmt(D.AllocatorTraits);
   }
+}
+void OMPClauseEnqueue::VisitOMPAffinityClause(const OMPAffinityClause *C) {
+  Visitor->AddStmt(C->getModifier());
+  for (const Expr *E : C->varlists())
+    Visitor->AddStmt(E);
 }
 } // namespace
 
