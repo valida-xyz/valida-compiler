@@ -480,25 +480,26 @@ TriCoreRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   }
   case TargetOpcode::G_MERGE_VALUES:
   case TargetOpcode::G_UNMERGE_VALUES: {
-    // Merge and unmerge can only be selected on the data regbank, unless we can
-    // use a subregister copy. A subregister copy can be used if we go from 64
-    // to 32-bit.
-    const unsigned BigTyIdx =
-        OpCode == TargetOpcode::G_MERGE_VALUES ? 0 : NumOperands - 1;
-    const unsigned SmallTyIdx =
-        OpCode == TargetOpcode::G_MERGE_VALUES ? NumOperands - 1 : 0;
+    // G_MERGE_VALUES and G_UNMERGE_VALUES might be cross-bank and are selected
+    // as subreg copies. Use copyCost to calculate cost
+    const Register DstReg = MI.getOperand(0).getReg();
+    const Register SrcReg = MI.getOperand(NumOperands - 1).getReg();
 
-    const LLT SmallTy = MRI.getType(MI.getOperand(SmallTyIdx).getReg());
-    const LLT BigTy = MRI.getType(MI.getOperand(BigTyIdx).getReg());
+    const LLT DstTy = MRI.getType(DstReg);
+    const LLT SrcTy = MRI.getType(SrcReg);
 
-    // Check if we can use the default mapping (subregister copy can be used)
-    if (SmallTy.getSizeInBits() == 32 && BigTy.getSizeInBits() == 64)
-      break;
+    const unsigned DstRBId =
+        DstTy.isPointer() ? TriCore::AddrRegBankID : TriCore::DataRegBankID;
+    const unsigned SrcRBId =
+        SrcTy.isPointer() ? TriCore::AddrRegBankID : TriCore::DataRegBankID;
 
-    // Force data regbank
-    for (unsigned Idx = 0; Idx < NumOperands; ++Idx)
-      OpRegBankIdx[Idx] = PMI_FirstDataReg;
+    const RegisterBank &DstRB = getRegBank(DstRBId);
+    const RegisterBank &SrcRB = getRegBank(SrcRBId);
 
+    const unsigned Size =
+        std::min(SrcTy.getSizeInBits(), DstTy.getSizeInBits());
+
+    Cost = copyCost(DstRB, SrcRB, Size);
     break;
   }
   case TargetOpcode::G_SELECT: {

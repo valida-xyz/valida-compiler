@@ -10,42 +10,23 @@ registers:
   - { id: 1, class: _ }
   - { id: 2, class: _ }
   - { id: 3, class: _ }
-  - { id: 4, class: _ }
-  - { id: 5, class: _ }
-  - { id: 6, class: _ }
-  - { id: 7, class: _ }
-  - { id: 8, class: _ }
 body:             |
   bb.0.entry:
-    liveins: $a4
+    liveins: $a4, $d4
     ; CHECK-LABEL: name: test_merge
-    ; CHECK: liveins: $a4
+    ; CHECK: liveins: $a4, $d4
     ; CHECK: [[COPY:%[0-9]+]]:addrregbank(p0) = COPY $a4
-    ; CHECK: [[LOAD:%[0-9]+]]:dataregbank(s32) = G_LOAD [[COPY]](p0) :: (load 1)
-    ; CHECK: [[TRUNC:%[0-9]+]]:dataregbank(s8) = G_TRUNC [[LOAD]](s32)
-    ; CHECK: [[MV:%[0-9]+]]:dataregbank(s16) = G_MERGE_VALUES [[TRUNC]](s8), [[TRUNC]](s8)
-    ; CHECK: [[MV1:%[0-9]+]]:dataregbank(s32) = G_MERGE_VALUES [[MV]](s16), [[MV]](s16)
-    ; CHECK: [[MV2:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[MV1]](s32), [[MV1]](s32)
-    ; CHECK: [[MV3:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8), [[TRUNC]](s8)
-    ; CHECK: [[MV4:%[0-9]+]]:dataregbank(p0) = G_MERGE_VALUES [[MV]](s16), [[MV]](s16)
-    ; CHECK: [[CROSSBANK_MERGE:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[COPY]](p0), [[COPY]](p0)
-    ; CHECK: $e2 = COPY [[MV2]](s64)
-    ; CHECK: $e2 = COPY [[MV3]](s64)
-    ; CHECK: $a2 = COPY [[MV4]](p0)
-    ; CHECK: $e2 = COPY [[CROSSBANK_MERGE]](s64)
+    ; CHECK: [[COPY1:%[0-9]+]]:dataregbank(s32) = COPY $d4
+    ; CHECK: [[MV:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[COPY1]](s32), [[COPY1]](s32)
+    ; CHECK: [[MV1:%[0-9]+]]:dataregbank(s64) = G_MERGE_VALUES [[COPY]](p0), [[COPY]](p0)
+    ; CHECK: $e2 = COPY [[MV]](s64)
+    ; CHECK: $e2 = COPY [[MV1]](s64)
     %0(p0) = COPY $a4
-    %1(s32) = G_LOAD %0(p0) :: (load 1)
-    %2(s8) = G_TRUNC %1(s32)
-    %3(s16) = G_MERGE_VALUES %2(s8), %2(s8)
-    %4(s32) = G_MERGE_VALUES %3(s16), %3(s16)
-    %5(s64) = G_MERGE_VALUES %4(s32), %4(s32)
-    %6(s64) = G_MERGE_VALUES %2(s8), %2(s8), %2(s8), %2(s8), %2(s8), %2(s8), %2(s8), %2(s8)
-    %7(p0) = G_MERGE_VALUES %3(s16), %3(s16)
-    %8(s64) = G_MERGE_VALUES %0(p0), %0(p0)
-    $e2 = COPY %5(s64)
-    $e2 = COPY %6(s64)
-    $a2 = COPY %7(p0)
-    $e2 = COPY %8(s64)
+    %1(s32) = COPY $d4
+    %2(s64) = G_MERGE_VALUES %1(s32), %1(s32)
+    %3(s64) = G_MERGE_VALUES %0(p0), %0(p0)
+    $e2 = COPY %2(s64)
+    $e2 = COPY %3(s64)
 ...
 
 ---
@@ -58,60 +39,23 @@ registers:
   - { id: 2, class: _ }
   - { id: 3, class: _ }
   - { id: 4, class: _ }
-  - { id: 5, class: _ }
-  - { id: 6, class: _ }
-  - { id: 7, class: _ }
-  - { id: 8, class: _ }
-  - { id: 9, class: _ }
-  - { id: 10, class: _ }
-  - { id: 11, class: _ }
-  - { id: 12, class: _ }
-  - { id: 13, class: _ }
-  - { id: 14, class: _ }
-  - { id: 15, class: _ }
-  - { id: 16, class: _ }
-  - { id: 17, class: _ }
-  - { id: 18, class: _ }
-  - { id: 19, class: _ }
-  - { id: 20, class: _ }
-  - { id: 21, class: _ }
-  - { id: 22, class: _ }
-  - { id: 23, class: _ }
-  - { id: 24, class: _ }
 body:             |
   bb.0.entry:
-    liveins: $a4, $e4
+    liveins: $e4
     ; CHECK-LABEL: name: test_unmerge
-    ; CHECK: liveins: $a4, $e4
-    ; CHECK: [[COPY:%[0-9]+]]:addrregbank(p0) = COPY $a4
-    ; CHECK: [[COPY1:%[0-9]+]]:dataregbank(s64) = COPY $e4
-    ; CHECK: [[UV:%[0-9]+]]:dataregbank(s32), [[UV1:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[UV2:%[0-9]+]]:dataregbank(s16), [[UV3:%[0-9]+]]:dataregbank(s16) = G_UNMERGE_VALUES [[UV]](s32)
-    ; CHECK: [[UV4:%[0-9]+]]:dataregbank(s8), [[UV5:%[0-9]+]]:dataregbank(s8) = G_UNMERGE_VALUES [[UV2]](s16)
-    ; CHECK: [[UV6:%[0-9]+]]:dataregbank(s8), [[UV7:%[0-9]+]]:dataregbank(s8), [[UV8:%[0-9]+]]:dataregbank(s8), [[UV9:%[0-9]+]]:dataregbank(s8), [[UV10:%[0-9]+]]:dataregbank(s8), [[UV11:%[0-9]+]]:dataregbank(s8), [[UV12:%[0-9]+]]:dataregbank(s8), [[UV13:%[0-9]+]]:dataregbank(s8) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[CROSSBANK_CP:%[0-9]+]]:dataregbank(p0) = COPY [[COPY]](p0)
-    ; CHECK: [[UV14:%[0-9]+]]:dataregbank(s8), [[UV15:%[0-9]+]]:dataregbank(s8), [[UV16:%[0-9]+]]:dataregbank(s8), [[UV17:%[0-9]+]]:dataregbank(s8) = G_UNMERGE_VALUES [[CROSSBANK_CP]](p0)
-    ; CHECK: [[CROSSBANK_UM:%[0-9]+]]:addrregbank(p0), [[CROSSBANK_UM2:%[0-9]+]]:addrregbank(p0) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[ANYEXT:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV4]](s8)
-    ; CHECK: [[ANYEXT1:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV6]](s8)
-    ; CHECK: [[ANYEXT2:%[0-9]+]]:dataregbank(s32) = G_ANYEXT [[UV14]](s8)
-    ; CHECK: $d2 = COPY [[ANYEXT]](s32)
-    ; CHECK: $d3 = COPY [[ANYEXT1]](s32)
-    ; CHECK: $d4 = COPY [[ANYEXT2]](s32)
-    ; CHECK: $a2 = COPY [[CROSSBANK_UM]](p0)
-    %0(p0) = COPY $a4
-    %1(s64) = COPY $e4
-    %2(s32), %3(s32) = G_UNMERGE_VALUES %1(s64)
-    %4(s16), %5(s16) = G_UNMERGE_VALUES %2(s32)
-    %6(s8), %7(s8) = G_UNMERGE_VALUES %4(s16)
-    %8(s8), %9(s8), %10(s8), %11(s8), %12(s8), %13(s8), %14(s8), %15(s8) = G_UNMERGE_VALUES %1(s64)
-    %16(s8), %17(s8), %18(s8), %19(s8) = G_UNMERGE_VALUES %0(p0)
-    %20(p0), %21(p0) = G_UNMERGE_VALUES %1(s64)
-    %22(s32) = G_ANYEXT %6(s8)
-    %23(s32) = G_ANYEXT %8(s8)
-    %24(s32) = G_ANYEXT %16(s8)
-    $d2 = COPY %22(s32)
-    $d3 = COPY %23(s32)
-    $d4 = COPY %24(s32)
-    $a2 = COPY %20(p0)
+    ; CHECK: liveins: $e4
+    ; CHECK: [[COPY:%[0-9]+]]:dataregbank(s64) = COPY $e4
+    ; CHECK: [[UV:%[0-9]+]]:dataregbank(s32), [[UV1:%[0-9]+]]:dataregbank(s32) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: [[UV2:%[0-9]+]]:addrregbank(p0), [[UV3:%[0-9]+]]:addrregbank(p0) = G_UNMERGE_VALUES [[COPY]](s64)
+    ; CHECK: $d2 = COPY [[UV]](s32)
+    ; CHECK: $d3 = COPY [[UV1]](s32)
+    ; CHECK: $a2 = COPY [[UV2]](p0)
+    ; CHECK: $a3 = COPY [[UV3]](p0)
+    %0(s64) = COPY $e4
+    %1(s32), %2(s32) = G_UNMERGE_VALUES %0(s64)
+    %3(p0), %4(p0) = G_UNMERGE_VALUES %0(s64)
+    $d2 = COPY %1(s32)
+    $d3 = COPY %2(s32)
+    $a2 = COPY %3(p0)
+    $a3 = COPY %4(p0)
 ...

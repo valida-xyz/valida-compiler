@@ -78,86 +78,171 @@ body:             |
     ; CHECK-LABEL: name: test_load_unaligned
     ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
     ; CHECK: [[LOAD:%[0-9]+]]:_(s32) = G_LOAD [[COPY]](p0) :: (load 1)
-    ; CHECK: [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD]](s32)
     ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
     ; CHECK: [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C]](s32)
     ; CHECK: [[LOAD1:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD]](p0) :: (load 1 + 1)
-    ; CHECK: [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD1]](s32)
-    ; CHECK: [[MV:%[0-9]+]]:_(s16) = G_MERGE_VALUES [[TRUNC]](s8), [[TRUNC1]](s8)
-    ; CHECK: [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[MV]](s16)
-    ; CHECK: $d2 = COPY [[SEXT]](s32)
+    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY [[C1]](s32)
+    ; CHECK: [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY1]], [[C2]]
+    ; CHECK: [[C3:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[LOAD1]](s32)
+    ; CHECK: [[AND1:%[0-9]+]]:_(s32) = G_AND [[COPY2]], [[C3]]
+    ; CHECK: [[SHL:%[0-9]+]]:_(s32) = G_SHL [[AND1]], [[AND]](s32)
+    ; CHECK: [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[LOAD]](s32)
+    ; CHECK: [[AND2:%[0-9]+]]:_(s32) = G_AND [[COPY3]], [[C4]]
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[SHL]](s32)
+    ; CHECK: [[OR:%[0-9]+]]:_(s32) = G_OR [[AND2]], [[COPY4]]
+    ; CHECK: [[COPY5:%[0-9]+]]:_(s32) = COPY [[OR]](s32)
+    ; CHECK: [[SEXT_INREG:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY5]], 16
+    ; CHECK: $d2 = COPY [[SEXT_INREG]](s32)
     ; CHECK: [[LOAD2:%[0-9]+]]:_(s32) = G_LOAD [[COPY]](p0) :: (load 1)
-    ; CHECK: [[TRUNC2:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD2]](s32)
-    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C1]](s32)
+    ; CHECK: [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C5]](s32)
     ; CHECK: [[LOAD3:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD1]](p0) :: (load 1 + 1)
-    ; CHECK: [[TRUNC3:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD3]](s32)
-    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C2]](s32)
+    ; CHECK: [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C6]](s32)
     ; CHECK: [[LOAD4:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD2]](p0) :: (load 1 + 2)
-    ; CHECK: [[TRUNC4:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD4]](s32)
-    ; CHECK: [[C3:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C3]](s32)
+    ; CHECK: [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C7]](s32)
     ; CHECK: [[LOAD5:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD3]](p0) :: (load 1 + 3)
-    ; CHECK: [[TRUNC5:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD5]](s32)
-    ; CHECK: [[MV1:%[0-9]+]]:_(s32) = G_MERGE_VALUES [[TRUNC2]](s8), [[TRUNC3]](s8), [[TRUNC4]](s8), [[TRUNC5]](s8)
-    ; CHECK: $d2 = COPY [[MV1]](s32)
+    ; CHECK: [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY6:%[0-9]+]]:_(s32) = COPY [[LOAD2]](s32)
+    ; CHECK: [[AND3:%[0-9]+]]:_(s32) = G_AND [[COPY6]], [[C8]]
+    ; CHECK: [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY7:%[0-9]+]]:_(s32) = COPY [[LOAD3]](s32)
+    ; CHECK: [[AND4:%[0-9]+]]:_(s32) = G_AND [[COPY7]], [[C9]]
+    ; CHECK: [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[SHL1:%[0-9]+]]:_(s32) = G_SHL [[AND4]], [[C10]](s32)
+    ; CHECK: [[OR1:%[0-9]+]]:_(s32) = G_OR [[AND3]], [[SHL1]]
+    ; CHECK: [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY8:%[0-9]+]]:_(s32) = COPY [[LOAD4]](s32)
+    ; CHECK: [[AND5:%[0-9]+]]:_(s32) = G_AND [[COPY8]], [[C11]]
+    ; CHECK: [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[SHL2:%[0-9]+]]:_(s32) = G_SHL [[AND5]], [[C12]](s32)
+    ; CHECK: [[OR2:%[0-9]+]]:_(s32) = G_OR [[OR1]], [[SHL2]]
+    ; CHECK: [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY9:%[0-9]+]]:_(s32) = COPY [[LOAD5]](s32)
+    ; CHECK: [[AND6:%[0-9]+]]:_(s32) = G_AND [[COPY9]], [[C13]]
+    ; CHECK: [[C14:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[SHL3:%[0-9]+]]:_(s32) = G_SHL [[AND6]], [[C14]](s32)
+    ; CHECK: [[OR3:%[0-9]+]]:_(s32) = G_OR [[OR2]], [[SHL3]]
+    ; CHECK: $d2 = COPY [[OR3]](s32)
     ; CHECK: [[LOAD6:%[0-9]+]]:_(s32) = G_LOAD [[COPY]](p0) :: (load 1)
-    ; CHECK: [[TRUNC6:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD6]](s32)
-    ; CHECK: [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C4]](s32)
+    ; CHECK: [[C15:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C15]](s32)
     ; CHECK: [[LOAD7:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD4]](p0) :: (load 1 + 1)
-    ; CHECK: [[TRUNC7:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD7]](s32)
-    ; CHECK: [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C5]](s32)
+    ; CHECK: [[C16:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C16]](s32)
     ; CHECK: [[LOAD8:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD5]](p0) :: (load 1 + 2)
-    ; CHECK: [[TRUNC8:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD8]](s32)
-    ; CHECK: [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD6:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C6]](s32)
+    ; CHECK: [[C17:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD6:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C17]](s32)
     ; CHECK: [[LOAD9:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD6]](p0) :: (load 1 + 3)
-    ; CHECK: [[TRUNC9:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD9]](s32)
-    ; CHECK: [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
-    ; CHECK: [[PTR_ADD7:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C7]](s32)
+    ; CHECK: [[C18:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+    ; CHECK: [[PTR_ADD7:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C18]](s32)
     ; CHECK: [[LOAD10:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD7]](p0) :: (load 1 + 4)
-    ; CHECK: [[TRUNC10:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD10]](s32)
-    ; CHECK: [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 5
-    ; CHECK: [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C8]](s32)
+    ; CHECK: [[C19:%[0-9]+]]:_(s32) = G_CONSTANT i32 5
+    ; CHECK: [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C19]](s32)
     ; CHECK: [[LOAD11:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD8]](p0) :: (load 1 + 5)
-    ; CHECK: [[TRUNC11:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD11]](s32)
-    ; CHECK: [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 6
-    ; CHECK: [[PTR_ADD9:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
+    ; CHECK: [[C20:%[0-9]+]]:_(s32) = G_CONSTANT i32 6
+    ; CHECK: [[PTR_ADD9:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C20]](s32)
     ; CHECK: [[LOAD12:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD9]](p0) :: (load 1 + 6)
-    ; CHECK: [[TRUNC12:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD12]](s32)
-    ; CHECK: [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 7
-    ; CHECK: [[PTR_ADD10:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C10]](s32)
+    ; CHECK: [[C21:%[0-9]+]]:_(s32) = G_CONSTANT i32 7
+    ; CHECK: [[PTR_ADD10:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C21]](s32)
     ; CHECK: [[LOAD13:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD10]](p0) :: (load 1 + 7)
-    ; CHECK: [[TRUNC13:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD13]](s32)
-    ; CHECK: [[MV2:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[TRUNC6]](s8), [[TRUNC7]](s8), [[TRUNC8]](s8), [[TRUNC9]](s8), [[TRUNC10]](s8), [[TRUNC11]](s8), [[TRUNC12]](s8), [[TRUNC13]](s8)
-    ; CHECK: $e2 = COPY [[MV2]](s64)
+    ; CHECK: [[C22:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY10:%[0-9]+]]:_(s32) = COPY [[LOAD6]](s32)
+    ; CHECK: [[AND7:%[0-9]+]]:_(s32) = G_AND [[COPY10]], [[C22]]
+    ; CHECK: [[C23:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY11:%[0-9]+]]:_(s32) = COPY [[LOAD7]](s32)
+    ; CHECK: [[AND8:%[0-9]+]]:_(s32) = G_AND [[COPY11]], [[C23]]
+    ; CHECK: [[C24:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[SHL4:%[0-9]+]]:_(s32) = G_SHL [[AND8]], [[C24]](s32)
+    ; CHECK: [[OR4:%[0-9]+]]:_(s32) = G_OR [[AND7]], [[SHL4]]
+    ; CHECK: [[C25:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY12:%[0-9]+]]:_(s32) = COPY [[LOAD8]](s32)
+    ; CHECK: [[AND9:%[0-9]+]]:_(s32) = G_AND [[COPY12]], [[C25]]
+    ; CHECK: [[C26:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[SHL5:%[0-9]+]]:_(s32) = G_SHL [[AND9]], [[C26]](s32)
+    ; CHECK: [[OR5:%[0-9]+]]:_(s32) = G_OR [[OR4]], [[SHL5]]
+    ; CHECK: [[C27:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY13:%[0-9]+]]:_(s32) = COPY [[LOAD9]](s32)
+    ; CHECK: [[AND10:%[0-9]+]]:_(s32) = G_AND [[COPY13]], [[C27]]
+    ; CHECK: [[C28:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[SHL6:%[0-9]+]]:_(s32) = G_SHL [[AND10]], [[C28]](s32)
+    ; CHECK: [[OR6:%[0-9]+]]:_(s32) = G_OR [[OR5]], [[SHL6]]
+    ; CHECK: [[C29:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY14:%[0-9]+]]:_(s32) = COPY [[LOAD10]](s32)
+    ; CHECK: [[AND11:%[0-9]+]]:_(s32) = G_AND [[COPY14]], [[C29]]
+    ; CHECK: [[C30:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY15:%[0-9]+]]:_(s32) = COPY [[LOAD11]](s32)
+    ; CHECK: [[AND12:%[0-9]+]]:_(s32) = G_AND [[COPY15]], [[C30]]
+    ; CHECK: [[C31:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[SHL7:%[0-9]+]]:_(s32) = G_SHL [[AND12]], [[C31]](s32)
+    ; CHECK: [[OR7:%[0-9]+]]:_(s32) = G_OR [[AND11]], [[SHL7]]
+    ; CHECK: [[C32:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY16:%[0-9]+]]:_(s32) = COPY [[LOAD12]](s32)
+    ; CHECK: [[AND13:%[0-9]+]]:_(s32) = G_AND [[COPY16]], [[C32]]
+    ; CHECK: [[C33:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[SHL8:%[0-9]+]]:_(s32) = G_SHL [[AND13]], [[C33]](s32)
+    ; CHECK: [[OR8:%[0-9]+]]:_(s32) = G_OR [[OR7]], [[SHL8]]
+    ; CHECK: [[C34:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY17:%[0-9]+]]:_(s32) = COPY [[LOAD13]](s32)
+    ; CHECK: [[AND14:%[0-9]+]]:_(s32) = G_AND [[COPY17]], [[C34]]
+    ; CHECK: [[C35:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[SHL9:%[0-9]+]]:_(s32) = G_SHL [[AND14]], [[C35]](s32)
+    ; CHECK: [[OR9:%[0-9]+]]:_(s32) = G_OR [[OR8]], [[SHL9]]
+    ; CHECK: [[MV:%[0-9]+]]:_(s64) = G_MERGE_VALUES [[OR6]](s32), [[OR9]](s32)
+    ; CHECK: $e2 = COPY [[MV]](s64)
     ; CHECK: [[LOAD14:%[0-9]+]]:_(s32) = G_LOAD [[COPY]](p0) :: (load 1)
-    ; CHECK: [[TRUNC14:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD14]](s32)
-    ; CHECK: [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD11:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C11]](s32)
+    ; CHECK: [[C36:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD11:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C36]](s32)
     ; CHECK: [[LOAD15:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD11]](p0) :: (load 1 + 1)
-    ; CHECK: [[TRUNC15:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD15]](s32)
-    ; CHECK: [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD12:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C12]](s32)
+    ; CHECK: [[C37:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD12:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C37]](s32)
     ; CHECK: [[LOAD16:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD12]](p0) :: (load 1 + 2)
-    ; CHECK: [[TRUNC16:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD16]](s32)
-    ; CHECK: [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD13:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C13]](s32)
+    ; CHECK: [[C38:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD13:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C38]](s32)
     ; CHECK: [[LOAD17:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD13]](p0) :: (load 1 + 3)
-    ; CHECK: [[TRUNC17:%[0-9]+]]:_(s8) = G_TRUNC [[LOAD17]](s32)
-    ; CHECK: [[MV3:%[0-9]+]]:_(p0) = G_MERGE_VALUES [[TRUNC14]](s8), [[TRUNC15]](s8), [[TRUNC16]](s8), [[TRUNC17]](s8)
-    ; CHECK: $a2 = COPY [[MV3]](p0)
+    ; CHECK: [[C39:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY18:%[0-9]+]]:_(s32) = COPY [[LOAD14]](s32)
+    ; CHECK: [[AND15:%[0-9]+]]:_(s32) = G_AND [[COPY18]], [[C39]]
+    ; CHECK: [[C40:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY19:%[0-9]+]]:_(s32) = COPY [[LOAD15]](s32)
+    ; CHECK: [[AND16:%[0-9]+]]:_(s32) = G_AND [[COPY19]], [[C40]]
+    ; CHECK: [[C41:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[SHL10:%[0-9]+]]:_(s32) = G_SHL [[AND16]], [[C41]](s32)
+    ; CHECK: [[OR10:%[0-9]+]]:_(s32) = G_OR [[AND15]], [[SHL10]]
+    ; CHECK: [[C42:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY20:%[0-9]+]]:_(s32) = COPY [[LOAD16]](s32)
+    ; CHECK: [[AND17:%[0-9]+]]:_(s32) = G_AND [[COPY20]], [[C42]]
+    ; CHECK: [[C43:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[SHL11:%[0-9]+]]:_(s32) = G_SHL [[AND17]], [[C43]](s32)
+    ; CHECK: [[OR11:%[0-9]+]]:_(s32) = G_OR [[OR10]], [[SHL11]]
+    ; CHECK: [[C44:%[0-9]+]]:_(s32) = G_CONSTANT i32 255
+    ; CHECK: [[COPY21:%[0-9]+]]:_(s32) = COPY [[LOAD17]](s32)
+    ; CHECK: [[AND18:%[0-9]+]]:_(s32) = G_AND [[COPY21]], [[C44]]
+    ; CHECK: [[C45:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[SHL12:%[0-9]+]]:_(s32) = G_SHL [[AND18]], [[C45]](s32)
+    ; CHECK: [[OR12:%[0-9]+]]:_(s32) = G_OR [[OR11]], [[SHL12]]
+    ; CHECK: [[INTTOPTR:%[0-9]+]]:_(p0) = G_INTTOPTR [[OR12]](s32)
+    ; CHECK: $a2 = COPY [[INTTOPTR]](p0)
     ; CHECK: [[LOAD18:%[0-9]+]]:_(s32) = G_LOAD [[COPY]](p0) :: (load 2)
-    ; CHECK: [[TRUNC18:%[0-9]+]]:_(s16) = G_TRUNC [[LOAD18]](s32)
-    ; CHECK: [[C14:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD14:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C14]](s32)
+    ; CHECK: [[C46:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD14:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C46]](s32)
     ; CHECK: [[LOAD19:%[0-9]+]]:_(s32) = G_LOAD [[PTR_ADD14]](p0) :: (load 2 + 2)
-    ; CHECK: [[TRUNC19:%[0-9]+]]:_(s16) = G_TRUNC [[LOAD19]](s32)
-    ; CHECK: [[MV4:%[0-9]+]]:_(p0) = G_MERGE_VALUES [[TRUNC18]](s16), [[TRUNC19]](s16)
-    ; CHECK: $a2 = COPY [[MV4]](p0)
+    ; CHECK: [[C47:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY22:%[0-9]+]]:_(s32) = COPY [[LOAD18]](s32)
+    ; CHECK: [[AND19:%[0-9]+]]:_(s32) = G_AND [[COPY22]], [[C47]]
+    ; CHECK: [[C48:%[0-9]+]]:_(s32) = G_CONSTANT i32 65535
+    ; CHECK: [[COPY23:%[0-9]+]]:_(s32) = COPY [[LOAD19]](s32)
+    ; CHECK: [[AND20:%[0-9]+]]:_(s32) = G_AND [[COPY23]], [[C48]]
+    ; CHECK: [[C49:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[SHL13:%[0-9]+]]:_(s32) = G_SHL [[AND20]], [[C49]](s32)
+    ; CHECK: [[OR13:%[0-9]+]]:_(s32) = G_OR [[AND19]], [[SHL13]]
+    ; CHECK: [[INTTOPTR1:%[0-9]+]]:_(p0) = G_INTTOPTR [[OR13]](s32)
+    ; CHECK: $a2 = COPY [[INTTOPTR1]](p0)
     %0:_(p0) = COPY $a4
     ; Unaligned loads
     %1:_(s16) = G_LOAD %0(p0) :: (load 2, align 1)
@@ -247,81 +332,113 @@ body:             |
     ; CHECK-LABEL: name: test_store_unaligned
     ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
     ; CHECK: [[COPY1:%[0-9]+]]:_(s64) = COPY $e4
-    ; CHECK: [[UV:%[0-9]+]]:_(s8), [[UV1:%[0-9]+]]:_(s8), [[UV2:%[0-9]+]]:_(s8), [[UV3:%[0-9]+]]:_(s8), [[UV4:%[0-9]+]]:_(s8), [[UV5:%[0-9]+]]:_(s8), [[UV6:%[0-9]+]]:_(s8), [[UV7:%[0-9]+]]:_(s8) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[UV]](s8)
-    ; CHECK: G_STORE [[ANYEXT]](s32), [[COPY]](p0) :: (store 1)
-    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C]](s32)
-    ; CHECK: [[ANYEXT1:%[0-9]+]]:_(s32) = G_ANYEXT [[UV1]](s8)
-    ; CHECK: G_STORE [[ANYEXT1]](s32), [[PTR_ADD]](p0) :: (store 1 + 1)
-    ; CHECK: [[UV8:%[0-9]+]]:_(s8), [[UV9:%[0-9]+]]:_(s8), [[UV10:%[0-9]+]]:_(s8), [[UV11:%[0-9]+]]:_(s8), [[UV12:%[0-9]+]]:_(s8), [[UV13:%[0-9]+]]:_(s8), [[UV14:%[0-9]+]]:_(s8), [[UV15:%[0-9]+]]:_(s8) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[ANYEXT2:%[0-9]+]]:_(s32) = G_ANYEXT [[UV8]](s8)
-    ; CHECK: G_STORE [[ANYEXT2]](s32), [[COPY]](p0) :: (store 1)
-    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C1]](s32)
-    ; CHECK: [[ANYEXT3:%[0-9]+]]:_(s32) = G_ANYEXT [[UV9]](s8)
-    ; CHECK: G_STORE [[ANYEXT3]](s32), [[PTR_ADD1]](p0) :: (store 1 + 1)
-    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C2]](s32)
-    ; CHECK: [[ANYEXT4:%[0-9]+]]:_(s32) = G_ANYEXT [[UV10]](s8)
-    ; CHECK: G_STORE [[ANYEXT4]](s32), [[PTR_ADD2]](p0) :: (store 1 + 2)
-    ; CHECK: [[C3:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C3]](s32)
-    ; CHECK: [[ANYEXT5:%[0-9]+]]:_(s32) = G_ANYEXT [[UV11]](s8)
-    ; CHECK: G_STORE [[ANYEXT5]](s32), [[PTR_ADD3]](p0) :: (store 1 + 3)
-    ; CHECK: [[UV16:%[0-9]+]]:_(s8), [[UV17:%[0-9]+]]:_(s8), [[UV18:%[0-9]+]]:_(s8), [[UV19:%[0-9]+]]:_(s8), [[UV20:%[0-9]+]]:_(s8), [[UV21:%[0-9]+]]:_(s8), [[UV22:%[0-9]+]]:_(s8), [[UV23:%[0-9]+]]:_(s8) = G_UNMERGE_VALUES [[COPY1]](s64)
-    ; CHECK: [[ANYEXT6:%[0-9]+]]:_(s32) = G_ANYEXT [[UV16]](s8)
-    ; CHECK: G_STORE [[ANYEXT6]](s32), [[COPY]](p0) :: (store 1)
-    ; CHECK: [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C4]](s32)
-    ; CHECK: [[ANYEXT7:%[0-9]+]]:_(s32) = G_ANYEXT [[UV17]](s8)
-    ; CHECK: G_STORE [[ANYEXT7]](s32), [[PTR_ADD4]](p0) :: (store 1 + 1)
-    ; CHECK: [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C5]](s32)
-    ; CHECK: [[ANYEXT8:%[0-9]+]]:_(s32) = G_ANYEXT [[UV18]](s8)
-    ; CHECK: G_STORE [[ANYEXT8]](s32), [[PTR_ADD5]](p0) :: (store 1 + 2)
-    ; CHECK: [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD6:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C6]](s32)
-    ; CHECK: [[ANYEXT9:%[0-9]+]]:_(s32) = G_ANYEXT [[UV19]](s8)
-    ; CHECK: G_STORE [[ANYEXT9]](s32), [[PTR_ADD6]](p0) :: (store 1 + 3)
-    ; CHECK: [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
-    ; CHECK: [[PTR_ADD7:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C7]](s32)
-    ; CHECK: [[ANYEXT10:%[0-9]+]]:_(s32) = G_ANYEXT [[UV20]](s8)
-    ; CHECK: G_STORE [[ANYEXT10]](s32), [[PTR_ADD7]](p0) :: (store 1 + 4)
-    ; CHECK: [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 5
-    ; CHECK: [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C8]](s32)
-    ; CHECK: [[ANYEXT11:%[0-9]+]]:_(s32) = G_ANYEXT [[UV21]](s8)
-    ; CHECK: G_STORE [[ANYEXT11]](s32), [[PTR_ADD8]](p0) :: (store 1 + 5)
-    ; CHECK: [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 6
-    ; CHECK: [[PTR_ADD9:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
-    ; CHECK: [[ANYEXT12:%[0-9]+]]:_(s32) = G_ANYEXT [[UV22]](s8)
-    ; CHECK: G_STORE [[ANYEXT12]](s32), [[PTR_ADD9]](p0) :: (store 1 + 6)
-    ; CHECK: [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 7
-    ; CHECK: [[PTR_ADD10:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C10]](s32)
-    ; CHECK: [[ANYEXT13:%[0-9]+]]:_(s32) = G_ANYEXT [[UV23]](s8)
-    ; CHECK: G_STORE [[ANYEXT13]](s32), [[PTR_ADD10]](p0) :: (store 1 + 7)
-    ; CHECK: [[UV24:%[0-9]+]]:_(s8), [[UV25:%[0-9]+]]:_(s8), [[UV26:%[0-9]+]]:_(s8), [[UV27:%[0-9]+]]:_(s8) = G_UNMERGE_VALUES [[COPY]](p0)
-    ; CHECK: [[ANYEXT14:%[0-9]+]]:_(s32) = G_ANYEXT [[UV24]](s8)
-    ; CHECK: G_STORE [[ANYEXT14]](s32), [[COPY]](p0) :: (store 1)
-    ; CHECK: [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-    ; CHECK: [[PTR_ADD11:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C11]](s32)
-    ; CHECK: [[ANYEXT15:%[0-9]+]]:_(s32) = G_ANYEXT [[UV25]](s8)
-    ; CHECK: G_STORE [[ANYEXT15]](s32), [[PTR_ADD11]](p0) :: (store 1 + 1)
-    ; CHECK: [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD12:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C12]](s32)
-    ; CHECK: [[ANYEXT16:%[0-9]+]]:_(s32) = G_ANYEXT [[UV26]](s8)
-    ; CHECK: G_STORE [[ANYEXT16]](s32), [[PTR_ADD12]](p0) :: (store 1 + 2)
-    ; CHECK: [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
-    ; CHECK: [[PTR_ADD13:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C13]](s32)
-    ; CHECK: [[ANYEXT17:%[0-9]+]]:_(s32) = G_ANYEXT [[UV27]](s8)
-    ; CHECK: G_STORE [[ANYEXT17]](s32), [[PTR_ADD13]](p0) :: (store 1 + 3)
-    ; CHECK: [[UV28:%[0-9]+]]:_(s16), [[UV29:%[0-9]+]]:_(s16) = G_UNMERGE_VALUES [[COPY]](p0)
-    ; CHECK: [[ANYEXT18:%[0-9]+]]:_(s32) = G_ANYEXT [[UV28]](s16)
-    ; CHECK: G_STORE [[ANYEXT18]](s32), [[COPY]](p0) :: (store 2)
-    ; CHECK: [[C14:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
-    ; CHECK: [[PTR_ADD14:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C14]](s32)
-    ; CHECK: [[ANYEXT19:%[0-9]+]]:_(s32) = G_ANYEXT [[UV29]](s16)
-    ; CHECK: G_STORE [[ANYEXT19]](s32), [[PTR_ADD14]](p0) :: (store 2 + 2)
+    ; CHECK: [[UV:%[0-9]+]]:_(s32), [[UV1:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[LSHR:%[0-9]+]]:_(s32) = G_LSHR [[UV]], [[C]](s32)
+    ; CHECK: [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR1:%[0-9]+]]:_(s32) = G_LSHR [[UV]], [[C1]](s32)
+    ; CHECK: [[C2:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[LSHR2:%[0-9]+]]:_(s32) = G_LSHR [[UV]], [[C2]](s32)
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[UV]](s32)
+    ; CHECK: G_STORE [[COPY2]](s32), [[COPY]](p0) :: (store 1)
+    ; CHECK: [[C3:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C3]](s32)
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[LSHR]](s32)
+    ; CHECK: G_STORE [[COPY3]](s32), [[PTR_ADD]](p0) :: (store 1 + 1)
+    ; CHECK: [[UV2:%[0-9]+]]:_(s32), [[UV3:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[C4:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[LSHR3:%[0-9]+]]:_(s32) = G_LSHR [[UV2]], [[C4]](s32)
+    ; CHECK: [[C5:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR4:%[0-9]+]]:_(s32) = G_LSHR [[UV2]], [[C5]](s32)
+    ; CHECK: [[C6:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[LSHR5:%[0-9]+]]:_(s32) = G_LSHR [[UV2]], [[C6]](s32)
+    ; CHECK: [[COPY4:%[0-9]+]]:_(s32) = COPY [[UV2]](s32)
+    ; CHECK: G_STORE [[COPY4]](s32), [[COPY]](p0) :: (store 1)
+    ; CHECK: [[C7:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD1:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C7]](s32)
+    ; CHECK: [[COPY5:%[0-9]+]]:_(s32) = COPY [[LSHR3]](s32)
+    ; CHECK: G_STORE [[COPY5]](s32), [[PTR_ADD1]](p0) :: (store 1 + 1)
+    ; CHECK: [[C8:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD2:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C8]](s32)
+    ; CHECK: [[COPY6:%[0-9]+]]:_(s32) = COPY [[LSHR4]](s32)
+    ; CHECK: G_STORE [[COPY6]](s32), [[PTR_ADD2]](p0) :: (store 1 + 2)
+    ; CHECK: [[C9:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD3:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C9]](s32)
+    ; CHECK: [[COPY7:%[0-9]+]]:_(s32) = COPY [[LSHR5]](s32)
+    ; CHECK: G_STORE [[COPY7]](s32), [[PTR_ADD3]](p0) :: (store 1 + 3)
+    ; CHECK: [[UV4:%[0-9]+]]:_(s32), [[UV5:%[0-9]+]]:_(s32) = G_UNMERGE_VALUES [[COPY1]](s64)
+    ; CHECK: [[C10:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[LSHR6:%[0-9]+]]:_(s32) = G_LSHR [[UV4]], [[C10]](s32)
+    ; CHECK: [[C11:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR7:%[0-9]+]]:_(s32) = G_LSHR [[UV4]], [[C11]](s32)
+    ; CHECK: [[C12:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[LSHR8:%[0-9]+]]:_(s32) = G_LSHR [[UV4]], [[C12]](s32)
+    ; CHECK: [[C13:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[LSHR9:%[0-9]+]]:_(s32) = G_LSHR [[UV5]], [[C13]](s32)
+    ; CHECK: [[C14:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR10:%[0-9]+]]:_(s32) = G_LSHR [[UV5]], [[C14]](s32)
+    ; CHECK: [[C15:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[LSHR11:%[0-9]+]]:_(s32) = G_LSHR [[UV5]], [[C15]](s32)
+    ; CHECK: [[COPY8:%[0-9]+]]:_(s32) = COPY [[UV4]](s32)
+    ; CHECK: G_STORE [[COPY8]](s32), [[COPY]](p0) :: (store 1)
+    ; CHECK: [[C16:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD4:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C16]](s32)
+    ; CHECK: [[COPY9:%[0-9]+]]:_(s32) = COPY [[LSHR6]](s32)
+    ; CHECK: G_STORE [[COPY9]](s32), [[PTR_ADD4]](p0) :: (store 1 + 1)
+    ; CHECK: [[C17:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD5:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C17]](s32)
+    ; CHECK: [[COPY10:%[0-9]+]]:_(s32) = COPY [[LSHR7]](s32)
+    ; CHECK: G_STORE [[COPY10]](s32), [[PTR_ADD5]](p0) :: (store 1 + 2)
+    ; CHECK: [[C18:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD6:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C18]](s32)
+    ; CHECK: [[COPY11:%[0-9]+]]:_(s32) = COPY [[LSHR8]](s32)
+    ; CHECK: G_STORE [[COPY11]](s32), [[PTR_ADD6]](p0) :: (store 1 + 3)
+    ; CHECK: [[C19:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+    ; CHECK: [[PTR_ADD7:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C19]](s32)
+    ; CHECK: [[COPY12:%[0-9]+]]:_(s32) = COPY [[UV5]](s32)
+    ; CHECK: G_STORE [[COPY12]](s32), [[PTR_ADD7]](p0) :: (store 1 + 4)
+    ; CHECK: [[C20:%[0-9]+]]:_(s32) = G_CONSTANT i32 5
+    ; CHECK: [[PTR_ADD8:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C20]](s32)
+    ; CHECK: [[COPY13:%[0-9]+]]:_(s32) = COPY [[LSHR9]](s32)
+    ; CHECK: G_STORE [[COPY13]](s32), [[PTR_ADD8]](p0) :: (store 1 + 5)
+    ; CHECK: [[C21:%[0-9]+]]:_(s32) = G_CONSTANT i32 6
+    ; CHECK: [[PTR_ADD9:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C21]](s32)
+    ; CHECK: [[COPY14:%[0-9]+]]:_(s32) = COPY [[LSHR10]](s32)
+    ; CHECK: G_STORE [[COPY14]](s32), [[PTR_ADD9]](p0) :: (store 1 + 6)
+    ; CHECK: [[C22:%[0-9]+]]:_(s32) = G_CONSTANT i32 7
+    ; CHECK: [[PTR_ADD10:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C22]](s32)
+    ; CHECK: [[COPY15:%[0-9]+]]:_(s32) = COPY [[LSHR11]](s32)
+    ; CHECK: G_STORE [[COPY15]](s32), [[PTR_ADD10]](p0) :: (store 1 + 7)
+    ; CHECK: [[PTRTOINT:%[0-9]+]]:_(s32) = G_PTRTOINT [[COPY]](p0)
+    ; CHECK: [[C23:%[0-9]+]]:_(s32) = G_CONSTANT i32 8
+    ; CHECK: [[LSHR12:%[0-9]+]]:_(s32) = G_LSHR [[PTRTOINT]], [[C23]](s32)
+    ; CHECK: [[C24:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR13:%[0-9]+]]:_(s32) = G_LSHR [[PTRTOINT]], [[C24]](s32)
+    ; CHECK: [[C25:%[0-9]+]]:_(s32) = G_CONSTANT i32 24
+    ; CHECK: [[LSHR14:%[0-9]+]]:_(s32) = G_LSHR [[PTRTOINT]], [[C25]](s32)
+    ; CHECK: [[COPY16:%[0-9]+]]:_(s32) = COPY [[PTRTOINT]](s32)
+    ; CHECK: G_STORE [[COPY16]](s32), [[COPY]](p0) :: (store 1)
+    ; CHECK: [[C26:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
+    ; CHECK: [[PTR_ADD11:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C26]](s32)
+    ; CHECK: [[COPY17:%[0-9]+]]:_(s32) = COPY [[LSHR12]](s32)
+    ; CHECK: G_STORE [[COPY17]](s32), [[PTR_ADD11]](p0) :: (store 1 + 1)
+    ; CHECK: [[C27:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD12:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C27]](s32)
+    ; CHECK: [[COPY18:%[0-9]+]]:_(s32) = COPY [[LSHR13]](s32)
+    ; CHECK: G_STORE [[COPY18]](s32), [[PTR_ADD12]](p0) :: (store 1 + 2)
+    ; CHECK: [[C28:%[0-9]+]]:_(s32) = G_CONSTANT i32 3
+    ; CHECK: [[PTR_ADD13:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C28]](s32)
+    ; CHECK: [[COPY19:%[0-9]+]]:_(s32) = COPY [[LSHR14]](s32)
+    ; CHECK: G_STORE [[COPY19]](s32), [[PTR_ADD13]](p0) :: (store 1 + 3)
+    ; CHECK: [[PTRTOINT1:%[0-9]+]]:_(s32) = G_PTRTOINT [[COPY]](p0)
+    ; CHECK: [[C29:%[0-9]+]]:_(s32) = G_CONSTANT i32 16
+    ; CHECK: [[LSHR15:%[0-9]+]]:_(s32) = G_LSHR [[PTRTOINT1]], [[C29]](s32)
+    ; CHECK: [[COPY20:%[0-9]+]]:_(s32) = COPY [[PTRTOINT1]](s32)
+    ; CHECK: G_STORE [[COPY20]](s32), [[COPY]](p0) :: (store 2)
+    ; CHECK: [[C30:%[0-9]+]]:_(s32) = G_CONSTANT i32 2
+    ; CHECK: [[PTR_ADD14:%[0-9]+]]:_(p0) = G_PTR_ADD [[COPY]], [[C30]](s32)
+    ; CHECK: [[COPY21:%[0-9]+]]:_(s32) = COPY [[LSHR15]](s32)
+    ; CHECK: G_STORE [[COPY21]](s32), [[PTR_ADD14]](p0) :: (store 2 + 2)
     %0:_(p0) = COPY $a4
     %1:_(s64) = COPY $e4
     %2:_(s16) = G_TRUNC %1(s64)

@@ -18,6 +18,8 @@
 #include "llvm/Support/MathExtras.h"
 
 using namespace llvm;
+using namespace LegalityPredicates;
+using namespace LegalizeMutations;
 
 static LegalityPredicate isMisalignedMemAccess() {
   return [=](const LegalityQuery &Query) -> bool {
@@ -479,31 +481,42 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       // Lower anything left over to G_*EXT and G_LOAD
       .lower();
 
-  // G_MERGE_VALUES and G_UNMERGE_VALUES are legalizer artifacts. Therefore
-  // their types correspond to any legal types that are produced or consumed by
-  // our instructions. This means that we require the smaller type to be a power
-  // of 2 between s8 and s32 and the bigger type to be a power of 2 between s8
-  // and s64. Furthermore the bigger type must be a multiple of the smaller type
+  // G_MERGE_VALUES and G_UNMERGE_VALUES are legalizer artifacts and should only
+  // ever use types which are produced/consumed by our instructions. They will
+  // map to subregister copies, so only (s32, s64) pairs are valid. Everything
+  // else must use bit arithmetic
   for (unsigned OpCode : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
     const unsigned BigTyIdx = OpCode == G_MERGE_VALUES ? 0 : 1;
     const unsigned SmallTyIdx = OpCode == G_MERGE_VALUES ? 1 : 0;
 
     getActionDefinitionsBuilder(OpCode)
-        // Clamp SmallTy to s8-s32 and make it a power of 2
-        .clampScalar(SmallTyIdx, s8, s32)
-        .widenScalarToNextPow2(SmallTyIdx)
-        // Clamp BigTy to s8-s64 and make it a power of 2
-        .clampScalar(BigTyIdx, s8, s64)
-        .widenScalarToNextPow2(BigTyIdx)
-        // At this point we only have power of 2 types between s8 and s64
-        .legalIf([=](const LegalityQuery &Query) {
-          const LLT &BigTy = Query.Types[BigTyIdx];
-          const LLT &SmallTy = Query.Types[SmallTyIdx];
+        .legalIf(typePairInSet(BigTyIdx, SmallTyIdx, {{s64, s32}, {s64, p0}}))
+        // Lower anything that is happening on a single register
+        .lowerIf([=](const LegalityQuery &Query) {
+          const LLT BigTy = Query.Types[BigTyIdx];
+          const LLT SmallTy = Query.Types[SmallTyIdx];
+
           const unsigned BigSize = BigTy.getSizeInBits();
           const unsigned SmallSize = SmallTy.getSizeInBits();
 
-          return BigSize % SmallSize == 0;
-        });
+          return BigSize <= 32 || (BigSize <= 64 && SmallSize > 32);
+        })
+        // Although anything smaller than s32 is not legal, we let the combiner
+        // sort them out for us. Since merge/unmerge are legalizer artifacts
+        // we can be sure that any type, that does not match one of our consumed
+        // types, will get casted again, which enables the artifact combiner to
+        // get rid of the illegal merge. We therefore avoid infinite loops while
+        // also eliminating any illegal operations.
+        .widenScalarToNextPow2(SmallTyIdx, 8)
+        .maxScalar(SmallTyIdx, s32)
+        // To be able to legalize things like s56 <-> s8, widen if the BigTy is
+        // within 64-bits
+        .widenScalarIf(scalarNarrowerThan(BigTyIdx, 65),
+                       changeTo(SmallTyIdx, s32))
+        // We don't really want to do something custom here, but we need to tell
+        // the combiner that we don't care about a potentially illegal combine
+        // result.
+        .custom();
   }
 
   // G_EXTRACT and G_INSERT are meant to represent subregister copies and can
