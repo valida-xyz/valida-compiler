@@ -61,10 +61,40 @@ void HighTec::addClangTargetOptions(const ArgList &DriverArgs,
                                     Action::OffloadKind) const {}
 
 void HighTec::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
-                                           ArgStringList &CC1Args) const {}
+                                           ArgStringList &CC1Args) const {
+  if (DriverArgs.hasArg(options::OPT_nostdlibinc) ||
+      DriverArgs.hasArg(options::OPT_nostdincxx))
+    return;
+
+  const Driver &D = getDriver();
+
+  switch (GetCXXStdlibType(DriverArgs)) {
+  case ToolChain::CST_Libcxx: {
+    SmallString<128> P(llvm::sys::path::parent_path(D.Dir));
+    llvm::sys::path::append(P, "tricore", "include", "c++", "v1");
+    addSystemInclude(DriverArgs, CC1Args, P.str());
+    break;
+  }
+
+  default:
+    llvm_unreachable("invalid stdlib name");
+  }
+}
 
 void HighTec::AddCXXStdlibLibArgs(const ArgList &Args,
                                   ArgStringList &CmdArgs) const {}
+
+ToolChain::CXXStdlibType
+HighTec::GetCXXStdlibType(const llvm::opt::ArgList &Args) const {
+  if (Arg *A = Args.getLastArg(options::OPT_stdlib_EQ)) {
+    StringRef Value = A->getValue();
+    if (Value != "libc++")
+      getDriver().Diag(diag::err_drv_invalid_stdlib_name)
+          << A->getAsString(Args);
+  }
+
+  return ToolChain::CST_Libcxx;
+}
 
 void hightec::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                    const InputInfo &Output,

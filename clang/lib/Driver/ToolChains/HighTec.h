@@ -46,6 +46,8 @@ public:
   void AddCXXStdlibLibArgs(const llvm::opt::ArgList &Args,
                            llvm::opt::ArgStringList &CmdArgs) const override;
 
+  CXXStdlibType GetCXXStdlibType(const llvm::opt::ArgList &Args) const override;
+
 protected:
   Tool *buildLinker() const override;
 };
