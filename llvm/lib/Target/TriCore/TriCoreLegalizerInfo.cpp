@@ -90,7 +90,6 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   using namespace TargetOpcode;
   const LLT p0 = LLT::pointer(0, 32);
   const LLT s1 = LLT::scalar(1);
-  const LLT s8 = LLT::scalar(8);
   const LLT s16 = LLT::scalar(16);
   const LLT s32 = LLT::scalar(32);
   const LLT s64 = LLT::scalar(64);
@@ -102,11 +101,18 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
       .widenScalarToNextPow2(0, 32);
 
   // G_PHI should be legal for all consumed types to avoid unnecessary
-  // truncations and extensions
+  // truncations and extensions. Although s1 is also a consumed type, it is
+  // only ever as carry, which on TriCore is a special system register and
+  // therefore not relevant for use in G_PHI. Furthermore, s16 is only supported
+  // for half-floats, so we never widen to s16, but instead widen to at least
+  // s32. To not make non-half-float s16s legal, we also forbid s16 even though
+  // it is a consumed type. We will encounter way more shorts than half-floats
+  // anyway.
   getActionDefinitionsBuilder(G_PHI)
-      .legalFor({p0, s8, s16, s32, s64})
-      .clampScalar(0, s8, s64)
-      .widenScalarToNextPow2(0);
+      // FIXME: Make half-floats legal once we have float LLTs
+      .legalFor({p0, s32, s64})
+      .widenScalarToNextPow2(0, 32)
+      .clampScalar(0, s32, s64);
 
   // Pointers
 

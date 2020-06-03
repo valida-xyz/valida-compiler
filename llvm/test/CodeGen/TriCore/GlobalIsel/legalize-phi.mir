@@ -23,17 +23,17 @@ body:             |
   ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY $d5
   ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY $d6
   ; CHECK:   [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY2]](s32)
-  ; CHECK:   [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY]](s32)
   ; CHECK:   G_BRCOND [[TRUNC]](s1), %bb.1
   ; CHECK:   G_BR %bb.2
   ; CHECK: bb.1:
   ; CHECK:   successors: %bb.2(0x80000000)
-  ; CHECK:   [[TRUNC2:%[0-9]+]]:_(s8) = G_TRUNC [[COPY1]](s32)
+  ; CHECK:   [[COPY4:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
   ; CHECK: bb.2:
-  ; CHECK:   [[PHI:%[0-9]+]]:_(s8) = G_PHI [[TRUNC1]](s8), %bb.0, [[TRUNC2]](s8), %bb.1
+  ; CHECK:   [[PHI:%[0-9]+]]:_(s32) = G_PHI [[COPY3]](s32), %bb.0, [[COPY4]](s32), %bb.1
   ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 1
-  ; CHECK:   [[ANYEXT:%[0-9]+]]:_(s32) = G_ANYEXT [[PHI]](s8)
-  ; CHECK:   [[AND:%[0-9]+]]:_(s32) = G_AND [[ANYEXT]], [[C]]
+  ; CHECK:   [[COPY5:%[0-9]+]]:_(s32) = COPY [[PHI]](s32)
+  ; CHECK:   [[AND:%[0-9]+]]:_(s32) = G_AND [[COPY5]], [[C]]
   ; CHECK:   $d2 = COPY [[AND]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
   bb.0:
@@ -78,18 +78,19 @@ body:             |
   ; CHECK:   liveins: $d4
   ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
   ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 42
-  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s8) = G_TRUNC [[C]](s32)
   ; CHECK:   [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 -42
-  ; CHECK:   [[TRUNC1:%[0-9]+]]:_(s8) = G_TRUNC [[C1]](s32)
-  ; CHECK:   [[TRUNC2:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
-  ; CHECK:   G_BRCOND [[TRUNC2]](s1), %bb.1
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY [[C1]](s32)
+  ; CHECK:   G_BRCOND [[TRUNC]](s1), %bb.1
   ; CHECK:   G_BR %bb.2
   ; CHECK: bb.1:
   ; CHECK:   successors: %bb.2(0x80000000)
+  ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY [[C]](s32)
   ; CHECK: bb.2:
-  ; CHECK:   [[PHI:%[0-9]+]]:_(s8) = G_PHI [[TRUNC1]](s8), %bb.0, [[TRUNC]](s8), %bb.1
-  ; CHECK:   [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[PHI]](s8)
-  ; CHECK:   $d2 = COPY [[SEXT]](s32)
+  ; CHECK:   [[PHI:%[0-9]+]]:_(s32) = G_PHI [[COPY1]](s32), %bb.0, [[COPY2]](s32), %bb.1
+  ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY [[PHI]](s32)
+  ; CHECK:   [[SEXT_INREG:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY3]], 8
+  ; CHECK:   $d2 = COPY [[SEXT_INREG]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
   bb.0:
     successors: %bb.1, %bb.2
@@ -131,18 +132,19 @@ body:             |
   ; CHECK:   liveins: $d4
   ; CHECK:   [[COPY:%[0-9]+]]:_(s32) = COPY $d4
   ; CHECK:   [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 42
-  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s16) = G_TRUNC [[C]](s32)
   ; CHECK:   [[C1:%[0-9]+]]:_(s32) = G_CONSTANT i32 -42
-  ; CHECK:   [[TRUNC1:%[0-9]+]]:_(s16) = G_TRUNC [[C1]](s32)
-  ; CHECK:   [[TRUNC2:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
-  ; CHECK:   G_BRCOND [[TRUNC2]](s1), %bb.1
+  ; CHECK:   [[TRUNC:%[0-9]+]]:_(s1) = G_TRUNC [[COPY]](s32)
+  ; CHECK:   [[COPY1:%[0-9]+]]:_(s32) = COPY [[C1]](s32)
+  ; CHECK:   G_BRCOND [[TRUNC]](s1), %bb.1
   ; CHECK:   G_BR %bb.2
   ; CHECK: bb.1:
   ; CHECK:   successors: %bb.2(0x80000000)
+  ; CHECK:   [[COPY2:%[0-9]+]]:_(s32) = COPY [[C]](s32)
   ; CHECK: bb.2:
-  ; CHECK:   [[PHI:%[0-9]+]]:_(s16) = G_PHI [[TRUNC1]](s16), %bb.0, [[TRUNC]](s16), %bb.1
-  ; CHECK:   [[SEXT:%[0-9]+]]:_(s32) = G_SEXT [[PHI]](s16)
-  ; CHECK:   $d2 = COPY [[SEXT]](s32)
+  ; CHECK:   [[PHI:%[0-9]+]]:_(s32) = G_PHI [[COPY1]](s32), %bb.0, [[COPY2]](s32), %bb.1
+  ; CHECK:   [[COPY3:%[0-9]+]]:_(s32) = COPY [[PHI]](s32)
+  ; CHECK:   [[SEXT_INREG:%[0-9]+]]:_(s32) = G_SEXT_INREG [[COPY3]], 16
+  ; CHECK:   $d2 = COPY [[SEXT_INREG]](s32)
   ; CHECK:   RET implicit $a11, implicit $d2
   bb.0:
     successors: %bb.1, %bb.2
