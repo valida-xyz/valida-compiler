@@ -35,11 +35,15 @@ namespace {
 class TriCoreAsmPrinter : public AsmPrinter {
   TriCoreMCInstLower MCInstLowering;
 
+  // since "emitAssemblerFlag(MCAssemblerFlag::MCAF_Code32)" has no real effect
+  // this predicate variable is used to enforce 32 bit instruction emission
+  bool Code32;
+
 public:
   explicit TriCoreAsmPrinter(TargetMachine &TM,
                              std::unique_ptr<MCStreamer> Streamer)
-      : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(OutContext, *this) {
-  }
+      : AsmPrinter(TM, std::move(Streamer)), MCInstLowering(OutContext, *this),
+        Code32(false) {}
 
   StringRef getPassName() const override { return "TriCore Assembly Printer"; }
 
@@ -247,6 +251,9 @@ void TriCoreAsmPrinter::EmitJumpTableInsts(const MachineInstr *MI) {
     // Make sure that we use the 4-byte J instruction, as otherwise our address
     // calculation is broken
     OutStreamer->emitAssemblerFlag(MCAssemblerFlag::MCAF_Code32);
+
+    // Code32 directive active
+    Code32 = true;
 
     // Emit jump
     EmitToStreamer(*OutStreamer,
@@ -485,10 +492,13 @@ void TriCoreAsmPrinter::EmitToStreamer(MCStreamer &S, const MCInst &Inst) {
   bool Compressed = false;
   auto STI = *TM.getMCSubtargetInfo();
 
-  if (!STI.getFeatureBits()[TriCore::Only32BitInstructions])
+  // do not try to compress if Code32 directive active
+  if (!STI.getFeatureBits()[TriCore::Only32BitInstructions] && !Code32)
     Compressed =
         compressInstruction(CInst, Inst, STI, OutStreamer->getContext());
 
+  // turn off Code32 directive
+  Code32 = false;
   AsmPrinter::EmitToStreamer(*OutStreamer, Compressed ? CInst : Inst);
 }
 
