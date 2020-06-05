@@ -355,8 +355,8 @@ TriCoreLegalizerInfo::TriCoreLegalizerInfo(const TriCoreSubtarget &ST) {
   // G_SEXT_INREG is legal if it fits our registers
   getActionDefinitionsBuilder(G_SEXT_INREG)
       .legalForTypeWithAnyImm({s32, s64})
-      .clampScalar(0, s32, s64)
-      .widenScalarToNextPow2(0);
+      .widenScalarToNextPow2(0, 32)
+      .clampScalar(0, s32, s64);
 
   // G_INTRINSIC_TRUNC should use custom legalization since we cannot model all
   // semantics of this instruction on TriCore yet
