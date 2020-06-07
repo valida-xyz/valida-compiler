@@ -106,6 +106,9 @@ private:
   bool selectUnmerge(MachineInstr &I, MachineRegisterInfo &MRI) const;
   bool selectVaStart(MachineInstr &I, MachineFunction &MF,
                      MachineRegisterInfo &MRI) const;
+
+  // Optimization methods.
+  bool tryFoldIntegerCompare(MachineInstr &I) const;
 };
 
 } // end anonymous namespace
@@ -264,6 +267,108 @@ static unsigned getCompareWithImmediateOpcode(unsigned CmpRegReg, int64_t Imm) {
   case TriCore::JLTU_ddc:
     return isUInt<4>(Imm) ? TriCore::JLTU_dcc : 0;
   }
+}
+
+bool TriCoreInstructionSelector::tryFoldIntegerCompare(MachineInstr &I) const {
+  MachineIRBuilder MIRBuilder(I);
+  MachineRegisterInfo &MRI = *MIRBuilder.getMRI();
+  const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
+
+  // If there is a constant operand, it should always be the RHS operand
+  auto VRegAndVal =
+      getConstantVRegValWithLookThrough(I.getOperand(3).getReg(), MRI);
+  if (!VRegAndVal)
+    return false;
+
+  CmpInst::Predicate P = (CmpInst::Predicate)I.getOperand(1).getPredicate();
+  int64_t Imm = VRegAndVal->Value;
+
+  bool IsImm9 = isInt<9>(Imm);
+  bool IsUImm9 = isUInt<9>(Imm);
+
+  const Register &SrcReg = I.getOperand(2).getReg();
+  const RegisterBank *RB = RBI.getRegBank(SrcReg, MRI, TRI);
+
+  unsigned Opcode = 0;
+  bool AddImm = true;
+  if (RB->getID() == TriCore::AddrRegBankID) {
+    // On the address register bank, we only have immediate compares against
+    // zero
+    if (Imm != 0)
+      return false;
+
+    switch (P) {
+    default:
+      return false;
+    case CmpInst::ICMP_EQ:
+    case CmpInst::ICMP_NE:
+      Opcode = (P == CmpInst::ICMP_EQ) ? TriCore::EQZA_da : TriCore::NEZA_da;
+      AddImm = false;
+      break;
+    }
+  } else {
+    switch (P) {
+    default:
+      return false;
+    case CmpInst::ICMP_EQ:
+    case CmpInst::ICMP_NE:
+    case CmpInst::ICMP_SGE:
+    case CmpInst::ICMP_SLT:
+      if (!IsImm9)
+        return false;
+      break;
+    case CmpInst::ICMP_UGE:
+    case CmpInst::ICMP_ULT:
+      if (!IsUImm9)
+        return false;
+      break;
+    case CmpInst::ICMP_UGT:
+    case CmpInst::ICMP_ULE:
+      if ((static_cast<uint32_t>(Imm) == UINT32_MAX) || !isUInt<9>(Imm + 1))
+        return false;
+      Imm++;
+      break;
+    case CmpInst::ICMP_SGT:
+    case CmpInst::ICMP_SLE:
+      if (!isInt<9>(Imm + 1))
+        return false;
+      Imm++;
+      break;
+    }
+
+#define PRED_TO_OP_CASE(pred, op)                                              \
+  case pred:                                                                   \
+    Opcode = op;                                                               \
+    break
+
+    switch (P) {
+    default:
+      return false;
+      PRED_TO_OP_CASE(CmpInst::ICMP_EQ, TriCore::EQ_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_NE, TriCore::NE_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_UGT, TriCore::GEU_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_UGE, TriCore::GEU_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_ULE, TriCore::LTU_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_ULT, TriCore::LTU_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_SGT, TriCore::GE_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_SGE, TriCore::GE_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_SLE, TriCore::LT_ddc);
+      PRED_TO_OP_CASE(CmpInst::ICMP_SLT, TriCore::LT_ddc);
+    }
+
+#undef PRED_TO_OP_CASE
+  }
+
+  assert(Opcode != 0 && "No opcode found!");
+
+  auto CmpInst = MIRBuilder.buildInstr(Opcode)
+                     .addDef(I.getOperand(0).getReg())
+                     .addUse(SrcReg);
+  if (AddImm)
+    CmpInst.addImm(Imm);
+
+  constrainSelectedInstRegOperands(*CmpInst, TII, TRI, RBI);
+  return true;
 }
 
 static unsigned getBranchOpCodeForPredicate(CmpInst::Predicate Predicate,
@@ -1763,6 +1868,12 @@ bool TriCoreInstructionSelector::selectICmp(
     LLVM_DEBUG(
         dbgs() << "Could not determine register bank for source register.\n");
     return false;
+  }
+
+  // Check if we can fold any of the operands into the compare instruction
+  if (tryFoldIntegerCompare(I)) {
+    I.removeFromParent();
+    return true;
   }
 
   bool SwapOperands = false;
