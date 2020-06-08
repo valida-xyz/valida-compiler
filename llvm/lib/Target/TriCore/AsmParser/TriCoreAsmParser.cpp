@@ -240,13 +240,8 @@ public:
 
     bool IsConstantImm = evaluateConstantImm(Imm, VK);
 
-    // only allow symbols when the operand is: uimm4_lsb0/simm15_lsb0
-    // /simm24_lsb0 which correspond to _4REL/_15REL/_24REL relocations
     if (!IsConstantImm)
-      IsValid =
-          ((WIDTH == 15 || WIDTH == 24) && SIGNED) || (WIDTH == 4 && !SIGNED)
-              ? TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm)
-              : false;
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
     else
       IsValid = SIGNED ? isShiftedInt<WIDTH, SHIFT>(Imm)
                        : isShiftedUInt<WIDTH, SHIFT>(Imm);
@@ -266,7 +261,7 @@ public:
     bool IsConstantImm = evaluateConstantImm(Imm, VK);
 
     if (!IsConstantImm)
-      IsValid = false; // symbols for this operand type is not allowed yet
+      IsValid = TriCoreAsmParser::classifySymbolRef(getImm(), VK, Imm);
     else
       IsValid = Imm >= -32 && Imm <= -2 && (Imm % 2 == 0);
 
@@ -722,8 +717,8 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidSImm4_1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -32, -2,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be an even number in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be an even number in the integer range");
   case Match_InvalidUImm4:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, (1 << 4) - 1,
@@ -797,23 +792,23 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidUImm4_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 2,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be an even number in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be an even number in the integer range");
   case Match_InvalidUImm4_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 4) - 1) * 4,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be divisible by 4 and in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be divisible by 4 and in the integer range");
   case Match_InvalidSImm8_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 8), (1 << 8) - 2,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be an even number in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be an even number in the integer range");
   case Match_InvalidUImm8_Lsb2:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 0, ((1 << 8) - 1) * 4,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be divisible by 4 and in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be divisible by 4 and in the integer range");
   case Match_InvalidSImm15_Lsb1:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, -(1 << 15), (1 << 15) - 2,
@@ -835,8 +830,8 @@ bool TriCoreAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_InvalidDisp4_16:
     return generateImmOutOfRangeError(
         Operands, ErrorInfo, 16 * 2, (15 + 16) * 2,
-        "Operand prefixes and symbol expressions are not allowed for this "
-        "operand and it must be an even number in the integer range");
+        "Operand must be a valid symbol expression "
+        "OR it must be an even number in the integer range");
   case Match_InvalidDisp24Abs:
     ErrorLoc = ((TriCoreOperand &)*Operands[ErrorInfo]).getStartLoc();
     return Error(ErrorLoc,

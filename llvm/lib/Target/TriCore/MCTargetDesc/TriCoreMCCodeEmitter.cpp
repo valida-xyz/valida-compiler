@@ -247,6 +247,30 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
       FixupKind = TriCore::fixup_15rel;
       break;
 
+    case TriCoreII::BOLFrm:
+      FixupKind = TriCore::fixup_16off;
+      break;
+
+    // 16 bit formats
+
+    case TriCoreII::SBFrm:
+      FixupKind = TriCore::fixup_8rel;
+      break;
+
+    case TriCoreII::SBCFrm:
+      // operands: d15, simm4, uimm4_lsb0/disp4_16
+      if (OpNo == 2)
+        switch (OpCode) {
+        default:
+          FixupKind = TriCore::fixup_4rel;
+          break;
+        case TriCore::JEQ_16_d15clc:
+        case TriCore::JNE_16_d15clc:
+          FixupKind = TriCore::fixup_4rel2;
+          break;
+        }
+      break;
+
     case TriCoreII::SBRFrm:
       switch (OpCode) {
       default:
@@ -255,6 +279,60 @@ void TriCoreMCCodeEmitter::createFixups(const MCInst &MI, unsigned OpNo,
       case TriCore::JEQ_16_d15dlc:
       case TriCore::JNE_16_d15dlc:
         FixupKind = TriCore::fixup_4rel2;
+        break;
+      case TriCore::LOOP_16_ac:
+        FixupKind = TriCore::fixup_4rel3;
+      }
+      break;
+
+    case TriCoreII::SBRNFrm:
+      // operands: d15, uimm4, uimm4_lsb0
+      if (OpNo == 2)
+        FixupKind = TriCore::fixup_4rel;
+      break;
+
+    case TriCoreII::SCFrm:
+      switch (OpCode) {
+      default:
+        break;
+      case TriCore::LDA_16_a15a10c:
+      case TriCore::LDW_16_d15a10c:
+      case TriCore::STA_16_a10ca15:
+      case TriCore::STW_16_a10cd15:
+        FixupKind = TriCore::fixup_8off;
+        break;
+      }
+      break;
+
+    case TriCoreII::SLROFrm:
+    case TriCoreII::SSROFrm:
+      switch (OpCode) {
+      default:
+        FixupKind = TriCore::fixup_4off4;
+        break;
+      case TriCore::LDH_16_da15c:
+      case TriCore::STH_16_a15cd:
+        FixupKind = TriCore::fixup_4off2;
+        break;
+      case TriCore::LDBU_16_da15c:
+      case TriCore::STB_16_a15cd:
+        FixupKind = TriCore::fixup_4off;
+        break;
+      }
+      break;
+
+    case TriCoreII::SROFrm:
+      switch (OpCode) {
+      default:
+        FixupKind = TriCore::fixup_42off4;
+        break;
+      case TriCore::LDH_16_d15ac:
+      case TriCore::STH_16_acd15:
+        FixupKind = TriCore::fixup_42off2;
+        break;
+      case TriCore::LDBU_16_d15ac:
+      case TriCore::STB_16_acd15:
+        FixupKind = TriCore::fixup_42off;
         break;
       }
       break;

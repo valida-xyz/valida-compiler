@@ -221,7 +221,7 @@ def simm8_lsb0 : GenericSImmLsbNIsZero<8, 1>,
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
       return isShiftedInt<8, 1>(Imm);
-    return false;
+    return MCOp.isBareSymbolRef();
   }];
 }
 
@@ -233,7 +233,7 @@ def uimm8_lsb00 : GenericUImmLsbNIsZero<8, 2>,
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
       return isShiftedUInt<8, 2>(Imm);
-    return false;
+    return MCOp.isBareSymbolRef();
   }];
 }
 
@@ -302,7 +302,7 @@ def simm16_BOL : Operand<i16> {
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
       return isInt<16>(Imm);
-    return false;
+    return MCOp.isBareSymbolRef();
   }];
 }
 
@@ -360,7 +360,7 @@ def simm15_lsb0 : GenericSImmLsbNIsZero<15, 1> {
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
       return isShiftedInt<15, 1>(Imm);
-    return false;
+    return MCOp.isBareSymbolRef();
   }];
 }
 
@@ -371,7 +371,7 @@ def simm24_lsb0 : GenericSImmLsbNIsZero<24, 1> {
     int64_t Imm;
     if (MCOp.evaluateAsConstantImm(Imm))
       return isShiftedInt<24, 1>(Imm);
-    return false;
+    return MCOp.isBareSymbolRef();
   }];
 }
 

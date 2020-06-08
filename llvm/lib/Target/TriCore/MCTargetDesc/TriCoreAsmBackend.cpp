@@ -22,15 +22,19 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
+#define GEN_UNCOMPRESS_INSTR
+#include "MCTargetDesc/TriCoreInstrCompression.h"
+
 using namespace llvm;
 
 namespace {
 class TriCoreAsmBackend : public MCAsmBackend {
   uint8_t OSABI;
+  const MCRegisterInfo &MRI;
 
 public:
-  TriCoreAsmBackend(uint8_t OSABI)
-      : MCAsmBackend(support::little), OSABI(OSABI) {}
+  TriCoreAsmBackend(uint8_t OSABI, const MCRegisterInfo &MRI)
+      : MCAsmBackend(support::little), OSABI(OSABI), MRI(MRI) {}
   ~TriCoreAsmBackend() override {}
 
   void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
@@ -59,8 +63,18 @@ public:
         {"fixup_18abs", 12, 20, 0},
         {"fixup_15rel", 16, 15, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_lha", 12, 20, 0},
+        {"fixup_16off", 16, 16, 0},
         {"fixup_4rel", 8, 4, MCFixupKindInfo::FKF_IsPCRel},
         {"fixup_4rel2", 8, 4, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_4rel3", 8, 4, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_8rel", 8, 8, MCFixupKindInfo::FKF_IsPCRel},
+        {"fixup_8off", 8, 8, 0},
+        {"fixup_4off", 12, 4, 0},
+        {"fixup_4off2", 12, 4, 0},
+        {"fixup_4off4", 12, 4, 0},
+        {"fixup_42off", 8, 4, 0},
+        {"fixup_42off2", 8, 4, 0},
+        {"fixup_42off4", 8, 4, 0},
     };
 
     static_assert((array_lengthof(Infos)) == TriCore::NumTargetFixupKinds,
@@ -75,8 +89,8 @@ public:
   bool mayNeedRelaxation(const MCInst &Inst,
                          const MCSubtargetInfo &STI) const override;
   unsigned getRelaxedOpcode(unsigned Op, const MCSubtargetInfo &STI) const;
-  void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
-                        MCInst &Res) const override;
+  void relaxInstruction(MCInst &Inst,
+                        const MCSubtargetInfo &STI) const override;
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *DF,
                             const MCAsmLayout &Layout) const override;
@@ -87,17 +101,116 @@ unsigned TriCoreAsmBackend::getRelaxedOpcode(unsigned Op,
                                              const MCSubtargetInfo &STI) const {
   bool Is32BitAllowed = STI.getFeatureBits()[TriCore::Allow32BitInstructions];
 
+  // Do 16 bit to 16 bit relaxation, which is a late instruction selection.
+  // If 32 bit instructions selection not allowed then return with the original
+  // opcode.
+  switch (Op) {
+  default:
+    if (!Is32BitAllowed)
+      return Op;
+    break;
+  case TriCore::JEQ_16_d15dc:
+    return TriCore::JEQ_16_d15dlc;
+  case TriCore::JEQ_16_d15cc:
+    return TriCore::JEQ_16_d15clc;
+  case TriCore::JNE_16_d15dc:
+    return TriCore::JNE_16_d15dlc;
+  case TriCore::JNE_16_d15cc:
+    return TriCore::JNE_16_d15clc;
+  }
+
+  // If 32 bit instruction emission allowed, then check also if the instruction
+  // could be relaxed to a 32 bit variant.
   switch (Op) {
   default:
     return Op;
-  case TriCore::JEQ_16_d15dc:
-    return TriCore::JEQ_16_d15dlc;
-  case TriCore::JNE_16_d15dc:
-    return TriCore::JNE_16_d15dlc;
+  // 4rel
+  case TriCore::JZ_16_dc:
+    return TriCore::JEQ_dcc;
+  case TriCore::JGEZ_16_dc:
+  case TriCore::JGTZ_16_dc:
+    return TriCore::JGE_dcc;
+  case TriCore::JLEZ_16_dc:
+  case TriCore::JLTZ_16_dc:
+    return TriCore::JLT_dcc;
+  case TriCore::JNZ_16_dc:
+    return TriCore::JNE_dcc;
+  case TriCore::JNZA_16_ac:
+    return TriCore::JNZA_ac;
+  case TriCore::JNZT_16_d15cc:
+    return TriCore::JNZT_dcc;
+  case TriCore::JZA_16_ac:
+    return TriCore::JZA_ac;
+  case TriCore::JZT_16_d15cc:
+    return TriCore::JZT_dcc;
+  // 4rel2
   case TriCore::JEQ_16_d15dlc:
-    return Is32BitAllowed ? TriCore::JEQ_ddc : Op;
+    return TriCore::JEQ_ddc;
+  case TriCore::JEQ_16_d15clc:
+    return TriCore::JEQ_dcc;
   case TriCore::JNE_16_d15dlc:
-    return Is32BitAllowed ? TriCore::JNE_ddc : Op;
+    return TriCore::JNE_ddc;
+  case TriCore::JNE_16_d15clc:
+    return TriCore::JNE_dcc;
+  // 4rel3
+  case TriCore::LOOP_16_ac:
+    return TriCore::LOOP_ac;
+  // 8rel
+  case TriCore::CALL_16:
+    return TriCore::CALL;
+  case TriCore::J_16:
+    return TriCore::J;
+  case TriCore::JNZ_16_d15c:
+    return TriCore::JNE_dcc;
+  case TriCore::JZ_16_d15c:
+    return TriCore::JEQ_dcc;
+  // 8off
+  case TriCore::LDA_16_a15a10c:
+    return TriCore::LDA_aalc;
+  case TriCore::LDW_16_d15a10c:
+    return TriCore::LDW_dalc;
+  case TriCore::STA_16_a10ca15:
+    return TriCore::STA_alca;
+  case TriCore::STW_16_a10cd15:
+    return TriCore::STW_alcd;
+  // 4off
+  case TriCore::LDBU_16_da15c:
+    return TriCore::LDBU_dalc;
+  case TriCore::STB_16_a15cd:
+    return TriCore::STB_alcd;
+  // 4off2
+  case TriCore::LDH_16_da15c:
+    return TriCore::LDH_dalc;
+  case TriCore::STH_16_a15cd:
+    return TriCore::STH_alcd;
+  // 4off4
+  case TriCore::LDA_16_aa15c:
+    return TriCore::LDA_aalc;
+  case TriCore::LDW_16_da15c:
+    return TriCore::LDW_dalc;
+  case TriCore::STA_16_a15ca:
+    return TriCore::STA_alca;
+  case TriCore::STW_16_a15cd:
+    return TriCore::STW_alcd;
+  // 42off
+  case TriCore::LDBU_16_d15ac:
+    return TriCore::LDBU_dalc;
+  case TriCore::STB_16_acd15:
+    return TriCore::STB_alcd;
+  // 42off2
+  case TriCore::LDH_16_d15ac:
+    return TriCore::LDH_dalc;
+  case TriCore::STH_16_acd15:
+    return TriCore::STH_alcd;
+  // 4off4
+  case TriCore::LDA_16_a15ac:
+    return TriCore::LDA_aalc;
+  case TriCore::LDW_16_d15ac:
+    return TriCore::LDW_dalc;
+  case TriCore::STA_16_aca15:
+    return TriCore::STA_alca;
+  case TriCore::STW_16_acd15:
+    return TriCore::STW_alcd;
   }
 }
 
@@ -125,18 +238,52 @@ bool TriCoreAsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
   case TriCore::fixup_4rel2:
     // Relax if the value is out of the range of disp4_16's [32,62]
     return Offset > 62 || Offset < 32;
+  case TriCore::fixup_4rel3:
+    // Relax if the value is out of the range of simm4_1's [-32,-2]
+    return Offset > -2 || Offset < -32;
+  case TriCore::fixup_8rel:
+    // Relax if the value is out of the range of simm8_lsb0's [-256,254]
+    return Offset > 254 || Offset < -256;
+  case TriCore::fixup_8off:
+    // Relax if the value is out of the range of uimm8_lsb00's [0,1020]
+    return Offset > 1020 || Offset < 0;
+  case TriCore::fixup_4off:
+  case TriCore::fixup_42off:
+    // Relax if the value is out of the range of uimm4's [0,15]
+    return Offset > 15 || Offset < 0;
+  case TriCore::fixup_4off2:
+  case TriCore::fixup_42off2:
+    // Relax if the value is out of the range of uimm4_lsb0's [0,30]
+    return Offset > 30 || Offset < 0;
+  case TriCore::fixup_4off4:
+  case TriCore::fixup_42off4:
+    // Relax if the value is out of the range of uimm4_lsb00's [0,60]
+    return Offset > 60 || Offset < 0;
   }
 }
 
-void TriCoreAsmBackend::relaxInstruction(const MCInst &Inst,
-                                         const MCSubtargetInfo &STI,
-                                         MCInst &Res) const {
+void TriCoreAsmBackend::relaxInstruction(MCInst &Inst,
+                                         const MCSubtargetInfo &STI) const {
   unsigned RelaxedOp = getRelaxedOpcode(Inst.getOpcode(), STI);
+  MCInst Res;
 
-  // We don't need to change the operands only we just need to update
-  // to the proper opcode.
-  Res = Inst;
-  Res.setOpcode(RelaxedOp);
+  switch (Inst.getOpcode()) {
+  default:
+    Inst.setOpcode(RelaxedOp);
+    break;
+  case TriCore::JGEZ_16_dc:
+  case TriCore::JGTZ_16_dc:
+  case TriCore::JLEZ_16_dc:
+  case TriCore::JLTZ_16_dc:
+  case TriCore::JNZ_16_d15c:
+  case TriCore::JNZ_16_dc:
+  case TriCore::JZ_16_d15c:
+  case TriCore::JZ_16_dc:
+    if (!uncompressInstruction(Res, Inst, MRI, STI))
+      llvm_unreachable("Unknown relaxation");
+    Inst = std::move(Res);
+    break;
+  }
 }
 
 bool TriCoreAsmBackend::writeNopData(raw_ostream &OS, uint64_t Count) const {
@@ -163,11 +310,22 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
   case FK_Data_4:
   case FK_Data_8:
     return Value;
+
+  case TriCore::fixup_24abs:
+  case TriCore::fixup_18abs:
+  case TriCore::fixup_16sm:
+    assert(Value == 0 && "fixup value must be 0");
+    return Value;
+
   case TriCore::fixup_hi:
     return ((Value + 0x8000u) >> 16u) & 0xffffu;
+
+  // TODO: these has to be encoded differently since _lo2 (the BOL version) has
+  // it's off16 operand encoded in chunks like B or ABS format
   case TriCore::fixup_lo:
   case TriCore::fixup_lo2:
     return Value & 0xffffu;
+
   case TriCore::fixup_24rel:
     if (!isInt<25>(Value))
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
@@ -175,12 +333,14 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
       Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
     Value = (Value >> 1) & 0xffffff;
     return ((Value & 0xff0000) >> 16) | ((Value & 0xffff) << 8);
+
   case TriCore::fixup_15rel:
     if (!isInt<16>(Value))
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
     if (Value & 1)
       Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
     return (Value >> 1) & 0x7fff;
+
   case TriCore::fixup_lha:
     if (!isUInt<32>(Value))
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
@@ -189,18 +349,70 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
     Value >>= 14u;
     return (((Value & 0x3fu) << 4u) | ((Value & 0x3c0u) << 10u) |
         (Value & 0x3c00u) | ((Value & 0x3c000u) >> 14u));
+
+  case TriCore::fixup_16off:
+    if (!isInt<16>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    Value =
+        ((Value << 6u) & 0xf000u) | ((Value >> 4) & 0xfc0u) | (Value & 0x3fu);
+    return Value;
+
   case TriCore::fixup_4rel:
     if (!isUInt<5>(Value))
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
-    if (Value & 1)
+    if (Value & 1u)
       Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
-    return (Value >> 1) & 0x1f;
+    return Value >> 1u;
+
   case TriCore::fixup_4rel2:
     if (Value > 62 || Value < 32)
       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
-    if (Value & 1)
+    if (Value & 1u)
       Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
-    return (Value >> 1) - 16;
+    return (Value >> 1u) - 16;
+
+  case TriCore::fixup_4rel3:
+    if ((int64_t)Value < -32 || (int64_t)Value > -2)
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 1u)
+      Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
+    return (Value >> 1u) & 0xfu;
+
+  case TriCore::fixup_8rel:
+    if (!isInt<9>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 1u)
+      Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
+    return (Value >> 1u) & 0xffu;
+
+  case TriCore::fixup_8off:
+    if (!isUInt<10>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 0b11u)
+      Ctx.reportError(Fixup.getLoc(), "fixup must be 4-byte aligned");
+    return Value >> 2u;
+
+  case TriCore::fixup_4off:
+  case TriCore::fixup_42off:
+    if (!isUInt<4>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    return Value;
+
+  case TriCore::fixup_4off2:
+  case TriCore::fixup_42off2:
+    if (!isUInt<5>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 1u)
+      Ctx.reportError(Fixup.getLoc(), "fixup must be 2-byte aligned");
+    return Value >> 1u;
+
+  case TriCore::fixup_4off4:
+  case TriCore::fixup_42off4:
+    if (!isUInt<6>(Value))
+      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+    if (Value & 0b11u)
+      Ctx.reportError(Fixup.getLoc(), "fixup must be 4-byte aligned");
+    return Value >> 2u;
   }
 }
 
@@ -210,14 +422,15 @@ void TriCoreAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
                                    bool IsResolved,
                                    const MCSubtargetInfo *STI) const {
   MCContext &Ctx = Asm.getContext();
-  MCFixupKindInfo Info = getFixupKindInfo(Fixup.getKind());
+  MCFixupKind FixupKind = Fixup.getKind();
+  MCFixupKindInfo Info = getFixupKindInfo(FixupKind);
+
+  // Apply any target-specific value adjustments.
+  Value = adjustFixupValue(Fixup, Value, Ctx);
 
   // Nothing to do if Value is 0, since the encoding bits already zeroed out
   if (!Value)
     return;
-
-  // Apply any target-specific value adjustments.
-  Value = adjustFixupValue(Fixup, Value, Ctx);
 
   // Shift the value into position.
   Value <<= Info.TargetOffset;
@@ -247,5 +460,5 @@ MCAsmBackend *llvm::createTriCoreAsmBackend(const Target &T,
                                             const MCTargetOptions &Options) {
   const Triple &TT = STI.getTargetTriple();
   uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(TT.getOS());
-  return new TriCoreAsmBackend(OSABI);
+  return new TriCoreAsmBackend(OSABI, MRI);
 }

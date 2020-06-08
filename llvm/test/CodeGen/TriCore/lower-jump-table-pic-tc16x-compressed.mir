@@ -55,11 +55,11 @@
 # CHECK-NEXT:    j  .LBB0_4                     # encoding: [0x1d,A,A,A]
 # CHECK:                                        #   fixup A - offset: 0, value: .LBB0_4, kind: fixup_24rel
 # CHECK:       # %bb.2:                         # %entry
-# CHECK:         j  .LBB0_5                     # encoding: [0x1d,A,A,A]
-# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# CHECK:         j  .LBB0_5                     # encoding: [0x3c,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_8rel
 # CHECK:       # %bb.3:                         # %sw.bb
-# CHECK:         j  .LBB0_5                     # encoding: [0x1d,A,A,A]
-# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_24rel
+# CHECK:         j  .LBB0_5                     # encoding: [0x3c,A]
+# CHECK:                                        #   fixup A - offset: 0, value: .LBB0_5, kind: fixup_8rel
 # CHECK:       .LBB0_4:                         # %sw.bb1
 # CHECK:       .LBB0_5:                         # %return
 # CHECK:         ret                            # encoding: [0x00,0x90]

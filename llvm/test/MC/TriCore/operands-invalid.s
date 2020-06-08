@@ -150,9 +150,8 @@ jned %d0, foo, 0
 .code16
 loop %a0, 0
 
-# CHECK: :[[@LINE+4]]:11: error: Operand prefixes and symbol expressions are 
-# CHECK-SAME: not allowed for this operand and it must be an even number in the 
-# CHECK-SAME: integer range [-32, -2]
+# CHECK: :[[@LINE+3]]:11: error: Operand must be a valid symbol expression OR it
+# CHECK-SAME: must be an even number in the integer range [-32, -2]
 .code16
 loop %a0, -3
 
@@ -160,11 +159,6 @@ loop %a0, -3
 # CHECK-SAME: 32-bit instruction generation
 .code16
 loop %a0, -34
-
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-loop %a0, foo
 
 
 ### Testing uimm4
@@ -205,9 +199,8 @@ ld.bu %d0, [%a15] 16
 .code16
 jz.t %d15, 0, -2
 
-# CHECK: :[[@LINE+4]]:15: error: Operand prefixes and symbol expressions are 
-# CHECK-SAME: not allowed for this operand and it must be an even number in the 
-# CHECK-SAME: integer range [0, 30]
+# CHECK: :[[@LINE+3]]:15: error: Operand must be a valid symbol expression OR it
+# CHECK-SAME: must be an even number in the integer range [0, 30]
 .code16
 jz.t %d15, 0, 1
 
@@ -223,28 +216,22 @@ jz.t %d15, 0, 32
 # CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
 # CHECK-SAME: 32-bit instruction generation
 .code16
-ld.a %a0, [%a1] -4
+ld.a %a0, [%a15] -4
 
 # CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
 # CHECK-SAME: 32-bit instruction generation
 .code16
-ld.a %a0, [%a1] 1
+ld.a %a0, [%a15] 1
 
 # CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
 # CHECK-SAME: 32-bit instruction generation
 .code16
-ld.a %a0, [%a1] 2
+ld.a %a0, [%a15] 2
 
 # CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
 # CHECK-SAME: 32-bit instruction generation
 .code16
-ld.a %a0, [%a1] 64
-
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-ld.a %a0, [%a1] foo
-
+ld.a %a0, [%a15] 64
 
 
 ### Testing uimm5
@@ -292,9 +279,8 @@ bisr foo
 .code16
 j -258
 
-# CHECK: :[[@LINE+4]]:3: error: Operand prefixes and symbol expressions are not 
-# CHECK-SAME: allowed for this operand and it must be an even number in the 
-# CHECK-SAME: integer range [-256, 254]
+# CHECK: :[[@LINE+3]]:3: error: Operand must be a valid symbol expression OR it
+# CHECK-SAME: must be an even number in the integer range [-256, 254]
 .code16
 j 1
 
@@ -302,11 +288,6 @@ j 1
 # CHECK-SAME: 32-bit instruction generation
 .code16
 j 256
-
-# CHECK: :[[@LINE+3]]:1: error: Instruction requires the following features:  
-# CHECK-SAME: 32-bit instruction generation
-.code16
-j foo
 
 
 ### Testing simm8_lsb00
@@ -446,9 +427,8 @@ addih %d0, %d0, 1 << 16
 
 ### Testing disp4_16
 
-# CHECK: :[[@LINE+4]]:14: error: Operand prefixes and symbol expressions are 
-# CHECK-SAME: not allowed for this operand and it must be an even number in the 
-# CHECK-SAME: integer range [32, 62]
+# CHECK: :[[@LINE+3]]:14: error: Operand must be a valid symbol expression OR it
+# CHECK-SAME: must be an even number in the integer range [32, 62]
 .code16
 jeq %d15, 0, 33
 

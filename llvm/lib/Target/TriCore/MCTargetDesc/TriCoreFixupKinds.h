@@ -50,12 +50,43 @@ enum Fixups {
   // EA = {off18[17:0], 14b'0}
   fixup_lha,
 
+  // 16 bit signed immediate used in BOL format
+  fixup_16off,
+
   // 4 bit pc-relative immediate used in SBR format (internally multiplied by 2)
   fixup_4rel,
 
   // 4 bit pc-relative immediate used in SBR format (internally add 16
   // and multiplied by 2)
   fixup_4rel2,
+
+  // 4 bit pc-relative immediate used in SBR format with the form:
+  // PC = PC + {27b’111111111111111111111111111, disp4, 0}
+  fixup_4rel3,
+
+  // 8 bit pc-relative immediate used in SB format (internally multiplied by 2)
+  fixup_8rel,
+
+  // 8 bit unsigned immediate internally multiplied by 4 used in SC format
+  fixup_8off,
+
+  // 4 bit unsigned offset used in SSRO, SLRO format
+  fixup_4off,
+
+  // 4 bit unsigned offset internally multiplied by 2 used in SSRO, SLRO format
+  fixup_4off2,
+
+  // 4 bit unsigned offset internally multiplied by 4 used in SSRO, SLRO format
+  fixup_4off4,
+
+  // 4 bit unsigned offset used in SRO format
+  fixup_42off,
+
+  // 4 bit unsigned offset internally multiplied by 2 used in SRO format
+  fixup_42off2,
+
+  // 4 bit unsigned offset internally multiplied by 4 used in SRO format
+  fixup_42off4,
 
   fixup_invalid,
   // the number of fixups for this target
