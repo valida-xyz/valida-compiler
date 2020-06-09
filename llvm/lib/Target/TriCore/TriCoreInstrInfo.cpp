@@ -577,3 +577,192 @@ bool TriCoreInstrInfo::verifyInstruction(const MachineInstr &MI,
 
   return true;
 }
+
+static void parseCondBranch(const MachineInstr &LastInstr,
+                            MachineBasicBlock *&Target,
+                            SmallVectorImpl<MachineOperand> &Cond) {
+  assert(LastInstr.isConditionalBranch());
+
+  // Set Target to the target basic block of the conditional branch and fill
+  // Cond with a set of machine operands that insertBranch can use to build
+  // a conditional branch
+  // In order to keep the correct semantics, the first operand of Cond will
+  // always be the Opcode of the conditional branch, such that insertBranch
+  // knows what instruction to use
+  Cond.push_back(MachineOperand::CreateImm(LastInstr.getOpcode()));
+
+  // Simply look over all but the last operand, which is the target basic block,
+  // and add them to Cond
+  unsigned I = 0;
+  for (; I < LastInstr.getNumExplicitOperands() - 1; ++I) {
+    Cond.push_back(LastInstr.getOperand(I));
+  }
+
+  Target = LastInstr.getOperand(I).getMBB();
+}
+
+bool TriCoreInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
+                                     MachineBasicBlock *&TBB,
+                                     MachineBasicBlock *&FBB,
+                                     SmallVectorImpl<MachineOperand> &Cond,
+                                     bool AllowModify) const {
+  // If the block has no terminators, it is a fallthrough to the next block
+  MachineBasicBlock::iterator I = MBB.getLastNonDebugInstr();
+  if (I == MBB.end())
+    return false;
+
+  if (!isUnpredicatedTerminator(*I))
+    return false;
+
+  // Count the number of terminators and find the first unconditional or indirect branch
+  MachineBasicBlock::iterator FirstUncondOrIndirectBr = MBB.end();
+  int NumTerminators = 0;
+  for (auto J = I.getReverse(); J != MBB.rend() && isUnpredicatedTerminator(*J); ++J) {
+    ++NumTerminators;
+    if (J->isUnconditionalBranch() || J->isIndirectBranch())
+      FirstUncondOrIndirectBr = J.getReverse();
+  }
+
+  // If AllowModify is true, we can erase any terminators after FirstUncondOrIndirectBr
+  if (AllowModify && FirstUncondOrIndirectBr != MBB.end()) {
+    while (std::next(FirstUncondOrIndirectBr) != MBB.end()) {
+      std::next(FirstUncondOrIndirectBr)->eraseFromParent();
+      --NumTerminators;
+    }
+    I = FirstUncondOrIndirectBr;
+  }
+
+  // We can't handle blocks that end in an indirect branch
+  if (I->isIndirectBranch())
+    return true;
+
+  // We can't handle blocks with more than 2 terminators
+  if (NumTerminators > 2)
+    return true;
+
+  // Handle a single unconditional branch
+  if (NumTerminators == 1 && I->isUnconditionalBranch()) {
+    TBB = I->getOperand(0).getMBB();
+    return false;
+  }
+
+  // Handle a single conditional branch
+  if (NumTerminators == 1 && I->isConditionalBranch()) {
+    parseCondBranch(*I, TBB, Cond);
+    return false;
+  }
+
+  // Handle a conditional branch followed by an unconditional branch
+  if (NumTerminators == 2 && std::prev(I)->isConditionalBranch() && I->isUnconditionalBranch()) {
+    parseCondBranch(*std::prev(I), TBB, Cond);
+    FBB = I->getOperand(0).getMBB();
+    return false;
+  }
+
+  // Everything else we cannot handle
+  return true;
+}
+
+unsigned int TriCoreInstrInfo::insertBranch(
+    MachineBasicBlock &MBB, MachineBasicBlock *TBB, MachineBasicBlock *FBB,
+    ArrayRef<MachineOperand> Cond, const DebugLoc &DL, int *BytesAdded) const {
+  // Shouldn't be a fall through.
+  assert(TBB && "insertBranch must not be told to insert a fallthrough");
+
+  if (BytesAdded)
+    *BytesAdded = 0;
+
+  // Unconditional branch
+  if (Cond.empty()) {
+    assert(!FBB && "Unconditional branch with FBB set?");
+    const MachineInstr &UncondBr =
+        *BuildMI(&MBB, DL, get(TriCore::J)).addMBB(TBB);
+
+    if (BytesAdded)
+      *BytesAdded += getInstSizeInBytes(UncondBr);
+    return 1;
+  }
+
+  // Conditional branch
+  assert(Cond.size() >= 2 && Cond.size() <= 3 &&
+         "TriCore branch conditions have 2 or 3 components.");
+  const unsigned Opc = Cond[0].getImm();
+  const MachineInstrBuilder MIB = BuildMI(&MBB, DL, get(Opc)).add(Cond[1]);
+  if (Cond.size() > 2)
+    MIB.add(Cond[2]);
+
+  MIB.addMBB(TBB);
+
+  if (BytesAdded)
+    *BytesAdded += getInstSizeInBytes(*MIB);
+
+  // Fall-through if FBB is not set
+  if (!FBB) {
+    return 1;
+  }
+
+  // Finish branch by inserting unconditional jump to FBB
+  const MachineInstr &UncondBr =
+      *BuildMI(&MBB, DL, get(TriCore::J)).addMBB(FBB);
+  if (BytesAdded)
+    *BytesAdded += getInstSizeInBytes(UncondBr);
+  return 2;
+}
+
+unsigned int TriCoreInstrInfo::removeBranch(MachineBasicBlock &MBB,
+                                            int *BytesRemoved) const {
+  // We only handle terminators here, which are also handled in analyzeBranch
+  MachineBasicBlock::iterator I = MBB.getLastNonDebugInstr();
+
+  if (BytesRemoved)
+    *BytesRemoved = 0;
+
+  // Nothing to do if there are no instruction to remove
+  if (I == MBB.end())
+    return 0;
+
+  // Nothing to do if there are no terminators to remove
+  if (!I->isUnconditionalBranch() && !I->isConditionalBranch())
+    return 0;
+
+  // Remove the branch
+  if (BytesRemoved)
+    *BytesRemoved += getInstSizeInBytes(*I);
+
+  I->removeFromParent();
+  I = MBB.end();
+
+  // Return here, if this was the only instruction in the block
+  if (I == MBB.begin())
+    return 1;
+
+  --I;
+
+  // Return here, if this was the only terminator. We only need to check for
+  // conditional branches, as otherwise analyzeBranch would have returned
+  // failure
+  if (!I->isConditionalBranch())
+    return 1;
+
+  // Remove the conditional branch and return
+  if (BytesRemoved)
+    *BytesRemoved += getInstSizeInBytes(*I);
+
+  I->eraseFromParent();
+
+  return 2;
+}
+
+bool TriCoreInstrInfo::reverseBranchCondition(
+    SmallVectorImpl<MachineOperand> &Cond) const {
+  // Reverse the condition by simply flipping the Opcode
+  const unsigned OldOpc = Cond[0].getImm();
+  const unsigned NewOpc = getOppositeBranchOpcode(OldOpc);
+
+  // If NewOpc is 0 the condition cannot be flipped
+  if (NewOpc == 0)
+    return true;
+
+  Cond[0].setImm(NewOpc);
+  return false;
+}

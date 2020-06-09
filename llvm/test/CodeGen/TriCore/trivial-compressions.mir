@@ -1,6 +1,6 @@
-# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select \
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=prologepilog \
 # RUN: -verify-machineinstrs -show-mc-encoding %s -o - | FileCheck %s
-# RUN: llc -mtriple=tricore -global-isel -start-after=instruction-select \
+# RUN: llc -O0 -mtriple=tricore -global-isel -start-after=prologepilog \
 # RUN: -verify-machineinstrs -show-mc-encoding -mattr=-tc18 %s -o - \
 # RUN:    | FileCheck %s --check-prefix=CHECK-NOTC18
 
@@ -241,7 +241,32 @@ legalized:       true
 regBankSelected: true
 selected:        true
 tracksRegLiveness: true
-liveins:         []
+liveins:
+  - { reg: '$d0', virtual-reg: '' }
+  - { reg: '$d1', virtual-reg: '' }
+  - { reg: '$d2', virtual-reg: '' }
+  - { reg: '$d3', virtual-reg: '' }
+  - { reg: '$d4', virtual-reg: '' }
+  - { reg: '$d5', virtual-reg: '' }
+  - { reg: '$d6', virtual-reg: '' }
+  - { reg: '$d7', virtual-reg: '' }
+  - { reg: '$d8', virtual-reg: '' }
+  - { reg: '$d9', virtual-reg: '' }
+  - { reg: '$d10', virtual-reg: '' }
+  - { reg: '$d11', virtual-reg: '' }
+  - { reg: '$d12', virtual-reg: '' }
+  - { reg: '$d13', virtual-reg: '' }
+  - { reg: '$d14', virtual-reg: '' }
+  - { reg: '$d15', virtual-reg: '' }
+  - { reg: '$a2', virtual-reg: '' }
+  - { reg: '$a3', virtual-reg: '' }
+  - { reg: '$a4', virtual-reg: '' }
+  - { reg: '$a5', virtual-reg: '' }
+  - { reg: '$a6', virtual-reg: '' }
+  - { reg: '$a7', virtual-reg: '' }
+  - { reg: '$a12', virtual-reg: '' }
+  - { reg: '$a13', virtual-reg: '' }
+  - { reg: '$a15', virtual-reg: '' }
 body:             |
   bb.0:
     $d0 = LDW_dalc $a14, -4
