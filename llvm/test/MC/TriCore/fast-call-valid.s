@@ -1,5 +1,8 @@
 # RUN: llvm-mc %s -triple=tricore -show-encoding \
 # RUN:     | FileCheck -check-prefixes=CHECK,CHECK-INST %s
+# RUN: llvm-mc -filetype=obj -triple=tricore < %s | llvm-objdump -d - \
+# RUN:     | FileCheck -check-prefixes=CHECK-INST %s
+
 
 # CHECK-INST: fcall -16777216
 # CHECK: encoding: [0x61,0x80,0x00,0x00]

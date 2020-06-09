@@ -6186,325 +6186,645 @@ jnz.t %d15, 3, 28
 .code16
 jnz.t %d15, 3, 30
  
-# CHECK-INST: jnz.t %d0, 0, 256
-# CHECK: encoding: [0x6f,0x00,0x80,0x80]
+# CHECK-INST: jnz.t %d0, 0, -32768
+# CHECK: encoding: [0x6f,0x00,0x00,0xc0]
 .code32
-jnz.t %d0, 0, 256
+jnz.t %d0, 0, -32768
 
-# CHECK-INST: jnz.t %d0, 0, 32512
-# CHECK: encoding: [0x6f,0x00,0x80,0xbf]
+# CHECK-INST: jnz.t %d0, 0, -32766
+# CHECK: encoding: [0x6f,0x00,0x01,0xc0]
 .code32
-jnz.t %d0, 0, 32512
+jnz.t %d0, 0, -32766
 
-# CHECK-INST: jnz.t %d0, 0, 16638
-# CHECK: encoding: [0x6f,0x00,0x7f,0xa0]
+# CHECK-INST: jnz.t %d0, 0, -4
+# CHECK: encoding: [0x6f,0x00,0xfe,0xff]
 .code32
-jnz.t %d0, 0, 16638
+jnz.t %d0, 0, -4
+
+# CHECK-INST: jnz.t %d0, 0, -2
+# CHECK: encoding: [0x6f,0x00,0xff,0xff]
+.code32
+jnz.t %d0, 0, -2
+
+# CHECK-INST: jnz.t %d0, 0, 0
+# CHECK: encoding: [0x6f,0x00,0x00,0x80]
+.code32
+jnz.t %d0, 0, 0
+
+# CHECK-INST: jnz.t %d0, 0, 2
+# CHECK: encoding: [0x6f,0x00,0x01,0x80]
+.code32
+jnz.t %d0, 0, 2
+
+# CHECK-INST: jnz.t %d0, 0, 32764
+# CHECK: encoding: [0x6f,0x00,0xfe,0xbf]
+.code32
+jnz.t %d0, 0, 32764
 
 # CHECK-INST: jnz.t %d0, 0, 32766
 # CHECK: encoding: [0x6f,0x00,0xff,0xbf]
 .code32
 jnz.t %d0, 0, 32766
 
-# CHECK-INST: jnz.t %d0, 1, 256
-# CHECK: encoding: [0x6f,0x10,0x80,0x80]
+# CHECK-INST: jnz.t %d0, 1, -32768
+# CHECK: encoding: [0x6f,0x10,0x00,0xc0]
 .code32
-jnz.t %d0, 1, 256
+jnz.t %d0, 1, -32768
 
-# CHECK-INST: jnz.t %d0, 1, 32512
-# CHECK: encoding: [0x6f,0x10,0x80,0xbf]
+# CHECK-INST: jnz.t %d0, 1, -32766
+# CHECK: encoding: [0x6f,0x10,0x01,0xc0]
 .code32
-jnz.t %d0, 1, 32512
+jnz.t %d0, 1, -32766
 
-# CHECK-INST: jnz.t %d0, 1, 16638
-# CHECK: encoding: [0x6f,0x10,0x7f,0xa0]
+# CHECK-INST: jnz.t %d0, 1, -4
+# CHECK: encoding: [0x6f,0x10,0xfe,0xff]
 .code32
-jnz.t %d0, 1, 16638
+jnz.t %d0, 1, -4
+
+# CHECK-INST: jnz.t %d0, 1, -2
+# CHECK: encoding: [0x6f,0x10,0xff,0xff]
+.code32
+jnz.t %d0, 1, -2
+
+# CHECK-INST: jnz.t %d0, 1, 0
+# CHECK: encoding: [0x6f,0x10,0x00,0x80]
+.code32
+jnz.t %d0, 1, 0
+
+# CHECK-INST: jnz.t %d0, 1, 2
+# CHECK: encoding: [0x6f,0x10,0x01,0x80]
+.code32
+jnz.t %d0, 1, 2
+
+# CHECK-INST: jnz.t %d0, 1, 32764
+# CHECK: encoding: [0x6f,0x10,0xfe,0xbf]
+.code32
+jnz.t %d0, 1, 32764
 
 # CHECK-INST: jnz.t %d0, 1, 32766
 # CHECK: encoding: [0x6f,0x10,0xff,0xbf]
 .code32
 jnz.t %d0, 1, 32766
 
-# CHECK-INST: jnz.t %d0, 2, 256
-# CHECK: encoding: [0x6f,0x20,0x80,0x80]
+# CHECK-INST: jnz.t %d0, 30, -32768
+# CHECK: encoding: [0xef,0xe0,0x00,0xc0]
 .code32
-jnz.t %d0, 2, 256
+jnz.t %d0, 30, -32768
 
-# CHECK-INST: jnz.t %d0, 2, 32512
-# CHECK: encoding: [0x6f,0x20,0x80,0xbf]
+# CHECK-INST: jnz.t %d0, 30, -32766
+# CHECK: encoding: [0xef,0xe0,0x01,0xc0]
 .code32
-jnz.t %d0, 2, 32512
+jnz.t %d0, 30, -32766
 
-# CHECK-INST: jnz.t %d0, 2, 16638
-# CHECK: encoding: [0x6f,0x20,0x7f,0xa0]
+# CHECK-INST: jnz.t %d0, 30, -4
+# CHECK: encoding: [0xef,0xe0,0xfe,0xff]
 .code32
-jnz.t %d0, 2, 16638
+jnz.t %d0, 30, -4
 
-# CHECK-INST: jnz.t %d0, 2, 32766
-# CHECK: encoding: [0x6f,0x20,0xff,0xbf]
+# CHECK-INST: jnz.t %d0, 30, -2
+# CHECK: encoding: [0xef,0xe0,0xff,0xff]
 .code32
-jnz.t %d0, 2, 32766
+jnz.t %d0, 30, -2
 
-# CHECK-INST: jnz.t %d0, 3, 256
-# CHECK: encoding: [0x6f,0x30,0x80,0x80]
+# CHECK-INST: jnz.t %d0, 30, 0
+# CHECK: encoding: [0xef,0xe0,0x00,0x80]
 .code32
-jnz.t %d0, 3, 256
+jnz.t %d0, 30, 0
 
-# CHECK-INST: jnz.t %d0, 3, 32512
-# CHECK: encoding: [0x6f,0x30,0x80,0xbf]
+# CHECK-INST: jnz.t %d0, 30, 2
+# CHECK: encoding: [0xef,0xe0,0x01,0x80]
 .code32
-jnz.t %d0, 3, 32512
+jnz.t %d0, 30, 2
 
-# CHECK-INST: jnz.t %d0, 3, 16638
-# CHECK: encoding: [0x6f,0x30,0x7f,0xa0]
+# CHECK-INST: jnz.t %d0, 30, 32764
+# CHECK: encoding: [0xef,0xe0,0xfe,0xbf]
 .code32
-jnz.t %d0, 3, 16638
+jnz.t %d0, 30, 32764
 
-# CHECK-INST: jnz.t %d0, 3, 32766
-# CHECK: encoding: [0x6f,0x30,0xff,0xbf]
+# CHECK-INST: jnz.t %d0, 30, 32766
+# CHECK: encoding: [0xef,0xe0,0xff,0xbf]
 .code32
-jnz.t %d0, 3, 32766
+jnz.t %d0, 30, 32766
 
-# CHECK-INST: jnz.t %d1, 0, 256
-# CHECK: encoding: [0x6f,0x01,0x80,0x80]
+# CHECK-INST: jnz.t %d0, 31, -32768
+# CHECK: encoding: [0xef,0xf0,0x00,0xc0]
 .code32
-jnz.t %d1, 0, 256
+jnz.t %d0, 31, -32768
 
-# CHECK-INST: jnz.t %d1, 0, 32512
-# CHECK: encoding: [0x6f,0x01,0x80,0xbf]
+# CHECK-INST: jnz.t %d0, 31, -32766
+# CHECK: encoding: [0xef,0xf0,0x01,0xc0]
 .code32
-jnz.t %d1, 0, 32512
+jnz.t %d0, 31, -32766
 
-# CHECK-INST: jnz.t %d1, 0, 16638
-# CHECK: encoding: [0x6f,0x01,0x7f,0xa0]
+# CHECK-INST: jnz.t %d0, 31, -4
+# CHECK: encoding: [0xef,0xf0,0xfe,0xff]
 .code32
-jnz.t %d1, 0, 16638
+jnz.t %d0, 31, -4
+
+# CHECK-INST: jnz.t %d0, 31, -2
+# CHECK: encoding: [0xef,0xf0,0xff,0xff]
+.code32
+jnz.t %d0, 31, -2
+
+# CHECK-INST: jnz.t %d0, 31, 0
+# CHECK: encoding: [0xef,0xf0,0x00,0x80]
+.code32
+jnz.t %d0, 31, 0
+
+# CHECK-INST: jnz.t %d0, 31, 2
+# CHECK: encoding: [0xef,0xf0,0x01,0x80]
+.code32
+jnz.t %d0, 31, 2
+
+# CHECK-INST: jnz.t %d0, 31, 32764
+# CHECK: encoding: [0xef,0xf0,0xfe,0xbf]
+.code32
+jnz.t %d0, 31, 32764
+
+# CHECK-INST: jnz.t %d0, 31, 32766
+# CHECK: encoding: [0xef,0xf0,0xff,0xbf]
+.code32
+jnz.t %d0, 31, 32766
+
+# CHECK-INST: jnz.t %d1, 0, -32768
+# CHECK: encoding: [0x6f,0x01,0x00,0xc0]
+.code32
+jnz.t %d1, 0, -32768
+
+# CHECK-INST: jnz.t %d1, 0, -32766
+# CHECK: encoding: [0x6f,0x01,0x01,0xc0]
+.code32
+jnz.t %d1, 0, -32766
+
+# CHECK-INST: jnz.t %d1, 0, -4
+# CHECK: encoding: [0x6f,0x01,0xfe,0xff]
+.code32
+jnz.t %d1, 0, -4
+
+# CHECK-INST: jnz.t %d1, 0, -2
+# CHECK: encoding: [0x6f,0x01,0xff,0xff]
+.code32
+jnz.t %d1, 0, -2
+
+# CHECK-INST: jnz.t %d1, 0, 0
+# CHECK: encoding: [0x6f,0x01,0x00,0x80]
+.code32
+jnz.t %d1, 0, 0
+
+# CHECK-INST: jnz.t %d1, 0, 2
+# CHECK: encoding: [0x6f,0x01,0x01,0x80]
+.code32
+jnz.t %d1, 0, 2
+
+# CHECK-INST: jnz.t %d1, 0, 32764
+# CHECK: encoding: [0x6f,0x01,0xfe,0xbf]
+.code32
+jnz.t %d1, 0, 32764
 
 # CHECK-INST: jnz.t %d1, 0, 32766
 # CHECK: encoding: [0x6f,0x01,0xff,0xbf]
 .code32
 jnz.t %d1, 0, 32766
 
-# CHECK-INST: jnz.t %d1, 1, 256
-# CHECK: encoding: [0x6f,0x11,0x80,0x80]
+# CHECK-INST: jnz.t %d1, 1, -32768
+# CHECK: encoding: [0x6f,0x11,0x00,0xc0]
 .code32
-jnz.t %d1, 1, 256
+jnz.t %d1, 1, -32768
 
-# CHECK-INST: jnz.t %d1, 1, 32512
-# CHECK: encoding: [0x6f,0x11,0x80,0xbf]
+# CHECK-INST: jnz.t %d1, 1, -32766
+# CHECK: encoding: [0x6f,0x11,0x01,0xc0]
 .code32
-jnz.t %d1, 1, 32512
+jnz.t %d1, 1, -32766
 
-# CHECK-INST: jnz.t %d1, 1, 16638
-# CHECK: encoding: [0x6f,0x11,0x7f,0xa0]
+# CHECK-INST: jnz.t %d1, 1, -4
+# CHECK: encoding: [0x6f,0x11,0xfe,0xff]
 .code32
-jnz.t %d1, 1, 16638
+jnz.t %d1, 1, -4
+
+# CHECK-INST: jnz.t %d1, 1, -2
+# CHECK: encoding: [0x6f,0x11,0xff,0xff]
+.code32
+jnz.t %d1, 1, -2
+
+# CHECK-INST: jnz.t %d1, 1, 0
+# CHECK: encoding: [0x6f,0x11,0x00,0x80]
+.code32
+jnz.t %d1, 1, 0
+
+# CHECK-INST: jnz.t %d1, 1, 2
+# CHECK: encoding: [0x6f,0x11,0x01,0x80]
+.code32
+jnz.t %d1, 1, 2
+
+# CHECK-INST: jnz.t %d1, 1, 32764
+# CHECK: encoding: [0x6f,0x11,0xfe,0xbf]
+.code32
+jnz.t %d1, 1, 32764
 
 # CHECK-INST: jnz.t %d1, 1, 32766
 # CHECK: encoding: [0x6f,0x11,0xff,0xbf]
 .code32
 jnz.t %d1, 1, 32766
 
-# CHECK-INST: jnz.t %d1, 2, 256
-# CHECK: encoding: [0x6f,0x21,0x80,0x80]
+# CHECK-INST: jnz.t %d1, 30, -32768
+# CHECK: encoding: [0xef,0xe1,0x00,0xc0]
 .code32
-jnz.t %d1, 2, 256
+jnz.t %d1, 30, -32768
 
-# CHECK-INST: jnz.t %d1, 2, 32512
-# CHECK: encoding: [0x6f,0x21,0x80,0xbf]
+# CHECK-INST: jnz.t %d1, 30, -32766
+# CHECK: encoding: [0xef,0xe1,0x01,0xc0]
 .code32
-jnz.t %d1, 2, 32512
+jnz.t %d1, 30, -32766
 
-# CHECK-INST: jnz.t %d1, 2, 16638
-# CHECK: encoding: [0x6f,0x21,0x7f,0xa0]
+# CHECK-INST: jnz.t %d1, 30, -4
+# CHECK: encoding: [0xef,0xe1,0xfe,0xff]
 .code32
-jnz.t %d1, 2, 16638
+jnz.t %d1, 30, -4
 
-# CHECK-INST: jnz.t %d1, 2, 32766
-# CHECK: encoding: [0x6f,0x21,0xff,0xbf]
+# CHECK-INST: jnz.t %d1, 30, -2
+# CHECK: encoding: [0xef,0xe1,0xff,0xff]
 .code32
-jnz.t %d1, 2, 32766
+jnz.t %d1, 30, -2
 
-# CHECK-INST: jnz.t %d1, 3, 256
-# CHECK: encoding: [0x6f,0x31,0x80,0x80]
+# CHECK-INST: jnz.t %d1, 30, 0
+# CHECK: encoding: [0xef,0xe1,0x00,0x80]
 .code32
-jnz.t %d1, 3, 256
+jnz.t %d1, 30, 0
 
-# CHECK-INST: jnz.t %d1, 3, 32512
-# CHECK: encoding: [0x6f,0x31,0x80,0xbf]
+# CHECK-INST: jnz.t %d1, 30, 2
+# CHECK: encoding: [0xef,0xe1,0x01,0x80]
 .code32
-jnz.t %d1, 3, 32512
+jnz.t %d1, 30, 2
 
-# CHECK-INST: jnz.t %d1, 3, 16638
-# CHECK: encoding: [0x6f,0x31,0x7f,0xa0]
+# CHECK-INST: jnz.t %d1, 30, 32764
+# CHECK: encoding: [0xef,0xe1,0xfe,0xbf]
 .code32
-jnz.t %d1, 3, 16638
+jnz.t %d1, 30, 32764
 
-# CHECK-INST: jnz.t %d1, 3, 32766
-# CHECK: encoding: [0x6f,0x31,0xff,0xbf]
+# CHECK-INST: jnz.t %d1, 30, 32766
+# CHECK: encoding: [0xef,0xe1,0xff,0xbf]
 .code32
-jnz.t %d1, 3, 32766
+jnz.t %d1, 30, 32766
 
-# CHECK-INST: jnz.t %d14, 0, 256
-# CHECK: encoding: [0x6f,0x0e,0x80,0x80]
+# CHECK-INST: jnz.t %d1, 31, -32768
+# CHECK: encoding: [0xef,0xf1,0x00,0xc0]
 .code32
-jnz.t %d14, 0, 256
+jnz.t %d1, 31, -32768
 
-# CHECK-INST: jnz.t %d14, 0, 32512
-# CHECK: encoding: [0x6f,0x0e,0x80,0xbf]
+# CHECK-INST: jnz.t %d1, 31, -32766
+# CHECK: encoding: [0xef,0xf1,0x01,0xc0]
 .code32
-jnz.t %d14, 0, 32512
+jnz.t %d1, 31, -32766
 
-# CHECK-INST: jnz.t %d14, 0, 16638
-# CHECK: encoding: [0x6f,0x0e,0x7f,0xa0]
+# CHECK-INST: jnz.t %d1, 31, -4
+# CHECK: encoding: [0xef,0xf1,0xfe,0xff]
 .code32
-jnz.t %d14, 0, 16638
+jnz.t %d1, 31, -4
+
+# CHECK-INST: jnz.t %d1, 31, -2
+# CHECK: encoding: [0xef,0xf1,0xff,0xff]
+.code32
+jnz.t %d1, 31, -2
+
+# CHECK-INST: jnz.t %d1, 31, 0
+# CHECK: encoding: [0xef,0xf1,0x00,0x80]
+.code32
+jnz.t %d1, 31, 0
+
+# CHECK-INST: jnz.t %d1, 31, 2
+# CHECK: encoding: [0xef,0xf1,0x01,0x80]
+.code32
+jnz.t %d1, 31, 2
+
+# CHECK-INST: jnz.t %d1, 31, 32764
+# CHECK: encoding: [0xef,0xf1,0xfe,0xbf]
+.code32
+jnz.t %d1, 31, 32764
+
+# CHECK-INST: jnz.t %d1, 31, 32766
+# CHECK: encoding: [0xef,0xf1,0xff,0xbf]
+.code32
+jnz.t %d1, 31, 32766
+
+# CHECK-INST: jnz.t %d14, 0, -32768
+# CHECK: encoding: [0x6f,0x0e,0x00,0xc0]
+.code32
+jnz.t %d14, 0, -32768
+
+# CHECK-INST: jnz.t %d14, 0, -32766
+# CHECK: encoding: [0x6f,0x0e,0x01,0xc0]
+.code32
+jnz.t %d14, 0, -32766
+
+# CHECK-INST: jnz.t %d14, 0, -4
+# CHECK: encoding: [0x6f,0x0e,0xfe,0xff]
+.code32
+jnz.t %d14, 0, -4
+
+# CHECK-INST: jnz.t %d14, 0, -2
+# CHECK: encoding: [0x6f,0x0e,0xff,0xff]
+.code32
+jnz.t %d14, 0, -2
+
+# CHECK-INST: jnz.t %d14, 0, 0
+# CHECK: encoding: [0x6f,0x0e,0x00,0x80]
+.code32
+jnz.t %d14, 0, 0
+
+# CHECK-INST: jnz.t %d14, 0, 2
+# CHECK: encoding: [0x6f,0x0e,0x01,0x80]
+.code32
+jnz.t %d14, 0, 2
+
+# CHECK-INST: jnz.t %d14, 0, 32764
+# CHECK: encoding: [0x6f,0x0e,0xfe,0xbf]
+.code32
+jnz.t %d14, 0, 32764
 
 # CHECK-INST: jnz.t %d14, 0, 32766
 # CHECK: encoding: [0x6f,0x0e,0xff,0xbf]
 .code32
 jnz.t %d14, 0, 32766
 
-# CHECK-INST: jnz.t %d14, 1, 256
-# CHECK: encoding: [0x6f,0x1e,0x80,0x80]
+# CHECK-INST: jnz.t %d14, 1, -32768
+# CHECK: encoding: [0x6f,0x1e,0x00,0xc0]
 .code32
-jnz.t %d14, 1, 256
+jnz.t %d14, 1, -32768
 
-# CHECK-INST: jnz.t %d14, 1, 32512
-# CHECK: encoding: [0x6f,0x1e,0x80,0xbf]
+# CHECK-INST: jnz.t %d14, 1, -32766
+# CHECK: encoding: [0x6f,0x1e,0x01,0xc0]
 .code32
-jnz.t %d14, 1, 32512
+jnz.t %d14, 1, -32766
 
-# CHECK-INST: jnz.t %d14, 1, 16638
-# CHECK: encoding: [0x6f,0x1e,0x7f,0xa0]
+# CHECK-INST: jnz.t %d14, 1, -4
+# CHECK: encoding: [0x6f,0x1e,0xfe,0xff]
 .code32
-jnz.t %d14, 1, 16638
+jnz.t %d14, 1, -4
+
+# CHECK-INST: jnz.t %d14, 1, -2
+# CHECK: encoding: [0x6f,0x1e,0xff,0xff]
+.code32
+jnz.t %d14, 1, -2
+
+# CHECK-INST: jnz.t %d14, 1, 0
+# CHECK: encoding: [0x6f,0x1e,0x00,0x80]
+.code32
+jnz.t %d14, 1, 0
+
+# CHECK-INST: jnz.t %d14, 1, 2
+# CHECK: encoding: [0x6f,0x1e,0x01,0x80]
+.code32
+jnz.t %d14, 1, 2
+
+# CHECK-INST: jnz.t %d14, 1, 32764
+# CHECK: encoding: [0x6f,0x1e,0xfe,0xbf]
+.code32
+jnz.t %d14, 1, 32764
 
 # CHECK-INST: jnz.t %d14, 1, 32766
 # CHECK: encoding: [0x6f,0x1e,0xff,0xbf]
 .code32
 jnz.t %d14, 1, 32766
 
-# CHECK-INST: jnz.t %d14, 2, 256
-# CHECK: encoding: [0x6f,0x2e,0x80,0x80]
+# CHECK-INST: jnz.t %d14, 30, -32768
+# CHECK: encoding: [0xef,0xee,0x00,0xc0]
 .code32
-jnz.t %d14, 2, 256
+jnz.t %d14, 30, -32768
 
-# CHECK-INST: jnz.t %d14, 2, 32512
-# CHECK: encoding: [0x6f,0x2e,0x80,0xbf]
+# CHECK-INST: jnz.t %d14, 30, -32766
+# CHECK: encoding: [0xef,0xee,0x01,0xc0]
 .code32
-jnz.t %d14, 2, 32512
+jnz.t %d14, 30, -32766
 
-# CHECK-INST: jnz.t %d14, 2, 16638
-# CHECK: encoding: [0x6f,0x2e,0x7f,0xa0]
+# CHECK-INST: jnz.t %d14, 30, -4
+# CHECK: encoding: [0xef,0xee,0xfe,0xff]
 .code32
-jnz.t %d14, 2, 16638
+jnz.t %d14, 30, -4
 
-# CHECK-INST: jnz.t %d14, 2, 32766
-# CHECK: encoding: [0x6f,0x2e,0xff,0xbf]
+# CHECK-INST: jnz.t %d14, 30, -2
+# CHECK: encoding: [0xef,0xee,0xff,0xff]
 .code32
-jnz.t %d14, 2, 32766
+jnz.t %d14, 30, -2
 
-# CHECK-INST: jnz.t %d14, 3, 256
-# CHECK: encoding: [0x6f,0x3e,0x80,0x80]
+# CHECK-INST: jnz.t %d14, 30, 0
+# CHECK: encoding: [0xef,0xee,0x00,0x80]
 .code32
-jnz.t %d14, 3, 256
+jnz.t %d14, 30, 0
 
-# CHECK-INST: jnz.t %d14, 3, 32512
-# CHECK: encoding: [0x6f,0x3e,0x80,0xbf]
+# CHECK-INST: jnz.t %d14, 30, 2
+# CHECK: encoding: [0xef,0xee,0x01,0x80]
 .code32
-jnz.t %d14, 3, 32512
+jnz.t %d14, 30, 2
 
-# CHECK-INST: jnz.t %d14, 3, 16638
-# CHECK: encoding: [0x6f,0x3e,0x7f,0xa0]
+# CHECK-INST: jnz.t %d14, 30, 32764
+# CHECK: encoding: [0xef,0xee,0xfe,0xbf]
 .code32
-jnz.t %d14, 3, 16638
+jnz.t %d14, 30, 32764
 
-# CHECK-INST: jnz.t %d14, 3, 32766
-# CHECK: encoding: [0x6f,0x3e,0xff,0xbf]
+# CHECK-INST: jnz.t %d14, 30, 32766
+# CHECK: encoding: [0xef,0xee,0xff,0xbf]
 .code32
-jnz.t %d14, 3, 32766
+jnz.t %d14, 30, 32766
 
-# CHECK-INST: jnz.t %d15, 0, 256
-# CHECK: encoding: [0x6f,0x0f,0x80,0x80]
+# CHECK-INST: jnz.t %d14, 31, -32768
+# CHECK: encoding: [0xef,0xfe,0x00,0xc0]
 .code32
-jnz.t %d15, 0, 256
+jnz.t %d14, 31, -32768
 
-# CHECK-INST: jnz.t %d15, 0, 32512
-# CHECK: encoding: [0x6f,0x0f,0x80,0xbf]
+# CHECK-INST: jnz.t %d14, 31, -32766
+# CHECK: encoding: [0xef,0xfe,0x01,0xc0]
 .code32
-jnz.t %d15, 0, 32512
+jnz.t %d14, 31, -32766
 
-# CHECK-INST: jnz.t %d15, 0, 16638
-# CHECK: encoding: [0x6f,0x0f,0x7f,0xa0]
+# CHECK-INST: jnz.t %d14, 31, -4
+# CHECK: encoding: [0xef,0xfe,0xfe,0xff]
 .code32
-jnz.t %d15, 0, 16638
+jnz.t %d14, 31, -4
+
+# CHECK-INST: jnz.t %d14, 31, -2
+# CHECK: encoding: [0xef,0xfe,0xff,0xff]
+.code32
+jnz.t %d14, 31, -2
+
+# CHECK-INST: jnz.t %d14, 31, 0
+# CHECK: encoding: [0xef,0xfe,0x00,0x80]
+.code32
+jnz.t %d14, 31, 0
+
+# CHECK-INST: jnz.t %d14, 31, 2
+# CHECK: encoding: [0xef,0xfe,0x01,0x80]
+.code32
+jnz.t %d14, 31, 2
+
+# CHECK-INST: jnz.t %d14, 31, 32764
+# CHECK: encoding: [0xef,0xfe,0xfe,0xbf]
+.code32
+jnz.t %d14, 31, 32764
+
+# CHECK-INST: jnz.t %d14, 31, 32766
+# CHECK: encoding: [0xef,0xfe,0xff,0xbf]
+.code32
+jnz.t %d14, 31, 32766
+
+# CHECK-INST: jnz.t %d15, 0, -32768
+# CHECK: encoding: [0x6f,0x0f,0x00,0xc0]
+.code32
+jnz.t %d15, 0, -32768
+
+# CHECK-INST: jnz.t %d15, 0, -32766
+# CHECK: encoding: [0x6f,0x0f,0x01,0xc0]
+.code32
+jnz.t %d15, 0, -32766
+
+# CHECK-INST: jnz.t %d15, 0, -4
+# CHECK: encoding: [0x6f,0x0f,0xfe,0xff]
+.code32
+jnz.t %d15, 0, -4
+
+# CHECK-INST: jnz.t %d15, 0, -2
+# CHECK: encoding: [0x6f,0x0f,0xff,0xff]
+.code32
+jnz.t %d15, 0, -2
+
+# CHECK-INST: jnz.t %d15, 0, 0
+# CHECK: encoding: [0x6f,0x0f,0x00,0x80]
+.code32
+jnz.t %d15, 0, 0
+
+# CHECK-INST: jnz.t %d15, 0, 2
+# CHECK: encoding: [0x6f,0x0f,0x01,0x80]
+.code32
+jnz.t %d15, 0, 2
+
+# CHECK-INST: jnz.t %d15, 0, 32764
+# CHECK: encoding: [0x6f,0x0f,0xfe,0xbf]
+.code32
+jnz.t %d15, 0, 32764
 
 # CHECK-INST: jnz.t %d15, 0, 32766
 # CHECK: encoding: [0x6f,0x0f,0xff,0xbf]
 .code32
 jnz.t %d15, 0, 32766
 
-# CHECK-INST: jnz.t %d15, 1, 256
-# CHECK: encoding: [0x6f,0x1f,0x80,0x80]
+# CHECK-INST: jnz.t %d15, 1, -32768
+# CHECK: encoding: [0x6f,0x1f,0x00,0xc0]
 .code32
-jnz.t %d15, 1, 256
+jnz.t %d15, 1, -32768
 
-# CHECK-INST: jnz.t %d15, 1, 32512
-# CHECK: encoding: [0x6f,0x1f,0x80,0xbf]
+# CHECK-INST: jnz.t %d15, 1, -32766
+# CHECK: encoding: [0x6f,0x1f,0x01,0xc0]
 .code32
-jnz.t %d15, 1, 32512
+jnz.t %d15, 1, -32766
 
-# CHECK-INST: jnz.t %d15, 1, 16638
-# CHECK: encoding: [0x6f,0x1f,0x7f,0xa0]
+# CHECK-INST: jnz.t %d15, 1, -4
+# CHECK: encoding: [0x6f,0x1f,0xfe,0xff]
 .code32
-jnz.t %d15, 1, 16638
+jnz.t %d15, 1, -4
+
+# CHECK-INST: jnz.t %d15, 1, -2
+# CHECK: encoding: [0x6f,0x1f,0xff,0xff]
+.code32
+jnz.t %d15, 1, -2
+
+# CHECK-INST: jnz.t %d15, 1, 0
+# CHECK: encoding: [0x6f,0x1f,0x00,0x80]
+.code32
+jnz.t %d15, 1, 0
+
+# CHECK-INST: jnz.t %d15, 1, 2
+# CHECK: encoding: [0x6f,0x1f,0x01,0x80]
+.code32
+jnz.t %d15, 1, 2
+
+# CHECK-INST: jnz.t %d15, 1, 32764
+# CHECK: encoding: [0x6f,0x1f,0xfe,0xbf]
+.code32
+jnz.t %d15, 1, 32764
 
 # CHECK-INST: jnz.t %d15, 1, 32766
 # CHECK: encoding: [0x6f,0x1f,0xff,0xbf]
 .code32
 jnz.t %d15, 1, 32766
 
-# CHECK-INST: jnz.t %d15, 2, 256
-# CHECK: encoding: [0x6f,0x2f,0x80,0x80]
+# CHECK-INST: jnz.t %d15, 30, -32768
+# CHECK: encoding: [0xef,0xef,0x00,0xc0]
 .code32
-jnz.t %d15, 2, 256
+jnz.t %d15, 30, -32768
 
-# CHECK-INST: jnz.t %d15, 2, 32512
-# CHECK: encoding: [0x6f,0x2f,0x80,0xbf]
+# CHECK-INST: jnz.t %d15, 30, -32766
+# CHECK: encoding: [0xef,0xef,0x01,0xc0]
 .code32
-jnz.t %d15, 2, 32512
+jnz.t %d15, 30, -32766
 
-# CHECK-INST: jnz.t %d15, 2, 16638
-# CHECK: encoding: [0x6f,0x2f,0x7f,0xa0]
+# CHECK-INST: jnz.t %d15, 30, -4
+# CHECK: encoding: [0xef,0xef,0xfe,0xff]
 .code32
-jnz.t %d15, 2, 16638
+jnz.t %d15, 30, -4
 
-# CHECK-INST: jnz.t %d15, 2, 32766
-# CHECK: encoding: [0x6f,0x2f,0xff,0xbf]
+# CHECK-INST: jnz.t %d15, 30, -2
+# CHECK: encoding: [0xef,0xef,0xff,0xff]
 .code32
-jnz.t %d15, 2, 32766
+jnz.t %d15, 30, -2
 
-# CHECK-INST: jnz.t %d15, 3, 256
-# CHECK: encoding: [0x6f,0x3f,0x80,0x80]
+# CHECK-INST: jnz.t %d15, 30, 0
+# CHECK: encoding: [0xef,0xef,0x00,0x80]
 .code32
-jnz.t %d15, 3, 256
+jnz.t %d15, 30, 0
 
-# CHECK-INST: jnz.t %d15, 3, 32512
-# CHECK: encoding: [0x6f,0x3f,0x80,0xbf]
+# CHECK-INST: jnz.t %d15, 30, 2
+# CHECK: encoding: [0xef,0xef,0x01,0x80]
 .code32
-jnz.t %d15, 3, 32512
+jnz.t %d15, 30, 2
 
-# CHECK-INST: jnz.t %d15, 3, 16638
-# CHECK: encoding: [0x6f,0x3f,0x7f,0xa0]
+# CHECK-INST: jnz.t %d15, 30, 32764
+# CHECK: encoding: [0xef,0xef,0xfe,0xbf]
 .code32
-jnz.t %d15, 3, 16638
+jnz.t %d15, 30, 32764
 
-# CHECK-INST: jnz.t %d15, 3, 32766
-# CHECK: encoding: [0x6f,0x3f,0xff,0xbf]
+# CHECK-INST: jnz.t %d15, 30, 32766
+# CHECK: encoding: [0xef,0xef,0xff,0xbf]
 .code32
-jnz.t %d15, 3, 32766
+jnz.t %d15, 30, 32766
+
+# CHECK-INST: jnz.t %d15, 31, -32768
+# CHECK: encoding: [0xef,0xff,0x00,0xc0]
+.code32
+jnz.t %d15, 31, -32768
+
+# CHECK-INST: jnz.t %d15, 31, -32766
+# CHECK: encoding: [0xef,0xff,0x01,0xc0]
+.code32
+jnz.t %d15, 31, -32766
+
+# CHECK-INST: jnz.t %d15, 31, -4
+# CHECK: encoding: [0xef,0xff,0xfe,0xff]
+.code32
+jnz.t %d15, 31, -4
+
+# CHECK-INST: jnz.t %d15, 31, -2
+# CHECK: encoding: [0xef,0xff,0xff,0xff]
+.code32
+jnz.t %d15, 31, -2
+
+# CHECK-INST: jnz.t %d15, 31, 0
+# CHECK: encoding: [0xef,0xff,0x00,0x80]
+.code32
+jnz.t %d15, 31, 0
+
+# CHECK-INST: jnz.t %d15, 31, 2
+# CHECK: encoding: [0xef,0xff,0x01,0x80]
+.code32
+jnz.t %d15, 31, 2
+
+# CHECK-INST: jnz.t %d15, 31, 32764
+# CHECK: encoding: [0xef,0xff,0xfe,0xbf]
+.code32
+jnz.t %d15, 31, 32764
+
+# CHECK-INST: jnz.t %d15, 31, 32766
+# CHECK: encoding: [0xef,0xff,0xff,0xbf]
+.code32
+jnz.t %d15, 31, 32766
 
 
 # CHECK-INST: jz.a %a0, 256
@@ -6750,325 +7070,645 @@ jz.t %d15, 3, 28
 jz.t %d15, 3, 30
 
 
-# CHECK-INST: jz.t %d0, 0, 256
-# CHECK: encoding: [0x6f,0x00,0x80,0x00]
+# CHECK-INST: jz.t %d0, 0, -32768
+# CHECK: encoding: [0x6f,0x00,0x00,0x40]
 .code32
-jz.t %d0, 0, 256
+jz.t %d0, 0, -32768
 
-# CHECK-INST: jz.t %d0, 0, 32512
-# CHECK: encoding: [0x6f,0x00,0x80,0x3f]
+# CHECK-INST: jz.t %d0, 0, -32766
+# CHECK: encoding: [0x6f,0x00,0x01,0x40]
 .code32
-jz.t %d0, 0, 32512
+jz.t %d0, 0, -32766
 
-# CHECK-INST: jz.t %d0, 0, 16638
-# CHECK: encoding: [0x6f,0x00,0x7f,0x20]
+# CHECK-INST: jz.t %d0, 0, -4
+# CHECK: encoding: [0x6f,0x00,0xfe,0x7f]
 .code32
-jz.t %d0, 0, 16638
+jz.t %d0, 0, -4
+
+# CHECK-INST: jz.t %d0, 0, -2
+# CHECK: encoding: [0x6f,0x00,0xff,0x7f]
+.code32
+jz.t %d0, 0, -2
+
+# CHECK-INST: jz.t %d0, 0, 0
+# CHECK: encoding: [0x6f,0x00,0x00,0x00]
+.code32
+jz.t %d0, 0, 0
+
+# CHECK-INST: jz.t %d0, 0, 2
+# CHECK: encoding: [0x6f,0x00,0x01,0x00]
+.code32
+jz.t %d0, 0, 2
+
+# CHECK-INST: jz.t %d0, 0, 32764
+# CHECK: encoding: [0x6f,0x00,0xfe,0x3f]
+.code32
+jz.t %d0, 0, 32764
 
 # CHECK-INST: jz.t %d0, 0, 32766
 # CHECK: encoding: [0x6f,0x00,0xff,0x3f]
 .code32
 jz.t %d0, 0, 32766
 
-# CHECK-INST: jz.t %d0, 1, 256
-# CHECK: encoding: [0x6f,0x10,0x80,0x00]
+# CHECK-INST: jz.t %d0, 1, -32768
+# CHECK: encoding: [0x6f,0x10,0x00,0x40]
 .code32
-jz.t %d0, 1, 256
+jz.t %d0, 1, -32768
 
-# CHECK-INST: jz.t %d0, 1, 32512
-# CHECK: encoding: [0x6f,0x10,0x80,0x3f]
+# CHECK-INST: jz.t %d0, 1, -32766
+# CHECK: encoding: [0x6f,0x10,0x01,0x40]
 .code32
-jz.t %d0, 1, 32512
+jz.t %d0, 1, -32766
 
-# CHECK-INST: jz.t %d0, 1, 16638
-# CHECK: encoding: [0x6f,0x10,0x7f,0x20]
+# CHECK-INST: jz.t %d0, 1, -4
+# CHECK: encoding: [0x6f,0x10,0xfe,0x7f]
 .code32
-jz.t %d0, 1, 16638
+jz.t %d0, 1, -4
+
+# CHECK-INST: jz.t %d0, 1, -2
+# CHECK: encoding: [0x6f,0x10,0xff,0x7f]
+.code32
+jz.t %d0, 1, -2
+
+# CHECK-INST: jz.t %d0, 1, 0
+# CHECK: encoding: [0x6f,0x10,0x00,0x00]
+.code32
+jz.t %d0, 1, 0
+
+# CHECK-INST: jz.t %d0, 1, 2
+# CHECK: encoding: [0x6f,0x10,0x01,0x00]
+.code32
+jz.t %d0, 1, 2
+
+# CHECK-INST: jz.t %d0, 1, 32764
+# CHECK: encoding: [0x6f,0x10,0xfe,0x3f]
+.code32
+jz.t %d0, 1, 32764
 
 # CHECK-INST: jz.t %d0, 1, 32766
 # CHECK: encoding: [0x6f,0x10,0xff,0x3f]
 .code32
 jz.t %d0, 1, 32766
 
-# CHECK-INST: jz.t %d0, 2, 256
-# CHECK: encoding: [0x6f,0x20,0x80,0x00]
+# CHECK-INST: jz.t %d0, 30, -32768
+# CHECK: encoding: [0xef,0xe0,0x00,0x40]
 .code32
-jz.t %d0, 2, 256
+jz.t %d0, 30, -32768
 
-# CHECK-INST: jz.t %d0, 2, 32512
-# CHECK: encoding: [0x6f,0x20,0x80,0x3f]
+# CHECK-INST: jz.t %d0, 30, -32766
+# CHECK: encoding: [0xef,0xe0,0x01,0x40]
 .code32
-jz.t %d0, 2, 32512
+jz.t %d0, 30, -32766
 
-# CHECK-INST: jz.t %d0, 2, 16638
-# CHECK: encoding: [0x6f,0x20,0x7f,0x20]
+# CHECK-INST: jz.t %d0, 30, -4
+# CHECK: encoding: [0xef,0xe0,0xfe,0x7f]
 .code32
-jz.t %d0, 2, 16638
+jz.t %d0, 30, -4
 
-# CHECK-INST: jz.t %d0, 2, 32766
-# CHECK: encoding: [0x6f,0x20,0xff,0x3f]
+# CHECK-INST: jz.t %d0, 30, -2
+# CHECK: encoding: [0xef,0xe0,0xff,0x7f]
 .code32
-jz.t %d0, 2, 32766
+jz.t %d0, 30, -2
 
-# CHECK-INST: jz.t %d0, 3, 256
-# CHECK: encoding: [0x6f,0x30,0x80,0x00]
+# CHECK-INST: jz.t %d0, 30, 0
+# CHECK: encoding: [0xef,0xe0,0x00,0x00]
 .code32
-jz.t %d0, 3, 256
+jz.t %d0, 30, 0
 
-# CHECK-INST: jz.t %d0, 3, 32512
-# CHECK: encoding: [0x6f,0x30,0x80,0x3f]
+# CHECK-INST: jz.t %d0, 30, 2
+# CHECK: encoding: [0xef,0xe0,0x01,0x00]
 .code32
-jz.t %d0, 3, 32512
+jz.t %d0, 30, 2
 
-# CHECK-INST: jz.t %d0, 3, 16638
-# CHECK: encoding: [0x6f,0x30,0x7f,0x20]
+# CHECK-INST: jz.t %d0, 30, 32764
+# CHECK: encoding: [0xef,0xe0,0xfe,0x3f]
 .code32
-jz.t %d0, 3, 16638
+jz.t %d0, 30, 32764
 
-# CHECK-INST: jz.t %d0, 3, 32766
-# CHECK: encoding: [0x6f,0x30,0xff,0x3f]
+# CHECK-INST: jz.t %d0, 30, 32766
+# CHECK: encoding: [0xef,0xe0,0xff,0x3f]
 .code32
-jz.t %d0, 3, 32766
+jz.t %d0, 30, 32766
 
-# CHECK-INST: jz.t %d1, 0, 256
-# CHECK: encoding: [0x6f,0x01,0x80,0x00]
+# CHECK-INST: jz.t %d0, 31, -32768
+# CHECK: encoding: [0xef,0xf0,0x00,0x40]
 .code32
-jz.t %d1, 0, 256
+jz.t %d0, 31, -32768
 
-# CHECK-INST: jz.t %d1, 0, 32512
-# CHECK: encoding: [0x6f,0x01,0x80,0x3f]
+# CHECK-INST: jz.t %d0, 31, -32766
+# CHECK: encoding: [0xef,0xf0,0x01,0x40]
 .code32
-jz.t %d1, 0, 32512
+jz.t %d0, 31, -32766
 
-# CHECK-INST: jz.t %d1, 0, 16638
-# CHECK: encoding: [0x6f,0x01,0x7f,0x20]
+# CHECK-INST: jz.t %d0, 31, -4
+# CHECK: encoding: [0xef,0xf0,0xfe,0x7f]
 .code32
-jz.t %d1, 0, 16638
+jz.t %d0, 31, -4
+
+# CHECK-INST: jz.t %d0, 31, -2
+# CHECK: encoding: [0xef,0xf0,0xff,0x7f]
+.code32
+jz.t %d0, 31, -2
+
+# CHECK-INST: jz.t %d0, 31, 0
+# CHECK: encoding: [0xef,0xf0,0x00,0x00]
+.code32
+jz.t %d0, 31, 0
+
+# CHECK-INST: jz.t %d0, 31, 2
+# CHECK: encoding: [0xef,0xf0,0x01,0x00]
+.code32
+jz.t %d0, 31, 2
+
+# CHECK-INST: jz.t %d0, 31, 32764
+# CHECK: encoding: [0xef,0xf0,0xfe,0x3f]
+.code32
+jz.t %d0, 31, 32764
+
+# CHECK-INST: jz.t %d0, 31, 32766
+# CHECK: encoding: [0xef,0xf0,0xff,0x3f]
+.code32
+jz.t %d0, 31, 32766
+
+# CHECK-INST: jz.t %d1, 0, -32768
+# CHECK: encoding: [0x6f,0x01,0x00,0x40]
+.code32
+jz.t %d1, 0, -32768
+
+# CHECK-INST: jz.t %d1, 0, -32766
+# CHECK: encoding: [0x6f,0x01,0x01,0x40]
+.code32
+jz.t %d1, 0, -32766
+
+# CHECK-INST: jz.t %d1, 0, -4
+# CHECK: encoding: [0x6f,0x01,0xfe,0x7f]
+.code32
+jz.t %d1, 0, -4
+
+# CHECK-INST: jz.t %d1, 0, -2
+# CHECK: encoding: [0x6f,0x01,0xff,0x7f]
+.code32
+jz.t %d1, 0, -2
+
+# CHECK-INST: jz.t %d1, 0, 0
+# CHECK: encoding: [0x6f,0x01,0x00,0x00]
+.code32
+jz.t %d1, 0, 0
+
+# CHECK-INST: jz.t %d1, 0, 2
+# CHECK: encoding: [0x6f,0x01,0x01,0x00]
+.code32
+jz.t %d1, 0, 2
+
+# CHECK-INST: jz.t %d1, 0, 32764
+# CHECK: encoding: [0x6f,0x01,0xfe,0x3f]
+.code32
+jz.t %d1, 0, 32764
 
 # CHECK-INST: jz.t %d1, 0, 32766
 # CHECK: encoding: [0x6f,0x01,0xff,0x3f]
 .code32
 jz.t %d1, 0, 32766
 
-# CHECK-INST: jz.t %d1, 1, 256
-# CHECK: encoding: [0x6f,0x11,0x80,0x00]
+# CHECK-INST: jz.t %d1, 1, -32768
+# CHECK: encoding: [0x6f,0x11,0x00,0x40]
 .code32
-jz.t %d1, 1, 256
+jz.t %d1, 1, -32768
 
-# CHECK-INST: jz.t %d1, 1, 32512
-# CHECK: encoding: [0x6f,0x11,0x80,0x3f]
+# CHECK-INST: jz.t %d1, 1, -32766
+# CHECK: encoding: [0x6f,0x11,0x01,0x40]
 .code32
-jz.t %d1, 1, 32512
+jz.t %d1, 1, -32766
 
-# CHECK-INST: jz.t %d1, 1, 16638
-# CHECK: encoding: [0x6f,0x11,0x7f,0x20]
+# CHECK-INST: jz.t %d1, 1, -4
+# CHECK: encoding: [0x6f,0x11,0xfe,0x7f]
 .code32
-jz.t %d1, 1, 16638
+jz.t %d1, 1, -4
+
+# CHECK-INST: jz.t %d1, 1, -2
+# CHECK: encoding: [0x6f,0x11,0xff,0x7f]
+.code32
+jz.t %d1, 1, -2
+
+# CHECK-INST: jz.t %d1, 1, 0
+# CHECK: encoding: [0x6f,0x11,0x00,0x00]
+.code32
+jz.t %d1, 1, 0
+
+# CHECK-INST: jz.t %d1, 1, 2
+# CHECK: encoding: [0x6f,0x11,0x01,0x00]
+.code32
+jz.t %d1, 1, 2
+
+# CHECK-INST: jz.t %d1, 1, 32764
+# CHECK: encoding: [0x6f,0x11,0xfe,0x3f]
+.code32
+jz.t %d1, 1, 32764
 
 # CHECK-INST: jz.t %d1, 1, 32766
 # CHECK: encoding: [0x6f,0x11,0xff,0x3f]
 .code32
 jz.t %d1, 1, 32766
 
-# CHECK-INST: jz.t %d1, 2, 256
-# CHECK: encoding: [0x6f,0x21,0x80,0x00]
+# CHECK-INST: jz.t %d1, 30, -32768
+# CHECK: encoding: [0xef,0xe1,0x00,0x40]
 .code32
-jz.t %d1, 2, 256
+jz.t %d1, 30, -32768
 
-# CHECK-INST: jz.t %d1, 2, 32512
-# CHECK: encoding: [0x6f,0x21,0x80,0x3f]
+# CHECK-INST: jz.t %d1, 30, -32766
+# CHECK: encoding: [0xef,0xe1,0x01,0x40]
 .code32
-jz.t %d1, 2, 32512
+jz.t %d1, 30, -32766
 
-# CHECK-INST: jz.t %d1, 2, 16638
-# CHECK: encoding: [0x6f,0x21,0x7f,0x20]
+# CHECK-INST: jz.t %d1, 30, -4
+# CHECK: encoding: [0xef,0xe1,0xfe,0x7f]
 .code32
-jz.t %d1, 2, 16638
+jz.t %d1, 30, -4
 
-# CHECK-INST: jz.t %d1, 2, 32766
-# CHECK: encoding: [0x6f,0x21,0xff,0x3f]
+# CHECK-INST: jz.t %d1, 30, -2
+# CHECK: encoding: [0xef,0xe1,0xff,0x7f]
 .code32
-jz.t %d1, 2, 32766
+jz.t %d1, 30, -2
 
-# CHECK-INST: jz.t %d1, 3, 256
-# CHECK: encoding: [0x6f,0x31,0x80,0x00]
+# CHECK-INST: jz.t %d1, 30, 0
+# CHECK: encoding: [0xef,0xe1,0x00,0x00]
 .code32
-jz.t %d1, 3, 256
+jz.t %d1, 30, 0
 
-# CHECK-INST: jz.t %d1, 3, 32512
-# CHECK: encoding: [0x6f,0x31,0x80,0x3f]
+# CHECK-INST: jz.t %d1, 30, 2
+# CHECK: encoding: [0xef,0xe1,0x01,0x00]
 .code32
-jz.t %d1, 3, 32512
+jz.t %d1, 30, 2
 
-# CHECK-INST: jz.t %d1, 3, 16638
-# CHECK: encoding: [0x6f,0x31,0x7f,0x20]
+# CHECK-INST: jz.t %d1, 30, 32764
+# CHECK: encoding: [0xef,0xe1,0xfe,0x3f]
 .code32
-jz.t %d1, 3, 16638
+jz.t %d1, 30, 32764
 
-# CHECK-INST: jz.t %d1, 3, 32766
-# CHECK: encoding: [0x6f,0x31,0xff,0x3f]
+# CHECK-INST: jz.t %d1, 30, 32766
+# CHECK: encoding: [0xef,0xe1,0xff,0x3f]
 .code32
-jz.t %d1, 3, 32766
+jz.t %d1, 30, 32766
 
-# CHECK-INST: jz.t %d14, 0, 256
-# CHECK: encoding: [0x6f,0x0e,0x80,0x00]
+# CHECK-INST: jz.t %d1, 31, -32768
+# CHECK: encoding: [0xef,0xf1,0x00,0x40]
 .code32
-jz.t %d14, 0, 256
+jz.t %d1, 31, -32768
 
-# CHECK-INST: jz.t %d14, 0, 32512
-# CHECK: encoding: [0x6f,0x0e,0x80,0x3f]
+# CHECK-INST: jz.t %d1, 31, -32766
+# CHECK: encoding: [0xef,0xf1,0x01,0x40]
 .code32
-jz.t %d14, 0, 32512
+jz.t %d1, 31, -32766
 
-# CHECK-INST: jz.t %d14, 0, 16638
-# CHECK: encoding: [0x6f,0x0e,0x7f,0x20]
+# CHECK-INST: jz.t %d1, 31, -4
+# CHECK: encoding: [0xef,0xf1,0xfe,0x7f]
 .code32
-jz.t %d14, 0, 16638
+jz.t %d1, 31, -4
+
+# CHECK-INST: jz.t %d1, 31, -2
+# CHECK: encoding: [0xef,0xf1,0xff,0x7f]
+.code32
+jz.t %d1, 31, -2
+
+# CHECK-INST: jz.t %d1, 31, 0
+# CHECK: encoding: [0xef,0xf1,0x00,0x00]
+.code32
+jz.t %d1, 31, 0
+
+# CHECK-INST: jz.t %d1, 31, 2
+# CHECK: encoding: [0xef,0xf1,0x01,0x00]
+.code32
+jz.t %d1, 31, 2
+
+# CHECK-INST: jz.t %d1, 31, 32764
+# CHECK: encoding: [0xef,0xf1,0xfe,0x3f]
+.code32
+jz.t %d1, 31, 32764
+
+# CHECK-INST: jz.t %d1, 31, 32766
+# CHECK: encoding: [0xef,0xf1,0xff,0x3f]
+.code32
+jz.t %d1, 31, 32766
+
+# CHECK-INST: jz.t %d14, 0, -32768
+# CHECK: encoding: [0x6f,0x0e,0x00,0x40]
+.code32
+jz.t %d14, 0, -32768
+
+# CHECK-INST: jz.t %d14, 0, -32766
+# CHECK: encoding: [0x6f,0x0e,0x01,0x40]
+.code32
+jz.t %d14, 0, -32766
+
+# CHECK-INST: jz.t %d14, 0, -4
+# CHECK: encoding: [0x6f,0x0e,0xfe,0x7f]
+.code32
+jz.t %d14, 0, -4
+
+# CHECK-INST: jz.t %d14, 0, -2
+# CHECK: encoding: [0x6f,0x0e,0xff,0x7f]
+.code32
+jz.t %d14, 0, -2
+
+# CHECK-INST: jz.t %d14, 0, 0
+# CHECK: encoding: [0x6f,0x0e,0x00,0x00]
+.code32
+jz.t %d14, 0, 0
+
+# CHECK-INST: jz.t %d14, 0, 2
+# CHECK: encoding: [0x6f,0x0e,0x01,0x00]
+.code32
+jz.t %d14, 0, 2
+
+# CHECK-INST: jz.t %d14, 0, 32764
+# CHECK: encoding: [0x6f,0x0e,0xfe,0x3f]
+.code32
+jz.t %d14, 0, 32764
 
 # CHECK-INST: jz.t %d14, 0, 32766
 # CHECK: encoding: [0x6f,0x0e,0xff,0x3f]
 .code32
 jz.t %d14, 0, 32766
 
-# CHECK-INST: jz.t %d14, 1, 256
-# CHECK: encoding: [0x6f,0x1e,0x80,0x00]
+# CHECK-INST: jz.t %d14, 1, -32768
+# CHECK: encoding: [0x6f,0x1e,0x00,0x40]
 .code32
-jz.t %d14, 1, 256
+jz.t %d14, 1, -32768
 
-# CHECK-INST: jz.t %d14, 1, 32512
-# CHECK: encoding: [0x6f,0x1e,0x80,0x3f]
+# CHECK-INST: jz.t %d14, 1, -32766
+# CHECK: encoding: [0x6f,0x1e,0x01,0x40]
 .code32
-jz.t %d14, 1, 32512
+jz.t %d14, 1, -32766
 
-# CHECK-INST: jz.t %d14, 1, 16638
-# CHECK: encoding: [0x6f,0x1e,0x7f,0x20]
+# CHECK-INST: jz.t %d14, 1, -4
+# CHECK: encoding: [0x6f,0x1e,0xfe,0x7f]
 .code32
-jz.t %d14, 1, 16638
+jz.t %d14, 1, -4
+
+# CHECK-INST: jz.t %d14, 1, -2
+# CHECK: encoding: [0x6f,0x1e,0xff,0x7f]
+.code32
+jz.t %d14, 1, -2
+
+# CHECK-INST: jz.t %d14, 1, 0
+# CHECK: encoding: [0x6f,0x1e,0x00,0x00]
+.code32
+jz.t %d14, 1, 0
+
+# CHECK-INST: jz.t %d14, 1, 2
+# CHECK: encoding: [0x6f,0x1e,0x01,0x00]
+.code32
+jz.t %d14, 1, 2
+
+# CHECK-INST: jz.t %d14, 1, 32764
+# CHECK: encoding: [0x6f,0x1e,0xfe,0x3f]
+.code32
+jz.t %d14, 1, 32764
 
 # CHECK-INST: jz.t %d14, 1, 32766
 # CHECK: encoding: [0x6f,0x1e,0xff,0x3f]
 .code32
 jz.t %d14, 1, 32766
 
-# CHECK-INST: jz.t %d14, 2, 256
-# CHECK: encoding: [0x6f,0x2e,0x80,0x00]
+# CHECK-INST: jz.t %d14, 30, -32768
+# CHECK: encoding: [0xef,0xee,0x00,0x40]
 .code32
-jz.t %d14, 2, 256
+jz.t %d14, 30, -32768
 
-# CHECK-INST: jz.t %d14, 2, 32512
-# CHECK: encoding: [0x6f,0x2e,0x80,0x3f]
+# CHECK-INST: jz.t %d14, 30, -32766
+# CHECK: encoding: [0xef,0xee,0x01,0x40]
 .code32
-jz.t %d14, 2, 32512
+jz.t %d14, 30, -32766
 
-# CHECK-INST: jz.t %d14, 2, 16638
-# CHECK: encoding: [0x6f,0x2e,0x7f,0x20]
+# CHECK-INST: jz.t %d14, 30, -4
+# CHECK: encoding: [0xef,0xee,0xfe,0x7f]
 .code32
-jz.t %d14, 2, 16638
+jz.t %d14, 30, -4
 
-# CHECK-INST: jz.t %d14, 2, 32766
-# CHECK: encoding: [0x6f,0x2e,0xff,0x3f]
+# CHECK-INST: jz.t %d14, 30, -2
+# CHECK: encoding: [0xef,0xee,0xff,0x7f]
 .code32
-jz.t %d14, 2, 32766
+jz.t %d14, 30, -2
 
-# CHECK-INST: jz.t %d14, 3, 256
-# CHECK: encoding: [0x6f,0x3e,0x80,0x00]
+# CHECK-INST: jz.t %d14, 30, 0
+# CHECK: encoding: [0xef,0xee,0x00,0x00]
 .code32
-jz.t %d14, 3, 256
+jz.t %d14, 30, 0
 
-# CHECK-INST: jz.t %d14, 3, 32512
-# CHECK: encoding: [0x6f,0x3e,0x80,0x3f]
+# CHECK-INST: jz.t %d14, 30, 2
+# CHECK: encoding: [0xef,0xee,0x01,0x00]
 .code32
-jz.t %d14, 3, 32512
+jz.t %d14, 30, 2
 
-# CHECK-INST: jz.t %d14, 3, 16638
-# CHECK: encoding: [0x6f,0x3e,0x7f,0x20]
+# CHECK-INST: jz.t %d14, 30, 32764
+# CHECK: encoding: [0xef,0xee,0xfe,0x3f]
 .code32
-jz.t %d14, 3, 16638
+jz.t %d14, 30, 32764
 
-# CHECK-INST: jz.t %d14, 3, 32766
-# CHECK: encoding: [0x6f,0x3e,0xff,0x3f]
+# CHECK-INST: jz.t %d14, 30, 32766
+# CHECK: encoding: [0xef,0xee,0xff,0x3f]
 .code32
-jz.t %d14, 3, 32766
+jz.t %d14, 30, 32766
 
-# CHECK-INST: jz.t %d15, 0, 256
-# CHECK: encoding: [0x6f,0x0f,0x80,0x00]
+# CHECK-INST: jz.t %d14, 31, -32768
+# CHECK: encoding: [0xef,0xfe,0x00,0x40]
 .code32
-jz.t %d15, 0, 256
+jz.t %d14, 31, -32768
 
-# CHECK-INST: jz.t %d15, 0, 32512
-# CHECK: encoding: [0x6f,0x0f,0x80,0x3f]
+# CHECK-INST: jz.t %d14, 31, -32766
+# CHECK: encoding: [0xef,0xfe,0x01,0x40]
 .code32
-jz.t %d15, 0, 32512
+jz.t %d14, 31, -32766
 
-# CHECK-INST: jz.t %d15, 0, 16638
-# CHECK: encoding: [0x6f,0x0f,0x7f,0x20]
+# CHECK-INST: jz.t %d14, 31, -4
+# CHECK: encoding: [0xef,0xfe,0xfe,0x7f]
 .code32
-jz.t %d15, 0, 16638
+jz.t %d14, 31, -4
+
+# CHECK-INST: jz.t %d14, 31, -2
+# CHECK: encoding: [0xef,0xfe,0xff,0x7f]
+.code32
+jz.t %d14, 31, -2
+
+# CHECK-INST: jz.t %d14, 31, 0
+# CHECK: encoding: [0xef,0xfe,0x00,0x00]
+.code32
+jz.t %d14, 31, 0
+
+# CHECK-INST: jz.t %d14, 31, 2
+# CHECK: encoding: [0xef,0xfe,0x01,0x00]
+.code32
+jz.t %d14, 31, 2
+
+# CHECK-INST: jz.t %d14, 31, 32764
+# CHECK: encoding: [0xef,0xfe,0xfe,0x3f]
+.code32
+jz.t %d14, 31, 32764
+
+# CHECK-INST: jz.t %d14, 31, 32766
+# CHECK: encoding: [0xef,0xfe,0xff,0x3f]
+.code32
+jz.t %d14, 31, 32766
+
+# CHECK-INST: jz.t %d15, 0, -32768
+# CHECK: encoding: [0x6f,0x0f,0x00,0x40]
+.code32
+jz.t %d15, 0, -32768
+
+# CHECK-INST: jz.t %d15, 0, -32766
+# CHECK: encoding: [0x6f,0x0f,0x01,0x40]
+.code32
+jz.t %d15, 0, -32766
+
+# CHECK-INST: jz.t %d15, 0, -4
+# CHECK: encoding: [0x6f,0x0f,0xfe,0x7f]
+.code32
+jz.t %d15, 0, -4
+
+# CHECK-INST: jz.t %d15, 0, -2
+# CHECK: encoding: [0x6f,0x0f,0xff,0x7f]
+.code32
+jz.t %d15, 0, -2
+
+# CHECK-INST: jz.t %d15, 0, 0
+# CHECK: encoding: [0x6f,0x0f,0x00,0x00]
+.code32
+jz.t %d15, 0, 0
+
+# CHECK-INST: jz.t %d15, 0, 2
+# CHECK: encoding: [0x6f,0x0f,0x01,0x00]
+.code32
+jz.t %d15, 0, 2
+
+# CHECK-INST: jz.t %d15, 0, 32764
+# CHECK: encoding: [0x6f,0x0f,0xfe,0x3f]
+.code32
+jz.t %d15, 0, 32764
 
 # CHECK-INST: jz.t %d15, 0, 32766
 # CHECK: encoding: [0x6f,0x0f,0xff,0x3f]
 .code32
 jz.t %d15, 0, 32766
 
-# CHECK-INST: jz.t %d15, 1, 256
-# CHECK: encoding: [0x6f,0x1f,0x80,0x00]
+# CHECK-INST: jz.t %d15, 1, -32768
+# CHECK: encoding: [0x6f,0x1f,0x00,0x40]
 .code32
-jz.t %d15, 1, 256
+jz.t %d15, 1, -32768
 
-# CHECK-INST: jz.t %d15, 1, 32512
-# CHECK: encoding: [0x6f,0x1f,0x80,0x3f]
+# CHECK-INST: jz.t %d15, 1, -32766
+# CHECK: encoding: [0x6f,0x1f,0x01,0x40]
 .code32
-jz.t %d15, 1, 32512
+jz.t %d15, 1, -32766
 
-# CHECK-INST: jz.t %d15, 1, 16638
-# CHECK: encoding: [0x6f,0x1f,0x7f,0x20]
+# CHECK-INST: jz.t %d15, 1, -4
+# CHECK: encoding: [0x6f,0x1f,0xfe,0x7f]
 .code32
-jz.t %d15, 1, 16638
+jz.t %d15, 1, -4
+
+# CHECK-INST: jz.t %d15, 1, -2
+# CHECK: encoding: [0x6f,0x1f,0xff,0x7f]
+.code32
+jz.t %d15, 1, -2
+
+# CHECK-INST: jz.t %d15, 1, 0
+# CHECK: encoding: [0x6f,0x1f,0x00,0x00]
+.code32
+jz.t %d15, 1, 0
+
+# CHECK-INST: jz.t %d15, 1, 2
+# CHECK: encoding: [0x6f,0x1f,0x01,0x00]
+.code32
+jz.t %d15, 1, 2
+
+# CHECK-INST: jz.t %d15, 1, 32764
+# CHECK: encoding: [0x6f,0x1f,0xfe,0x3f]
+.code32
+jz.t %d15, 1, 32764
 
 # CHECK-INST: jz.t %d15, 1, 32766
 # CHECK: encoding: [0x6f,0x1f,0xff,0x3f]
 .code32
 jz.t %d15, 1, 32766
 
-# CHECK-INST: jz.t %d15, 2, 256
-# CHECK: encoding: [0x6f,0x2f,0x80,0x00]
+# CHECK-INST: jz.t %d15, 30, -32768
+# CHECK: encoding: [0xef,0xef,0x00,0x40]
 .code32
-jz.t %d15, 2, 256
+jz.t %d15, 30, -32768
 
-# CHECK-INST: jz.t %d15, 2, 32512
-# CHECK: encoding: [0x6f,0x2f,0x80,0x3f]
+# CHECK-INST: jz.t %d15, 30, -32766
+# CHECK: encoding: [0xef,0xef,0x01,0x40]
 .code32
-jz.t %d15, 2, 32512
+jz.t %d15, 30, -32766
 
-# CHECK-INST: jz.t %d15, 2, 16638
-# CHECK: encoding: [0x6f,0x2f,0x7f,0x20]
+# CHECK-INST: jz.t %d15, 30, -4
+# CHECK: encoding: [0xef,0xef,0xfe,0x7f]
 .code32
-jz.t %d15, 2, 16638
+jz.t %d15, 30, -4
 
-# CHECK-INST: jz.t %d15, 2, 32766
-# CHECK: encoding: [0x6f,0x2f,0xff,0x3f]
+# CHECK-INST: jz.t %d15, 30, -2
+# CHECK: encoding: [0xef,0xef,0xff,0x7f]
 .code32
-jz.t %d15, 2, 32766
+jz.t %d15, 30, -2
 
-# CHECK-INST: jz.t %d15, 3, 256
-# CHECK: encoding: [0x6f,0x3f,0x80,0x00]
+# CHECK-INST: jz.t %d15, 30, 0
+# CHECK: encoding: [0xef,0xef,0x00,0x00]
 .code32
-jz.t %d15, 3, 256
+jz.t %d15, 30, 0
 
-# CHECK-INST: jz.t %d15, 3, 32512
-# CHECK: encoding: [0x6f,0x3f,0x80,0x3f]
+# CHECK-INST: jz.t %d15, 30, 2
+# CHECK: encoding: [0xef,0xef,0x01,0x00]
 .code32
-jz.t %d15, 3, 32512
+jz.t %d15, 30, 2
 
-# CHECK-INST: jz.t %d15, 3, 16638
-# CHECK: encoding: [0x6f,0x3f,0x7f,0x20]
+# CHECK-INST: jz.t %d15, 30, 32764
+# CHECK: encoding: [0xef,0xef,0xfe,0x3f]
 .code32
-jz.t %d15, 3, 16638
+jz.t %d15, 30, 32764
 
-# CHECK-INST: jz.t %d15, 3, 32766
-# CHECK: encoding: [0x6f,0x3f,0xff,0x3f]
+# CHECK-INST: jz.t %d15, 30, 32766
+# CHECK: encoding: [0xef,0xef,0xff,0x3f]
 .code32
-jz.t %d15, 3, 32766
+jz.t %d15, 30, 32766
+
+# CHECK-INST: jz.t %d15, 31, -32768
+# CHECK: encoding: [0xef,0xff,0x00,0x40]
+.code32
+jz.t %d15, 31, -32768
+
+# CHECK-INST: jz.t %d15, 31, -32766
+# CHECK: encoding: [0xef,0xff,0x01,0x40]
+.code32
+jz.t %d15, 31, -32766
+
+# CHECK-INST: jz.t %d15, 31, -4
+# CHECK: encoding: [0xef,0xff,0xfe,0x7f]
+.code32
+jz.t %d15, 31, -4
+
+# CHECK-INST: jz.t %d15, 31, -2
+# CHECK: encoding: [0xef,0xff,0xff,0x7f]
+.code32
+jz.t %d15, 31, -2
+
+# CHECK-INST: jz.t %d15, 31, 0
+# CHECK: encoding: [0xef,0xff,0x00,0x00]
+.code32
+jz.t %d15, 31, 0
+
+# CHECK-INST: jz.t %d15, 31, 2
+# CHECK: encoding: [0xef,0xff,0x01,0x00]
+.code32
+jz.t %d15, 31, 2
+
+# CHECK-INST: jz.t %d15, 31, 32764
+# CHECK: encoding: [0xef,0xff,0xfe,0x3f]
+.code32
+jz.t %d15, 31, 32764
+
+# CHECK-INST: jz.t %d15, 31, 32766
+# CHECK: encoding: [0xef,0xff,0xff,0x3f]
+.code32
+jz.t %d15, 31, 32766
 
 
 ### Test if 16 bit instructions are generated by default

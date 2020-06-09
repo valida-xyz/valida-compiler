@@ -375,11 +375,15 @@ let Defs = [PSW] in {
   // CADD
   def CADD_dddc        :  CARI_RCR<0xAB, 0x00, "cadd">;
   def CADD_dddd        :  CARI_RRR<0x2B, 0x00, "cadd">;
+
+  let DecoderMethod = "decode_16_dd15c" in
   def CADD_16_dd15c    :  CARI_SRC<0x8A, "cadd">;
 
   // CADDN
   def CADDN_dddc       :  CARI_RCR<0xAB, 0x01, "caddn">;
   def CADDN_dddd       :  CARI_RRR<0x2B, 0x01, "caddn">;
+
+  let DecoderMethod = "decode_16_dd15c" in
   def CADDN_16_dd15c   :  CARI_SRC<0xCA, "caddn">;
 
   // CSUB
@@ -400,16 +404,20 @@ let isReMaterializable = 1 in {
     def SELN_dddd      :  CARI_RRR<0x2B, 0x05, "seln">;
 
     // CMOV
+    let DecoderMethod = "decode_16_dd15c" in
     def CMOV_16_dd15c  :  CARI_SRC<0xAA, "cmov">;
 
+    let DecoderMethod = "decode_16_dd15d" in
     def CMOV_16_dd15d  :  SRR<0x2A, (outs DataRegs:$s1_d),
                             (ins ImplDataReg:$d15, DataRegs:$s2),
                             "cmov", "\t$s1_d, $d15, $s2">;
   } // isSelect = 1
 
   // CMOVN
+  let DecoderMethod = "decode_16_dd15c" in
   def CMOVN_16_dd15c   :  CARI_SRC<0xEA, "cmovn">;
 
+  let DecoderMethod = "decode_16_dd15d" in
   def CMOVN_16_dd15d   :  SRR<0x6A, (outs DataRegs:$s1_d),
                           (ins ImplDataReg:$d15, DataRegs:$s2),
                           "cmovn", "\t$s1_d, $d15, $s2">;
