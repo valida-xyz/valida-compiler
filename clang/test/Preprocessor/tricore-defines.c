@@ -9,7 +9,7 @@
 // RUN: %clang -target tricore -mcpu=tc37xx -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162 -DARCH=0x162 -DCPU=0x3700
 // RUN: %clang -target tricore -mcpu=tc38xx -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162 -DARCH=0x162 -DCPU=0x3800
 // RUN: %clang -target tricore -mcpu=tc39xx -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162 -DARCH=0x162 -DCPU=0x3900
-// RUN: %clang -target tricore -mcpu=tc4xx  -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162,TC18 -DARCH=0x18 -DCPU=0x4000
+// RUN: %clang -target tricore -mcpu=tc4xx  -E -dM %s -o - | FileCheck %s --check-prefixes=COMMON,TC161,TC162,TC18 -DARCH=0x180 -DCPU=0x4000
 
 // Check vendor, target, architecture and CPU specific defines
 

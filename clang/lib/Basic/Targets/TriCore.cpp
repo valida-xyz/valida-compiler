@@ -104,7 +104,7 @@ void TriCoreTargetInfo::getTargetDefines(const LangOptions &Opts,
     getTargetDefinesTC162(Opts, Builder);
     break;
   case DK_TC4XX:
-    TriCoreCore = "0x18";
+    TriCoreCore = "0x180";
     getTargetDefinesTC18(Opts, Builder);
     break;
   default:
