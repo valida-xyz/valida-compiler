@@ -1311,7 +1311,10 @@ _LIBCPP_FUNC_VIS extern "C" void __sanitizer_annotate_contiguous_container(
 #endif
 
 #if !defined(_LIBCPP_HAS_NO_OFF_T_FUNCTIONS)
-#  if defined(_LIBCPP_MSVCRT) || defined(_NEWLIB_VERSION)
+// FIXME: We would rather check for `_HAS_DINKUM_CLIB` instead of `__HIGHTEC__`,
+//  but unfortunately this macro is not defined at this point
+#  if defined(_LIBCPP_MSVCRT) || defined(_NEWLIB_VERSION) ||                   \
+      defined(__HIGHTEC__)
 #    define _LIBCPP_HAS_NO_OFF_T_FUNCTIONS
 #  endif
 #endif
