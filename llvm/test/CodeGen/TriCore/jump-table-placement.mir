@@ -2,6 +2,11 @@
 # RUN: llc -mtriple=tricore -global-isel -run-pass=tricore-jump-tables -verify-machineinstrs %s -o - | FileCheck %s
 
 --- |
+  ; ModuleID = 'jump-table-placement.mir'
+  source_filename = "jump-table-placement.mir"
+  target datalayout = "e-m:e-i64:32-p:32:32-f64:32-n32-a:0:32-S64"
+  target triple = "tricore"
+
   define i32 @jt_test(i32 %x) {
   entry:
     switch i32 %x, label %return [
@@ -30,7 +35,7 @@
 
   define i32 @jt_test_2(i32 %x) {
   entry:
-    switch i32 %x, label %return [
+    switch i32 %x, label %entry1 [
       i32 75, label %sw.bb
       i32 34, label %sw.bb
       i32 56, label %sw.bb
@@ -43,35 +48,40 @@
 
   sw.bb:                                            ; preds = %entry, %entry, %entry, %entry, %entry
     %add = add nsw i32 %x, 42
-    br label %sw2.entry
+    br label %entry1
 
   sw.bb1:                                           ; preds = %entry, %entry, %entry
     %mul = mul nsw i32 %x, 3
-    br label %sw2.entry
+    br label %entry1
 
-  sw2.entry:
+  entry1:                                           ; preds = %sw.bb1, %sw.bb, %entry
     switch i32 %x, label %return [
-      i32 0, label %sw2.bb
-      i32 1, label %sw2.bb
-      i32 2, label %sw2.bb
-      i32 3, label %sw2.bb1
-      i32 4, label %sw2.bb1
-      i32 5, label %sw2.bb1
+      i32 75, label %sw1.bb
+      i32 34, label %sw1.bb
+      i32 56, label %sw1.bb
+      i32 35, label %sw1.bb
+      i32 40, label %sw1.bb
+      i32 4, label %sw1.bb1
+      i32 5, label %sw1.bb1
+      i32 6, label %sw1.bb1
     ]
 
-  sw2.bb:
+  sw1.bb:                                           ; preds = %entry1, %entry1, %entry1, %entry1, %entry1
+    %add1 = add nsw i32 %x, 42
     br label %return
 
-  sw2.bb1:
+  sw1.bb1:                                          ; preds = %entry1, %entry1, %entry1
+    %mul1 = mul nsw i32 %x, 3
     br label %return
 
-  return:                                           ; preds = %sw2.bb1, %sw2.bb, %sw2.entry, %entry
-    %retval.0 = phi i32 [ 0, %sw2.bb1 ], [ 0, %sw2.bb ], [ 0, %sw2.entry ], [ 0, %entry ]
+  return:                                           ; preds = %sw1.bb1, %sw1.bb, %entry1
+    %retval.0 = phi i32 [ %mul1, %sw1.bb1 ], [ %add1, %sw1.bb ], [ 0, %entry1 ]
     ret i32 %retval.0
   }
+
   define i32 @jt_test_3(i32 %x) {
   entry:
-    switch i32 %x, label %cntd [
+    switch i32 %x, label %entry1 [
       i32 75, label %sw.bb
       i32 34, label %sw.bb
       i32 56, label %sw.bb
@@ -82,7 +92,7 @@
       i32 6, label %sw.bb1
     ]
 
-  cntd:
+  entry1:                                           ; preds = %entry
     switch i32 %x, label %return [
       i32 75, label %sw.bb
       i32 34, label %sw.bb
@@ -94,221 +104,420 @@
       i32 6, label %sw.bb1
     ]
 
-  sw.bb:                                            ; preds = %entry, %entry, %entry, %entry, %entry
+  sw.bb:                                            ; preds = %entry1, %entry1, %entry1, %entry1, %entry1, %entry, %entry, %entry, %entry, %entry
     %add = add nsw i32 %x, 42
     br label %return
 
-  sw.bb1:                                           ; preds = %entry, %entry, %entry
+  sw.bb1:                                           ; preds = %entry1, %entry1, %entry1, %entry, %entry, %entry
     %mul = mul nsw i32 %x, 3
     br label %return
 
-  return:                                           ; preds = %sw.bb1, %sw.bb, %entry
-    %retval.0 = phi i32 [ %mul, %sw.bb1 ], [ %add, %sw.bb ], [ 0, %cntd ]
+  return:                                           ; preds = %sw.bb1, %sw.bb, %entry1
+    %retval.0 = phi i32 [ %mul, %sw.bb1 ], [ %add, %sw.bb ], [ 0, %entry1 ]
     ret i32 %retval.0
   }
 
 ...
-
 ---
 name:            jt_test
 legalized:       true
 regBankSelected: true
 selected:        true
 tracksRegLiveness: true
+stack:
+  - { id: 0, name: '', type: spill-slot, offset: -4, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 1, name: '', type: spill-slot, offset: -8, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 2, name: '', type: spill-slot, offset: -12, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
 jumpTable:
   kind:            inline
   entries:
     - id:              0
-      blocks:          [ '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.3',
-                         '%bb.3', '%bb.3' ]
+      blocks:          [ '%bb.3', '%bb.3', '%bb.3', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.2', '%bb.2', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.2', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.2', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.2' ]
 body:             |
   ; CHECK-LABEL: name: jt_test
   ; CHECK: bb.0.entry:
+  ; CHECK:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; CHECK:   liveins: $d4
   ; CHECK:   $a14 = frame-setup MOVAA_aa $a10
-  ; CHECK:   $a15 = JIJumpTable killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
-  ; CHECK: bb.5:
-  ; CHECK:   successors:
-  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 32
+  ; CHECK:   $a10 = frame-setup LEA_aac $a10, -16
+  ; CHECK:   frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+  ; CHECK:   $d15 = MOV_dc 71
+  ; CHECK:   $d0 = MOV_dc 0
+  ; CHECK:   $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+  ; CHECK:   STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+  ; CHECK:   JLTU_ddc killed $d15, killed $d1, %bb.4
   ; CHECK: bb.1.entry:
   ; CHECK:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; CHECK:   J %bb.4
+  ; CHECK:   $d15 = MOV_dc 0
+  ; CHECK:   $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+  ; CHECK:   STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+  ; CHECK:   $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; CHECK: bb.5:
+  ; CHECK:   successors:
+  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 288
   ; CHECK: bb.2.sw.bb:
   ; CHECK:   successors: %bb.4(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK:   J %bb.4
   ; CHECK: bb.3.sw.bb1:
   ; CHECK:   successors: %bb.4(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK: bb.4.return:
-  ; CHECK:   RET implicit $a11
+  ; CHECK:   $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+  ; CHECK:   $d2 = MOV_dd killed $d15
+  ; CHECK:   RET implicit $a11, implicit killed $d2
   bb.0.entry:
+    successors: %bb.4(0x40000000), %bb.1(0x40000000)
     liveins: $d4
 
     $a14 = frame-setup MOVAA_aa $a10
-    $a15 = JIJumpTable killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+    $a10 = frame-setup LEA_aac $a10, -16
+    frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+    $d15 = MOV_dc 71
+    $d0 = MOV_dc 0
+    $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+    STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+    STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+    JLTU_ddc killed $d15, killed $d1, %bb.4
 
   bb.1.entry:
     successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
 
-    J %bb.4
+    $d15 = MOV_dc 0
+    $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+    STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+    $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
 
   bb.2.sw.bb:
     successors: %bb.4(0x80000000)
 
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
     J %bb.4
 
   bb.3.sw.bb1:
     successors: %bb.4(0x80000000)
 
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
 
   bb.4.return:
-    RET implicit $a11
+    $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+    $d2 = MOV_dd killed $d15
+    RET implicit $a11, implicit killed $d2
 
 ...
-
 ---
 name:            jt_test_2
 legalized:       true
 regBankSelected: true
 selected:        true
 tracksRegLiveness: true
+stack:
+  - { id: 0, name: '', type: spill-slot, offset: -4, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 1, name: '', type: spill-slot, offset: -8, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 2, name: '', type: spill-slot, offset: -12, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
 jumpTable:
   kind:            inline
   entries:
     - id:              0
-      blocks:          [ '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.3',
-                         '%bb.3', '%bb.3' ]
+      blocks:          [ '%bb.3', '%bb.3', '%bb.3', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.2', '%bb.2', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.2', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.2', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4',
+                         '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.4', '%bb.2' ]
     - id:              1
-      blocks:          [ '%bb.6', '%bb.6', '%bb.6', '%bb.7', '%bb.7', '%bb.7' ]
+      blocks:          [ '%bb.6', '%bb.6', '%bb.6', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.5', '%bb.5', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.5', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.5', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7',
+                         '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.7', '%bb.5' ]
 body:             |
   ; CHECK-LABEL: name: jt_test_2
   ; CHECK: bb.0.entry:
+  ; CHECK:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; CHECK:   liveins: $d4
   ; CHECK:   $a14 = frame-setup MOVAA_aa $a10
-  ; CHECK:   $a15 = JIJumpTable $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
-  ; CHECK: bb.9:
-  ; CHECK:   successors:
-  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 32
+  ; CHECK:   $a10 = frame-setup LEA_aac $a10, -16
+  ; CHECK:   frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+  ; CHECK:   $d15 = MOV_dc 71
+  ; CHECK:   $d0 = MOV_dc 0
+  ; CHECK:   $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+  ; CHECK:   STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+  ; CHECK:   JLTU_ddc killed $d15, killed $d1, %bb.4
   ; CHECK: bb.1.entry:
   ; CHECK:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; CHECK:   J %bb.4
+  ; CHECK:   $d15 = MOV_dc 0
+  ; CHECK:   $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+  ; CHECK:   $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; CHECK: bb.9:
+  ; CHECK:   successors:
+  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 288
   ; CHECK: bb.2.sw.bb:
   ; CHECK:   successors: %bb.4(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
   ; CHECK:   J %bb.4
   ; CHECK: bb.3.sw.bb1:
   ; CHECK:   successors: %bb.4(0x80000000)
-  ; CHECK: bb.4.sw2.entry:
-  ; CHECK:   liveins: $d4
-  ; CHECK:   $a15 = JIJumpTable killed $d4, target-flags(tricore-hi) %jump-table.1, target-flags(tricore-lo) %jump-table.1
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+  ; CHECK: bb.4.entry1:
+  ; CHECK:   successors: %bb.6(0x2aaaaaab), %bb.7(0x2aaaaaab), %bb.5(0x2aaaaaab)
+  ; CHECK:   $d15 = MOV_dc 0
+  ; CHECK:   $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+  ; CHECK:   STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+  ; CHECK:   $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.1
   ; CHECK: bb.8:
   ; CHECK:   successors:
-  ; CHECK:   JUMPTABLE_INSTS %jump-table.1, 24
-  ; CHECK: bb.5.sw2.bb:
+  ; CHECK:   JUMPTABLE_INSTS %jump-table.1, 288
+  ; CHECK: bb.5.sw1.bb:
   ; CHECK:   successors: %bb.7(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK:   J %bb.7
-  ; CHECK: bb.6.sw2.bb1:
+  ; CHECK: bb.6.sw1.bb1:
   ; CHECK:   successors: %bb.7(0x80000000)
-  ; CHECK:   J %bb.7
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK: bb.7.return:
-  ; CHECK:   RET implicit $a11
+  ; CHECK:   $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+  ; CHECK:   $d2 = MOV_dd killed $d15
+  ; CHECK:   RET implicit $a11, implicit killed $d2
   bb.0.entry:
+    successors: %bb.4(0x40000000), %bb.1(0x40000000)
     liveins: $d4
 
     $a14 = frame-setup MOVAA_aa $a10
-    $a15 = JIJumpTable $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+    $a10 = frame-setup LEA_aac $a10, -16
+    frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+    $d15 = MOV_dc 71
+    $d0 = MOV_dc 0
+    $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+    STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+    STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+    JLTU_ddc killed $d15, killed $d1, %bb.4
 
   bb.1.entry:
     successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
 
-    J %bb.4
+    $d15 = MOV_dc 0
+    $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+    $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
 
   bb.2.sw.bb:
     successors: %bb.4(0x80000000)
 
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
     J %bb.4
 
   bb.3.sw.bb1:
     successors: %bb.4(0x80000000)
 
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
 
-  bb.4.sw2.entry:
-    liveins: $d4
+  bb.4.entry1:
+    successors: %bb.6(0x2aaaaaab), %bb.7(0x2aaaaaab), %bb.5(0x2aaaaaab)
 
-    $a15 = JIJumpTable killed $d4, target-flags(tricore-hi) %jump-table.1, target-flags(tricore-lo) %jump-table.1
+    $d15 = MOV_dc 0
+    $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+    STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+    $a15 = JIJumpTable killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.1
 
-  bb.6.sw2.bb:
-    J %bb.5
+  bb.5.sw1.bb:
+    successors: %bb.7(0x80000000)
 
-  bb.7.sw2.bb1:
-    J %bb.5
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+    J %bb.7
 
-  bb.5.return:
-    RET implicit $a11
+  bb.6.sw1.bb1:
+    successors: %bb.7(0x80000000)
+
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+
+  bb.7.return:
+    $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+    $d2 = MOV_dd killed $d15
+    RET implicit $a11, implicit killed $d2
 
 ...
-
 ---
 name:            jt_test_3
 legalized:       true
 regBankSelected: true
 selected:        true
 tracksRegLiveness: true
+stack:
+  - { id: 0, name: '', type: spill-slot, offset: -4, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 1, name: '', type: spill-slot, offset: -8, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
+  - { id: 2, name: '', type: spill-slot, offset: -12, size: 4, alignment: 4,
+      stack-id: default, callee-saved-register: '', callee-saved-restored: true,
+      debug-info-variable: '', debug-info-expression: '', debug-info-location: '' }
 jumpTable:
   kind:            inline
   entries:
     - id:              0
-      blocks:          [ '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.2', '%bb.3',
-                         '%bb.3', '%bb.3' ]
+      blocks:          [ '%bb.4', '%bb.4', '%bb.4', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.3', '%bb.3', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.3', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.3', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5',
+                         '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.5', '%bb.3' ]
 body:             |
   ; CHECK-LABEL: name: jt_test_3
   ; CHECK: bb.0.entry:
-  ; CHECK:   successors: %bb.1(0x80000000)
-  ; CHECK:   liveins: $d4, $d5
-  ; CHECK:   $a14 = frame-setup MOVAA_aa $a10
-  ; CHECK:   JNE_ddc $d4, $d5, %bb.1
-  ; CHECK:   $a15 = JIJumpTable $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
-  ; CHECK: bb.1.cntd:
+  ; CHECK:   successors: %bb.5(0x40000000), %bb.1(0x40000000)
   ; CHECK:   liveins: $d4
-  ; CHECK:   $a15, $a2 = JIJumpTableTC16XPIC killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; CHECK:   $a14 = frame-setup MOVAA_aa $a10
+  ; CHECK:   $a10 = frame-setup LEA_aac $a10, -16
+  ; CHECK:   frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+  ; CHECK:   $d15 = MOV_dc 71
+  ; CHECK:   $d0 = MOV_dc 0
+  ; CHECK:   $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+  ; CHECK:   STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+  ; CHECK:   JLTU_ddc killed $d15, killed $d1, %bb.5
+  ; CHECK: bb.1.entry:
+  ; CHECK:   successors: %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab), %bb.3(0x2aaaaaab)
+  ; CHECK:   $d15 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+  ; CHECK:   $a15 = JIJumpTable killed $d15, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; CHECK: bb.2.entry1:
+  ; CHECK:   successors: %bb.4(0x2aaaaaab), %bb.5(0x2aaaaaab), %bb.3(0x2aaaaaab)
+  ; CHECK:   $d15 = MOV_dc 0
+  ; CHECK:   $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+  ; CHECK:   STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+  ; CHECK:   $a15, $a2 = JIJumpTableTC16XPIC killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
   ; CHECK: bb.6:
   ; CHECK:   successors:
-  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 32
-  ; CHECK: bb.2.entry:
-  ; CHECK:   successors: %bb.4(0x2aaaaaab), %bb.5(0x2aaaaaab), %bb.3(0x2aaaaaab)
-  ; CHECK:   J %bb.5
+  ; CHECK:   JUMPTABLE_INSTS %jump-table.0, 288
   ; CHECK: bb.3.sw.bb:
   ; CHECK:   successors: %bb.5(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK:   J %bb.5
   ; CHECK: bb.4.sw.bb1:
   ; CHECK:   successors: %bb.5(0x80000000)
+  ; CHECK:   $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+  ; CHECK:   $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+  ; CHECK:   STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
   ; CHECK: bb.5.return:
-  ; CHECK:   RET implicit $a11
+  ; CHECK:   $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+  ; CHECK:   $d2 = MOV_dd killed $d15
+  ; CHECK:   RET implicit $a11, implicit killed $d2
   bb.0.entry:
-    liveins: $d4, $d5
-
-    $a14 = frame-setup MOVAA_aa $a10
-    JNE_ddc $d4, $d5, %bb.5
-    $a15 = JIJumpTable $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
-
-  bb.5.cntd:
+    successors: %bb.5(0x40000000), %bb.1(0x40000000)
     liveins: $d4
 
-    $a15, $a2 = JIJumpTableTC16XPIC killed $d4, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+    $a14 = frame-setup MOVAA_aa $a10
+    $a10 = frame-setup LEA_aac $a10, -16
+    frame-setup CFI_INSTRUCTION def_cfa $a14, 0
+    $d15 = MOV_dc 71
+    $d0 = MOV_dc 0
+    $d1 = ADDI_ddc $d4, -4, implicit-def $psw
+    STW_alcd $a14, -4, killed $d4 :: (store 4 into %stack.0)
+    STW_alcd $a14, -8, $d1 :: (store 4 into %stack.1)
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+    JLTU_ddc killed $d15, killed $d1, %bb.5
 
   bb.1.entry:
-    successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
+    successors: %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab), %bb.3(0x2aaaaaab)
 
-    J %bb.4
+    $d15 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+    $a15 = JIJumpTable killed $d15, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
 
-  bb.2.sw.bb:
-    successors: %bb.4(0x80000000)
+  bb.2.entry1:
+    successors: %bb.4(0x2aaaaaab), %bb.5(0x2aaaaaab), %bb.3(0x2aaaaaab)
 
-    J %bb.4
+    $d15 = MOV_dc 0
+    $d0 = LDW_dalc $a14, -8 :: (load 4 from %stack.1)
+    STW_alcd $a14, -12, killed $d15 :: (store 4 into %stack.2)
+    $a15, $a2 = JIJumpTableTC16XPIC killed $d0, target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
 
-  bb.3.sw.bb1:
-    successors: %bb.4(0x80000000)
+  bb.3.sw.bb:
+    successors: %bb.5(0x80000000)
 
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw ADDI_ddc killed $d15, 42, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+    J %bb.5
 
-  bb.4.return:
-    RET implicit $a11
+  bb.4.sw.bb1:
+    successors: %bb.5(0x80000000)
+
+    $d15 = LDW_dalc $a14, -4 :: (load 4 from %stack.0)
+    $d0 = nsw MUL_ddc killed $d15, 3, implicit-def $psw
+    STW_alcd $a14, -12, killed $d0 :: (store 4 into %stack.2)
+
+  bb.5.return:
+    $d15 = LDW_dalc $a14, -12 :: (load 4 from %stack.2)
+    $d2 = MOV_dd killed $d15
+    RET implicit $a11, implicit killed $d2
 
 ...

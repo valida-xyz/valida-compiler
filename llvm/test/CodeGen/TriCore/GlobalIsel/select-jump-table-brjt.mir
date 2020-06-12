@@ -18,15 +18,15 @@
       i32 6, label %sw.bb1
     ]
 
-  sw.bb:                                            ; preds = %entry, %entry, %entry, %entry, %entry
+  sw.bb:
     %add = add nsw i32 %x, 42
     br label %return
 
-  sw.bb1:                                           ; preds = %entry, %entry, %entry
+  sw.bb1:
     %mul = mul nsw i32 %x, 3
     br label %return
 
-  return:                                           ; preds = %sw.bb1, %sw.bb, %entry
+  return:
     %retval.0 = phi i32 [ %mul, %sw.bb1 ], [ %add, %sw.bb ], [ 0, %entry ]
     ret i32 %retval.0
   }
@@ -34,11 +34,9 @@
 ...
 ---
 name:            jt_test
+alignment:       4
 legalized:       true
 regBankSelected: true
-registers:
-  - { id: 0, class: dataregbank }
-  - { id: 1, class: addrregbank }
 tracksRegLiveness: true
 jumpTable:
   kind:            inline
@@ -59,86 +57,133 @@ jumpTable:
 body:             |
   ; STATICTC18-LABEL: name: jt_test
   ; STATICTC18: bb.0.entry:
-  ; STATICTC18:   successors: %bb.1(0x80000000)
+  ; STATICTC18:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; STATICTC18:   liveins: $d4
   ; STATICTC18:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; STATICTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[COPY]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; STATICTC18:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 71
+  ; STATICTC18:   [[MOVImmDataReg1:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; STATICTC18:   [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -4, implicit-def $psw
+  ; STATICTC18:   JLTU_ddc [[MOVImmDataReg]], [[ADDI_ddc]], %bb.4
   ; STATICTC18: bb.1.entry:
   ; STATICTC18:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; STATICTC18:   J %bb.4
+  ; STATICTC18:   [[MOVImmDataReg2:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; STATICTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[ADDI_ddc]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
   ; STATICTC18: bb.2.sw.bb:
   ; STATICTC18:   successors: %bb.4(0x80000000)
+  ; STATICTC18:   [[ADDI_ddc1:%[0-9]+]]:dataregs = nsw ADDI_ddc [[COPY]], 42, implicit-def $psw
   ; STATICTC18:   J %bb.4
   ; STATICTC18: bb.3.sw.bb1:
   ; STATICTC18:   successors: %bb.4(0x80000000)
+  ; STATICTC18:   [[MUL_ddc:%[0-9]+]]:dataregs = nsw MUL_ddc [[COPY]], 3, implicit-def $psw
   ; STATICTC18: bb.4.return:
-  ; STATICTC18:   RET implicit $a11
+  ; STATICTC18:   [[PHI:%[0-9]+]]:dataregs = PHI [[MUL_ddc]], %bb.3, [[ADDI_ddc1]], %bb.2, [[MOVImmDataReg1]], %bb.0, [[MOVImmDataReg2]], %bb.1
+  ; STATICTC18:   $d2 = COPY [[PHI]]
+  ; STATICTC18:   RET implicit $a11, implicit $d2
   ; STATICTNOTTC18-LABEL: name: jt_test
   ; STATICTNOTTC18: bb.0.entry:
-  ; STATICTNOTTC18:   successors: %bb.1(0x80000000)
+  ; STATICTNOTTC18:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; STATICTNOTTC18:   liveins: $d4
   ; STATICTNOTTC18:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; STATICTNOTTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[COPY]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; STATICTNOTTC18:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 71
+  ; STATICTNOTTC18:   [[MOVImmDataReg1:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; STATICTNOTTC18:   [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -4, implicit-def $psw
+  ; STATICTNOTTC18:   JLTU_ddc [[MOVImmDataReg]], [[ADDI_ddc]], %bb.4
   ; STATICTNOTTC18: bb.1.entry:
   ; STATICTNOTTC18:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; STATICTNOTTC18:   J %bb.4
+  ; STATICTNOTTC18:   [[MOVImmDataReg2:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; STATICTNOTTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[ADDI_ddc]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
   ; STATICTNOTTC18: bb.2.sw.bb:
   ; STATICTNOTTC18:   successors: %bb.4(0x80000000)
+  ; STATICTNOTTC18:   [[ADDI_ddc1:%[0-9]+]]:dataregs = nsw ADDI_ddc [[COPY]], 42, implicit-def $psw
   ; STATICTNOTTC18:   J %bb.4
   ; STATICTNOTTC18: bb.3.sw.bb1:
   ; STATICTNOTTC18:   successors: %bb.4(0x80000000)
+  ; STATICTNOTTC18:   [[MUL_ddc:%[0-9]+]]:dataregs = nsw MUL_ddc [[COPY]], 3, implicit-def $psw
   ; STATICTNOTTC18: bb.4.return:
-  ; STATICTNOTTC18:   RET implicit $a11
+  ; STATICTNOTTC18:   [[PHI:%[0-9]+]]:dataregs = PHI [[MUL_ddc]], %bb.3, [[ADDI_ddc1]], %bb.2, [[MOVImmDataReg1]], %bb.0, [[MOVImmDataReg2]], %bb.1
+  ; STATICTNOTTC18:   $d2 = COPY [[PHI]]
+  ; STATICTNOTTC18:   RET implicit $a11, implicit $d2
   ; PICTC18-LABEL: name: jt_test
   ; PICTC18: bb.0.entry:
-  ; PICTC18:   successors: %bb.1(0x80000000)
+  ; PICTC18:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; PICTC18:   liveins: $d4
   ; PICTC18:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; PICTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[COPY]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; PICTC18:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 71
+  ; PICTC18:   [[MOVImmDataReg1:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; PICTC18:   [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -4, implicit-def $psw
+  ; PICTC18:   JLTU_ddc [[MOVImmDataReg]], [[ADDI_ddc]], %bb.4
   ; PICTC18: bb.1.entry:
   ; PICTC18:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; PICTC18:   J %bb.4
+  ; PICTC18:   [[MOVImmDataReg2:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; PICTC18:   [[JIJumpTable:%[0-9]+]]:addrregs = JIJumpTable [[ADDI_ddc]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
   ; PICTC18: bb.2.sw.bb:
   ; PICTC18:   successors: %bb.4(0x80000000)
+  ; PICTC18:   [[ADDI_ddc1:%[0-9]+]]:dataregs = nsw ADDI_ddc [[COPY]], 42, implicit-def $psw
   ; PICTC18:   J %bb.4
   ; PICTC18: bb.3.sw.bb1:
   ; PICTC18:   successors: %bb.4(0x80000000)
+  ; PICTC18:   [[MUL_ddc:%[0-9]+]]:dataregs = nsw MUL_ddc [[COPY]], 3, implicit-def $psw
   ; PICTC18: bb.4.return:
-  ; PICTC18:   RET implicit $a11
+  ; PICTC18:   [[PHI:%[0-9]+]]:dataregs = PHI [[MUL_ddc]], %bb.3, [[ADDI_ddc1]], %bb.2, [[MOVImmDataReg1]], %bb.0, [[MOVImmDataReg2]], %bb.1
+  ; PICTC18:   $d2 = COPY [[PHI]]
+  ; PICTC18:   RET implicit $a11, implicit $d2
   ; PICNOTTC18-LABEL: name: jt_test
   ; PICNOTTC18: bb.0.entry:
-  ; PICNOTTC18:   successors: %bb.1(0x80000000)
+  ; PICNOTTC18:   successors: %bb.4(0x40000000), %bb.1(0x40000000)
   ; PICNOTTC18:   liveins: $d4
   ; PICNOTTC18:   [[COPY:%[0-9]+]]:dataregs = COPY $d4
-  ; PICNOTTC18:   [[JIJumpTableTC16XPIC:%[0-9]+]]:addrregs, [[JIJumpTableTC16XPIC1:%[0-9]+]]:addrregs = JIJumpTableTC16XPIC [[COPY]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
+  ; PICNOTTC18:   [[MOVImmDataReg:%[0-9]+]]:dataregs = MOVImmDataReg 71
+  ; PICNOTTC18:   [[MOVImmDataReg1:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; PICNOTTC18:   [[ADDI_ddc:%[0-9]+]]:dataregs = ADDI_ddc [[COPY]], -4, implicit-def $psw
+  ; PICNOTTC18:   JLTU_ddc [[MOVImmDataReg]], [[ADDI_ddc]], %bb.4
   ; PICNOTTC18: bb.1.entry:
   ; PICNOTTC18:   successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
-  ; PICNOTTC18:   J %bb.4
+  ; PICNOTTC18:   [[MOVImmDataReg2:%[0-9]+]]:dataregs = MOVImmDataReg 0
+  ; PICNOTTC18:   [[JIJumpTableTC16XPIC:%[0-9]+]]:addrregs, [[JIJumpTableTC16XPIC1:%[0-9]+]]:addrregs = JIJumpTableTC16XPIC [[ADDI_ddc]], target-flags(tricore-hi) %jump-table.0, target-flags(tricore-lo) %jump-table.0
   ; PICNOTTC18: bb.2.sw.bb:
   ; PICNOTTC18:   successors: %bb.4(0x80000000)
+  ; PICNOTTC18:   [[ADDI_ddc1:%[0-9]+]]:dataregs = nsw ADDI_ddc [[COPY]], 42, implicit-def $psw
   ; PICNOTTC18:   J %bb.4
   ; PICNOTTC18: bb.3.sw.bb1:
   ; PICNOTTC18:   successors: %bb.4(0x80000000)
+  ; PICNOTTC18:   [[MUL_ddc:%[0-9]+]]:dataregs = nsw MUL_ddc [[COPY]], 3, implicit-def $psw
   ; PICNOTTC18: bb.4.return:
-  ; PICNOTTC18:   RET implicit $a11
-  bb.0.entry:
+  ; PICNOTTC18:   [[PHI:%[0-9]+]]:dataregs = PHI [[MUL_ddc]], %bb.3, [[ADDI_ddc1]], %bb.2, [[MOVImmDataReg1]], %bb.0, [[MOVImmDataReg2]], %bb.1
+  ; PICNOTTC18:   $d2 = COPY [[PHI]]
+  ; PICNOTTC18:   RET implicit $a11, implicit $d2
+  bb.1.entry:
     liveins: $d4
 
-    %0(s32) = COPY $d4
-    %1(p0) = G_JUMP_TABLE %jump-table.0
-    G_BRJT %1(p0), %jump-table.0, %0(s32)
+    %0:dataregbank(s32) = COPY $d4
+    %4:dataregbank(s32) = G_CONSTANT i32 71
+    %8:dataregbank(s32) = G_CONSTANT i32 3
+    %10:dataregbank(s32) = G_CONSTANT i32 42
+    %13:dataregbank(s32) = G_CONSTANT i32 0
+    %1:dataregbank(s32) = G_CONSTANT i32 4
+    %2:dataregbank(s32) = G_SUB %0, %1
+    %14:dataregbank(s32) = G_ICMP intpred(ugt), %2(s32), %4
+    %6:dataregbank(s1) = G_TRUNC %14(s32)
+    G_BRCOND %6(s1), %bb.4
 
-  bb.1.entry:
-    successors: %bb.3(0x2aaaaaab), %bb.4(0x2aaaaaab), %bb.2(0x2aaaaaab)
+  bb.5.entry:
+    successors: %bb.3, %bb.4, %bb.2
 
-    G_BR %bb.4
+    %17:dataregbank(s32) = G_CONSTANT i32 0
+    %7:addrregbank(p0) = G_JUMP_TABLE %jump-table.0
+    G_BRJT %7(p0), %jump-table.0, %2(s32)
 
   bb.2.sw.bb:
+    %16:dataregbank(s32) = G_CONSTANT i32 42
+    %11:dataregbank(s32) = nsw G_ADD %0, %16
     G_BR %bb.4
 
   bb.3.sw.bb1:
+    %15:dataregbank(s32) = G_CONSTANT i32 3
+    %9:dataregbank(s32) = nsw G_MUL %0, %15
 
   bb.4.return:
-    RET implicit $a11
+    %12:dataregbank(s32) = G_PHI %9(s32), %bb.3, %11(s32), %bb.2, %13(s32), %bb.1, %17(s32), %bb.5
+    $d2 = COPY %12(s32)
+    RET implicit $a11, implicit $d2
 
 ...
