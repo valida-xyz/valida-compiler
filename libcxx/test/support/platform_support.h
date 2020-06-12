@@ -83,6 +83,14 @@ std::string get_temp_file_name()
     char Name[] = "libcxx.XXXXXX";
     if (_mktemp_s(Name, sizeof(Name)) != 0) abort();
     return Name;
+#elif defined(_HAS_DINKUM_CLIB)
+    std::string Name = "libcxx.XXXXXX";
+    char *TempName = mktemp(&Name[0]);
+    if (TempName == nullptr || strlen(TempName) == 0) {
+      perror("mktemp");
+      abort();
+    }
+    return TempName;
 #else
     std::string Name;
     int FD = -1;
