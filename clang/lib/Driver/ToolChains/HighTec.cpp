@@ -32,6 +32,44 @@ HighTec::HighTec(const Driver &D, const llvm::Triple &Triple,
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
     getProgramPaths().push_back(getDriver().Dir);
+
+  if (Triple.getArch() == llvm::Triple::tricore) {
+    auto FilePath = [&](const Multilib &M) -> std::vector<std::string> {
+      std::vector<std::string> FP;
+      SmallString<128> P(llvm::sys::path::parent_path(D.Dir));
+      llvm::sys::path::append(P, "tricore", "lib", M.gccSuffix());
+      FP.emplace_back(std::string(P.str()));
+      return FP;
+    };
+
+    Multilibs.push_back(
+        Multilib("tc161", "tc161", "tc161", 1).flag("+march=tc161"));
+    Multilibs.push_back(
+        Multilib("tc162", "tc162", "tc162", 2).flag("+march=tc162"));
+    Multilibs.push_back(
+        Multilib("tc18", "tc18", "tc18", 3).flag("+march=tc18"));
+
+    Multilibs.FilterOut([&](const Multilib &M) {
+      std::vector<std::string> RD = FilePath(M);
+      return std::all_of(RD.begin(), RD.end(),
+                       [&](std::string P) { return !getVFS().exists(P);
+      });
+    });
+
+    StringRef MArch = Args.getLastArgValue(options::OPT_march_EQ);
+    Multilib::flags_list Flags;
+    addMultilibFlag(MArch == "tc161", "march=tc161", Flags);
+    addMultilibFlag(MArch == "tc162", "march=tc162", Flags);
+    addMultilibFlag(MArch == "tc18", "march=tc18", Flags);
+    Multilibs.setFilePathsCallback(FilePath);
+
+    if (Multilibs.select(Flags, SelectedMultilib))
+      if (!SelectedMultilib.isDefault())
+        if (const auto &PathsCallback = Multilibs.filePathsCallback())
+          for (const auto &Path : PathsCallback(SelectedMultilib))
+            // Prepend the multilib path to ensure it takes the precedence.
+            getFilePaths().insert(getFilePaths().begin(), Path);
+  }
 }
 
 Tool *HighTec::buildLinker() const { return new tools::hightec::Linker(*this); }
@@ -104,6 +142,8 @@ void hightec::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   ArgStringList CmdArgs;
 
   auto &TC = static_cast<const toolchains::HighTec &>(getToolChain());
+
+  TC.AddFilePathLibArgs(Args, CmdArgs);
 
   AddLinkerInputs(TC, Inputs, Args, CmdArgs, JA);
 

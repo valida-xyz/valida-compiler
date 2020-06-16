@@ -25,3 +25,24 @@
 // CHECK-NOSTDLIBINC: "-resource-dir" "[[RESOURCE_DIR:[^"]+]]"
 // CHECK-NOSTDLIBINC: "[[RESOURCE_DIR]]{{/|\\\\}}include"
 // CHECK-NOSTDLIBINC-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}include"
+
+// RUN: %clang %s -### --target=tricore -march=tc161 \
+// RUN:     -ccc-install-dir %S/Inputs/basic_htc_tree/bin 2>&1 \
+// RUN:     | FileCheck -check-prefixes=CHECK-TC161 %s
+// CHECK-TC161: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc161
+// CHECK-TC161-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc162
+// CHECK-TC161-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc18
+
+// RUN: %clang %s -### --target=tricore -march=tc162 \
+// RUN:     -ccc-install-dir %S/Inputs/basic_htc_tree/bin 2>&1 \
+// RUN:     | FileCheck -check-prefixes=CHECK-TC162 %s
+// CHECK-TC162: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc162
+// CHECK-TC162-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc161
+// CHECK-TC162-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc18
+
+// RUN: %clang %s -### --target=tricore -march=tc18 \
+// RUN:     -ccc-install-dir %S/Inputs/basic_htc_tree/bin 2>&1 \
+// RUN:     | FileCheck -check-prefixes=CHECK-TC18 %s
+// CHECK-TC18: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc18
+// CHECK-TC18-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc161
+// CHECK-TC18-NOT: "[[SYSROOT:[^"]+]]{{/|\\\\}}tricore{{/|\\\\}}lib{{/|\\\\}}tc162
