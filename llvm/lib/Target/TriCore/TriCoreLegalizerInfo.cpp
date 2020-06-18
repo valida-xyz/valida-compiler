@@ -625,12 +625,42 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
   switch (MI.getIntrinsicID()) {
   case Intrinsic::memcpy:
   case Intrinsic::memset:
-  case Intrinsic::memmove:
-    if (createMemLibcall(MIRBuilder, *MIRBuilder.getMRI(), MI) ==
+  case Intrinsic::memmove: {
+
+    // Unfortunately LLVM (still) allows to create memory intrinsics with
+    // types that do not match the prototype of the corresponding C library
+    // functions. Therefore, we trunc the size of the len argument to 32-bits.
+    // If the len type is < 32-bit, it will be extended to 32-bits by the call
+    // lowering code.
+    // FIXME: this hack should be removed once LLVM restricts the use of the
+    // memory intrinsics
+    MachineRegisterInfo &MRI = *MIRBuilder.getMRI();
+    MachineOperand &SizeOp = MI.getOperand(3);
+    Register SizeReg = SizeOp.getReg();
+    LLT SizeTy = MRI.getType(SizeReg);
+    if (SizeTy.getSizeInBits() > 32) {
+
+      // If the len argument is a constant, simply create a new s32 constant
+      auto VRegAndVal = getConstantVRegValWithLookThrough(SizeReg, MRI);
+      if (VRegAndVal) {
+        Register NewConstant =
+            MRI.createGenericVirtualRegister(LLT::scalar(32));
+        MIRBuilder.buildConstant(NewConstant, VRegAndVal->Value);
+        SizeOp.setReg(NewConstant);
+      } else {
+        // Otherwise, we need to truncate the source register to 32-bits
+        Register TruncReg = MRI.createGenericVirtualRegister(LLT::scalar(32));
+        MIRBuilder.buildTrunc(TruncReg, SizeReg);
+        SizeOp.setReg(TruncReg);
+      }
+    }
+
+    if (createMemLibcall(MIRBuilder, MRI, MI) ==
         LegalizerHelper::UnableToLegalize)
       return false;
     MI.eraseFromParent();
     return true;
+  }
   case Intrinsic::vacopy: {
       MachinePointerInfo MPO;
 

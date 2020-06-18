@@ -26,6 +26,63 @@ body:             |
     RET implicit $a11
 
 ...
+
+---
+name:            test_memcpy_s64_imm
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $a5
+
+    ; CHECK-LABEL: name: test_memcpy_s64_imm
+    ; CHECK: liveins: $a4, $a5
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: $a5 = COPY [[COPY1]](p0)
+    ; CHECK: $d4 = COPY [[C]](s32)
+    ; CHECK: CALL &memcpy, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $a5, implicit $d4
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(p0) = COPY $a5
+    %2:_(s64) = G_CONSTANT i64 4
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memcpy), %0(p0), %1(p0), %2(s64), 0
+    RET implicit $a11
+
+...
+
+---
+name:            test_memcpy_s64
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $a5, $e4
+
+    ; CHECK-LABEL: name: test_memcpy_s64
+    ; CHECK: liveins: $a4, $a5, $e4
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY2]](s64)
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: $a5 = COPY [[COPY1]](p0)
+    ; CHECK: $d4 = COPY [[TRUNC]](s32)
+    ; CHECK: CALL &memcpy, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $a5, implicit $d4
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(p0) = COPY $a5
+    %2:_(s64) = COPY $e4
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memcpy), %0(p0), %1(p0), %2(s64), 0
+    RET implicit $a11
+
+...
+
+
 ---
 name:            test_memmove
 tracksRegLiveness: true
@@ -52,6 +109,64 @@ body:             |
     RET implicit $a11
 
 ...
+
+---
+name:            test_memmove_s64_imm
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $a5
+
+    ; CHECK-LABEL: name: test_memmove_s64_imm
+    ; CHECK: liveins: $a4, $a5
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: $a5 = COPY [[COPY1]](p0)
+    ; CHECK: $d4 = COPY [[C]](s32)
+    ; CHECK: CALL &memmove, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $a5, implicit $d4
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(p0) = COPY $a5
+    %2:_(s64) = G_CONSTANT i64 4
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memmove), %0(p0), %1(p0), %2(s64), 0
+    RET implicit $a11
+
+...
+
+---
+name:            test_memmove_s64
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $a5, $e4
+
+    ; CHECK-LABEL: name: test_memmove_s64
+    ; CHECK: liveins: $a4, $a5, $e4
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(p0) = COPY $a5
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e4
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY2]](s64)
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: $a5 = COPY [[COPY1]](p0)
+    ; CHECK: $d4 = COPY [[TRUNC]](s32)
+    ; CHECK: CALL &memmove, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $a5, implicit $d4
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(p0) = COPY $a5
+    %2:_(s64) = COPY $e4
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memmove), %0(p0), %1(p0), %2(s64), 0
+    RET implicit $a11
+
+...
+
+
+
 ---
 name:            test_memset
 tracksRegLiveness: true
@@ -81,3 +196,61 @@ body:             |
 
 ...
 
+---
+name:            test_memset_s64_imm
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $d4
+
+    ; CHECK-LABEL: name: test_memset_s64_imm
+    ; CHECK: liveins: $a4, $d4
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[C:%[0-9]+]]:_(s32) = G_CONSTANT i32 4
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: $d4 = COPY [[COPY2]](s32)
+    ; CHECK: $d5 = COPY [[C]](s32)
+    ; CHECK: CALL &memset, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $d4, implicit $d5
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(s32) = COPY $d4
+    %2:_(s64) = G_CONSTANT i64 4
+    %3:_(s8) = G_TRUNC %1(s32)
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memset), %0(p0), %3(s8), %2(s64), 0
+    RET implicit $a11
+
+...
+
+---
+name:            test_memset_s64
+tracksRegLiveness: true
+body:             |
+  bb.1:
+    liveins: $a4, $d4, $e6
+
+    ; CHECK-LABEL: name: test_memset_s64
+    ; CHECK: liveins: $a4, $d4, $e6
+    ; CHECK: [[COPY:%[0-9]+]]:_(p0) = COPY $a4
+    ; CHECK: [[COPY1:%[0-9]+]]:_(s32) = COPY $d4
+    ; CHECK: [[COPY2:%[0-9]+]]:_(s64) = COPY $e6
+    ; CHECK: [[TRUNC:%[0-9]+]]:_(s32) = G_TRUNC [[COPY2]](s64)
+    ; CHECK: ADJCALLSTACKDOWN 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: $a4 = COPY [[COPY]](p0)
+    ; CHECK: [[COPY3:%[0-9]+]]:_(s32) = COPY [[COPY1]](s32)
+    ; CHECK: $d4 = COPY [[COPY3]](s32)
+    ; CHECK: $d5 = COPY [[TRUNC]](s32)
+    ; CHECK: CALL &memset, csr_tricore_uppercontext, implicit-def $a11, implicit $psw, implicit $a4, implicit $d4, implicit $d5
+    ; CHECK: ADJCALLSTACKUP 0, 0, implicit-def $a10, implicit $a10
+    ; CHECK: RET implicit $a11
+    %0:_(p0) = COPY $a4
+    %1:_(s32) = COPY $d4
+    %2:_(s64) = COPY $e6
+    %3:_(s8) = G_TRUNC %1(s32)
+    G_INTRINSIC_W_SIDE_EFFECTS intrinsic(@llvm.memset), %0(p0), %3(s8), %2(s64), 0
+    RET implicit $a11
+
+...
