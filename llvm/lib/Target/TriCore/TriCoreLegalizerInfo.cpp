@@ -640,6 +640,9 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
     LLT SizeTy = MRI.getType(SizeReg);
     if (SizeTy.getSizeInBits() > 32) {
 
+      // Inform the observer that we are about to modify the instruction
+      Observer.changingInstr(MI);
+
       // If the len argument is a constant, simply create a new s32 constant
       auto VRegAndVal = getConstantVRegValWithLookThrough(SizeReg, MRI);
       if (VRegAndVal) {
@@ -653,6 +656,9 @@ bool TriCoreLegalizerInfo::legalizeIntrinsic(
         MIRBuilder.buildTrunc(TruncReg, SizeReg);
         SizeOp.setReg(TruncReg);
       }
+
+      // Inform the observer that we are done changing the instruction
+      Observer.changedInstr(MI);
     }
 
     if (createMemLibcall(MIRBuilder, MRI, MI) ==
