@@ -1,3 +1,5 @@
+INCLUDE(CheckCXXSourceCompiles)
+
 set(LIBCXX_LIB_CMAKEFILES_DIR "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}"  PARENT_SCOPE)
 
 # Get sources
@@ -66,6 +68,20 @@ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "SunOS")
     support/solaris/mbsnrtowcs.inc
     support/solaris/wcsnrtombs.inc
     support/solaris/xlocale.cpp
+    )
+endif()
+
+check_cxx_source_compiles("
+#include <stdio.h>
+#ifndef _HAS_DINKUM_CLIB
+#error
+#endif
+int main(void) { return 0; }
+" LIBCXX_HAS_DINKUM_CLIB)
+
+if(LIBCXX_HAS_DINKUM_CLIB)
+  list(APPEND LIBCXX_SOURCES
+    support/dinkum/support.cpp
     )
 endif()
 
