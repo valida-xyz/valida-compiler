@@ -38,6 +38,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case bpfel:          return "bpfel";
   case csky:           return "csky";
   case dxil:           return "dxil";
+  case delendum:       return "delendum";
   case hexagon:        return "hexagon";
   case hsail64:        return "hsail64";
   case hsail:          return "hsail";
@@ -175,6 +176,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
   case dxil:        return "dx";
 
   case xtensa:      return "xtensa";
+
+  case delendum:    return "delendum";
   }
 }
 
@@ -880,6 +883,9 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::spirv64:
     return Triple::SPIRV;
 
+  case Triple::delendum:
+    return Triple::ELF;
+
   case Triple::dxil:
     return Triple::DXContainer;
   }
@@ -1412,6 +1418,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::armeb:
   case llvm::Triple::csky:
   case llvm::Triple::dxil:
+  case llvm::Triple::delendum:
   case llvm::Triple::hexagon:
   case llvm::Triple::hsail:
   case llvm::Triple::kalimba:
@@ -1757,6 +1764,7 @@ bool Triple::isLittleEndian() const {
   case Triple::avr:
   case Triple::bpfel:
   case Triple::csky:
+  case Triple::delendum:
   case Triple::dxil:
   case Triple::hexagon:
   case Triple::hsail64:
