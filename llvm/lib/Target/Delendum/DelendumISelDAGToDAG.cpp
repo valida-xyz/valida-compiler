@@ -85,6 +85,14 @@ SDNode* DelendumDAGToDAGISel::getGlobalBaseReg() {
   // TODO
 }
 
+bool DelendumDAGToDAGISel::SelectADDRrr(SDValue N, SDValue &R1, SDValue &R2) {
+  // TODO
+}
+
+bool DelendumDAGToDAGISel::SelectADDRri(SDValue N, SDValue &Base, SDValue &Offset) {
+  // TODO
+}
+
 bool DelendumDAGToDAGISel::SelectAddr(SDNode *Parent, SDValue N, 
                                       SDValue &Base, SDValue &Offset) {
   // TODO
@@ -103,8 +111,8 @@ void DelendumDAGToDAGISel::Select(SDNode *N) {
 /// inline asm expressions.
 bool
 DelendumDAGToDAGISel::SelectInlineAsmMemoryOperand(const SDValue &Op,
-                                                unsigned ConstraintID,
-                                                std::vector<SDValue> &OutOps) {
+                                                   unsigned ConstraintID,
+                                                   std::vector<SDValue> &OutOps) {
   SDValue Op0, Op1;
   switch (ConstraintID) {
   default: return true;

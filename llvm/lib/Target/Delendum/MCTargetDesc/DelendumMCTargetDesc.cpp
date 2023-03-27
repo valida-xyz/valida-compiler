@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DelendumMCTargetDesc.h"
+#include "DelendumMCAsmInfo.h"
 #include "TargetInfo/DelendumTargetInfo.h"
 
 #include "llvm/MC/MCInstrInfo.h"
@@ -21,6 +22,8 @@
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+
+using namespace llvm;
 
 #define GET_INSTRINFO_MC_DESC
 #define ENABLE_INSTR_PREDICATE_VERIFIER
@@ -32,10 +35,12 @@
 #define GET_REGINFO_MC_DESC
 #include "DelendumGenRegisterInfo.inc"
 
-using namespace llvm;
-
-static std::string ParseDelendumTriple(StringRef TT, StringRef CPU) {
-  return "";
+static MCAsmInfo *createDelendumMCAsmInfo(const MCRegisterInfo &MRI,
+                                       const Triple &TT,
+                                       const MCTargetOptions &Options) {
+  // TODO
+  MCAsmInfo *MAI = new DelendumELFMCAsmInfo(TT);
+  return MAI;
 }
 
 static MCInstrInfo *createDelendumMCInstrInfo() {
@@ -46,6 +51,8 @@ static MCInstrInfo *createDelendumMCInstrInfo() {
 
 extern "C" void LLVMInitializeDelendumTargetMC() {
   Target &T = getTheDelendumTarget();
+
+  RegisterMCAsmInfoFn X(T, createDelendumMCAsmInfo);
 
   // Register the MC instruction info.
   TargetRegistry::RegisterMCInstrInfo(T, createDelendumMCInstrInfo);

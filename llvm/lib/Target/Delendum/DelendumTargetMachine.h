@@ -24,6 +24,7 @@ namespace llvm {
 class formatted_raw_ostream;
 
 class DelendumTargetMachine : public LLVMTargetMachine {
+  std::unique_ptr<TargetLoweringObjectFile> TLOF;
 
 public:
   DelendumTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
@@ -31,6 +32,18 @@ public:
                         std::optional<Reloc::Model> RM,
                         std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
                         bool JIT);
+
+  // Pass Pipeline Configuration
+  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+
+  bool addPassesToEmitFile(PassManagerBase &PM, raw_pwrite_stream &Out,
+                           raw_pwrite_stream *DwoOut, CodeGenFileType FileType,
+                           bool DisableVerify,
+                           MachineModuleInfoWrapperPass *MMIWP) override;
+
+  TargetLoweringObjectFile *getObjFileLowering() const override {
+    return TLOF.get();
+  }
 };
 } // End llvm namespace
 

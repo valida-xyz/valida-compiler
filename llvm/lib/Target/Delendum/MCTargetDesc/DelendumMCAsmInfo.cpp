@@ -16,11 +16,19 @@
 
 using namespace llvm;
 
-void DelendumMCAsmInfo::anchor() { }
+void DelendumELFMCAsmInfo::anchor() { }
 
-DelendumMCAsmInfo::DelendumMCAsmInfo(const Target &T, StringRef TT) {
-  Triple TheTriple(TT);
-  if ((TheTriple.getArch() == Triple::delendum))
-    IsLittleEndian = false;
-  // TODO
+DelendumELFMCAsmInfo::DelendumELFMCAsmInfo(const Triple &T) {
+  CodePointerSize = 4;
+  CalleeSaveStackSlotSize = 4;
+
+  IsLittleEndian = false;
+
+  // Debug Information
+  SupportsDebugInformation = true;
+
+  // Exceptions handling
+  ExceptionsType = ExceptionHandling::DwarfCFI;
+
+  CommentString = ";";
 }

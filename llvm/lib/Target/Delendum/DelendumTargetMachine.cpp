@@ -14,9 +14,14 @@
 #include "DelendumTargetMachine.h"
 #include "Delendum.h"
 #include "DelendumMachineFunction.h"
+#include "DelendumTargetObjectFile.h"
 #include "DelendumSubtarget.h"
 #include "TargetInfo/DelendumTargetInfo.h"
 
+#include "llvm/CodeGen/GlobalISel/IRTranslator.h"
+#include "llvm/CodeGen/GlobalISel/InstructionSelect.h"
+#include "llvm/CodeGen/GlobalISel/Legalizer.h"
+#include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/InitializePasses.h"
@@ -73,6 +78,88 @@ DelendumTargetMachine::DelendumTargetMachine(const Target &T, const Triple &TT,
                                              CodeGenOpt::Level OL, bool JIT)
     : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options), TT, CPU, FS,
                         Options, getEffectiveRelocModel(TT, RM),
-                        ::getEffectiveCodeModel(CM, JIT), OL) {
+                        ::getEffectiveCodeModel(CM, JIT), OL),
+      TLOF(std::make_unique<DelendumELFTargetObjectFile>()) {
     // TODO
+}
+
+bool DelendumTargetMachine::addPassesToEmitFile(
+    PassManagerBase &PM, raw_pwrite_stream &Out, raw_pwrite_stream *DwoOut,
+    CodeGenFileType FileType, bool DisableVerify,
+    MachineModuleInfoWrapperPass *MMIWP) {
+  //TargetPassConfig *PassConfig = createPassConfig(PM);
+  return false;
+}
+
+
+//===----------------------------------------------------------------------===//
+// Pass Pipeline Configuration
+//===----------------------------------------------------------------------===//
+
+namespace {
+class DelendumPassConfig : public TargetPassConfig {
+public:
+  DelendumPassConfig(DelendumTargetMachine &TM, PassManagerBase &PM)
+      : TargetPassConfig(TM, PM) {}
+
+  DelendumTargetMachine &getDelendumTargetMachine() const {
+    return getTM<DelendumTargetMachine>();
+  }
+
+  //const DelendumSubtarget &getDelendumSubtarget() const {
+  //  return *getDelendumTargetMachine().getSubtargetImpl();
+  //}
+  
+  void addIRPasses() override;
+  bool addIRTranslator() override;
+  bool addLegalizeMachineIR() override;
+  bool addRegBankSelect() override;
+  bool addGlobalInstructionSelect() override;
+  bool addInstSelector() override;
+  void addPreSched2() override;
+  void addPreEmitPass() override;
+};
+} // namespace
+
+TargetPassConfig *DelendumTargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new DelendumPassConfig(*this, PM);
+}
+
+void DelendumPassConfig::addIRPasses() {
+  //addPass(createAtomicExpandPass());
+  //TargetPassConfig::addIRPasses();
+}
+
+bool DelendumPassConfig::addInstSelector() {
+  // Install an instruction selector.
+  addPass(createDelendumISelDag(getDelendumTargetMachine()));
+  return false;
+}
+
+bool DelendumPassConfig::addIRTranslator() {
+  //addPass(new IRTranslator());
+  return false;
+}
+
+bool DelendumPassConfig::addLegalizeMachineIR() {
+  //addPass(new Legalizer());
+  return false;
+}
+
+bool DelendumPassConfig::addRegBankSelect() {
+  //addPass(new RegBankSelect());
+  return false;
+}
+
+bool DelendumPassConfig::addGlobalInstructionSelect() {
+  //addPass(new InstructionSelect());
+  return false;
+}
+
+void DelendumPassConfig::addPreSched2() { 
+  // TODO
+}
+
+void DelendumPassConfig::addPreEmitPass() {
+  //addPass(createDelendumCollapseMOVEMPass());
 }

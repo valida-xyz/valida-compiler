@@ -11,19 +11,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DELENDUMTARGETASMINFO_H
-#define DELENDUMTARGETASMINFO_H
+#ifndef LLVM_LIB_TARGET_DELENDUM_MCTARGETDESC_DELENDUMMCASMINFO_H
+#define LLVM_LIB_TARGET_DELENDUM_MCTARGETDESC_DELENDUMMCASMINFO_H
 
-#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCAsmInfoELF.h"
+#include "llvm/TargetParser/Triple.h"
 
 namespace llvm {
   class StringRef;
   class Target;
 
-  class DelendumMCAsmInfo : public MCAsmInfo {
+  class DelendumELFMCAsmInfo : public MCAsmInfoELF {
     virtual void anchor();
   public:
-    explicit DelendumMCAsmInfo(const Target &T, StringRef TT);
+    explicit DelendumELFMCAsmInfo(const Triple &T);
   };
 
 } // namespace llvm
