@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DelendumMCTargetDesc.h"
+#include "DelendumInstPrinter.h"
 #include "DelendumMCAsmInfo.h"
 #include "TargetInfo/DelendumTargetInfo.h"
 
@@ -62,6 +63,14 @@ static MCInstrInfo *createDelendumMCInstrInfo() {
   return X;
 }
 
+static MCInstPrinter *createDelendumMCInstPrinter(const Triple &T,
+                                                  unsigned SyntaxVariant,
+                                                  const MCAsmInfo &MAI,
+                                                  const MCInstrInfo &MII,
+                                                  const MCRegisterInfo &MRI) {
+  return new DelendumInstPrinter(MAI, MII, MRI);
+}
+
 extern "C" void LLVMInitializeDelendumTargetMC() {
   Target &T = getTheDelendumTarget();
 
@@ -75,6 +84,9 @@ extern "C" void LLVMInitializeDelendumTargetMC() {
 
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(T, createDelendumMCSubtargetInfo);
+
+  // Register the MCInstPrinter.
+  TargetRegistry::RegisterMCInstPrinter(T, createDelendumMCInstPrinter);
 
   // Register the code emitter.
   TargetRegistry::RegisterMCCodeEmitter(T, createDelendumMCCodeEmitter);

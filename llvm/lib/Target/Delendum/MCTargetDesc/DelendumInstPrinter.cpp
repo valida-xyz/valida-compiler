@@ -39,7 +39,9 @@ void DelendumInstPrinter::printRegName(raw_ostream &OS, MCRegister Reg) const {
 }
 
 void DelendumInstPrinter::printInst(const MCInst *MI, uint64_t Address,
-                                    StringRef Annot, raw_ostream &O) {
+                                    StringRef Annot, 
+                                    const MCSubtargetInfo &STI,
+                                    raw_ostream &O) {
   if (!printAliasInstr(MI, Address, O) &&
       !printDelendumAliasInstr(MI, O))
     printInstruction(MI, Address, O);
