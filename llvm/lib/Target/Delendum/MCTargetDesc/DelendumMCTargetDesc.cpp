@@ -43,6 +43,19 @@ static MCAsmInfo *createDelendumMCAsmInfo(const MCRegisterInfo &MRI,
   return MAI;
 }
 
+static MCRegisterInfo *createDelendumMCRegisterInfo(const Triple &TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitDelendumMCRegisterInfo(X, 0, 0, 0, 0);
+  return X;
+}
+
+static MCSubtargetInfo *
+createDelendumMCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
+  if (CPU.empty())
+    CPU = "";
+  return createDelendumMCSubtargetInfoImpl(TT, CPU, /*TuneCPU*/ CPU, FS);
+}
+
 static MCInstrInfo *createDelendumMCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
   InitDelendumMCInstrInfo(X); // defined in DelendumGenInstrInfo.inc
@@ -56,6 +69,12 @@ extern "C" void LLVMInitializeDelendumTargetMC() {
 
   // Register the MC instruction info.
   TargetRegistry::RegisterMCInstrInfo(T, createDelendumMCInstrInfo);
+
+  // Register the MC register info.
+  TargetRegistry::RegisterMCRegInfo(T, createDelendumMCRegisterInfo);
+
+  // Register the MC subtarget info.
+  TargetRegistry::RegisterMCSubtargetInfo(T, createDelendumMCSubtargetInfo);
 
   // Register the code emitter.
   TargetRegistry::RegisterMCCodeEmitter(T, createDelendumMCCodeEmitter);

@@ -36,8 +36,8 @@ using namespace llvm;
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDelendumTarget() {
   RegisterTargetMachine<DelendumTargetMachine> X(getTheDelendumTarget());
-  //auto *PR = PassRegistry::getPassRegistry();
-  //initializeDelendumDAGToDAGISelPass(*PR);
+  auto *PR = PassRegistry::getPassRegistry();
+  initializeDelendumDAGToDAGISelPass(*PR);
 }
 
 namespace {
@@ -80,17 +80,8 @@ DelendumTargetMachine::DelendumTargetMachine(const Target &T, const Triple &TT,
                         Options, getEffectiveRelocModel(TT, RM),
                         ::getEffectiveCodeModel(CM, JIT), OL),
       TLOF(std::make_unique<DelendumELFTargetObjectFile>()) {
-    // TODO
+  initAsmInfo();
 }
-
-bool DelendumTargetMachine::addPassesToEmitFile(
-    PassManagerBase &PM, raw_pwrite_stream &Out, raw_pwrite_stream *DwoOut,
-    CodeGenFileType FileType, bool DisableVerify,
-    MachineModuleInfoWrapperPass *MMIWP) {
-  //TargetPassConfig *PassConfig = createPassConfig(PM);
-  return false;
-}
-
 
 //===----------------------------------------------------------------------===//
 // Pass Pipeline Configuration
@@ -100,15 +91,11 @@ namespace {
 class DelendumPassConfig : public TargetPassConfig {
 public:
   DelendumPassConfig(DelendumTargetMachine &TM, PassManagerBase &PM)
-      : TargetPassConfig(TM, PM) {}
+      : TargetPassConfig(TM, PM) { }
 
   DelendumTargetMachine &getDelendumTargetMachine() const {
     return getTM<DelendumTargetMachine>();
   }
-
-  //const DelendumSubtarget &getDelendumSubtarget() const {
-  //  return *getDelendumTargetMachine().getSubtargetImpl();
-  //}
   
   void addIRPasses() override;
   bool addIRTranslator() override;
@@ -127,7 +114,7 @@ TargetPassConfig *DelendumTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 void DelendumPassConfig::addIRPasses() {
   //addPass(createAtomicExpandPass());
-  //TargetPassConfig::addIRPasses();
+  TargetPassConfig::addIRPasses();
 }
 
 bool DelendumPassConfig::addInstSelector() {

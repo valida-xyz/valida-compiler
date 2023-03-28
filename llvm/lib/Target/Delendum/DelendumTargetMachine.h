@@ -36,11 +36,6 @@ public:
   // Pass Pipeline Configuration
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
-  bool addPassesToEmitFile(PassManagerBase &PM, raw_pwrite_stream &Out,
-                           raw_pwrite_stream *DwoOut, CodeGenFileType FileType,
-                           bool DisableVerify,
-                           MachineModuleInfoWrapperPass *MMIWP) override;
-
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
   }
