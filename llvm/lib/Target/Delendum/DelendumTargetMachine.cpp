@@ -70,6 +70,25 @@ CodeModel::Model getEffectiveCodeModel(std::optional<CodeModel::Model> CM,
   return CM.value();
 }
 
+const DelendumSubtarget *
+DelendumTargetMachine::getSubtargetImpl(const Function &F) const {
+  Attribute CPUAttr = F.getFnAttribute("target-cpu");
+  Attribute FSAttr = F.getFnAttribute("target-features");
+
+  auto CPU = CPUAttr.isValid() ? CPUAttr.getValueAsString().str() : TargetCPU;
+  auto FS = FSAttr.isValid() ? FSAttr.getValueAsString().str() : TargetFS;
+
+  auto &I = SubtargetMap[CPU + FS];
+  if (!I) {
+    // This needs to be done before we create a new subtarget since any
+    // creation will depend on the TM and the code generation flags on the
+    // function that reside in TargetOptions.
+    resetTargetOptions(F);
+    I = std::make_unique<DelendumSubtarget>(TargetTriple, CPU, FS, *this);
+  }
+  return I.get();
+}
+
 DelendumTargetMachine::DelendumTargetMachine(const Target &T, const Triple &TT,
                                              StringRef CPU, StringRef FS,
                                              const TargetOptions &Options,
@@ -79,7 +98,8 @@ DelendumTargetMachine::DelendumTargetMachine(const Target &T, const Triple &TT,
     : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options), TT, CPU, FS,
                         Options, getEffectiveRelocModel(TT, RM),
                         ::getEffectiveCodeModel(CM, JIT), OL),
-      TLOF(std::make_unique<DelendumELFTargetObjectFile>()) {
+      TLOF(std::make_unique<DelendumELFTargetObjectFile>()),
+      Subtarget(TT, CPU, FS, *this) {
   initAsmInfo();
 }
 

@@ -84,6 +84,7 @@ namespace llvm {
     const char *getTargetNodeName(unsigned Opcode) const override;
 
     ConstraintType getConstraintType(StringRef Constraint) const override;
+
     ConstraintWeight
     getSingleConstraintMatchWeight(AsmOperandInfo &info,
                                    const char *constraint) const override;

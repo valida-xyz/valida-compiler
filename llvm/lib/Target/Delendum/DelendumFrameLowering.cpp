@@ -13,6 +13,7 @@
 
 #include "DelendumFrameLowering.h"
 #include "DelendumInstrInfo.h"
+#include "DelendumSubtarget.h"
 #include "llvm/IR/Function.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -24,6 +25,11 @@
 #include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
+
+DelendumFrameLowering::DelendumFrameLowering(const DelendumSubtarget &ST)
+    : TargetFrameLowering(TargetFrameLowering::StackGrowsDown,
+                          Align(8), 0,
+                          Align(8)) {}
 
 bool DelendumFrameLowering::hasFP(const MachineFunction &MF) const {
   // TODO
@@ -37,7 +43,8 @@ static void expandLargeImm(unsigned Reg, int64_t Imm,
   // TODO
 }
 
-void DelendumFrameLowering::emitPrologue(MachineFunction &MF) const {
+void DelendumFrameLowering::emitPrologue(MachineFunction &MF,
+                                         MachineBasicBlock &MBB) const {
   // TODO
 }
 
@@ -57,8 +64,9 @@ spillCalleeSavedRegisters(MachineBasicBlock &MBB,
 // This function eliminate ADJCALLSTACKDOWN,
 // ADJCALLSTACKUP pseudo instructions
 MachineBasicBlock::iterator
-eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
-                              MachineBasicBlock::iterator MI) {
+DelendumFrameLowering::eliminateCallFramePseudoInstr(MachineFunction &MF,
+                                                     MachineBasicBlock &MBB,
+                                                     MachineBasicBlock::iterator MI) const {
   // TODO
 }
 
@@ -66,8 +74,8 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
 //  physical registers used to determine what callee saved registers should be 
 //  spilled. This method is optional. 
 void DelendumFrameLowering::
-processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                     RegScavenger *RS) const {
+DelendumFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
+                                                            RegScavenger *RS) const {
   // TODO
 }
 

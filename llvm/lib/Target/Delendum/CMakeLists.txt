@@ -11,18 +11,18 @@ tablegen(LLVM DelendumGenRegisterInfo.inc -gen-register-info)
 tablegen(LLVM DelendumGenSubtargetInfo.inc -gen-subtarget)
 tablegen(LLVM DelendumGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM DelendumGenDisassemblerTable.inc -gen-disassembler)
-tablegen(LLVM DelendumGenSubtargetInfo.inc -gen-subtarget)
 
 add_public_tablegen_target(DelendumCommonTableGen)
 
 add_llvm_target(DelendumCodeGen
   DelendumAsmPrinter.cpp
+  DelendumInstrInfo.cpp
   DelendumISelDAGToDAG.cpp
   DelendumISelLowering.cpp
-  DelendumTargetMachine.cpp
   DelendumFrameLowering.cpp
   DelendumMachineFunction.cpp
-  DelendumInstrInfo.cpp
+  DelendumSubtarget.cpp
+  DelendumTargetMachine.cpp
   DelendumTargetObjectFile.cpp
 
   LINK_COMPONENTS

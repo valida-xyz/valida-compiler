@@ -37,9 +37,12 @@ namespace Delendum {
 #define GET_INSTRINFO_CTOR_DTOR
 #include "DelendumGenInstrInfo.inc"
 
-DelendumInstrInfo::DelendumInstrInfo(DelendumTargetMachine &tm)
+// Pin the vtable to this file.
+void DelendumInstrInfo::anchor() {}
+
+DelendumInstrInfo::DelendumInstrInfo(DelendumSubtarget &ST)
   : DelendumGenInstrInfo(DL::ADJCALLSTACKDOWN, DL::ADJCALLSTACKUP),
-    TM(tm) {}
+    Subtarget(ST) {}
 
 static MachineMemOperand* GetMemOperand(MachineBasicBlock &MBB, int FI,
                                         unsigned Flag) {

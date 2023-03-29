@@ -25,6 +25,9 @@ class formatted_raw_ostream;
 
 class DelendumTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  DelendumSubtarget Subtarget;
+
+  mutable StringMap<std::unique_ptr<DelendumSubtarget>> SubtargetMap;
 
 public:
   DelendumTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
@@ -32,6 +35,9 @@ public:
                         std::optional<Reloc::Model> RM,
                         std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL,
                         bool JIT);
+
+  const DelendumSubtarget *getSubtargetImpl() const { return &Subtarget; }
+  const DelendumSubtarget *getSubtargetImpl(const Function &F) const override;
 
   // Pass Pipeline Configuration
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;

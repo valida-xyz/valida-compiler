@@ -25,10 +25,11 @@
 namespace llvm {
 
 class DelendumInstrInfo : public DelendumGenInstrInfo {
-  DelendumTargetMachine &TM;
+  const DelendumSubtarget& Subtarget;
+  virtual void anchor();
 
 public:
-  explicit DelendumInstrInfo(DelendumTargetMachine &TM);
+  explicit DelendumInstrInfo(DelendumSubtarget &ST);
 
 public:
   /// isLoadFromStackSlot - If the specified machine instruction is a direct
