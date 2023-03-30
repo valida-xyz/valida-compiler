@@ -32,6 +32,8 @@
 #include "llvm/Support/KnownBits.h"
 using namespace llvm;
 
+#include "DelendumGenCallingConv.inc"
+
 DelendumTargetLowering::DelendumTargetLowering(const TargetMachine &TM,
                                                const DelendumSubtarget &STI)
     : TargetLowering(TM), Subtarget(&STI) { }
@@ -101,6 +103,18 @@ DelendumTargetLowering::LowerFormalArguments(SDValue Chain,
                                              const SmallVectorImpl<ISD::InputArg> &Ins,
                                              const SDLoc &dl, SelectionDAG &DAG,
                                              SmallVectorImpl<SDValue> &InVals) const {
+  // Assign locations to all of the incoming arguments.
+  SmallVector<CCValAssign, 16> ArgLocs;
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), ArgLocs,
+                 *DAG.getContext());
+  CCInfo.AnalyzeFormalArguments(Ins, Delendum_CCallingConv);
+
+  SDValue ArgValue;
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
+    InVals.push_back(ArgValue);
+  }
+
+  return Chain;
 };
 
 SDValue
@@ -111,14 +125,20 @@ bool DelendumTargetLowering::CanLowerReturn(CallingConv::ID CallConv,
                                             MachineFunction &MF,
                                             bool isVarArg,
                                             const SmallVectorImpl<ISD::OutputArg> &Outs,
-                                            LLVMContext &Context) const {};
+                                            LLVMContext &Context) const {
+  SmallVector<CCValAssign, 16> RVLocs;
+  CCState CCInfo(CallConv, isVarArg, MF, RVLocs, Context);
+  return CCInfo.CheckReturn(Outs, Delendum_CRetConv);
+};
 
 SDValue
 DelendumTargetLowering::LowerReturn(SDValue Chain, 
                                     CallingConv::ID CallConv, bool isVarArg,
                                     const SmallVectorImpl<ISD::OutputArg> &Outs,
                                     const SmallVectorImpl<SDValue> &OutVals,
-                                    const SDLoc &dl, SelectionDAG &DAG) const {};
+                                    const SDLoc &dl, SelectionDAG &DAG) const {
+  return Chain;
+};
 
 SDValue
 DelendumTargetLowering::PerformDAGCombine(SDNode *N,

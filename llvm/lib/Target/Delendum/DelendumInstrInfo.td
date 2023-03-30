@@ -57,9 +57,9 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>
 //===----------------------------------------------------------------------===//
 
 class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
-  : DInst<op, (outs GPR:$rd), (ins GPR:$rs1, GPR:$rs2),
+  : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, MemOp:$rs2),
          !strconcat(opcodestr, "$rd, $rs1, $rs2"),
-         [(set GPR:$rd, (OpNode GPR:$rs1, GPR:$rs2))]> {
+         [(set GPR:$rd, (OpNode addr:$rs1, addr:$rs2))]> {
   // TODO: How can we prepend 'op' using a DAG operator?
   let Inst = (ascend
     (operand "$rd", 32),
@@ -69,9 +69,9 @@ class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
 
 class ALU_ri<bits<32> op, string opcodestr, SDNode OpNode,
              Operand Od, PatLeaf imm_type>
-  : DInst<op, (outs GPR:$rd), (ins GPR:$rs1, Od:$imm32),
+  : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, Od:$imm32),
          !strconcat(opcodestr, "$rd, $rs1, $imm32"),
-         [(set GPR:$rd, (OpNode GPR:$rs1, imm_type:$imm32))]> {
+         [(set GPR:$rd, (OpNode addr:$rs1, imm_type:$imm32))]> {
   let Inst = (ascend
     (operand "$rd", 32),
     (operand "$rs1", 32),
@@ -88,9 +88,9 @@ class LOAD<bits<32> op, string instr_asm, PatFrag OpNode>
 }
 
 class STORE<bits<32> op, string instr_asm, PatFrag OpNode>
-  : DInst<op, (outs), (ins GPR:$ra, MemOp:$addr),
+  : DInst<op, (outs), (ins MemOp:$ra, MemOp:$addr),
          !strconcat(instr_asm, "\t$ra, $addr"),
-         [(OpNode GPR:$ra, addr:$addr)]> {
+         [(OpNode addr:$ra, addr:$addr)]> {
   let Inst = (ascend
     (operand "$ra", 32),
     (operand "$addr", 32));

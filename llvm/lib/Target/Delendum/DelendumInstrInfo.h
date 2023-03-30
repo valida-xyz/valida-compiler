@@ -25,13 +25,18 @@
 namespace llvm {
 
 class DelendumInstrInfo : public DelendumGenInstrInfo {
+  const DelendumRegisterInfo RI;
   const DelendumSubtarget& Subtarget;
   virtual void anchor();
 
 public:
   explicit DelendumInstrInfo(DelendumSubtarget &ST);
 
-public:
+  /// getRegisterInfo - TargetInstrInfo is a superset of MRegister info.  As
+  /// such, whenever a client has an instance of instruction info, it should
+  /// always be able to get register info as well (through this method).
+  const DelendumRegisterInfo &getRegisterInfo() const { return RI; }
+  
   /// isLoadFromStackSlot - If the specified machine instruction is a direct
   /// load from a stack slot, return the virtual or physical register number of
   /// the destination along with the FrameIndex of the loaded stack slot.  If

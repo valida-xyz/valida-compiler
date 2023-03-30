@@ -22,6 +22,7 @@ add_llvm_target(DelendumCodeGen
   DelendumFrameLowering.cpp
   DelendumMachineFunction.cpp
   DelendumSubtarget.cpp
+  DelendumRegisterInfo.cpp
   DelendumTargetMachine.cpp
   DelendumTargetObjectFile.cpp
 

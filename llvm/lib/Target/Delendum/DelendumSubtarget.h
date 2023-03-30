@@ -47,9 +47,9 @@ public:
   const TargetFrameLowering *getFrameLowering() const override {
     return &FrameLowering;
   }
-  //const DelendumRegisterInfo *getRegisterInfo() const override {
-  //  return &InstrInfo.getRegisterInfo();
-  //}
+  const DelendumRegisterInfo *getRegisterInfo() const override {
+    return &InstrInfo.getRegisterInfo();
+  }
   const DelendumTargetLowering *getTargetLowering() const override {
     return &TLInfo;
   }

@@ -103,7 +103,7 @@ bool DelendumDAGToDAGISel::tryInlineAsm(SDNode *N){
 }
 
 void DelendumDAGToDAGISel::Select(SDNode *N) {
-  // TODO
+  SelectCode(N);
 }
 
 

@@ -55,30 +55,6 @@ public:
   const uint32_t *getCallPreservedMask(const MachineFunction &MF,
                                        CallingConv::ID) const override;
 
-  /// Returns a register class with registers that can be used in forming tail
-  /// calls.
-  const TargetRegisterClass *
-  getRegsForTailCall(const MachineFunction &MF) const;
-
-  /// Return a mega-register of the specified register Reg so its sub-register
-  /// of index SubIdx is Reg, its super(or mega) Reg. In other words it will
-  /// return a register that is not direct super register but still shares
-  /// physical register with Reg.
-  /// NOTE not sure about the term though.
-  unsigned getMatchingMegaReg(unsigned Reg,
-                              const TargetRegisterClass *RC) const;
-
-  /// Returns the Register Class of a physical register of the given type,
-  /// picking the biggest register class of the right type that contains this
-  /// physreg.
-  const TargetRegisterClass *getMaximalPhysRegClass(unsigned reg, MVT VT) const;
-
-  /// Return index of a register within a register class, otherwise return -1
-  int getRegisterOrder(unsigned Reg, const TargetRegisterClass &TRC) const;
-
-  /// Return spill order index of a register, if there is none then trap
-  int getSpillRegisterOrder(unsigned Reg) const;
-
   BitVector getReservedRegs(const MachineFunction &MF) const override;
 
   bool requiresRegisterScavenging(const MachineFunction &MF) const override;
@@ -90,8 +66,6 @@ public:
   bool eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                            unsigned FIOperandNum,
                            RegScavenger *RS = nullptr) const override;
-
-  bool hasBasePointer(const MachineFunction &MF) const;
 
   /// True if the stack can be realigned for the target.
   bool canRealignStack(const MachineFunction &MF) const override;

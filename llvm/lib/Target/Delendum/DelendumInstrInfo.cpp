@@ -13,6 +13,7 @@
 
 //#include "Delendum.h"
 #include "DelendumInstrInfo.h"
+#include "DelendumSubtarget.h"
 #include "DelendumTargetMachine.h"
 #include "MCTargetDesc/DelendumMCCodeEmitter.h"
 
@@ -27,10 +28,10 @@
 
 using namespace llvm;
 
-namespace llvm {
-namespace Delendum {
-} // end namespace Delendum
-} // end namespace llvm
+//namespace llvm {
+//namespace Delendum {
+//} // end namespace Delendum
+//} // end namespace llvm
 
 #define DEBUG_TYPE "delendum-instr-info"
 
@@ -42,7 +43,7 @@ void DelendumInstrInfo::anchor() {}
 
 DelendumInstrInfo::DelendumInstrInfo(DelendumSubtarget &ST)
   : DelendumGenInstrInfo(DL::ADJCALLSTACKDOWN, DL::ADJCALLSTACKUP),
-    Subtarget(ST) {}
+    RI(ST), Subtarget(ST) {}
 
 static MachineMemOperand* GetMemOperand(MachineBasicBlock &MBB, int FI,
                                         unsigned Flag) {
