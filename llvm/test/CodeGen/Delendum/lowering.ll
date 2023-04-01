@@ -6,3 +6,9 @@
 define void @f() {
   ret void
 }
+
+; NOTE: What's the proper way to test argument lowering into the stack?
+; CHECK: RET
+define void @f(i32 %a) {
+  ret void
+}

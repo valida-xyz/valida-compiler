@@ -28,5 +28,5 @@ def Delendum_CRetConv : CallingConv<[
 
   // Integer values get stored in stack slots that are 4 bytes in size and
   // 4-byte aligned
-  //CCIfType<[i32], CCAssignToStack<4, 4>>
+  CCIfType<[i32], CCAssignToStack<4, 4>>
 ]>;

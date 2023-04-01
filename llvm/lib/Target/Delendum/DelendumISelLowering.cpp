@@ -86,6 +86,21 @@ Register
 DelendumTargetLowering::getRegisterByName(const char* RegName, LLT VT,
                                          const MachineFunction &MF) const {};
 
+unsigned DelendumTargetLowering::getNumRegistersForCallingConv(
+    LLVMContext &Context, CallingConv::ID CC, EVT VT) const {
+  return 1;
+  // FIXME: Why is getNumRegisters not returning the correct number of virtual regs?
+  //return getNumRegisters(Context, VT);
+}
+
+MVT DelendumTargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
+                                                          CallingConv::ID CC,
+                                                          EVT VT) const {
+  return MVT::i32;
+  // FIXME: Why is getRegisterType not returning the correct type?
+  //return getRegisterType(Context, VT);
+}
+
 /// Override to support customized stack guard loading.
 bool DelendumTargetLowering::useLoadStackGuardNode() const {};
 void DelendumTargetLowering::insertSSPDeclarations(Module &M) const {};

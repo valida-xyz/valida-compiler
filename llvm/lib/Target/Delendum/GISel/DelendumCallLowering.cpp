@@ -25,6 +25,8 @@
 
 using namespace llvm;
 
+#include "DelendumGenCallingConv.inc"
+
 DelendumCallLowering::DelendumCallLowering(const DelendumTargetLowering &TLI)
     : CallLowering(&TLI) {}
 
@@ -47,6 +49,7 @@ struct DelendumOutgoingArgHandler : public CallLowering::OutgoingValueHandler {
                            MachinePointerInfo &MPO,
                            ISD::ArgFlagsTy Flags) override {
   }
+
   MachineInstrBuilder MIB;
   const DataLayout &DL;
   const DelendumSubtarget &STI;
@@ -64,15 +67,37 @@ bool DelendumCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
                                             const Function &F,
                                             ArrayRef<ArrayRef<Register>> VRegs,
                                             FunctionLoweringInfo &FLI) const {
-  if (F.arg_empty())
-    return true;
+  MachineFunction &MF = MIRBuilder.getMF();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  const auto &DL = F.getParent()->getDataLayout();
+  auto &TLI = *getTLI<DelendumTargetLowering>();
 
-  return false;
+  if (!VRegs.empty()) {
+    SmallVector<ArgInfo, 8> InArgs;
+    unsigned I = 0;
+    for (auto &Arg : F.args()) {
+      ArgInfo OrigArg{VRegs[I], Arg.getType(), 0};
+      setArgFlags(OrigArg, I + AttributeList::FirstArgIndex, DL, F);
+      InArgs.push_back(OrigArg);
+      ++I;
+    }
+
+    FormalArgHandler Handler(MIRBuilder, MRI);
+
+    CCAssignFn *AssignFn = Delendum_CCallingConv;
+    OutgoingValueAssigner Assigner(AssignFn);
+
+    determineAndHandleAssignments(Handler, Assigner, InArgs, MIRBuilder, 
+                                  F.getCallingConv(), F.isVarArg());
+  }
+
+  return true;
 }
 
 void DelendumIncomingValueHandler::assignValueToReg(Register ValVReg,
                                                 Register PhysReg,
                                                 CCValAssign VA) {
+  // NOOP: all values are in the stack
 }
 
 void DelendumIncomingValueHandler::assignValueToAddress(Register ValVReg,
@@ -80,16 +105,34 @@ void DelendumIncomingValueHandler::assignValueToAddress(Register ValVReg,
                                                     LLT MemTy,
                                                     MachinePointerInfo &MPO,
                                                     CCValAssign &VA) {
+  MachineFunction &MF = MIRBuilder.getMF();
+  Register ExtReg = extendRegister(ValVReg, VA);
+
+  auto *MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
+                                      inferAlignFromPtrInfo(MF, MPO));
+  MIRBuilder.buildStore(ExtReg, Addr, *MMO);
 }
 
 Register DelendumIncomingValueHandler::getStackAddress(uint64_t Size,
-                                                   int64_t Offset,
-                                                   MachinePointerInfo &MPO,
-                                                   ISD::ArgFlagsTy Flags) {
+                                                       int64_t Offset,
+                                                       MachinePointerInfo &MPO,
+                                                       ISD::ArgFlagsTy Flags) {
+  auto &MFI = MIRBuilder.getMF().getFrameInfo();
+  const bool IsImmutable = !Flags.isByVal();
+  int FI = MFI.CreateFixedObject(Size, Offset, IsImmutable);
+  MPO = MachinePointerInfo::getFixedStack(MIRBuilder.getMF(), FI);
+
+  // Build Frame Index
+  llvm::LLT FramePtr = LLT::pointer(
+      0, MIRBuilder.getMF().getDataLayout().getPointerSizeInBits());
+  MachineInstrBuilder AddrReg = MIRBuilder.buildFrameIndex(FramePtr, FI);
+  StackUsed = std::max(StackUsed, Size + Offset);
+  return AddrReg.getReg(0);
 }
 
 void CallReturnHandler::assignValueToReg(Register ValVReg, Register PhysReg,
                                          CCValAssign VA) {
+  // NOOP: all values are in the stack
 }
 
 bool DelendumCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
