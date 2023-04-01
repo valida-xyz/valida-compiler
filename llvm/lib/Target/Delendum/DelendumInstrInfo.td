@@ -23,12 +23,16 @@ def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_DCallSeqEnd,
 // multiple operand types here, and check whether a given operand needs to be
 // split into smaller ones.
 def ImmOp32 : Operand<i32> {
-  let DecoderMethod = "DecodeImm32";
+  let DecoderMethod = "DecodeImmOp32";
 }
 
 def MemOp : Operand<iPTR> {
   let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops GPR, ImmOp32);
+  let MIOperandInfo = (ops GPR:$reg, ImmOp32:$imm);
+}
+
+class MemOpEncoding<string opname> {
+  dag Value = (ascend (operand "$"#opname#".reg", 32), (operand "$"#opname#".imm", 32));
 }
 
 // Node immediate fits as 32-bit sign extended on target immediate.
@@ -58,23 +62,23 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>
 
 class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
   : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, MemOp:$rs2),
-         !strconcat(opcodestr, "$rd, $rs1, $rs2"),
+         opcodestr#"\t$rd, $rs1, $rs2",
          [(set GPR:$rd, (OpNode addr:$rs1, addr:$rs2))]> {
   // TODO: How can we prepend 'op' using a DAG operator?
-  let Inst = (ascend
+  let Inst = (ascend op,
     (operand "$rd", 32),
-    (operand "$rs1", 32),
-    (operand "$rs2", 32));
+    MemOpEncoding<"rs1">.Value,
+    MemOpEncoding<"rs2">.Value);
 }
 
 class ALU_ri<bits<32> op, string opcodestr, SDNode OpNode,
              Operand Od, PatLeaf imm_type>
   : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, Od:$imm32),
-         !strconcat(opcodestr, "$rd, $rs1, $imm32"),
+         !strconcat(opcodestr, "\t$rd, $rs1, $imm32"),
          [(set GPR:$rd, (OpNode addr:$rs1, imm_type:$imm32))]> {
-  let Inst = (ascend
+  let Inst = (ascend op,
     (operand "$rd", 32),
-    (operand "$rs1", 32),
+    MemOpEncoding<"rs1">.Value,
     (operand "$imm32", 32));
 }
 
@@ -82,18 +86,18 @@ class LOAD<bits<32> op, string instr_asm, PatFrag OpNode>
   : DInst<op, (outs GPR:$ra), (ins MemOp:$addr),
          !strconcat(instr_asm, "\t$ra, $addr"),
          [(set GPR:$ra, (OpNode addr:$addr))]> {
-  let Inst = (ascend
+  let Inst = (ascend op,
     (operand "$ra", 32),
-    (operand "$addr", 32));
+    MemOpEncoding<"addr">.Value);
 }
 
 class STORE<bits<32> op, string instr_asm, PatFrag OpNode>
   : DInst<op, (outs), (ins MemOp:$ra, MemOp:$addr),
          !strconcat(instr_asm, "\t$ra, $addr"),
          [(OpNode addr:$ra, addr:$addr)]> {
-  let Inst = (ascend
-    (operand "$ra", 32),
-    (operand "$addr", 32));
+  let Inst = (ascend op,
+    MemOpEncoding<"ra">.Value,
+    MemOpEncoding<"addr">.Value);
 }
 
 //===----------------------------------------------------------------------===//

@@ -42,18 +42,20 @@ DelendumRegisterInfo::DelendumRegisterInfo(const DelendumSubtarget &ST)
 
 const MCPhysReg*
 DelendumRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  // TODO
+  static const MCPhysReg CalleeSavedRegs[] = {0};
+  return CalleeSavedRegs;
 }
 
 const uint32_t*
 DelendumRegisterInfo::getCallPreservedMask(const MachineFunction &MF,
-                                                           CallingConv::ID) const {
+                                           CallingConv::ID) const {
   // TODO
 }
 
 BitVector
 DelendumRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
-  // TODO
+    BitVector Reserved(getNumRegs());
+    return Reserved;
 };
 
 bool

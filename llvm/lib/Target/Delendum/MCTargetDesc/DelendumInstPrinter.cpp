@@ -50,23 +50,31 @@ void DelendumInstPrinter::printInst(const MCInst *MI, uint64_t Address,
 
 bool DelendumInstPrinter::printDelendumAliasInstr(const MCInst *MI,
                                                   raw_ostream &O) {
-  // TODO
-  return true;
+  return false;
 }
 
 void DelendumInstPrinter::printOperand(const MCInst *MI, int opNum,
                                        raw_ostream &O) {
-  // TODO
+  MCOperand Op = MI->getOperand(opNum);
+  if (Op.isReg())
+    O << "%" << getRegisterName(Op.getReg());
+  else if (Op.isImm())
+    O << "#" << Op.getImm();
 }
 
 void DelendumInstPrinter::printMemOperand(const MCInst *MI, int opNum,
-                                          raw_ostream &O, const char *Modifier) {
-  // TODO
+                                          raw_ostream &O,
+                                          const char *Modifier) {
+  O << "(";
+  printOperand(MI, opNum, O);
+  O << ", ";
+  printOperand(MI, opNum + 1, O);
+  O << ")";
 }
 
 void DelendumInstPrinter::printCCOperand(const MCInst *MI, int opNum,
                                          raw_ostream &O) {
-  // TODO
+  llvm_unreachable("unimplemented");
 }
 
 bool DelendumInstPrinter::printGetPCX(const MCInst *MI, unsigned opNum,

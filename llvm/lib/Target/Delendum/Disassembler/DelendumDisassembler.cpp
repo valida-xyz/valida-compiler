@@ -32,9 +32,20 @@ using namespace llvm;
 
 typedef MCDisassembler::DecodeStatus DecodeStatus;
 
-static DecodeStatus DecodeImm32(MCInst &Inst, uint64_t Imm, uint64_t Address,
-                                const void *Decoder) {
-  // TODO
+static DecodeStatus DecodeImmOp32(MCInst &Inst, uint64_t Imm, uint64_t Address,
+                                  const void *Decoder) {
+  Inst.addOperand(MCOperand::createImm(Imm));
+  return DecodeStatus::Success;
+}
+
+static DecodeStatus DecodeGPRRegisterClass(MCInst &Inst, uint64_t RegNo,
+                                           uint64_t Address,
+                                           const void *Decoder) {
+  if (RegNo >= 4)
+    return DecodeStatus::Fail;
+  static unsigned GPRList[] = {DL::PC, DL::SP, DL::FP, DL::X0};
+  Inst.addOperand(MCOperand::createReg(GPRList[RegNo]));
+  return DecodeStatus::Success;
 }
 
 #include "DelendumGenDisassemblerTable.inc"
@@ -55,7 +66,28 @@ DecodeStatus DelendumDisassembler::getInstruction(MCInst &Instr, uint64_t &Size,
                                                   uint64_t Address,
                                                   raw_ostream &CStream) const {
   DecodeStatus Result;
-  // TODO
+  auto MakeUp = [&](APInt &Insn, unsigned InstrBits) {
+    unsigned Idx = Insn.getBitWidth() >> 3;
+    unsigned RoundUp = alignTo(InstrBits, Align(32));
+    if (RoundUp > Insn.getBitWidth())
+      Insn = Insn.zext(RoundUp);
+    RoundUp = RoundUp >> 3;
+    for (; Idx < RoundUp; Idx += 4) {
+      Insn.insertBits(support::endian::read32be(&Bytes[Idx]), Idx * 8, 32);
+    }
+  };
+
+  APInt Insn(32, support::endian::read32be(Bytes.data()));
+  // 4 bytes of data are consumed, so set Size to 4
+  // If we don't do this, disassembler may generate result even
+  // the encoding is invalid. We need to let it fail correctly.
+  Size = 4;
+  Result = decodeInstruction(DecoderTableDelendum192, Instr, Insn, Address,
+                             this, STI, MakeUp);
+  if (Result == DecodeStatus::Success)
+    Size = InstrLenTable[Instr.getOpcode()] >> 3;
+
+  LLVM_DEBUG(llvm::dbgs() << "Disassemble: "; Instr.dump());
   return Result;
 }
 

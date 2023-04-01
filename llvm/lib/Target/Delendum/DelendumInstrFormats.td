@@ -15,7 +15,7 @@ class DInst<bits<32> op, dag outs, dag ins, string asmstr, list<dag> pattern>
   let AsmString = asmstr;
   let Pattern = pattern;
 
-  field bits<32> SoftFail = 0;
+  // field bits<32> SoftFail = 0;
 }
 
 class DPseudoInst<bits<32> op, dag outs, dag ins, string asmstr, list<dag> pattern>
