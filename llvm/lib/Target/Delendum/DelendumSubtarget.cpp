@@ -17,6 +17,7 @@
 #include "DelendumMachineFunction.h"
 #include "DelendumRegisterInfo.h"
 #include "DelendumTargetMachine.h"
+#include "GISel/DelendumCallLowering.h"
 
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/IR/Attributes.h"
@@ -59,4 +60,10 @@ DelendumSubtarget::DelendumSubtarget(const Triple &TT, StringRef CPU, StringRef 
                                      const DelendumTargetMachine &TM)
     : DelendumGenSubtargetInfo(TT, CPU, /*TuneCPU*/ CPU, FS), TM(TM),
       InstrInfo(initializeSubtargetDependencies(CPU, FS)),
-      TLInfo(TM, *this), FrameLowering(*this) {}
+      TLInfo(TM, *this), FrameLowering(*this) {
+  CallLoweringInfo.reset(new DelendumCallLowering(*getTargetLowering()));
+}
+
+const CallLowering *DelendumSubtarget::getCallLowering() const {
+  return CallLoweringInfo.get();
+}

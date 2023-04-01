@@ -17,6 +17,15 @@
 #include "Delendum.h"
 #include "llvm/CodeGen/TargetLowering.h"
 
+namespace DLISD {
+
+/// DL Specific DAG nodes
+enum NodeType {
+  RET,
+};
+
+} // namespace DLISD
+
 namespace llvm {
   class DelendumSubtarget;
 

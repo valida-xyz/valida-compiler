@@ -74,8 +74,8 @@ public:
 
   const TargetRegisterClass *
   getCrossCopyRegClass(const TargetRegisterClass *RC) const override {
-    if (RC == &DL::GPRRegClass)
-      return &DL::GPRRegClass;
+    if (RC == &DL::I32RegClass)
+      return &DL::I32RegClass;
     return RC;
   }
 

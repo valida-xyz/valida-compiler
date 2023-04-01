@@ -38,13 +38,13 @@ static DecodeStatus DecodeImmOp32(MCInst &Inst, uint64_t Imm, uint64_t Address,
   return DecodeStatus::Success;
 }
 
-static DecodeStatus DecodeGPRRegisterClass(MCInst &Inst, uint64_t RegNo,
+static DecodeStatus DecodeI32RegisterClass(MCInst &Inst, uint64_t RegNo,
                                            uint64_t Address,
                                            const void *Decoder) {
   if (RegNo >= 4)
     return DecodeStatus::Fail;
-  static unsigned GPRList[] = {DL::PC, DL::SP, DL::FP, DL::X0};
-  Inst.addOperand(MCOperand::createReg(GPRList[RegNo]));
+  static unsigned I32List[] = {DL::PC, DL::FP};
+  Inst.addOperand(MCOperand::createReg(I32List[RegNo]));
   return DecodeStatus::Success;
 }
 

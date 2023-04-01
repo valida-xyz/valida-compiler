@@ -158,12 +158,12 @@ void DelendumPassConfig::addIRPasses() {
 
 bool DelendumPassConfig::addInstSelector() {
   // Install an instruction selector.
-  addPass(createDelendumISelDag(getDelendumTargetMachine()));
+  //addPass(createDelendumISelDag(getDelendumTargetMachine()));
   return false;
 }
 
 bool DelendumPassConfig::addIRTranslator() {
-  //addPass(new IRTranslator());
+  addPass(new IRTranslator());
   return false;
 }
 

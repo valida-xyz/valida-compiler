@@ -15,6 +15,9 @@ def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_DCallSeqStart,
 def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_DCallSeqEnd,
                            [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
+def DLretflag     : SDNode<"DLISD::RET", SDTNone,
+                           [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+
 //===----------------------------------------------------------------------===//
 // Operand Types
 //===----------------------------------------------------------------------===//
@@ -28,7 +31,7 @@ def ImmOp32 : Operand<i32> {
 
 def MemOp : Operand<iPTR> {
   let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops GPR:$reg, ImmOp32:$imm);
+  let MIOperandInfo = (ops I32:$reg, ImmOp32:$imm);
 }
 
 class MemOpEncoding<string opname> {
@@ -61,10 +64,9 @@ def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>
 //===----------------------------------------------------------------------===//
 
 class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
-  : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, MemOp:$rs2),
+  : DInst<op, (outs I32:$rd), (ins MemOp:$rs1, MemOp:$rs2),
          opcodestr#"\t$rd, $rs1, $rs2",
-         [(set GPR:$rd, (OpNode addr:$rs1, addr:$rs2))]> {
-  // TODO: How can we prepend 'op' using a DAG operator?
+         [(set I32:$rd, (OpNode addr:$rs1, addr:$rs2))]> {
   let Inst = (ascend op,
     (operand "$rd", 32),
     MemOpEncoding<"rs1">.Value,
@@ -73,9 +75,9 @@ class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
 
 class ALU_ri<bits<32> op, string opcodestr, SDNode OpNode,
              Operand Od, PatLeaf imm_type>
-  : DInst<op, (outs GPR:$rd), (ins MemOp:$rs1, Od:$imm32),
+  : DInst<op, (outs I32:$rd), (ins MemOp:$rs1, Od:$imm32),
          !strconcat(opcodestr, "\t$rd, $rs1, $imm32"),
-         [(set GPR:$rd, (OpNode addr:$rs1, imm_type:$imm32))]> {
+         [(set I32:$rd, (OpNode addr:$rs1, imm_type:$imm32))]> {
   let Inst = (ascend op,
     (operand "$rd", 32),
     MemOpEncoding<"rs1">.Value,
@@ -83,9 +85,9 @@ class ALU_ri<bits<32> op, string opcodestr, SDNode OpNode,
 }
 
 class LOAD<bits<32> op, string instr_asm, PatFrag OpNode>
-  : DInst<op, (outs GPR:$ra), (ins MemOp:$addr),
+  : DInst<op, (outs I32:$ra), (ins MemOp:$addr),
          !strconcat(instr_asm, "\t$ra, $addr"),
-         [(set GPR:$ra, (OpNode addr:$addr))]> {
+         [(set I32:$ra, (OpNode addr:$addr))]> {
   let Inst = (ascend op,
     (operand "$ra", 32),
     MemOpEncoding<"addr">.Value);
@@ -117,6 +119,11 @@ def MUL : ALU_rr<5, "mul", mul>;
 def ADDi : ALU_ri<6, "addi", add, ImmOp32, ImmSExt32>;
 def SUBi : ALU_ri<7, "sub",  sub, ImmOp32, ImmSExt32>;
 def MULi : ALU_ri<8, "muli", mul, ImmOp32, ImmSExt32>;
+
+def RET : DInst<9, (outs), (ins),
+         "ret",
+         [(DLretflag)]>;
+
 
 //===----------------------------------------------------------------------===//
 // Pseudo Instructions

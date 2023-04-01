@@ -2,6 +2,7 @@ add_llvm_component_group(Delendum)
 
 set(LLVM_TARGET_DEFINITIONS Delendum.td)
 
+tablegen(LLVM DelendumGenGlobalISel.inc -gen-global-isel)
 tablegen(LLVM DelendumGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM DelendumGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM DelendumGenDAGISel.inc -gen-dag-isel)
@@ -15,6 +16,7 @@ tablegen(LLVM DelendumGenDisassemblerTable.inc -gen-disassembler)
 add_public_tablegen_target(DelendumCommonTableGen)
 
 add_llvm_target(DelendumCodeGen
+  GISel/DelendumCallLowering.cpp
   DelendumAsmPrinter.cpp
   DelendumInstrInfo.cpp
   DelendumISelDAGToDAG.cpp
@@ -31,6 +33,7 @@ add_llvm_target(DelendumCodeGen
   AsmPrinter
   CodeGen
   Core
+  GlobalISel
   MC
   SelectionDAG
   Support
