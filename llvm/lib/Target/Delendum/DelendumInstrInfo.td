@@ -39,7 +39,7 @@ class MemOpEncoding<string opname> {
 }
 
 // Node immediate fits as 32-bit sign extended on target immediate.
-def ImmSExt32  : PatLeaf<(imm), [{ return isInt<32>(N->getSExtValue()); }]>;
+def ImmSExt32  : ImmLeaf<i32, [{ return isInt<32>(Imm); }]>;
 
 //===----------------------------------------------------------------------===//
 // Patterns
@@ -74,7 +74,7 @@ class ALU_rr<bits<32> op, string opcodestr, SDNode OpNode>
 }
 
 class ALU_ri<bits<32> op, string opcodestr, SDNode OpNode,
-             Operand Od, PatLeaf imm_type>
+             Operand Od, ImmLeaf imm_type>
   : DInst<op, (outs I32:$rd), (ins MemOp:$rs1, Od:$imm32),
          !strconcat(opcodestr, "\t$rd, $rs1, $imm32"),
          [(set I32:$rd, (OpNode addr:$rs1, imm_type:$imm32))]> {
@@ -136,3 +136,14 @@ def ADJCALLSTACKUP   : DPseudoInst<8, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2)
                                    "# ADJCALLSTACKUP $amt1",
                                    [(callseq_end timm:$amt1, timm:$amt2)]>;
 
+//===----------------------------------------------------------------------===//
+// GlobalISel mapping
+//===----------------------------------------------------------------------===//
+
+// Map custom ISD nodes (FIXME: not currently matching gMIR "RET" instruction)
+def G_RET : DPseudoInst<9, (outs), (ins), "ret", []>;
+def : GINodeEquiv<G_RET, DLretflag>;
+
+// Map complex patterns
+def g_addr : GIComplexOperandMatcher<s32, "selectAddr">, 
+             GIComplexPatternEquiv<addr>;

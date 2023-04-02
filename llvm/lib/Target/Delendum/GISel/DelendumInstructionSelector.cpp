@@ -25,11 +25,14 @@ namespace {
 
 class DelendumInstructionSelector : public InstructionSelector {
 public:
-  DelendumInstructionSelector(const DelendumTargetMachine &TM, const DelendumSubtarget &STI,
-                          const DelendumRegisterBankInfo &RBI);
+  DelendumInstructionSelector(const DelendumTargetMachine &TM, 
+                              const DelendumSubtarget &STI,
+                              const DelendumRegisterBankInfo &RBI);
 
   bool select(MachineInstr &I) override;
   static const char *getName() { return DEBUG_TYPE; }
+
+  InstructionSelector::ComplexRendererFns selectAddr(MachineOperand &Root) const;
 
 private:
   bool selectImpl(MachineInstr &I, CodeGenCoverage &CoverageInfo) const;
@@ -79,12 +82,16 @@ bool DelendumInstructionSelector::select(MachineInstr &I) {
 
   return false;
 }
+InstructionSelector::ComplexRendererFns
+DelendumInstructionSelector::selectAddr(MachineOperand &Root) const {
+  // TODO
+}
 
 namespace llvm {
 InstructionSelector *
 createDelendumInstructionSelector(const DelendumTargetMachine &TM,
-                              const DelendumSubtarget &Subtarget,
-                              const DelendumRegisterBankInfo &RBI) {
+                                  const DelendumSubtarget &Subtarget,
+                                  const DelendumRegisterBankInfo &RBI) {
   return new DelendumInstructionSelector(TM, Subtarget, RBI);
 }
 } // end namespace llvm
