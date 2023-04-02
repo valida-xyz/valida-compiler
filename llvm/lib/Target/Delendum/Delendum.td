@@ -12,8 +12,9 @@ include "llvm/Target/Target.td"
 // Calling Conv, Instruction Descriptions, Register information, etc
 //===----------------------------------------------------------------------===//
 
-include "DelendumSchedule.td"
 include "DelendumRegisterInfo.td"
+include "GISel/DelendumRegisterBanks.td"
+include "DelendumSchedule.td"
 include "DelendumCallingConv.td"
 include "DelendumInstrInfo.td"
 

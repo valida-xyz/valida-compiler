@@ -152,13 +152,10 @@ TargetPassConfig *DelendumTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 void DelendumPassConfig::addIRPasses() {
-  //addPass(createAtomicExpandPass());
   TargetPassConfig::addIRPasses();
 }
 
 bool DelendumPassConfig::addInstSelector() {
-  // Install an instruction selector.
-  //addPass(createDelendumISelDag(getDelendumTargetMachine()));
   return false;
 }
 
@@ -168,24 +165,22 @@ bool DelendumPassConfig::addIRTranslator() {
 }
 
 bool DelendumPassConfig::addLegalizeMachineIR() {
-  //addPass(new Legalizer());
-  return false;
-}
-
-bool DelendumPassConfig::addRegBankSelect() {
-  //addPass(new RegBankSelect());
+  addPass(new Legalizer());
   return false;
 }
 
 bool DelendumPassConfig::addGlobalInstructionSelect() {
-  //addPass(new InstructionSelect());
+  addPass(new InstructionSelect());
   return false;
 }
 
-void DelendumPassConfig::addPreSched2() { 
-  // TODO
+bool DelendumPassConfig::addRegBankSelect() {
+  // Instruction selection requires that a register bank exist, even 
+  // if we do not use it.
+  addPass(new RegBankSelect());
+  return false;
 }
 
-void DelendumPassConfig::addPreEmitPass() {
-  //addPass(createDelendumCollapseMOVEMPass());
-}
+void DelendumPassConfig::addPreSched2() {}
+
+void DelendumPassConfig::addPreEmitPass() {}

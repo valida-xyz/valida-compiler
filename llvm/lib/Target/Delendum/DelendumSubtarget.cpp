@@ -18,6 +18,7 @@
 #include "DelendumRegisterInfo.h"
 #include "DelendumTargetMachine.h"
 #include "GISel/DelendumCallLowering.h"
+#include "GISel/DelendumRegisterBankInfo.h"
 
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/IR/Attributes.h"
@@ -62,8 +63,19 @@ DelendumSubtarget::DelendumSubtarget(const Triple &TT, StringRef CPU, StringRef 
       InstrInfo(initializeSubtargetDependencies(CPU, FS)),
       TLInfo(TM, *this), FrameLowering(*this) {
   CallLoweringInfo.reset(new DelendumCallLowering(*getTargetLowering()));
+  auto *RBI = new DelendumRegisterBankInfo(*getRegisterInfo());
+  RegBankInfo.reset(RBI);
+  InstSelector.reset(createDelendumInstructionSelector(TM, *this, *RBI));
 }
 
 const CallLowering *DelendumSubtarget::getCallLowering() const {
   return CallLoweringInfo.get();
+}
+
+const RegisterBankInfo *DelendumSubtarget::getRegBankInfo() const {
+  return RegBankInfo.get();
+}
+
+InstructionSelector *DelendumSubtarget::getInstructionSelector() const {
+  return InstSelector.get();
 }

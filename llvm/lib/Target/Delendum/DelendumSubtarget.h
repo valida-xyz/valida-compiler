@@ -19,6 +19,8 @@
 #include "DelendumFrameLowering.h"
 
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
+#include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
+#include "llvm/CodeGen/RegisterBankInfo.h"
 #include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
@@ -67,9 +69,13 @@ public:
 protected:
   // GlobalISel related APIs.
   std::unique_ptr<CallLowering> CallLoweringInfo;
+  std::unique_ptr<InstructionSelector> InstSelector;
+  std::unique_ptr<RegisterBankInfo> RegBankInfo;
 
 public:
   const CallLowering *getCallLowering() const override;
+  InstructionSelector *getInstructionSelector() const override;
+  const RegisterBankInfo *getRegBankInfo() const override;
 
 };
 } // End llvm namespace
