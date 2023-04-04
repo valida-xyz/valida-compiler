@@ -38,3 +38,20 @@ DelendumLegalizerInfo::DelendumLegalizerInfo(const DelendumSubtarget &ST) {
 
   getLegacyLegalizerInfo().computeTables();
 }
+
+bool DelendumLegalizerInfo::legalizeCustom(LegalizerHelper &Helper,
+                                           MachineInstr &MI) const {
+  // TODO
+  //using namespace TargetOpcode;
+
+  //switch (MI.getOpcode()) {
+  //case G_LOAD:
+  //case G_STORE: {
+  //  MI.eraseFromParent();
+  //  break;
+  //}
+  //default:
+  //  return false;
+  //}
+  //return true;
+}

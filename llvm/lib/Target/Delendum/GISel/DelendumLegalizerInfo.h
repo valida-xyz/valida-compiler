@@ -24,6 +24,8 @@ class DelendumSubtarget;
 struct DelendumLegalizerInfo : public LegalizerInfo {
 public:
   DelendumLegalizerInfo(const DelendumSubtarget &ST);
+
+  bool legalizeCustom(LegalizerHelper &Helper, MachineInstr &MI) const override;
 };
 } // end namespace llvm
 #endif // LLVM_LIB_TARGET_DELENDUM_GLSEL_DELENDUMLEGALIZERINFO_H
