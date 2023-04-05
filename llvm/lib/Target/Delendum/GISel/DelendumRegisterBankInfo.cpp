@@ -29,13 +29,30 @@ using namespace llvm;
 namespace llvm {
 namespace Delendum {
 
-enum PartialMappingIdx {};
+enum PartialMappingIdx {
+  PMI_GPR,
+  PMI_Min = PMI_GPR,
+};
 
-RegisterBankInfo::PartialMapping PartMappings[]{};
+RegisterBankInfo::PartialMapping PartMappings[]{
+    // GPR Partial Mapping
+    {0, 32, I32RegBank},
+};
 
-enum ValueMappingIdx {};
+enum ValueMappingIdx {
+  InvalidIdx = 0,
+  GPR3OpsIdx = 1,
+};
 
-RegisterBankInfo::ValueMapping ValueMappings[] = {};
+RegisterBankInfo::ValueMapping ValueMappings[] = {
+    // invalid
+    {nullptr, 0},
+    // 3 operands in GPRs
+    {&PartMappings[PMI_GPR - PMI_Min], 1},
+    {&PartMappings[PMI_GPR - PMI_Min], 1},
+    {&PartMappings[PMI_GPR - PMI_Min], 1},
+
+};
 
 } // end namespace Delendum
 } // end namespace llvm
@@ -45,10 +62,44 @@ DelendumRegisterBankInfo::DelendumRegisterBankInfo(const TargetRegisterInfo &TRI
 
 const RegisterBank &
 DelendumRegisterBankInfo::getRegBankFromRegClass(const TargetRegisterClass &RC,
-                                             LLT) const {
+                                                 LLT) const {
   return getRegBank(Delendum::I32RegBankID);
 }
 
 const RegisterBankInfo::InstructionMapping &
 DelendumRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
+  auto Opc = MI.getOpcode();
+
+  const InstructionMapping &Mapping = getInstrMappingImpl(MI);
+  if (Mapping.isValid())
+    return Mapping;
+
+  using namespace TargetOpcode;
+
+  unsigned NumOperands = MI.getNumOperands();
+  const ValueMapping *OperandsMapping = &Delendum::ValueMappings[Delendum::GPR3OpsIdx];
+
+  switch (Opc) {
+  case G_ADD:
+  case G_SUB:
+  case G_MUL:
+  case G_SDIV:
+  case G_UDIV:
+  case G_LOAD:
+  case G_STORE: {
+    OperandsMapping = &Delendum::ValueMappings[Delendum::GPR3OpsIdx];
+    break;
+  }
+
+  case G_CONSTANT:
+  case G_FRAME_INDEX:
+    OperandsMapping =
+        getOperandsMapping({&Delendum::ValueMappings[Delendum::GPR3OpsIdx], nullptr});
+    break;
+  default:
+    return getInvalidInstructionMapping();
+  }
+
+  return getInstructionMapping(DefaultMappingID, /*Cost=*/1, OperandsMapping,
+                               NumOperands);
 }
