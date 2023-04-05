@@ -32,6 +32,10 @@ DelendumLegalizerInfo::DelendumLegalizerInfo(const DelendumSubtarget &ST) {
 
   getActionDefinitionsBuilder({G_FRAME_INDEX, G_GLOBAL_VALUE}).legalFor({p0});
 
+  getActionDefinitionsBuilder(G_CONSTANT)
+      .legalFor({s32, p0})
+      .clampScalar(0, s32, s32);
+
   getActionDefinitionsBuilder({G_STORE, G_LOAD})
       .legalFor({p0, s32})
       .clampScalar(0, s8, s32);
