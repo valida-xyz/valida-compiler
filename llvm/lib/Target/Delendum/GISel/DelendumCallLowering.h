@@ -74,9 +74,6 @@ struct CallReturnHandler : public DelendumIncomingValueHandler {
       : DelendumIncomingValueHandler(MIRBuilder, MRI), MIB(MIB) {}
 
 private:
-  void assignValueToReg(Register ValVReg, Register PhysReg,
-                        CCValAssign VA) override;
-
   MachineInstrBuilder &MIB;
 };
 } // end namespace llvm

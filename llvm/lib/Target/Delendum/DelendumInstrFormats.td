@@ -1,4 +1,4 @@
-class DInst<bits<32> op, dag outs, dag ins, string asmstr, list<dag> pattern>
+class DInst<bits<32> op, dag outs, dag ins, string asmstr>
     : Instruction {
   bits<32> Opcode = op;
 
@@ -11,15 +11,12 @@ class DInst<bits<32> op, dag outs, dag ins, string asmstr, list<dag> pattern>
   dag OutOperandList = outs;
   dag InOperandList = ins;
 
-  //let AsmString = asmstr;
   let AsmString = asmstr;
-  let Pattern = pattern;
-
-  // field bits<32> SoftFail = 0;
 }
 
 class DPseudoInst<bits<32> op, dag outs, dag ins, string asmstr, list<dag> pattern>
-    : DInst<op, outs, ins, asmstr, pattern> {
+    : DInst<op, outs, ins, asmstr> {
   let isPseudo = 1;
+  let Pattern = pattern;
 }
 

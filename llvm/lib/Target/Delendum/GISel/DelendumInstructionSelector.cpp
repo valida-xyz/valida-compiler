@@ -34,6 +34,13 @@ public:
 
   InstructionSelector::ComplexRendererFns selectAddr(MachineOperand &Root) const;
 
+  // Custom instruction selection that didn't occur in TableGen
+  bool customSelect(MachineInstr &I) const;
+  bool selectConst(const APInt &Imm, MachineInstr &I) const;
+  bool selectFrameIndex(MachineInstr &I) const;
+  bool selectAdd(MachineInstr &I, int Offset) const;
+  bool selectStore(MachineInstr &I) const;
+
 private:
   bool selectImpl(MachineInstr &I, CodeGenCoverage &CoverageInfo) const;
 
@@ -73,6 +80,13 @@ DelendumInstructionSelector::DelendumInstructionSelector(
 }
 
 bool DelendumInstructionSelector::select(MachineInstr &I) {
+  assert(I.getParent() && "Instruction should be in a basic block!");
+
+  if (customSelect(I)) {
+    I.removeFromParent();
+    return true;
+  }
+
   // Certain non-generic instructions also need some special handling.
   if (!isPreISelGenericOpcode(I.getOpcode()))
     return true;
@@ -82,9 +96,109 @@ bool DelendumInstructionSelector::select(MachineInstr &I) {
 
   return false;
 }
-InstructionSelector::ComplexRendererFns
-DelendumInstructionSelector::selectAddr(MachineOperand &Root) const {
-  // TODO
+
+bool DelendumInstructionSelector::customSelect(MachineInstr &I) const {
+  const unsigned Opcode = I.getOpcode();
+
+  switch (Opcode) {
+  case TargetOpcode::G_STORE:
+    return selectStore(I);
+  case TargetOpcode::G_CONSTANT:
+  case TargetOpcode::G_FRAME_INDEX:
+  case TargetOpcode::G_LOAD:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool DelendumInstructionSelector::selectConst(const APInt &Imm,
+                                              MachineInstr &I) const {
+  // NO-OP
+  return true;
+}
+
+bool DelendumInstructionSelector::selectFrameIndex(MachineInstr &I) const {
+  // NO-OP
+  return true;
+}
+
+// TODO: Should we be using a (post-legalizer?) pass so we don't have to fold
+// G_STORE, G_LOAD, and G_ADD/G_SUB/G_MUL/...?
+// We also shouldn't be explicitly passing in the destination offset.
+bool DelendumInstructionSelector::selectAdd(MachineInstr &I,
+                                            int DstOffset) const {
+  MachineInstr *MI = nullptr;
+  using namespace TargetOpcode;
+
+  MachineBasicBlock &MBB = *I.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  MachineInstr *Src0 = MRI.getVRegDef(I.getOperand(1).getReg());
+  MachineInstr *Src1 = MRI.getVRegDef(I.getOperand(2).getReg());
+
+  if (Src0->getOpcode() != G_LOAD) {
+    llvm_unreachable("Immediate value not supported for this operand");
+  } else if (Src1->getOpcode() == G_CONSTANT) {
+    int SrcOffset0 = Src0->getOperand(1).getIndex() * 4;
+    APInt Value1 = Src1->getOperand(1).getCImm()->getValue();
+    MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::ADDi))
+             .addImm(DstOffset)
+             .addImm(SrcOffset0)
+             .addImm(Value1.getSExtValue());
+  } else {
+    MachineInstr *Load0 = MRI.getVRegDef(Src0->getOperand(1).getReg());
+    MachineInstr *Load1 = MRI.getVRegDef(Src1->getOperand(1).getReg());
+    int SrcOffset0 = Load0->getOperand(1).getIndex() * 4;
+    int SrcOffset1 = Load1->getOperand(1).getIndex() * 4;
+    MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::ADD))
+             .addImm(DstOffset)
+             .addImm(SrcOffset0)
+             .addImm(SrcOffset1);
+  }
+
+  return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
+}
+
+bool DelendumInstructionSelector::selectStore(MachineInstr &I) const {
+  MachineInstr *MI = nullptr;
+  using namespace TargetOpcode;
+
+  MachineBasicBlock &MBB = *I.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  MachineInstr *SRC0 = MRI.getVRegDef(I.getOperand(0).getReg());
+  MachineInstr *SRC1 = MRI.getVRegDef(I.getOperand(1).getReg());
+  if (SRC1->getOpcode() == G_FRAME_INDEX) {
+    // TODO: Proper way to force alignment? I assume this information is in the
+    // virtual register representing the stack local variable?
+    int Offset = SRC1->getOperand(1).getIndex() * 4;
+
+    // If the first operand to G_STORE is a constant, then use SET32
+    if (SRC0->getOpcode() == G_CONSTANT) {
+      // FIXME: Split ConstantValue into 4 byte values
+      APInt ConstantValue = SRC0->getOperand(1).getCImm()->getValue();
+
+      MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::SET32))
+               .addImm(Offset)
+               .addImm(0)
+               .addImm(0)
+               .addImm(0)
+               .addImm(ConstantValue.getSExtValue());
+      return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
+
+    } else {
+      MachineInstr *I2 = MRI.getVRegDef(I.getOperand(0).getReg());
+      if (I2->getOpcode() == G_ADD) {
+        int Offset = SRC1->getOperand(1).getIndex() * 4;
+        selectAdd(*I2, Offset);
+        return true;
+      }
+    }
+      
+  }
 }
 
 namespace llvm {

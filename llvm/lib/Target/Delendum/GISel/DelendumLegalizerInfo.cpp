@@ -27,7 +27,7 @@ DelendumLegalizerInfo::DelendumLegalizerInfo(const DelendumSubtarget &ST) {
   const LLT p0 = LLT::pointer(0, 32);
 
   getActionDefinitionsBuilder({G_ADD, G_SUB, G_MUL, G_AND, G_OR, G_XOR, G_SHL})
-      .legalFor({s32})
+      .legalFor({p0, s32})
       .clampScalar(0, s8, s32);
 
   getActionDefinitionsBuilder({G_FRAME_INDEX, G_GLOBAL_VALUE}).legalFor({p0});

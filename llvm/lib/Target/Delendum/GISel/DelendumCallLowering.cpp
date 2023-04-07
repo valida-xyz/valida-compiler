@@ -39,6 +39,7 @@ struct DelendumOutgoingArgHandler : public CallLowering::OutgoingValueHandler {
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
                         CCValAssign VA) override {
+      // TODO
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
@@ -95,16 +96,16 @@ bool DelendumCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
 }
 
 void DelendumIncomingValueHandler::assignValueToReg(Register ValVReg,
-                                                Register PhysReg,
-                                                CCValAssign VA) {
-  // NOOP: all values are in the stack
+                                                    Register PhysReg,
+                                                    CCValAssign VA) {
+  // NO-OP: all values are in the stack
 }
 
 void DelendumIncomingValueHandler::assignValueToAddress(Register ValVReg,
-                                                    Register Addr,
-                                                    LLT MemTy,
-                                                    MachinePointerInfo &MPO,
-                                                    CCValAssign &VA) {
+                                                        Register Addr,
+                                                        LLT MemTy,
+                                                        MachinePointerInfo &MPO,
+                                                        CCValAssign &VA) {
   MachineFunction &MF = MIRBuilder.getMF();
   Register ExtReg = extendRegister(ValVReg, VA);
 
@@ -128,11 +129,6 @@ Register DelendumIncomingValueHandler::getStackAddress(uint64_t Size,
   MachineInstrBuilder AddrReg = MIRBuilder.buildFrameIndex(FramePtr, FI);
   StackUsed = std::max(StackUsed, Size + Offset);
   return AddrReg.getReg(0);
-}
-
-void CallReturnHandler::assignValueToReg(Register ValVReg, Register PhysReg,
-                                         CCValAssign VA) {
-  // NOOP: all values are in the stack
 }
 
 bool DelendumCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
