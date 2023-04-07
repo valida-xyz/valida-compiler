@@ -13,7 +13,7 @@
 #include "llvm/CodeGen/GlobalISel/InstructionSelectorImpl.h"
 #include "llvm/Support/Debug.h"
 
-#define DEBUG_TYPE "m68k-isel"
+#define DEBUG_TYPE "delendum-isel"
 
 using namespace llvm;
 
@@ -169,20 +169,20 @@ bool DelendumInstructionSelector::selectStore(MachineInstr &I) const {
   MachineFunction &MF = *MBB.getParent();
   MachineRegisterInfo &MRI = MF.getRegInfo();
 
-  MachineInstr *SRC0 = MRI.getVRegDef(I.getOperand(0).getReg());
-  MachineInstr *SRC1 = MRI.getVRegDef(I.getOperand(1).getReg());
-  if (SRC1->getOpcode() == G_FRAME_INDEX) {
+  MachineInstr *Src0 = MRI.getVRegDef(I.getOperand(0).getReg());
+  MachineInstr *Src1 = MRI.getVRegDef(I.getOperand(1).getReg());
+  if (Src1->getOpcode() == G_FRAME_INDEX) {
     // TODO: Proper way to force alignment? I assume this information is in the
     // virtual register representing the stack local variable?
-    int Offset = SRC1->getOperand(1).getIndex() * 4;
+    int SrcOffset1 = Src1->getOperand(1).getIndex() * 4;
 
     // If the first operand to G_STORE is a constant, then use SET32
-    if (SRC0->getOpcode() == G_CONSTANT) {
+    if (Src0->getOpcode() == G_CONSTANT) {
       // FIXME: Split ConstantValue into 4 byte values
-      APInt ConstantValue = SRC0->getOperand(1).getCImm()->getValue();
+      APInt ConstantValue = Src0->getOperand(1).getCImm()->getValue();
 
       MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::SET32))
-               .addImm(Offset)
+               .addImm(SrcOffset1)
                .addImm(0)
                .addImm(0)
                .addImm(0)
@@ -192,8 +192,7 @@ bool DelendumInstructionSelector::selectStore(MachineInstr &I) const {
     } else {
       MachineInstr *I2 = MRI.getVRegDef(I.getOperand(0).getReg());
       if (I2->getOpcode() == G_ADD) {
-        int Offset = SRC1->getOperand(1).getIndex() * 4;
-        selectAdd(*I2, Offset);
+        selectAdd(*I2, SrcOffset1);
         return true;
       }
     }
