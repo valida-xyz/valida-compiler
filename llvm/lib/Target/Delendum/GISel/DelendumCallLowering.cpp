@@ -30,38 +30,73 @@ using namespace llvm;
 DelendumCallLowering::DelendumCallLowering(const DelendumTargetLowering &TLI)
     : CallLowering(&TLI) {}
 
-struct DelendumOutgoingArgHandler : public CallLowering::OutgoingValueHandler {
-  DelendumOutgoingArgHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
+struct DelendumOutgoingValueHandler : public CallLowering::OutgoingValueHandler {
+  DelendumOutgoingValueHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
                          MachineInstrBuilder MIB)
       : OutgoingValueHandler(MIRBuilder, MRI), MIB(MIB),
         DL(MIRBuilder.getMF().getDataLayout()),
         STI(MIRBuilder.getMF().getSubtarget<DelendumSubtarget>()) {}
 
+  uint64_t StackUsed;
+
   void assignValueToReg(Register ValVReg, Register PhysReg,
                         CCValAssign VA) override {
-      // TODO
+    // NO-OP: all values are in the stack
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
+    MachineFunction &MF = MIRBuilder.getMF();
+    auto *MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
+                                        inferAlignFromPtrInfo(MF, MPO));
+    MIRBuilder.buildStore(ValVReg, Addr, *MMO);
   }
 
   Register getStackAddress(uint64_t Size, int64_t Offset,
                            MachinePointerInfo &MPO,
                            ISD::ArgFlagsTy Flags) override {
-  }
+    auto &MFI = MIRBuilder.getMF().getFrameInfo();
+    const bool IsImmutable = !Flags.isByVal();
+    int FI = MFI.CreateFixedObject(Size, Offset, IsImmutable);
+    MPO = MachinePointerInfo::getFixedStack(MIRBuilder.getMF(), FI);
 
-  MachineInstrBuilder MIB;
-  const DataLayout &DL;
-  const DelendumSubtarget &STI;
+    // Build Frame Index
+    llvm::LLT FramePtr = LLT::pointer(
+        0, MIRBuilder.getMF().getDataLayout().getPointerSizeInBits());
+    MachineInstrBuilder AddrReg = MIRBuilder.buildFrameIndex(FramePtr, FI);
+    StackUsed = std::max(StackUsed, Size + Offset);
+    return AddrReg.getReg(0);
+    }
+
+    MachineInstrBuilder MIB;
+    const DataLayout &DL;
+    const DelendumSubtarget &STI;
 };
 bool DelendumCallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
-                                   const Value *Val, ArrayRef<Register> VRegs,
-                                   FunctionLoweringInfo &FLI) const {
-  if (!VRegs.empty())
-    return false;
-  MIRBuilder.buildInstr(DL::RET); 
-  return true;
+                                       const Value *Val, ArrayRef<Register> VRegs,
+                                       FunctionLoweringInfo &FLI) const {
+  bool Success = true;
+  if (!VRegs.empty()) {
+    auto MIB = MIRBuilder.buildInstrNoInsert(DL::RET); 
+    MachineFunction &MF = MIRBuilder.getMF();
+    const Function &F = MF.getFunction();
+    MachineRegisterInfo &MRI = MF.getRegInfo();
+    auto &DL = F.getParent()->getDataLayout();
+
+    SmallVector<ArgInfo, 8> SplitArgs;
+    ArgInfo OrigArg{VRegs, Val->getType(), 0};
+    setArgFlags(OrigArg, AttributeList::ReturnIndex, DL, F);
+    splitToValueTypes(OrigArg, SplitArgs, DL, F.getCallingConv());
+
+    CCAssignFn *AssignFn = Delendum_CRetConv;
+    OutgoingValueAssigner Assigner(AssignFn);
+    DelendumOutgoingValueHandler Handler(MIRBuilder, MRI, MIB);
+
+    Success = determineAndHandleAssignments(Handler, Assigner, SplitArgs,
+                                            MIRBuilder, F.getCallingConv(),
+                                            F.isVarArg());
+  }
+  return Success;
 }
 
 bool DelendumCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
