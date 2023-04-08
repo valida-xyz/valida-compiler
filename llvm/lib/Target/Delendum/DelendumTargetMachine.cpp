@@ -38,6 +38,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDelendumTarget() {
   RegisterTargetMachine<DelendumTargetMachine> X(getTheDelendumTarget());
   auto *PR = PassRegistry::getPassRegistry();
   initializeDelendumDAGToDAGISelPass(*PR);
+  initializeDelendumPreLegalizerCombinerPass(*PR);
 }
 
 namespace {
@@ -139,6 +140,7 @@ public:
   void addIRPasses() override;
   bool addIRTranslator() override;
   bool addLegalizeMachineIR() override;
+  void addPreLegalizeMachineIR() override;
   bool addRegBankSelect() override;
   bool addGlobalInstructionSelect() override;
   bool addInstSelector() override;
@@ -162,6 +164,10 @@ bool DelendumPassConfig::addInstSelector() {
 bool DelendumPassConfig::addIRTranslator() {
   addPass(new IRTranslator());
   return false;
+}
+
+void DelendumPassConfig::addPreLegalizeMachineIR() {
+  addPass(createDelendumPreLegalizeCombiner());
 }
 
 bool DelendumPassConfig::addLegalizeMachineIR() {

@@ -24,21 +24,15 @@ class DelendumSubtarget;
 class DelendumTargetMachine;
 class PassRegistry;
 
-/// This pass converts a legalized DAG into a Delendum-specific DAG, ready for
-/// instruction scheduling.
 FunctionPass *createDelendumISelDag(DelendumTargetMachine &TM);
-
-/// Return a Machine IR pass that expands Delendum-specific pseudo
-/// instructions into a sequence of actual instructions. This pass
-/// must run after prologue/epilogue insertion and before lowering
-/// the MachineInstr to MC.
-FunctionPass *createDelendumExpandPseudoPass();
+FunctionPass *createDelendumPreLegalizeCombiner();
 
 InstructionSelector *
 createDelendumInstructionSelector(const DelendumTargetMachine &, const DelendumSubtarget &,
                                   const DelendumRegisterBankInfo &);
 
 void initializeDelendumDAGToDAGISelPass(PassRegistry &);
+void initializeDelendumPreLegalizerCombinerPass(PassRegistry &);
 
 } // namespace llvm
 
