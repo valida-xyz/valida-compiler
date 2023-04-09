@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "DelendumCallingConv.h"
 #include "DelendumCallLowering.h"
 #include "DelendumISelLowering.h"
 #include "DelendumInstrInfo.h"
@@ -20,6 +21,7 @@
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
+#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/TargetCallingConv.h"
 
@@ -47,9 +49,10 @@ struct DelendumOutgoingValueHandler : public CallLowering::OutgoingValueHandler 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
                             MachinePointerInfo &MPO, CCValAssign &VA) override {
     MachineFunction &MF = MIRBuilder.getMF();
+    Register ExtReg = extendRegister(ValVReg, VA);
     auto *MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
                                         inferAlignFromPtrInfo(MF, MPO));
-    MIRBuilder.buildStore(ValVReg, Addr, *MMO);
+    MIRBuilder.buildStore(ExtReg, Addr, *MMO);
   }
 
   Register getStackAddress(uint64_t Size, int64_t Offset,
@@ -66,22 +69,31 @@ struct DelendumOutgoingValueHandler : public CallLowering::OutgoingValueHandler 
     MachineInstrBuilder AddrReg = MIRBuilder.buildFrameIndex(FramePtr, FI);
     StackUsed = std::max(StackUsed, Size + Offset);
     return AddrReg.getReg(0);
-    }
+  }
 
-    MachineInstrBuilder MIB;
-    const DataLayout &DL;
-    const DelendumSubtarget &STI;
+  MachineInstrBuilder MIB;
+  const DataLayout &DL;
+  const DelendumSubtarget &STI;
 };
 bool DelendumCallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
                                        const Value *Val, ArrayRef<Register> VRegs,
                                        FunctionLoweringInfo &FLI) const {
   bool Success = true;
   if (!VRegs.empty()) {
-    auto MIB = MIRBuilder.buildInstrNoInsert(DL::RET); 
     MachineFunction &MF = MIRBuilder.getMF();
     const Function &F = MF.getFunction();
     MachineRegisterInfo &MRI = MF.getRegInfo();
     auto &DL = F.getParent()->getDataLayout();
+
+    // Get stack offset (accounting for stored return value and address)
+    const llvm::TargetSubtargetInfo &STI = MF.getSubtarget();
+    unsigned StackAlignment = STI.getFrameLowering()->getStackAlignment();
+    int StackOffset = -(F.arg_size() + 1) * StackAlignment;
+
+    auto MIB = MIRBuilder.buildInstrNoInsert(DL::JALV)
+        .addImm(0)
+        .addImm(0)
+        .addImm(StackOffset);
 
     SmallVector<ArgInfo, 8> SplitArgs;
     ArgInfo OrigArg{VRegs, Val->getType(), 0};
@@ -91,6 +103,8 @@ bool DelendumCallLowering::lowerReturn(MachineIRBuilder &MIRBuilder,
     CCAssignFn *AssignFn = Delendum_CRetConv;
     OutgoingValueAssigner Assigner(AssignFn);
     DelendumOutgoingValueHandler Handler(MIRBuilder, MRI, MIB);
+
+    MIRBuilder.insertInstr(MIB);
 
     Success = determineAndHandleAssignments(Handler, Assigner, SplitArgs,
                                             MIRBuilder, F.getCallingConv(),
@@ -106,7 +120,6 @@ bool DelendumCallLowering::lowerFormalArguments(MachineIRBuilder &MIRBuilder,
   MachineFunction &MF = MIRBuilder.getMF();
   MachineRegisterInfo &MRI = MF.getRegInfo();
   const auto &DL = F.getParent()->getDataLayout();
-  auto &TLI = *getTLI<DelendumTargetLowering>();
 
   if (!VRegs.empty()) {
     SmallVector<ArgInfo, 8> InArgs;
@@ -167,7 +180,70 @@ Register DelendumIncomingValueHandler::getStackAddress(uint64_t Size,
 }
 
 bool DelendumCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
-                                 CallLoweringInfo &Info) const {
+                                     CallLoweringInfo &Info) const {
+  MachineFunction &MF = MIRBuilder.getMF();
+  Function &F = MF.getFunction();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  auto &DL = F.getParent()->getDataLayout();
+  const DelendumTargetLowering &TLI = *getTLI<DelendumTargetLowering>();
+  const DelendumSubtarget &STI = MF.getSubtarget<DelendumSubtarget>();
+  const TargetInstrInfo &TII = *STI.getInstrInfo();
+  const DelendumRegisterInfo *TRI = STI.getRegisterInfo();
+
+  SmallVector<ArgInfo, 8> OutArgs;
+  for (auto &OrigArg : Info.OrigArgs)
+    splitToValueTypes(OrigArg, OutArgs, DL, Info.CallConv);
+
+  SmallVector<ArgInfo, 8> InArgs;
+  if (!Info.OrigRet.Ty->isVoidTy())
+    splitToValueTypes(Info.OrigRet, InArgs, DL, Info.CallConv);
+
+  unsigned AdjStackDown = TII.getCallFrameSetupOpcode();
+  auto CallSeqStart = MIRBuilder.buildInstr(AdjStackDown);
+
+  auto MIB = MIRBuilder.buildInstrNoInsert(DL::JAL); // CALL
+
+  CCAssignFn *AssignFn = Delendum_CCallingConv;
+  OutgoingValueAssigner Assigner(AssignFn);
+  DelendumOutgoingValueHandler Handler(MIRBuilder, MRI, MIB);
+
+  SmallVector<CCValAssign, 16> ArgLocs;
+  CCState CCInfo(Info.CallConv, Info.IsVarArg, MF, ArgLocs, F.getContext());
+
+  // Allocate space for return value
+  CCInfo.AllocateStack(4, Align(4));
+
+  if (!determineAssignments(Assigner, OutArgs, CCInfo))
+    return false;
+
+  if (!handleAssignments(Handler, OutArgs, CCInfo, ArgLocs, MIRBuilder))
+    return false;
+
+  // Get call frame size (bytes required for arguments) from callee
+  int NextStackOffset = CCInfo.getNextStackOffset();
+
+  if (!Info.OrigRet.Ty->isVoidTy()) {
+    CCAssignFn *RetAssignFn = Delendum_CRetConv;
+    OutgoingValueAssigner Assigner(RetAssignFn, RetAssignFn);
+    CallReturnHandler Handler(MIRBuilder, MRI, MIB);
+    if (!determineAndHandleAssignments(Handler, Assigner, InArgs, MIRBuilder,
+                                       Info.CallConv, Info.IsVarArg))
+      return false;
+  }
+
+  // Insert jump and link instruction
+  MIB.addImm(NextStackOffset);
+  MIB.add(Info.Callee);
+  MIB.addImm(NextStackOffset); // Is the third operand really needed in JAL?
+  MIRBuilder.insertInstr(MIB);
+
+  CallSeqStart.addImm(Assigner.StackOffset).addImm(0);
+
+  unsigned AdjStackUp = TII.getCallFrameDestroyOpcode();
+  MIRBuilder.buildInstr(AdjStackUp).addImm(Assigner.StackOffset).addImm(0);
+
+  return true;
 }
 
 bool DelendumCallLowering::enableBigEndian() const { return true; }

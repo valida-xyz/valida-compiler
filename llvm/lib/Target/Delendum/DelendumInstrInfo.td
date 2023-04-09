@@ -105,6 +105,7 @@ class JUMP<bits<32> op, string opcodestr>
     (operand "$c", 32),
     (operand "$a", 32),
     (operand "$b", 32));
+  let isCall = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -139,9 +140,11 @@ def RET : DInst<10, (outs), (ins), "ret">;
 // Pseudo Instructions
 //===----------------------------------------------------------------------===//
 
-def ADJCALLSTACKDOWN : DPseudoInst<7, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2),
+def CALL : DPseudoInst<0, (outs), (ins ImmOp32:$a), "call", []>;
+
+def ADJCALLSTACKDOWN : DPseudoInst<1, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2),
                                    "# ADJCALLSTACKDOWN $amt1",
                                    [(callseq_start timm:$amt1, timm:$amt2)]>;
-def ADJCALLSTACKUP   : DPseudoInst<8, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2),
+def ADJCALLSTACKUP   : DPseudoInst<2, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2),
                                    "# ADJCALLSTACKUP $amt1",
                                    [(callseq_end timm:$amt1, timm:$amt2)]>;
