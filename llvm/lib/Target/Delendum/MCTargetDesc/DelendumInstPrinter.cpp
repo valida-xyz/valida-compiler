@@ -56,10 +56,19 @@ bool DelendumInstPrinter::printDelendumAliasInstr(const MCInst *MI,
 void DelendumInstPrinter::printOperand(const MCInst *MI, int opNum,
                                        raw_ostream &O) {
   MCOperand Op = MI->getOperand(opNum);
-  if (Op.isReg())
+
+  if (Op.isReg()) {
     O << "%" << getRegisterName(Op.getReg());
-  else if (Op.isImm())
-    O << "#" << Op.getImm();
+    return;
+  }
+
+  if (Op.isImm()) {
+    O << Op.getImm();
+    return;
+  }
+
+  assert(Op.isExpr() && "unknown operand kind in printOperand");
+  Op.getExpr()->print(O, &MAI, true);
 }
 
 void DelendumInstPrinter::printMemOperand(const MCInst *MI, int opNum,

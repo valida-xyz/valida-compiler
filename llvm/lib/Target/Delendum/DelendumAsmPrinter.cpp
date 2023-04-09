@@ -13,10 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Delendum.h"
+#include "DelendumAsmPrinter.h"
 #include "DelendumMachineFunction.h"
 #include "TargetInfo/DelendumTargetInfo.h"
 #include "DelendumTargetMachine.h"
 #include "MCTargetDesc/DelendumInstPrinter.h"
+#include "DelendumMCInstLower.h"
 
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/MC/MCStreamer.h"
@@ -28,22 +30,11 @@ using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
 
-namespace {
-class DelendumAsmPrinter : public AsmPrinter {
-public:
-
-  explicit DelendumAsmPrinter(TargetMachine &TM,
-                              std::unique_ptr<MCStreamer> Streamer)
-      : AsmPrinter(TM, std::move(Streamer)) {
-  }
-
-  bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                       const char *ExtraCode, raw_ostream &OS) override;
-
-  void printOperand(const MachineInstr *MI, int OpNum, raw_ostream &OS);
-
-  void emitInstruction(const MachineInstr *MI) override;
-};
+bool DelendumAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+  //MMFI = MF.getInfo<DelendumMachineFunctionInfo>();
+  MCInstLowering = std::make_unique<DelendumMCInstLower>(MF, *this);
+  AsmPrinter::runOnMachineFunction(MF);
+  return true;
 }
 
 // FIXME: This is not currently used when emitting instructions
@@ -82,19 +73,7 @@ void DelendumAsmPrinter::emitInstruction(const MachineInstr *MI) {
   Delendum_MC::verifyInstructionPredicates(MI->getOpcode(),
                                            getSubtargetInfo().getFeatureBits());
   MCInst OutMI;
-
-  // Lower opcode
-  unsigned Opcode = MI->getOpcode();
-  OutMI.setOpcode(Opcode);
-
-  // Lower operands
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
-    const MachineOperand &MO = MI->getOperand(i);
-    std::optional<MCOperand> MCOp = MCOperand::createImm(MO.getImm());
-    if (MCOp.has_value() && MCOp.value().isValid())
-      OutMI.addOperand(MCOp.value());
-  }
-
+  MCInstLowering->Lower(MI, OutMI);
   OutStreamer->emitInstruction(OutMI, getSubtargetInfo());
 
 }
