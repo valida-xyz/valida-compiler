@@ -35,6 +35,8 @@ public:
                MachineIRBuilder &B) const override;
 };
 
+// NOTE: It looks like this code might be replaced with the LoadStoreOpt
+// pass in llvm/include/llvm/CodeGen/GlobalISel/LoadStoreOpt.h?
 bool DelendumPreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
                                                MachineInstr &MI,
                                                MachineIRBuilder &B) const {
@@ -47,8 +49,9 @@ bool DelendumPreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
   switch (MI.getOpcode()) {
   case TargetOpcode::G_STORE: {
     MachineInstr *Src0 = MRI.getVRegDef(MI.getOperand(0).getReg());
+    MachineInstr *Src1 = MRI.getVRegDef(MI.getOperand(1).getReg());
 
-    // Fold G_LOAD -> G_STORE -> G_LOAD into a single G_LOAD.
+    // Fold consecutive G_STOREs and G_LOADs
     if (Src0->getOpcode() == TargetOpcode::G_LOAD) {
       // Match the following pattern:
       SmallVector<MachineInstr *, 4> Uses;
@@ -63,6 +66,12 @@ bool DelendumPreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
         UseMI->getOperand(1).setReg(Src0->getOperand(1).getReg());
         Success = true;
       }
+
+      // Remove the original G_STORE if the second operand is G_FRAME_INDEX
+      if (Src1->getOpcode() == TargetOpcode::G_FRAME_INDEX) {
+        Success = true;
+      }
+
       if (Success) {
         MI.eraseFromParent();
       }

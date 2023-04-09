@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "DelendumCallingConv.h"
 #include "DelendumISelLowering.h"
 #include "DelendumRegisterInfo.h"
 #include "DelendumTargetMachine.h"

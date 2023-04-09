@@ -32,7 +32,9 @@ public:
 
   /// Return true if the specified function should have a dedicated frame
   /// pointer register
-  bool hasFP(const MachineFunction &MF) const;
+  bool hasFP(const MachineFunction &MF) const {
+    return true;
+  }
 
   MachineBasicBlock::iterator
   eliminateCallFramePseudoInstr(MachineFunction &MF,

@@ -28,54 +28,27 @@ using namespace llvm;
 
 DelendumFrameLowering::DelendumFrameLowering(const DelendumSubtarget &ST)
     : TargetFrameLowering(TargetFrameLowering::StackGrowsDown,
-                          Align(8), 0,
-                          Align(8)) {}
-
-bool DelendumFrameLowering::hasFP(const MachineFunction &MF) const {
-  // TODO
-}
-
-// Build an instruction sequence to load an immediate that is too large to fit
-// in 16-bit and add the result to Reg.
-static void expandLargeImm(unsigned Reg, int64_t Imm, 
-                           const DelendumInstrInfo &TII, MachineBasicBlock& MBB,
-                           MachineBasicBlock::iterator II, DebugLoc DL) {
-  // TODO
-}
+                          Align(4), 0,
+                          Align(4)) {}
 
 void DelendumFrameLowering::emitPrologue(MachineFunction &MF,
-                                         MachineBasicBlock &MBB) const {
-  // TODO
-}
+                                         MachineBasicBlock &MBB) const {}
 
 void DelendumFrameLowering::emitEpilogue(MachineFunction &MF,
-                                         MachineBasicBlock &MBB) const {
-  // TODO
-}
+                                         MachineBasicBlock &MBB) const {}
 
 bool DelendumFrameLowering::
 spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                           MachineBasicBlock::iterator MI,
                           const std::vector<CalleeSavedInfo> &CSI,
-                          const TargetRegisterInfo *TRI) const {
-  // TODO
-}
+                          const TargetRegisterInfo *TRI) const {}
 
-// This function eliminate ADJCALLSTACKDOWN,
-// ADJCALLSTACKUP pseudo instructions
 MachineBasicBlock::iterator
 DelendumFrameLowering::eliminateCallFramePseudoInstr(MachineFunction &MF,
                                                      MachineBasicBlock &MBB,
-                                                     MachineBasicBlock::iterator MI) const {
-  // TODO
-}
+                                                     MachineBasicBlock::iterator MI) const {}
 
-// This method is called immediately before PrologEpilogInserter scans the 
-//  physical registers used to determine what callee saved registers should be 
-//  spilled. This method is optional. 
 void DelendumFrameLowering::
 DelendumFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                            RegScavenger *RS) const {
-  // TODO
-}
+                                                            RegScavenger *RS) const {}
 
