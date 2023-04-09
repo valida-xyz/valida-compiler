@@ -1,7 +1,7 @@
 # Valida Compiler
 
 ### Overview
-This repository contains the frontend compiler for the [Valida zkVM](https://github.com/delendum-xyz/Valida), a STARK-based VM designed to efficiently prove the execution of programs written in conventional languages. A work-in-progress spec for the VM ISA is described in the GitHub issue [here](...). The code implementing the compiler can be found in the `llvm/lib/Target/Delendum` directory.
+This repository contains the compiler for the [Valida zkVM](https://github.com/delendum-xyz/Valida), a STARK-based VM designed to efficiently prove the execution of programs written in conventional languages. A work-in-progress spec for the VM ISA is described in the GitHub issue [here](https://github.com/delendum-xyz/valida-compiler/issues/2). The code implementing the compiler can be found in the `llvm/lib/Target/Delendum` directory.
 
 ### Building the compiler
 These are the steps to build the Valida backend compiler (`llc`), which translates LLVM IR to Valida Assembly:
