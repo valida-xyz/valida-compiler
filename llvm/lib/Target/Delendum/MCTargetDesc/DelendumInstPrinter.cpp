@@ -22,14 +22,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
 
-// The generated AsmMatcher DelendumGenAsmWriter uses "Delendum" as the target
-// namespace. But DELENDUM backend uses "DL" as its namespace.
-//namespace llvm {
-//namespace Delendum {
-//  using namespace DL;
-//}
-//}
-
 #define GET_INSTRUCTION_NAME
 #define PRINT_ALIAS_INSTR
 #include "DelendumGenAsmWriter.inc"
@@ -71,28 +63,12 @@ void DelendumInstPrinter::printOperand(const MCInst *MI, int opNum,
   Op.getExpr()->print(O, &MAI, true);
 }
 
-void DelendumInstPrinter::printMemOperand(const MCInst *MI, int opNum,
-                                          raw_ostream &O,
-                                          const char *Modifier) {
-  O << "(";
-  printOperand(MI, opNum, O);
-  O << ", ";
-  printOperand(MI, opNum + 1, O);
-  O << ")";
+void DelendumInstPrinter::printImmOp32(const MCInst *MI, int opNum, 
+                                      raw_ostream &OS, const char *Modifier) {
+  printOperand(MI, opNum, OS);
 }
-
-void DelendumInstPrinter::printCCOperand(const MCInst *MI, int opNum,
-                                         raw_ostream &O) {
-  llvm_unreachable("unimplemented");
-}
-
-bool DelendumInstPrinter::printGetPCX(const MCInst *MI, unsigned opNum,
-                                      raw_ostream &O) {
-  llvm_unreachable("FIXME: Implement DelendumInstPrinter::printGetPCX.");
-  return true;
-}
-
-void DelendumInstPrinter::printMembarTag(const MCInst *MI, int opNum,
-                                         raw_ostream &O) {
-  // TODO
+void DelendumInstPrinter::printFPOp32(const MCInst *MI, int opNum,
+                                      raw_ostream &OS, const char *Modifier) {
+  printOperand(MI, opNum, OS);
+  OS << "(fp)";
 }

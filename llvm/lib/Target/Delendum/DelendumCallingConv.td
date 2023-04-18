@@ -19,8 +19,7 @@ def Delendum_CCallingConv : CallingConv<[
 
   // Integer values get stored in stack slots that are 4 bytes in size and
   // 4-byte aligned
-  //CCIfType<[i32], CCAssignToStack<4, 4>>
-  CCIfType<[i32], CCCustom<"CC_Delendum_AssignToStack">>,
+  CCIfType<[i32], CCCustom<"CC_Delendum_CAssignToStack">>,
 ]>;
 
 // C Return Convention
@@ -29,5 +28,5 @@ def Delendum_CRetConv : CallingConv<[
 
   // Integer values get stored in stack slots that are 4 bytes in size and
   // 4-byte aligned
-  CCIfType<[i32], CCAssignToStack<4, 4>>
+  CCIfType<[i32], CCCustom<"CC_Delendum_RAssignToStack">>,
 ]>;

@@ -6,10 +6,7 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-//
-//
-//===----------------------------------------------------------------------===//
+
 #ifndef LLVM_LIB_TARGET_DELENDUM_DELENDUMFRAMELOWERING_H
 #define LLVM_LIB_TARGET_DELENDUM_DELENDUMFRAMELOWERING_H
 
@@ -30,27 +27,13 @@ public:
   /// Insert epilog code into the function.
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
 
-  /// Return true if the specified function should have a dedicated frame
-  /// pointer register
-  bool hasFP(const MachineFunction &MF) const {
+  // Return true if the specified function should have a dedicated frame
+  // pointer register
+  bool hasFP(const MachineFunction &MF) const override {
     return true;
   }
-
-  MachineBasicBlock::iterator
-  eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator MI) const override;
-
-  bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                 MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const;
-
-  void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                            RegScavenger *RS) const;
 };
 
 } // End llvm namespace
 
 #endif
-

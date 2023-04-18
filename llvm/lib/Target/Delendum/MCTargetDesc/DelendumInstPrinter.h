@@ -38,11 +38,10 @@ public:
   static const char *getRegisterName(MCRegister Reg);
 
   void printOperand(const MCInst *MI, int opNum, raw_ostream &OS);
-  void printMemOperand(const MCInst *MI, int opNum, raw_ostream &OS,
+  void printImmOp32(const MCInst *MI, int opNum, raw_ostream &OS,
                        const char *Modifier = nullptr);
-  void printCCOperand(const MCInst *MI, int opNum, raw_ostream &OS);
-  bool printGetPCX(const MCInst *MI, unsigned OpNo, raw_ostream &OS);
-  void printMembarTag(const MCInst *MI, int opNum, raw_ostream &O);
+  void printFPOp32(const MCInst *MI, int opNum, raw_ostream &OS,
+                       const char *Modifier = nullptr);
 };
 } // end namespace llvm
 

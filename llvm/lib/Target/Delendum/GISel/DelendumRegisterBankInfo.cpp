@@ -91,10 +91,21 @@ DelendumRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
     break;
   }
 
+  case G_ICMP: {
+    OperandsMapping =
+        getOperandsMapping({&Delendum::ValueMappings[Delendum::GPR3OpsIdx],
+                            nullptr,
+                            &Delendum::ValueMappings[Delendum::GPR3OpsIdx],
+                            &Delendum::ValueMappings[Delendum::GPR3OpsIdx]});
+    break;
+  }
+
+  case G_BRCOND:
   case G_CONSTANT:
   case G_FRAME_INDEX:
     OperandsMapping =
-        getOperandsMapping({&Delendum::ValueMappings[Delendum::GPR3OpsIdx], nullptr});
+        getOperandsMapping({&Delendum::ValueMappings[Delendum::GPR3OpsIdx],
+                            nullptr});
     break;
   default:
     return getInvalidInstructionMapping();

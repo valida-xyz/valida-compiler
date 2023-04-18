@@ -31,42 +31,9 @@ using namespace llvm;
 #define DEBUG_TYPE "asm-printer"
 
 bool DelendumAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
-  //MMFI = MF.getInfo<DelendumMachineFunctionInfo>();
   MCInstLowering = std::make_unique<DelendumMCInstLower>(MF, *this);
   AsmPrinter::runOnMachineFunction(MF);
   return true;
-}
-
-// FIXME: This is not currently used when emitting instructions
-void DelendumAsmPrinter::printOperand(const MachineInstr *MI, int OpNum,
-                                      raw_ostream &OS) {
-  const MachineOperand &MO = MI->getOperand(OpNum);
-  switch (MO.getType()) {
-  case MachineOperand::MO_Register:
-    OS << "%" << DelendumInstPrinter::getRegisterName(MO.getReg());
-    break;
-  case MachineOperand::MO_Immediate:
-    OS << MO.getImm();
-    break;
-  case MachineOperand::MO_MachineBasicBlock:
-    MO.getMBB()->getSymbol()->print(OS, MAI);
-    break;
-  default:
-    llvm_unreachable("not implemented");
-  }
-}
-
-bool DelendumAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                         const char *ExtraCode,
-                                         raw_ostream &OS) {
-  // Print the operand if there is no operand modifier.
-  if (!ExtraCode || !ExtraCode[0]) {
-    printOperand(MI, OpNo, OS);
-    return false;
-  }
-
-  // Fallback to the default implementation.
-  return AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, OS);
 }
 
 void DelendumAsmPrinter::emitInstruction(const MachineInstr *MI) {
@@ -75,7 +42,6 @@ void DelendumAsmPrinter::emitInstruction(const MachineInstr *MI) {
   MCInst OutMI;
   MCInstLowering->Lower(MI, OutMI);
   OutStreamer->emitInstruction(OutMI, getSubtargetInfo());
-
 }
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDelendumAsmPrinter() {

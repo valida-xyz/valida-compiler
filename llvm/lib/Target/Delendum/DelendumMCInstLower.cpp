@@ -42,8 +42,15 @@ DelendumMCInstLower::LowerSymbolOperand(const MachineOperand &MO) const {
   const MCExpr *Expr = nullptr;
 
   SmallString<128> Name;
-  if (MO.isGlobal()) {
+  switch (MO.getType()) {
+  case MachineOperand::MO_MachineBasicBlock:
+    Sym = MO.getMBB()->getSymbol();
+    break;
+  case MachineOperand::MO_GlobalAddress:
     Sym = AsmPrinter.getSymbol(MO.getGlobal());
+    break;
+  default:
+    break;
   }
 
   if (!Sym)
@@ -61,6 +68,7 @@ DelendumMCInstLower::LowerOperand(const MachineInstr *MI,
   switch (MO.getType()) {
   case MachineOperand::MO_Immediate:
     return MCOperand::createImm(MO.getImm());
+  case MachineOperand::MO_MachineBasicBlock:
   case MachineOperand::MO_GlobalAddress:
     return LowerSymbolOperand(MO);
   default:

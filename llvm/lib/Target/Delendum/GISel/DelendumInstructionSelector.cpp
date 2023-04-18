@@ -1,4 +1,4 @@
-//===-- DelendumInstructionSelector.cpp -----------------------------*- C++ -*-===//
+//===-- DelendumInstructionSelector.cpp -------------------------*- C++ -*-===//
 //===----------------------------------------------------------------------===//
 /// \file
 /// This file implements the targeting of the InstructionSelector class for
@@ -36,18 +36,17 @@ public:
   bool select(MachineInstr &I) override;
   static const char *getName() { return DEBUG_TYPE; }
 
-  InstructionSelector::ComplexRendererFns selectAddr(MachineOperand &Root) const;
-
   // Custom instruction selection that didn't occur in TableGen
   bool customSelect(MachineInstr &I) const;
-  bool selectConst(const APInt &Imm, MachineInstr &I) const;
   bool selectFrameIndex(MachineInstr &I) const;
+  bool selectJump(MachineInstr &I) const;
+  bool selectCall(MachineInstr &I) const;
   bool selectArithmetic(MachineInstr &I, int Offset) const;
   bool selectStore(MachineInstr &I) const;
 
 private:
   bool selectImpl(MachineInstr &I, CodeGenCoverage &CoverageInfo) const;
-  int getOffsetFP(MachineOperand &MI) const;
+  int getFPOffset(MachineOperand &MI) const;
 
   const DelendumTargetMachine &TM;
   const DelendumInstrInfo &TII;
@@ -84,26 +83,15 @@ DelendumInstructionSelector::DelendumInstructionSelector(
 {
 }
 
-int DelendumInstructionSelector::getOffsetFP(MachineOperand &MO) const {
+int DelendumInstructionSelector::getFPOffset(MachineOperand &MO) const {
   MachineInstr &I = *MO.getParent();
   MachineBasicBlock &MBB = *I.getParent();
   MachineFunction &MF = *MBB.getParent();
   MachineFrameInfo &MFI = MF.getFrameInfo();
 
-  // FIXME: The stack pointer in MFI (SPOffset) is incorrect, so some
-  // object offsets are returning zero. We have to manually calculate
-  // those offsets until this is fixed.
-  int Offset;
+  // Offset is relative to frame pointer
   int Index = MO.getIndex();
-
-  // FIXME: How should we detect if an operand is going to be used
-  // as a return value? It must stored in fp - 4 if so.
-  if (MFI.isFixedObjectIndex(Index)) {
-    Offset = -MFI.getObjectOffset(Index) - 8; // Relative to frame pointer
-  } else {
-    Offset = Index * 4; 
-  }
-
+  int Offset = MFI.getObjectOffset(Index); 
   return Offset;
 }
 
@@ -131,29 +119,94 @@ bool DelendumInstructionSelector::customSelect(MachineInstr &I) const {
   switch (Opcode) {
   case TargetOpcode::G_STORE:
     return selectStore(I);
+  case TargetOpcode::G_BRCOND:
+  case TargetOpcode::G_BR:
+    return selectJump(I);
   case TargetOpcode::G_CONSTANT:
   case TargetOpcode::G_FRAME_INDEX:
   case TargetOpcode::G_LOAD:
+  case TargetOpcode::G_ICMP:
     return true;
+  case DL::CALL: {
+    return selectCall(I);
+  }
   default:
     return false;
   }
 }
 
-bool DelendumInstructionSelector::selectConst(const APInt &Imm,
-                                              MachineInstr &I) const {
-  // NO-OP
+bool DelendumInstructionSelector::selectCall(MachineInstr &I) const {
+  MachineBasicBlock &MBB = *I.getParent();
+  const MachineOperand &PCAddr = I.getOperand(1);
+  const MachineOperand &FPOffset = I.getOperand(2);
+
+  MachineInstr *Imm32 = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::IMM32))
+                          .addImm(FPOffset.getImm()+8)
+                          .addImm(0)
+                          .addImm(0)
+                          .addImm(0)
+                          .addImm(-FPOffset.getImm());
+  if (!constrainSelectedInstRegOperands(*Imm32, TII, TRI, RBI))
+    return false;
+
+  MachineInstr *Store = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::JAL))
+                          .add(FPOffset)
+                          .add(PCAddr) 
+                          .add(FPOffset);
+  if (!constrainSelectedInstRegOperands(*Store, TII, TRI, RBI))
+    return false;
+
   return true;
 }
 
-bool DelendumInstructionSelector::selectFrameIndex(MachineInstr &I) const {
-  // NO-OP
-  return true;
+bool DelendumInstructionSelector::selectJump(MachineInstr &I) const {
+  MachineInstr *MI = nullptr;
+
+  MachineBasicBlock &MBB = *I.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+
+  const unsigned Opcode = I.getOpcode();
+
+  if (Opcode == TargetOpcode::G_BR) {
+    const MachineOperand &MO = I.getOperand(0);
+    MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::BEQ))
+        .add(MO)
+        .addImm(0)
+        .addImm(0);
+  } else if (Opcode == TargetOpcode::G_BRCOND) {
+    const MachineOperand &MO = I.getOperand(1);
+    MachineInstr *Src0 = MRI.getVRegDef(I.getOperand(0).getReg());
+
+    if (Src0->getOpcode() == TargetOpcode::G_ICMP) {
+      CmpInst::Predicate Cond =
+          static_cast<CmpInst::Predicate>(Src0->getOperand(1).getPredicate());
+      switch (Cond) {
+      case CmpInst::ICMP_NE: {
+        MachineInstr *Load0 = MRI.getVRegDef(Src0->getOperand(2).getReg());
+        MachineInstr *Load1 = MRI.getVRegDef(Src0->getOperand(3).getReg());
+        MachineInstr *FrameIndex0 = MRI.getVRegDef(Load0->getOperand(1).getReg());
+        MachineInstr *FrameIndex1 = MRI.getVRegDef(Load1->getOperand(1).getReg());
+        int SrcOffset0 = getFPOffset(FrameIndex0->getOperand(1));
+        int SrcOffset1 = getFPOffset(FrameIndex1->getOperand(1));
+
+        MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::BNE))
+            .add(MO)
+            .addImm(SrcOffset0)
+            .addImm(SrcOffset1);
+        break;
+      }
+      default:
+        return false;
+      }
+    } else {
+      llvm_unreachable("Unsupported opcode");
+    }
+  }
+
+  return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
 }
 
-// TODO: Should we be using a (pre/post-legalizer?) pass so we don't have to fold
-// G_STORE, G_LOAD, and G_ADD/G_SUB/G_MUL/...?
-// We also shouldn't be explicitly passing in the destination offset.
 bool DelendumInstructionSelector::selectArithmetic(MachineInstr &I,
                                                   int DstOffset) const {
   MachineInstr *MI = nullptr;
@@ -173,7 +226,7 @@ bool DelendumInstructionSelector::selectArithmetic(MachineInstr &I,
     llvm_unreachable("Immediate value not supported for this operand");
   } else if (Src1->getOpcode() == G_CONSTANT) {
     MachineInstr *Load0 = MRI.getVRegDef(Src0->getOperand(1).getReg());
-    int SrcOffset0 = Load0->getOperand(1).getIndex() * StackAlignment; 
+    int SrcOffset0 = getFPOffset(Load0->getOperand(1));
     APInt Value1 = Src1->getOperand(1).getCImm()->getValue();
     int OpCode = I.getOpcode() == G_ADD ? DL::ADDi : DL::SUBi;
     MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(OpCode))
@@ -183,8 +236,8 @@ bool DelendumInstructionSelector::selectArithmetic(MachineInstr &I,
   } else {
     MachineInstr *Load0 = MRI.getVRegDef(Src0->getOperand(1).getReg());
     MachineInstr *Load1 = MRI.getVRegDef(Src1->getOperand(1).getReg());
-    int SrcOffset0 = getOffsetFP(Load0->getOperand(1));
-    int SrcOffset1 = getOffsetFP(Load1->getOperand(1));
+    int SrcOffset0 = getFPOffset(Load0->getOperand(1));
+    int SrcOffset1 = getFPOffset(Load1->getOperand(1));
 
     int OpCode;
     if (I.getOpcode() == G_ADD) {
@@ -196,9 +249,6 @@ bool DelendumInstructionSelector::selectArithmetic(MachineInstr &I,
     } else {
       llvm_unreachable("Unsupported opcode");
     }
-
-    // Detect if the output of this instruction is a return value,
-    // and if so, store in fp - 4
 
     MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(OpCode))
              .addImm(DstOffset)
@@ -219,35 +269,57 @@ bool DelendumInstructionSelector::selectStore(MachineInstr &I) const {
 
   MachineInstr *Src0 = MRI.getVRegDef(I.getOperand(0).getReg());
   MachineInstr *Src1 = MRI.getVRegDef(I.getOperand(1).getReg());
-  if (Src1->getOpcode() == G_FRAME_INDEX) {
-    int SrcOffset1 = getOffsetFP(Src1->getOperand(1));
 
-    if (Src0->getOpcode() == G_CONSTANT) {
+  if (Src1->getOpcode() != G_FRAME_INDEX) {
+    llvm_unreachable("Unsupported opcode");
+  }
+
+  int SrcOffset1 = getFPOffset(Src1->getOperand(1));
+
+  switch (Src0->getOpcode()) {
+    case G_CONSTANT: {
       APInt ConstantValue = Src0->getOperand(1).getCImm()->getValue();
       std::array<unsigned, 4> ConstantBytes;
       for (unsigned I = 0; I < 4; ++I) {
         ConstantBytes[I] = static_cast<unsigned>(
                 (ConstantValue.ashr(I * 8)).getZExtValue() & 0xFF);
       }
-
-      MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::SET32))
+      MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::IMM32))
                .addImm(SrcOffset1)
                .addImm(ConstantBytes[3])
                .addImm(ConstantBytes[2])
                .addImm(ConstantBytes[1])
                .addImm(ConstantBytes[0]);
-      return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
-
-    } else {
-      MachineInstr *I2 = MRI.getVRegDef(I.getOperand(0).getReg());
-      if (I2->getOpcode() == G_ADD || I2->getOpcode() == G_SUB || 
-          I2->getOpcode() == G_MUL) {
-        selectArithmetic(*I2, SrcOffset1);
-        return true;
-      }
+      break;
     }
-      
+    case DL::CALL: {
+      int DstOffset = getFPOffset(Src1->getOperand(1));
+      int JmpOffset = Src0->getOperand(0).getImm();
+      MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::STORE32))
+               .addImm(DstOffset)
+               .addImm(JmpOffset);
+      break;
+    }
+    case G_LOAD: {
+      MachineInstr *FI0 = MRI.getVRegDef(Src0->getOperand(1).getReg());
+      int SrcOffset = getFPOffset(FI0->getOperand(1));
+      int DstOffset = getFPOffset(Src1->getOperand(1));
+      MI = BuildMI(MBB, I, I.getDebugLoc(), TII.get(DL::STORE32))
+               .addImm(DstOffset)
+               .addImm(SrcOffset);
+      break;
+    }
+    case G_ADD:
+    case G_SUB:
+    case G_MUL: {
+      selectArithmetic(*Src0, SrcOffset1);
+      return true;
+    }
+    default:
+      llvm_unreachable("Unsupported opcode");
   }
+
+  return constrainSelectedInstRegOperands(*MI, TII, TRI, RBI);
 }
 
 namespace llvm {

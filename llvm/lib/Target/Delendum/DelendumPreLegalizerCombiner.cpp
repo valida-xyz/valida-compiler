@@ -51,8 +51,16 @@ bool DelendumPreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
     MachineInstr *Src0 = MRI.getVRegDef(MI.getOperand(0).getReg());
     MachineInstr *Src1 = MRI.getVRegDef(MI.getOperand(1).getReg());
 
-    // Fold consecutive G_STOREs and G_LOADs
+    // Do not copy arguments into the stack
     if (Src0->getOpcode() == TargetOpcode::G_LOAD) {
+      // Only copy non-fixed stack items
+      if (Src1->getOperand(1).getIndex() >= 0) {
+        break;
+      }
+
+      // FIXME: Skipping for now
+      break;
+
       // Match the following pattern:
       SmallVector<MachineInstr *, 4> Uses;
       for (auto &UseMI : MRI.use_nodbg_instructions(MI.getOperand(1).getReg())) {

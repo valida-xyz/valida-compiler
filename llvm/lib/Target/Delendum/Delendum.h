@@ -26,13 +26,16 @@ class PassRegistry;
 
 FunctionPass *createDelendumISelDag(DelendumTargetMachine &TM);
 FunctionPass *createDelendumPreLegalizeCombiner();
+FunctionPass *createDelendumDeadStackSlotEliminator();
 
 InstructionSelector *
-createDelendumInstructionSelector(const DelendumTargetMachine &, const DelendumSubtarget &,
+createDelendumInstructionSelector(const DelendumTargetMachine &,
+                                  const DelendumSubtarget &,
                                   const DelendumRegisterBankInfo &);
 
 void initializeDelendumDAGToDAGISelPass(PassRegistry &);
 void initializeDelendumPreLegalizerCombinerPass(PassRegistry &);
+void initializeDelendumDeadStackSlotEliminatorPass(PassRegistry &);
 
 } // namespace llvm
 

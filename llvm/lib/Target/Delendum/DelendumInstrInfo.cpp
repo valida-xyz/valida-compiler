@@ -1,4 +1,4 @@
-//===-- DelendumInstrInfo.cpp - Delendum Instruction Information ------------------===//
+//===-- DelendumInstrInfo.cpp - Delendum Instruction Information ----------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-//#include "Delendum.h"
 #include "DelendumInstrInfo.h"
 #include "DelendumSubtarget.h"
 #include "DelendumTargetMachine.h"
@@ -28,11 +27,6 @@
 
 using namespace llvm;
 
-//namespace llvm {
-//namespace Delendum {
-//} // end namespace Delendum
-//} // end namespace llvm
-
 #define DEBUG_TYPE "delendum-instr-info"
 
 #define GET_INSTRINFO_CTOR_DTOR
@@ -44,61 +38,3 @@ void DelendumInstrInfo::anchor() {}
 DelendumInstrInfo::DelendumInstrInfo(DelendumSubtarget &ST)
   : DelendumGenInstrInfo(DL::ADJCALLSTACKDOWN, DL::ADJCALLSTACKUP),
     RI(ST), Subtarget(ST) {}
-
-static MachineMemOperand* GetMemOperand(MachineBasicBlock &MBB, int FI,
-                                        unsigned Flag) {
-  // TODO
-}
-
-/// isLoadFromStackSlot - If the specified machine instruction is a direct
-/// load from a stack slot, return the virtual or physical register number of
-/// the destination along with the FrameIndex of the loaded stack slot.  If
-/// not, return 0.  This predicate must return 0 if the instruction has
-/// any side effects other than loading from the stack slot.
-unsigned DelendumInstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
-                                                int &FrameIndex) const {
-  // TODO
-  if (MI.getOpcode() == DL::ADD || MI.getOpcode() == DL::SUB ||
-      MI.getOpcode() == DL::MUL) {
-    FrameIndex = MI.getOperand(1).getIndex();
-    return MI.getOperand(0).getReg();
-  }
-  return 0;
-}
-
-/// isStoreToStackSlot - If the specified machine instruction is a direct
-/// store to a stack slot, return the virtual or physical register number of
-/// the source reg along with the FrameIndex of the loaded stack slot.  If
-/// not, return 0.  This predicate must return 0 if the instruction has
-/// any side effects other than storing to the stack slot.
-unsigned DelendumInstrInfo::isStoreToStackSlot(const MachineInstr &MI,
-                                               int &FrameIndex) const {
-  // TODO
-  if (MI.getOpcode() == DL::ADD || MI.getOpcode() == DL::SUB ||
-      MI.getOpcode() == DL::MUL) {
-    FrameIndex = MI.getOperand(0).getIndex();
-    return MI.getOperand(2).getReg();
-  }
-  return 0;
-}
-
-MachineInstr*
-DelendumInstrInfo::emitFrameIndexDebugValue(MachineFunction &MF, int FrameIx,
-                                            uint64_t Offset, const MDNode *MDPtr,
-                                            DebugLoc DL) const {
-  // TODO
-}
-
-// DelendumInstrInfo::expandPostRAPseudo
-/// Expand Pseudo instructions into real backend instructions
-bool DelendumInstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
-  // TODO
-}
-
-void DelendumInstrInfo::ExpandRetLR(MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator I,
-                                    unsigned Opc) const {
-  // TODO
-}
-
-

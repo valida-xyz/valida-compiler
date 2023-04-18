@@ -39,6 +39,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDelendumTarget() {
   auto *PR = PassRegistry::getPassRegistry();
   initializeDelendumDAGToDAGISelPass(*PR);
   initializeDelendumPreLegalizerCombinerPass(*PR);
+  //initializeStackFrameLayoutAnalysisPassPass(*PR);
 }
 
 namespace {
@@ -143,9 +144,6 @@ public:
   void addPreLegalizeMachineIR() override;
   bool addRegBankSelect() override;
   bool addGlobalInstructionSelect() override;
-  bool addInstSelector() override;
-  void addPreSched2() override;
-  void addPreEmitPass() override;
 };
 } // namespace
 
@@ -155,10 +153,6 @@ TargetPassConfig *DelendumTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 void DelendumPassConfig::addIRPasses() {
   TargetPassConfig::addIRPasses();
-}
-
-bool DelendumPassConfig::addInstSelector() {
-  return false;
 }
 
 bool DelendumPassConfig::addIRTranslator() {
@@ -175,18 +169,13 @@ bool DelendumPassConfig::addLegalizeMachineIR() {
   return false;
 }
 
-bool DelendumPassConfig::addGlobalInstructionSelect() {
-  addPass(new InstructionSelect());
-  return false;
-}
-
 bool DelendumPassConfig::addRegBankSelect() {
-  // Instruction selection requires that a register bank exist, even 
-  // if we do not use it.
   addPass(new RegBankSelect());
   return false;
 }
 
-void DelendumPassConfig::addPreSched2() {}
-
-void DelendumPassConfig::addPreEmitPass() {}
+bool DelendumPassConfig::addGlobalInstructionSelect() {
+  addPass(createDelendumDeadStackSlotEliminator());
+  addPass(new InstructionSelect());
+  return false;
+}

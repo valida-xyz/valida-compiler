@@ -1,4 +1,4 @@
-//===-- DelendumAsmPrinter.h - Delendum LLVM Assembly Printer -----------*- C++ -*-===//
+//===-- DelendumAsmPrinter.h - Delendum LLVM Assembly Printer ---*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -25,20 +25,9 @@
 #include <utility>
 
 namespace llvm {
-class MCStreamer;
-class MachineInstr;
-class MachineBasicBlock;
-class Module;
-class raw_ostream;
-
-class DelendumSubtarget;
 class DelendumMachineFunctionInfo;
 
 class LLVM_LIBRARY_VISIBILITY DelendumAsmPrinter : public AsmPrinter {
-
-  //void EmitInstrWithMacroNoAT(const MachineInstr *MI);
-
-  void printOperand(const MachineInstr *MI, int OpNum, raw_ostream &OS);
 
 public:
   const DelendumSubtarget *Subtarget;
@@ -55,14 +44,7 @@ public:
 
   virtual bool runOnMachineFunction(MachineFunction &MF) override;
 
-  bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                       const char *ExtraCode, raw_ostream &OS) override;
-
   void emitInstruction(const MachineInstr *MI) override;
-  //void emitFunctionBodyStart() override;
-  //void emitFunctionBodyEnd() override;
-  //void emitStartOfAsmFile(Module &M) override;
-  //void emitEndOfAsmFile(Module &M) override;
 };
 } // namespace llvm
 

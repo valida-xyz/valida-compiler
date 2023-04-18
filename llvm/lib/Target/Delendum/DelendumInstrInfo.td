@@ -19,10 +19,13 @@ def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_DCallSeqEnd,
 // Operand Types
 //===----------------------------------------------------------------------===//
 
-// TODO: We cannot represent all 32-bit operands in our field. We need to add
-// multiple operand types here, and check whether a given operand needs to be
-// split into smaller ones.
+def FPOp32 : Operand<i32> {
+  let PrintMethod = "printFPOp32";
+  let DecoderMethod = "DecodeFPOp32";
+}
+
 def ImmOp32 : Operand<i32> {
+  let PrintMethod = "printImmOp32";
   let DecoderMethod = "DecodeImmOp32";
 }
 
@@ -50,7 +53,7 @@ class AlignedStore<PatFrag Node> :
 //===----------------------------------------------------------------------===//
 
 class ALU_rr<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$c, ImmOp32:$a, ImmOp32:$b),
+  : DInst<op, (outs), (ins FPOp32:$c, FPOp32:$a, FPOp32:$b),
          opcodestr#"\t$c, $a, $b"> {
   let Inst = (ascend op,
     (operand "$c", 32),
@@ -59,7 +62,7 @@ class ALU_rr<bits<32> op, string opcodestr>
 }
 
 class ALU_ri<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$c, ImmOp32:$a, ImmOp32:$b),
+  : DInst<op, (outs), (ins FPOp32:$c, FPOp32:$a, ImmOp32:$b),
          opcodestr#"\t$c, $a, $b"> {
   let Inst = (ascend op,
     (operand "$c", 32),
@@ -70,7 +73,7 @@ class ALU_ri<bits<32> op, string opcodestr>
 }
 
 class LOAD<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$c, ImmOp32:$a),
+  : DInst<op, (outs), (ins FPOp32:$c, FPOp32:$a),
          opcodestr#"\t$c, $a"> {
   let Inst = (ascend op,
     (operand "$c", 32),
@@ -78,7 +81,7 @@ class LOAD<bits<32> op, string opcodestr>
 }
 
 class STORE<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$a, ImmOp32:$b),
+  : DInst<op, (outs), (ins FPOp32:$a, FPOp32:$b),
          opcodestr#"\t$a, $b"> {
   let Inst = (ascend op,
     (operand "$a", 32),
@@ -86,7 +89,7 @@ class STORE<bits<32> op, string opcodestr>
 }
 
 class WRITE_IMM<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$c, ImmOp32:$a, 
+  : DInst<op, (outs), (ins FPOp32:$c, ImmOp32:$a, 
                            ImmOp32:$b, ImmOp32:$d,
                            ImmOp32:$e),
          opcodestr#"\t$c, $a, $b, $d, $e"> {
@@ -98,14 +101,33 @@ class WRITE_IMM<bits<32> op, string opcodestr>
     (operand "$e", 32));
 }
 
-class JUMP<bits<32> op, string opcodestr>
-  : DInst<op, (outs), (ins ImmOp32:$c, ImmOp32:$a, ImmOp32:$b),
+class JUMP1<bits<32> op, string opcodestr>
+  : DInst<op, (outs), (ins FPOp32:$c, FPOp32:$a, FPOp32:$b),
          opcodestr#"\t$c, $a, $b"> {
   let Inst = (ascend op,
     (operand "$c", 32),
     (operand "$a", 32),
     (operand "$b", 32));
   let isCall = 1;
+}
+
+class JUMP2<bits<32> op, string opcodestr>
+  : DInst<op, (outs), (ins FPOp32:$c, ImmOp32:$a, ImmOp32:$b),
+         opcodestr#"\t$c, $a, $b"> {
+  let Inst = (ascend op,
+    (operand "$c", 32),
+    (operand "$a", 32),
+    (operand "$b", 32));
+  let isCall = 1;
+}
+
+class JUMP3<bits<32> op, string opcodestr>
+  : DInst<op, (outs), (ins ImmOp32:$c, FPOp32:$a, FPOp32:$b),
+         opcodestr#"\t$c, $a, $b"> {
+  let Inst = (ascend op,
+    (operand "$c", 32),
+    (operand "$a", 32),
+    (operand "$b", 32));
 }
 
 //===----------------------------------------------------------------------===//
@@ -117,30 +139,35 @@ def LOAD32 : LOAD<1, "lw">;
 def STORE32 : STORE<2, "sw">;
 
 // Immediate value writes
-def SET32 : WRITE_IMM<3, "set32">;
+def IMM32 : WRITE_IMM<3, "imm32">;
 
 // Control flow
-def JAL  : JUMP<4, "jal">;
-def JALV : JUMP<5, "jalv">;
-def BEQ  : JUMP<6, "beq">;
+def JAL  : JUMP2<4, "jal">;
+def JALV : JUMP1<5, "jalv">;
+def BEQ  : JUMP3<6, "beq">;
+def BNE  : JUMP3<7, "bne">;
 
 // Arithmetic (32-bit)
-def ADD : ALU_rr<7, "add">;
-def SUB : ALU_rr<8, "sub">;
-def MUL : ALU_rr<9, "mul">;
+def ADD : ALU_rr<8, "add">;
+def SUB : ALU_rr<9, "sub">;
+def MUL : ALU_rr<10, "mul">;
 
 // Arithmetic (32-bit) immediate
-def ADDi : ALU_ri<10, "addi">;
-def SUBi : ALU_ri<11, "subi">;
-def MULi : ALU_ri<12, "muli">;
+def ADDi : ALU_ri<11, "addi">;
+def SUBi : ALU_ri<12, "subi">;
+def MULi : ALU_ri<13, "muli">;
 
-def RET : DInst<10, (outs), (ins), "ret">;
+def RET : DInst<14, (outs), (ins), "ret">;
 
 //===----------------------------------------------------------------------===//
 // Pseudo Instructions
 //===----------------------------------------------------------------------===//
 
-def CALL : DPseudoInst<0, (outs), (ins ImmOp32:$a), "call", []>;
+// Pseudoinstruction for JAL
+def CALL : DPseudoInst<15,
+    (outs), 
+    (ins ImmOp32:$a, ImmOp32:$b, ImmOp32:$c),
+    "call", []>;
 
 def ADJCALLSTACKDOWN : DPseudoInst<1, (outs), (ins ImmOp32:$amt1, ImmOp32:$amt2),
                                    "# ADJCALLSTACKDOWN $amt1",

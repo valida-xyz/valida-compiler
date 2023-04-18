@@ -22,12 +22,8 @@
 namespace llvm {
 
 class DelendumTargetLowering;
-class MachineInstrBuilder;
 
 class DelendumCallLowering : public CallLowering {
-  // TODO: We are only supporting return instruction with no value at this time
-  // point
-
 public:
   DelendumCallLowering(const DelendumTargetLowering &TLI);
 
@@ -44,9 +40,10 @@ public:
 
   bool enableBigEndian() const override;
 };
+
 struct DelendumIncomingValueHandler : public CallLowering::IncomingValueHandler {
   DelendumIncomingValueHandler(MachineIRBuilder &MIRBuilder,
-                           MachineRegisterInfo &MRI)
+                               MachineRegisterInfo &MRI)
       : CallLowering::IncomingValueHandler(MIRBuilder, MRI) {}
 
   uint64_t StackUsed;
@@ -68,14 +65,6 @@ struct FormalArgHandler : public DelendumIncomingValueHandler {
       : DelendumIncomingValueHandler(MIRBuilder, MRI) {}
 };
 
-struct CallReturnHandler : public DelendumIncomingValueHandler {
-  CallReturnHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
-                    MachineInstrBuilder &MIB)
-      : DelendumIncomingValueHandler(MIRBuilder, MRI), MIB(MIB) {}
-
-private:
-  MachineInstrBuilder &MIB;
-};
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_DELENDUM_GLSEL_DELENDUMCALLLOWERING_H

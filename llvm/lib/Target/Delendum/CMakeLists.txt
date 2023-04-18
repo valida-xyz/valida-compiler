@@ -22,6 +22,7 @@ add_llvm_target(DelendumCodeGen
   GISel/DelendumRegisterBankInfo.cpp
   GISel/DelendumInstructionSelector.cpp
   DelendumAsmPrinter.cpp
+  DelendumDeadStackSlotEliminator.cpp
   DelendumInstrInfo.cpp
   DelendumISelDAGToDAG.cpp
   DelendumISelLowering.cpp

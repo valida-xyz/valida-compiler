@@ -36,19 +36,3 @@ void DelendumFrameLowering::emitPrologue(MachineFunction &MF,
 
 void DelendumFrameLowering::emitEpilogue(MachineFunction &MF,
                                          MachineBasicBlock &MBB) const {}
-
-bool DelendumFrameLowering::
-spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                          MachineBasicBlock::iterator MI,
-                          const std::vector<CalleeSavedInfo> &CSI,
-                          const TargetRegisterInfo *TRI) const {}
-
-MachineBasicBlock::iterator
-DelendumFrameLowering::eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                                     MachineBasicBlock &MBB,
-                                                     MachineBasicBlock::iterator MI) const {}
-
-void DelendumFrameLowering::
-DelendumFrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                            RegScavenger *RS) const {}
-
