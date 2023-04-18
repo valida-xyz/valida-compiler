@@ -16,47 +16,69 @@ These are the steps to build the Valida backend compiler (`llc`), which translat
 In this section we'll show how to generate Valida Assembly from the following example C program:
 
 ```c
-// prog.c
+// fib.c
 
-#include <stdint.h>
-
-int mul_add(int a, int b) {
-  int c = a * b;
-  return c + 42;
+int fib(int n) {
+    int a = 0;
+    int b = 1;
+    for (int i = 0; i != n; i++) {
+        int c = a + b;
+        a = b;
+        b = c;
+    }
+    return a;
 }
 
-void main() {
-  int a = 1111;
-  int b = 2222;
-  int r = mul_add(a, b);
-  return;
+int main() {
+    int n = 10;
+    int result = fib(n);
+    return result;
 }
 ```
 
 1. Compile the program to LLVM IR using Clang, with a generic 32-bit backend as our target:
 
-`clang prog.c --target=riscv32 -S -emit-llvm`
+`clang fib.c --target=riscv32 -S -emit-llvm`
 
 2. Generate the assembly:
 
-`./build/bin/llc prog.ll --march=delendum --global-isel`
+`./build/bin/llc fib.ll --march=delendum --global-isel`
 
 ```asm
-; prog.s
+; fib.s
 
 ...
-mul_add:                                ; @mul_add
-	.cfi_startproc
+fib:                                    ; @fib
 ; %bb.0:
-	mul 	4, -8, -12
-	addi 	-4, 4, 42
-	jalv	0, 0, -12
+	sw	-4(fp), 12(fp)
+	imm32	-8(fp), 0, 0, 0, 0
+	imm32	-12(fp), 0, 0, 0, 1
+	imm32	-16(fp), 0, 0, 0, 0
+	beq	.LBB0_1, 0(fp), 0(fp)
+.LBB0_1:
+	bne	.LBB0_2, -16(fp), -4(fp)
+	beq	.LBB0_4, 0(fp), 0(fp)
+; %bb.2:
+	add	-20(fp), -8(fp), -12(fp)
+	sw	-8(fp), -12(fp)
+	sw	-12(fp), -20(fp)
+	beq	.LBB0_3, 0(fp), 0(fp)
+; %bb.3:
+	addi	-16(fp), -16(fp), 1
+	beq	.LBB0_1, 0(fp), 0(fp)
+.LBB0_4:
+	sw	4(fp), -8(fp)
+	jalv	-4(fp), 0(fp), 8(fp)
 ...
 main:                                   ; @main
-	.cfi_startproc
 ; %bb.0:
-	set32	0, 0, 0, 4, 87
-	set32	4, 0, 0, 8, 174
-	jal  	12, mul_add, 12
+	imm32	-4(fp), 0, 0, 0, 0
+	imm32	-8(fp), 0, 0, 0, 10
+	sw	-16(fp), -8(fp)
+	imm32	-20(fp), 0, 0, 0, 28
+	jal	-28(fp), fib, -28
+	sw	-12(fp), -24(fp)
+	sw	4(fp), -12(fp)
+	jalv	-4(fp), 0(fp), 8(fp)
 ...
 ```
